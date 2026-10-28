@@ -166,6 +166,81 @@ func copyTree(ctx context.Context, root, dst, skip string) error {
 	})
 }
 
+// restoreAssets is the file restore writes into a project's restore directory;
+// a project without it was never restored.
+const restoreAssets = "project.assets.json"
+
+// borrowRestoreOutputs copies into the snapshot, for every project it has no
+// restore outputs for, those of the same project in depRoot: the working tree
+// the snapshot's checkout stands in for. A checkout holds tracked files only and
+// restore outputs are gitignored, so without them the helper resolves no
+// package on the checkout side. Only a project at the same path in both trees
+// borrows, and only the files directly in its restore directory (the assets
+// file and the NuGet imports), never build output below it. depRoot is read,
+// never written, and nothing is written outside the snapshot. The borrowed
+// outputs describe the working tree's packages: changedRestoreInputs names the
+// projects whose own restore inputs differ. It returns the projects that
+// borrowed and those left without restore outputs.
+func borrowRestoreOutputs(snapRoot, depRoot string, projects []ProjectEvaluation) (borrowed []ProjectEvaluation, unrestored []string, err error) {
+	for _, p := range projects {
+		if p.RestoreDir == "" {
+			continue
+		}
+		dir := filepath.FromSlash(p.RestoreDir)
+		dst := filepath.Join(snapRoot, dir)
+		if fileExists(filepath.Join(dst, restoreAssets)) {
+			continue
+		}
+		src := filepath.Join(depRoot, dir)
+		if !fileExists(filepath.Join(depRoot, filepath.FromSlash(p.Path))) || !fileExists(filepath.Join(src, restoreAssets)) ||
+			!withinSnapshot(snapRoot, dst) {
+			unrestored = append(unrestored, p.Path)
+			continue
+		}
+		if err := copyRestoreDir(src, dst); err != nil {
+			return nil, nil, err
+		}
+		borrowed = append(borrowed, p)
+	}
+	return borrowed, unrestored, nil
+}
+
+// withinSnapshot reports whether p, its existing prefix resolved, lies in the
+// snapshot: a link in the checkout must not carry a write outside it.
+func withinSnapshot(snapRoot, p string) bool {
+	resolved, ok := resolveExisting(p)
+	if !ok {
+		return false
+	}
+	_, inside := relToRoot(snapRoot, resolved)
+	return inside
+}
+
+// copyRestoreDir copies the regular files directly in src into dst. A file the
+// snapshot already has is kept.
+func copyRestoreDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0o700); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		target := filepath.Join(dst, e.Name())
+		if _, err := os.Lstat(target); err == nil {
+			continue
+		}
+		if err := copyFile(filepath.Join(src, e.Name()), target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // copySymlink recreates a link so it names the same file it names in the
 // original, with one change: a target inside the root is redirected into the
 // snapshot, so a write through the link cannot reach the original tree. Inside

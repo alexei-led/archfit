@@ -79,6 +79,10 @@ type ProjectEvaluation struct {
 	// OutsideRoot counts ProjectReference targets outside the analysed root. They
 	// are dropped, not missing.
 	OutsideRoot int
+	// RestoreDir is the root-relative MSBuildProjectExtensionsPath: where
+	// restore writes project.assets.json and the NuGet imports. Empty when it
+	// lies outside the root or the evaluation failed.
+	RestoreDir string
 
 	definedIn  map[string]graph.Location // reference -> where it is declared
 	assemblies map[string]struct{}       // references that compile against the project's assembly
@@ -334,6 +338,11 @@ func evaluateProject(ctx context.Context, runner toolrun.Runner, root, rel strin
 	if base.failure != "" {
 		pe.Status, pe.Reason = ProjectFailed, base.failure
 		return pe, nil
+	}
+	if ext := base.props[propExtensions]; ext != "" {
+		if dir, inside := relToRoot(root, filepath.Clean(ext)); inside && dir != "" {
+			pe.RestoreDir = dir
+		}
 	}
 	acc := newAccumulator(root)
 	acc.add(base)

@@ -484,7 +484,7 @@ func TestExtract_RunsEachProjectAndFramework(t *testing.T) {
 		t.Errorf("calls = %v, want %v", got, want)
 	}
 	call := fake.calls[0]
-	for _, flag := range []string{"-getItem:ProjectReference", "-getItem:PackageReference", "-getProperty:TargetFramework", "-getProperty:TargetFrameworks", "-getProperty:IsTestProject"} {
+	for _, flag := range []string{"-getItem:ProjectReference", "-getItem:PackageReference", "-getProperty:TargetFramework", "-getProperty:TargetFrameworks", "-getProperty:IsTestProject", "-getProperty:MSBuildProjectExtensionsPath"} {
 		if !slices.Contains(call.Args, flag) {
 			t.Errorf("args %v lack %s", call.Args, flag)
 		}

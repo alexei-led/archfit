@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
@@ -95,6 +96,7 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 		ConfigSource: runCtx.ConfigSource, BundleDir: bundleDir, Root: baseRoot,
 		EvaluatedAt: runCtx.Now, EmptyBaseline: true,
 		NoAdvisories: req.NoAdvisories, SuppressGateReasons: true, WarnLabel: baseWarnLabel,
+		DependencyRoot: runCtx.Scope.Root,
 	}
 	acquired, err := sub.Evidence.Acquire(ctx, baseReq)
 	if err != nil {
@@ -108,7 +110,7 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	return BaseEvidence{
 		Findings:           decision.BaseFindings(diag.Findings),
 		Seams:              evaluation.BaseSeams(diag.Seams),
-		Coverage:           diag.ToolCoverage,
+		Coverage:           withoutBaseRoot(diag.ToolCoverage, baseRoot),
 		CoverageGaps:       diag.CoverageGaps,
 		ConfigHash:         diag.ConfigHash,
 		ModelHash:          diag.ModelHash,
@@ -120,3 +122,14 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 
 // baseWarnLabel prefixes every base-side stderr warning.
 const baseWarnLabel = "[base] "
+
+// withoutBaseRoot spells the base root out of each row's reason, as the .NET
+// snapshot mapper does: an unpaired origin reason quotes the base row's reason,
+// and no base path may reach head output.
+func withoutBaseRoot(rows []modevidence.Coverage, baseRoot string) []modevidence.Coverage {
+	out := slices.Clone(rows)
+	for i := range out {
+		out[i].Reason = strings.ReplaceAll(strings.ReplaceAll(out[i].Reason, baseRoot+"/", ""), baseRoot, ".")
+	}
+	return out
+}

@@ -3,7 +3,9 @@ package dotnet_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -143,5 +145,214 @@ func TestSnapshot_SymlinkThroughAnAliasStaysInTheSnapshot(t *testing.T) {
 	}
 	if _, err := os.Stat(snapshot); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("snapshot %s still exists (err %v)", snapshot, err)
+	}
+}
+
+// restoreProject is one project of a fake restore graph.
+type restoreProject struct {
+	version string   // the central version of the one package it references
+	refs    []string // referenced projects
+}
+
+// restoreGraphJSON renders a NuGet restore graph of projects under root. env
+// stands for the fields that depend on the machine, never on the inputs.
+func restoreGraphJSON(root, env string, projects map[string]restoreProject) string {
+	abs := func(p string) string { return filepath.ToSlash(filepath.Join(root, p)) }
+	entries := make([]string, 0, len(projects))
+	for path, p := range projects {
+		refs := make([]string, 0, len(p.refs))
+		for _, r := range p.refs {
+			refs = append(refs, fmt.Sprintf("%q:{\"projectPath\":%q}", abs(r), abs(r)))
+		}
+		entries = append(entries, fmt.Sprintf(`%q:{"frameworks":{"net10.0":{"dependencies":{"Pkg":{"target":"Package","version":"[1.0.0, )","versionCentrallyManaged":true}},`+
+			`"centralPackageVersions":{"Pkg":%q},"runtimeIdentifierGraphPath":%q}},`+
+			`"restore":{"projectPath":%q,"packagesPath":%q,"sources":{"https://api.nuget.org/v3/index.json":{}},`+
+			`"centralPackageVersionsManagementEnabled":true,"frameworks":{"net10.0":{"projectReferences":{%s}}}}}`,
+			abs(path), p.version, env+"/sdk/PortableRuntimeIdentifierGraph.json", abs(path), env+"/packages", strings.Join(refs, ",")))
+	}
+	return `{"format":1,"projects":{` + strings.Join(entries, ",") + `}}`
+}
+
+// closure returns project and every project it references in graph.
+func closure(graph map[string]restoreProject, project string) map[string]restoreProject {
+	out := map[string]restoreProject{}
+	var walk func(string)
+	walk = func(p string) {
+		if _, seen := out[p]; seen {
+			return
+		}
+		out[p] = graph[p]
+		for _, r := range graph[p].refs {
+			walk(r)
+		}
+	}
+	walk(project)
+	return out
+}
+
+// answerRestoreGraph answers `msbuild -t:GenerateRestoreGraphFile` with graph's
+// closure of the target, written where the call asks, and passes every other
+// call to next.
+func answerRestoreGraph(t *testing.T, next func(context.Context, toolrun.ToolCmd) (toolrun.Output, error), graph map[string]restoreProject) func(context.Context, toolrun.ToolCmd) (toolrun.Output, error) {
+	return func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+		if !slices.Contains(cmd.Args, "-t:GenerateRestoreGraphFile") {
+			return next(ctx, cmd)
+		}
+		target, err := filepath.Rel(cmd.WorkDir, cmd.Args[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range cmd.Args {
+			if out, ok := strings.CutPrefix(a, "-p:RestoreGraphOutputPath="); ok {
+				writeFile(t, filepath.Dir(out), filepath.Base(out), restoreGraphJSON(cmd.WorkDir, "/base-machine", closure(graph, filepath.ToSlash(target))))
+			}
+		}
+		return toolrun.Output{}, nil
+	}
+}
+
+// TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs: a checkout (the --base
+// worktree) holds no gitignored restore outputs, so the snapshot takes them
+// from the working tree, project by project, at the path MSBuild evaluates in
+// the checkout. A project whose restore inputs differ from the ones the working
+// tree restored with is partial and named. Neither tree is written.
+func TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs(t *testing.T) {
+	const (
+		restored   = "Restored/Restored.csproj"     // restored in the working tree, same inputs
+		artifacts  = "Artifacts/Artifacts.csproj"   // UseArtifactsOutput; its central version was bumped
+		consumer   = "Consumer/Consumer.csproj"     // same own inputs, references Artifacts
+		sourced    = "Sourced/Sourced.csproj"       // a NuGet.config only the working tree has
+		propped    = "Propped/Propped.csproj"       // a Directory.Build.props that differs
+		unrestored = "Unrestored/Unrestored.csproj" // never restored in the working tree
+		baseOnly   = "BaseOnly/BaseOnly.csproj"     // gone from the working tree
+		committed  = "Committed/Committed.csproj"   // the checkout tracks its own restore outputs
+		outside    = "Outside/Outside.csproj"       // restore dir outside the root
+		pkgVersion = "1.0.0"
+	)
+	projects := []string{restored, artifacts, consumer, sourced, propped, unrestored, baseOnly, committed, outside}
+	restoreDirs := map[string]string{
+		restored: "Restored/obj", artifacts: "artifacts/obj/Artifacts", consumer: "Consumer/obj", sourced: "Sourced/obj", propped: "Propped/obj",
+		unrestored: "Unrestored/obj", baseOnly: "BaseOnly/obj", committed: "Committed/obj",
+	}
+	baseGraph := map[string]restoreProject{
+		restored: {version: pkgVersion}, artifacts: {version: pkgVersion}, consumer: {version: pkgVersion, refs: []string{artifacts}},
+		sourced: {version: pkgVersion}, propped: {version: pkgVersion},
+	}
+	headGraph := maps.Clone(baseGraph)
+	headGraph[artifacts] = restoreProject{version: "2.0.0"}
+
+	work := tree(t, restored, artifacts, consumer, sourced, propped, unrestored, committed, outside)
+	writeFile(t, work, "global.json", `{"sdk":{"version":"10.0.100"}}`)
+	writeFile(t, work, "Sourced/NuGet.config", "<configuration />")
+	writeFile(t, work, "Propped/Directory.Build.props", "<Project />")
+	for _, p := range []string{restored, artifacts, consumer, sourced, propped} {
+		dir := restoreDirs[p]
+		writeFile(t, work, dir+"/project.assets.json", "work assets")
+		writeFile(t, work, dir+"/"+filepath.Base(p)+".nuget.dgspec.json", restoreGraphJSON(work, "/work-machine", closure(headGraph, p)))
+	}
+	writeFile(t, work, "Restored/obj/Restored.csproj.nuget.g.props", "<Project />")
+	writeFile(t, work, "Restored/obj/Debug/net10.0/Restored.dll", "build output")
+	writeFile(t, work, "BaseOnly/obj/project.assets.json", "stale assets of a removed project")
+	writeFile(t, work, "Committed/obj/project.assets.json", "work assets")
+
+	checkout := tree(t, projects...)
+	writeFile(t, checkout, "global.json", `{"sdk":{"version":"10.0.100"}}`)
+	writeFile(t, checkout, "Committed/obj/project.assets.json", "checkout assets")
+	writeFile(t, checkout, "Propped/Directory.Build.props", `<Project><ItemGroup><PackageReference Include="Other" /></ItemGroup></Project>`)
+
+	entries := make([]string, 0, len(projects))
+	replies := map[string]reply{}
+	for _, p := range projects {
+		ext := "/elsewhere/obj/"
+		if dir, ok := restoreDirs[p]; ok {
+			ext = filepath.ToSlash(filepath.Join(checkout, dir)) + "/"
+		}
+		replies[p] = reply{stdout: `{"Properties":{"TargetFramework":"net10.0","MSBuildProjectExtensionsPath":"` + ext + `"},"Items":{}}`}
+		entries = append(entries, `{"path":"`+p+`","tfm":"net10.0","status":"complete","used_projects":[],"files":[]}`)
+	}
+	report := `{"schema_version":2,"skipped_projects":[],"projects":[` + strings.Join(entries, ",") + `]}`
+
+	tests := []struct {
+		name           string
+		dependencyRoot string
+		want           map[string]string // snapshot file -> content; "" means absent
+		wantReason     string
+		wantPartial    []string
+	}{
+		{
+			name:           "checkout with a working tree",
+			dependencyRoot: work,
+			want: map[string]string{
+				"Restored/obj/project.assets.json":            "work assets",
+				"Restored/obj/Restored.csproj.nuget.g.props":  "<Project />",
+				"Restored/obj/Debug/net10.0/Restored.dll":     "",
+				"artifacts/obj/Artifacts/project.assets.json": "work assets",
+				"Unrestored/obj/project.assets.json":          "",
+				"BaseOnly/obj/project.assets.json":            "",
+				"Committed/obj/project.assets.json":           "checkout assets",
+			},
+			wantReason: "no restore outputs for 2 projects in the checkout or at the same path in the working tree; " +
+				"run dotnet restore in the working tree: BaseOnly/BaseOnly.csproj, Unrestored/Unrestored.csproj; " +
+				"restore inputs (package references, central versions, sources, global.json, NuGet.config, Directory.Build.props/.targets, " +
+				"Directory.Packages.props) differ from the working tree's for 4 projects, so they are partial: " +
+				"Artifacts/Artifacts.csproj, Consumer/Consumer.csproj, Propped/Propped.csproj, Sourced/Sourced.csproj; " +
+				"restore outputs reused from the working tree for 5 projects",
+			wantPartial: []string{artifacts, consumer, propped, sourced},
+		},
+		{
+			name: "working tree scan",
+			want: map[string]string{
+				"Restored/obj/project.assets.json":            "",
+				"artifacts/obj/Artifacts/project.assets.json": "",
+				"Committed/obj/project.assets.json":           "checkout assets",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workBefore, checkoutBefore := treeState(t, work), treeState(t, checkout)
+			installHelper(t)
+			fake := newFake(t, checkout, replies)
+			fake.RunFunc = answerRestoreGraph(t, fake.RunFunc, baseGraph)
+			fake.helper = fakeHelper(func(_ context.Context, snap string) (toolrun.Output, error) {
+				for rel, want := range tt.want {
+					data, err := os.ReadFile(filepath.Join(snap, filepath.FromSlash(rel))) //nolint:gosec // test snapshot path
+					if got := string(data); (err == nil) != (want != "") || got != want {
+						t.Errorf("snapshot %s = %q (err %v), want %q", rel, got, err, want)
+					}
+				}
+				return toolrun.Output{Stdout: []byte(report)}, nil
+			})
+			e := dotnet.New(fake, autoCfg(), nil)
+			if _, _, err := e.Extract(context.Background(), scope.Scope{Root: checkout, DependencyRoot: tt.dependencyRoot}); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+			if len(fake.helperCalls) != 2 {
+				t.Fatalf("helper calls = %d, want --version and one run", len(fake.helperCalls))
+			}
+			cov := e.LastTypeGraphCoverage()
+			if tt.wantReason == "" && cov.Reason != "" || !strings.HasPrefix(cov.Reason, tt.wantReason) {
+				t.Errorf("roslyn reason = %q, want it to start with %q", cov.Reason, tt.wantReason)
+			}
+			var partial []string
+			for _, p := range e.LastTypeGraph().Projects {
+				if p.Status == dotnet.TypeGraphPartial {
+					partial = append(partial, p.Path)
+				}
+			}
+			slices.Sort(partial)
+			if !slices.Equal(partial, tt.wantPartial) {
+				t.Errorf("partial projects = %v, want %v", partial, tt.wantPartial)
+			}
+			if wantStatus := map[bool]string{true: "partial", false: "ok"}[len(tt.wantPartial) > 0]; cov.Status != wantStatus {
+				t.Errorf("roslyn status = %q, want %q", cov.Status, wantStatus)
+			}
+			if after := treeState(t, work); !mapsEqual(after, workBefore) {
+				t.Errorf("the working tree changed:\nbefore %v\nafter  %v", workBefore, after)
+			}
+			if after := treeState(t, checkout); !mapsEqual(after, checkoutBefore) {
+				t.Errorf("the checkout changed:\nbefore %v\nafter  %v", checkoutBefore, after)
+			}
+		})
 	}
 }

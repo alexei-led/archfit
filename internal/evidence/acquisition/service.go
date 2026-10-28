@@ -101,6 +101,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if err != nil {
 		return application.Acquired{}, err
 	}
+	resolved.DependencyRoot = req.DependencyRoot
 
 	declaredDeployUnits, ownerProvenance := declaredOperationsFacts(runPolicy)
 	store := factcache.NewStore(factsCacheDir(bundleDir))

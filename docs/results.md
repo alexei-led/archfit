@@ -87,6 +87,8 @@ changes gate acceptance or the exit code.
   Accepted-baseline metric ratchets always have unknown base-tree origin.
 
 Read `comparison.origin_status` and `origin_reasons` for analyzer pairing.
+When a base analyzer timed out or left inputs out of its graph, its reason names
+the base row's own cause and fix after `base:`.
 Numeric `comparison.status` is separate: fingerprint differences can suppress
 numeric deltas while origin still compares observed IDs. Neither status proves
 that installed dependencies, generated files, or indexer resolution were identical.

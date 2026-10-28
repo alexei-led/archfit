@@ -129,6 +129,23 @@ func testOriginUnpairedReason(t *testing.T) {
 			head: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)}, base: absent, baseGap: goGap,
 			want: "go/packages: head ok, base absent",
 		},
+		{
+			// A partial row ran to the end; "did not finish" would send the reader
+			// to timeouts when the cause is inputs the analyzer could not resolve.
+			name: "equal partial statuses say inputs are missing, not unfinished",
+			head: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusPartial)},
+			base: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusPartial)},
+			want: "go/packages: head partial (inputs missing from the graph), base partial (inputs missing from the graph)",
+		},
+		{
+			// The base diagnostic is dropped after the comparison, so the base
+			// row's own cause and fix must travel in the reason. The head's stays
+			// on the head's coverage row.
+			name: "an unavailable base row names its own cause",
+			head: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusPartial, Reason: "head cause"}},
+			base: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusTimedOut, Reason: "raise the timeout"}},
+			want: "go/packages: head partial, base timed out — base: raise the timeout",
+		},
 	}
 
 	for _, tc := range tests {

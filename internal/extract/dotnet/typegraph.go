@@ -341,6 +341,13 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 			res.cov.Reason = joinReason(res.cov.Reason, "snapshot cleanup failed: "+rerr.Error())
 		}
 	}()
+	var borrowed []ProjectEvaluation
+	var unrestored []string
+	if s.DependencyRoot != "" {
+		if borrowed, unrestored, err = borrowRestoreOutputs(snap.root, s.DependencyRoot, projects); err != nil {
+			return failedRun("", "reuse restore outputs from the working tree: "+err.Error(), fallback), nil
+		}
+	}
 	// The helper reports paths relative to the root it is given; MSBuild spells
 	// files by their real path (macOS /var is /private/var), so pass that.
 	helperRoot := snap.root
@@ -348,6 +355,15 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 		helperRoot = resolved
 	}
 	mapper := newSnapshotMapper(snap, s.GitRoot)
+	var changed []string
+	if len(borrowed) > 0 {
+		if changed, err = e.changedRestoreInputs(ctx, helperRoot, s.DependencyRoot, targets, borrowed, mapper); err != nil {
+			if isTimeout(ctx, err) {
+				return timedOutRun("", fallback), nil
+			}
+			return typeGraphResult{}, err
+		}
+	}
 	dll := filepath.Join(dir, helperDLL)
 	run := func(args []string, limit time.Duration) (toolrun.Output, error) {
 		return e.runner.Run(ctx, toolrun.ToolCmd{
@@ -384,11 +400,52 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 		return typeGraphResult{}, err
 	}
 	res = foldReport(report, projects)
+	markChangedRestoreInputs(res.graph.Projects, changed)
 	if len(snap.aboveRepo) > 0 {
 		res.details = append(res.details, "build inputs above the copied tree are not in the snapshot: "+strings.Join(snap.aboveRepo, ", "))
 	}
 	res.cov = typeGraphCoverage(version, res)
+	if len(borrowed) > 0 || len(unrestored) > 0 {
+		// First, so the cause survives every shortened rendering of the reason.
+		res.cov.Reason = joinReason(borrowReason(len(borrowed), changed, unrestored), res.cov.Reason)
+	}
 	return res, nil
+}
+
+// markChangedRestoreInputs makes every project whose restore inputs differ
+// from the working tree's partial: it was analysed against packages its own
+// restore may not resolve, so its edges are not proven to be the checkout's.
+func markChangedRestoreInputs(projects []TypeGraphProject, changed []string) {
+	for i := range projects {
+		p := &projects[i]
+		if !slices.Contains(changed, p.Path) {
+			continue
+		}
+		if p.Status == TypeGraphComplete {
+			p.Status = TypeGraphPartial
+		}
+		p.Reason = joinReason(reasonRestoreInputsDiffer, p.Reason)
+	}
+}
+
+// borrowReason discloses a checkout's restore outputs: the projects without
+// any, the projects whose borrowed outputs do not match their restore inputs,
+// and how many borrowed. Each fix precedes its list, so a shortened reason
+// keeps it; every project is named, as in the rest of the row.
+func borrowReason(borrowed int, changed, unrestored []string) string {
+	var parts []string
+	if len(unrestored) > 0 {
+		parts = append(parts, fmt.Sprintf("no restore outputs for %s in the checkout or at the same path in the working tree; run dotnet restore in the working tree: %s",
+			plural(len(unrestored), "project", "projects"), strings.Join(unrestored, ", ")))
+	}
+	if len(changed) > 0 {
+		parts = append(parts, fmt.Sprintf("restore inputs (package references, central versions, sources, global.json, NuGet.config, Directory.Build.props/.targets, Directory.Packages.props) differ from the working tree's for %s, so they are partial: %s",
+			plural(len(changed), "project", "projects"), strings.Join(changed, ", ")))
+	}
+	if borrowed > 0 {
+		parts = append(parts, "restore outputs reused from the working tree for "+plural(borrowed, "project", "projects"))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // helperIdentity is the producer identity line `--version` prints

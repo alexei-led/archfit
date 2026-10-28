@@ -411,12 +411,20 @@ func compareAnalyzerEvidence(fams []AnalyzerFamily, head, base AnalyzerEvidence)
 // So whenever the raw statuses match, both sides carry their meaning, even when
 // the meanings match too. Differing raw statuses already carry the information
 // and stay terse.
+//
+// A base row that did not finish or left inputs out appends its own reason:
+// the base diagnostic is dropped, so this is the only place its cause and fix
+// can reach the reader. The head's reason is already on its coverage row.
 func unpairedReason(name string, head, base familySummary) string {
+	reason := fmt.Sprintf("%s: head %s, base %s", name, head.raw(), base.raw())
 	if head.raw() == base.raw() {
-		return fmt.Sprintf("%s: head %s (%s), base %s (%s)",
+		reason = fmt.Sprintf("%s: head %s (%s), base %s (%s)",
 			name, head.raw(), head.meaning(), base.raw(), base.meaning())
 	}
-	return fmt.Sprintf("%s: head %s, base %s", name, head.raw(), base.raw())
+	if base.unavailableReason != "" {
+		reason += " — base: " + base.unavailableReason
+	}
+	return reason
 }
 
 // familySummary is one family's normalised coverage on one side.
@@ -428,6 +436,9 @@ type familySummary struct {
 	// magnitude-blind, so without the numbers nothing in the output separates a
 	// handful of unresolved specifiers from a repo-wide resolution failure.
 	rawStatuses []string
+	// unavailableReason is the reason of the side's single row when that row is
+	// unavailable evidence (timed out, or partial with inputs missing).
+	unavailableReason string
 }
 
 func (s familySummary) rows() int { return len(s.statuses) }
@@ -468,8 +479,11 @@ func (s familySummary) meaning() string {
 	default: // evidenceUnavailable
 		// Covers timeouts and every partial that left inputs OUT of the graph.
 		// Both mean the analyzer could have reported findings over this tree and
-		// did not get through it.
-		return "run did not finish"
+		// did not; only a timeout means it did not get through it.
+		if s.rawStatuses[0] == evidence.StatusTimedOut {
+			return "run did not finish"
+		}
+		return "inputs missing from the graph"
 	}
 }
 
@@ -480,8 +494,15 @@ func summariseFamily(f AnalyzerFamily, side AnalyzerEvidence) familySummary {
 		if c.Tool != f.name {
 			continue
 		}
-		out.statuses = append(out.statuses, normalizeCoverage(f, c, side.Gaps))
+		status := normalizeCoverage(f, c, side.Gaps)
+		out.statuses = append(out.statuses, status)
 		out.rawStatuses = append(out.rawStatuses, rawCoverageStatus(c))
+		if status == evidenceUnavailable {
+			out.unavailableReason = c.Reason
+		}
+	}
+	if out.rows() != 1 {
+		out.unavailableReason = ""
 	}
 	sort.Strings(out.rawStatuses)
 	return out

@@ -20,6 +20,7 @@ const (
 	propTargetFW    = "TargetFramework"
 	propTargetFWs   = "TargetFrameworks"
 	propIsTest      = "IsTestProject"
+	propExtensions  = "MSBuildProjectExtensionsPath"
 	itemProjectRef  = "ProjectReference"
 	itemPackageRef  = "PackageReference"
 	tfmOverrideFlag = "-p:TargetFramework="
@@ -97,6 +98,7 @@ func evaluate(ctx context.Context, runner toolrun.Runner, root, project, tfm str
 		"-getProperty:" + propTargetFW,
 		"-getProperty:" + propTargetFWs,
 		"-getProperty:" + propIsTest,
+		"-getProperty:" + propExtensions,
 	}
 	if tfm != "" {
 		args = append(args, tfmOverrideFlag+tfm)

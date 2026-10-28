@@ -221,3 +221,91 @@ func TestIntegration_SubtreeInheritsAncestorBuildProps(t *testing.T) {
 		t.Errorf("the original tree changed:\nbefore %v\nafter  %v", before, after)
 	}
 }
+
+// TestIntegration_CheckoutReusesWorkingTreeRestoreOutputs analyses a checkout
+// of tracked files (the --base worktree) of a restored working tree. App's only
+// use of Lib compiles under a constant that App's restore outputs define, as a
+// package's build props would. Without the working tree's restore outputs the
+// use is not compiled and the edge is missing. A checkout whose App references
+// a package the working tree did not restore is told apart from it by NuGet's
+// own restore graph, offline.
+func TestIntegration_CheckoutReusesWorkingTreeRestoreOutputs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("restores one project and loads two in the helper, three times")
+	}
+	runner := realRunner(t)
+	t.Setenv(helperEnv, helperForIntegration(t))
+	const (
+		sdkProject = `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>%s</Project>`
+		libRef     = `<ItemGroup><ProjectReference Include="../Lib/Lib.csproj" /></ItemGroup>`
+		appProj    = "App/App.csproj"
+	)
+	tracked := map[string]string{
+		"Lib/Lib.csproj": strings.Replace(sdkProject, "%s", "", 1),
+		"Lib/Thing.cs":   "namespace Lib;\npublic class Thing { public void Run() { } }\n",
+		appProj:          strings.Replace(sdkProject, "%s", libRef, 1),
+		"App/Use.cs":     "namespace App;\n#if ARCHFIT_RESTORED\npublic class U { public void M(Lib.Thing t) => t.Run(); }\n#endif\n",
+	}
+	checkoutOf := func(changes map[string]string) string {
+		dir := t.TempDir()
+		for rel, content := range tracked {
+			if changed, ok := changes[rel]; ok {
+				content = changed
+			}
+			writeFile(t, dir, rel, content)
+		}
+		return dir
+	}
+	work := checkoutOf(nil)
+	out, err := runner.Run(context.Background(), toolrun.ToolCmd{Name: toolDotnet, Args: []string{"restore", "App.csproj"}, WorkDir: filepath.Join(work, "App")})
+	if err != nil || out.ExitCode != 0 {
+		t.Fatalf("restore: %v %s %s", err, out.Stdout, out.Stderr)
+	}
+	writeFile(t, work, "App/obj/App.csproj.archfit.props",
+		`<Project><PropertyGroup><DefineConstants>$(DefineConstants);ARCHFIT_RESTORED</DefineConstants></PropertyGroup></Project>`)
+	workBefore := treeState(t, work)
+
+	for _, tt := range []struct {
+		name           string
+		checkout       string
+		dependencyRoot string
+		wantEdge       bool
+		wantStatus     string
+		wantReason     string
+	}{
+		{
+			name: "same restore inputs", checkout: checkoutOf(nil), dependencyRoot: work, wantEdge: true,
+			wantStatus: evidence.StatusOK, wantReason: "restore outputs reused from the working tree for 2 projects",
+		},
+		{
+			name: "package added in the checkout", dependencyRoot: work, wantEdge: true, wantStatus: evidence.StatusPartial,
+			checkout: checkoutOf(map[string]string{appProj: strings.Replace(sdkProject, "%s",
+				libRef+`<ItemGroup><PackageReference Include="Archfit.Fixture.Unrestored" Version="1.0.0" /></ItemGroup>`, 1)}),
+			wantReason: "restore inputs (package references, central versions, sources, global.json, NuGet.config, " +
+				"Directory.Build.props/.targets, Directory.Packages.props) differ from the working tree's " +
+				"for 1 project, so they are partial: App/App.csproj; restore outputs reused from the working tree for 2 projects",
+		},
+		{name: "checkout alone", checkout: checkoutOf(nil), wantStatus: evidence.StatusOK},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			checkoutBefore := treeState(t, tt.checkout)
+			e := dotnet.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeOn}, nil)
+			facts, _, err := e.Extract(context.Background(), scope.Scope{Root: tt.checkout, DependencyRoot: tt.dependencyRoot})
+			if err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+			if got := fileEdges(facts)["App/Use.cs -> file:Lib/Thing.cs"]; (got.hint == hFunctional) != tt.wantEdge {
+				t.Errorf("file edges = %v, want App/Use.cs -> Lib/Thing.cs %v", fileEdges(facts), tt.wantEdge)
+			}
+			if cov := e.LastTypeGraphCoverage(); cov.Status != tt.wantStatus || !strings.HasPrefix(cov.Reason, tt.wantReason) {
+				t.Errorf("roslyn coverage = %s %q, want %s starting %q", cov.Status, cov.Reason, tt.wantStatus, tt.wantReason)
+			}
+			if after := treeState(t, tt.checkout); !mapsEqual(after, checkoutBefore) {
+				t.Errorf("the checkout changed:\nbefore %v\nafter  %v", checkoutBefore, after)
+			}
+		})
+	}
+	if after := treeState(t, work); !mapsEqual(after, workBefore) {
+		t.Errorf("the working tree changed:\nbefore %v\nafter  %v", workBefore, after)
+	}
+}

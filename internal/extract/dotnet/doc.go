@@ -16,8 +16,10 @@
 // The type graph comes from the Roslyn helper, located by ARCHFIT_DOTNET_ROSLYN.
 // Its design-time build writes under each project's obj/, so it runs on a
 // per-run copy of the root (everything but .git and node_modules, plus the
-// build-input files of its ancestors up to the repository root), which is
-// removed on every path. Its per-(project, framework) entries fold to one result
+// build-input files of its ancestors up to the repository root, plus, when the
+// root is a checkout of tracked files, the working tree's restore outputs of
+// each project at the same path), which is removed on every path. A borrowing
+// project whose NuGet restore graph differs from the working tree's is partial. Its per-(project, framework) entries fold to one result
 // per project: loaded when any framework loaded (complete only when every entry
 // is complete, else partial), failed only when every entry failed, with the
 // union of the loaded frameworks' file edges, strongest hint per file pair in

@@ -103,6 +103,9 @@ type AnalysisRequest struct {
 	// it: they are analyze/check-only (see DiscloseHealthWarnings).
 	WarnLabel            string
 	CaptureRelationships bool
+	// DependencyRoot is the working tree a checkout Root stands in for: the
+	// --base sub-run sets it to the head scan root (see scope.Scope).
+	DependencyRoot string
 }
 
 // AnalysisResult is the stage output consumed by the application projection.
