@@ -60,13 +60,14 @@ func (f fakeGit) FileAt(_ context.Context, rev, path string) ([]byte, bool, erro
 }
 
 const (
-	policyPath  = ".archfit.yaml"
-	labelsPath  = ".archfit-labels.yaml"
-	headRef     = "HEAD"
-	branchMain  = "main"
-	originDev   = "origin/dev"
-	originMain  = "origin/main"
-	explicitSHA = "abc"
+	policyPath    = ".archfit.yaml"
+	labelsPath    = ".archfit-labels.yaml"
+	headRef       = "HEAD"
+	branchMain    = "main"
+	originDev     = "origin/dev"
+	originDevelop = "origin/develop"
+	originMain    = "origin/main"
+	explicitSHA   = "abc"
 )
 
 // branchy: m1 <- m2 (origin/main = main = m2); feature head f2 <- f1 <- m1.
@@ -111,7 +112,7 @@ func TestResolveScope(t *testing.T) {
 				Unresolved: "no target branch: pass --target, set target_branch in the config, or set origin/HEAD (git remote set-head origin -a)"}},
 		{name: "main and master both exist", git: func() fakeGit { g := branchy(); g.refs["master"] = "m1"; return g },
 			want: application.ScopeResolution{Mode: report.ScopeModeNone,
-				Unresolved: "both main and master exist: pass --target or set target_branch in the config"}},
+				Unresolved: "both main and master exist and their configs name no common target_branch: pass --target or declare target_branch in both"}},
 		{name: "a shallow clone has no merge-base", git: func() fakeGit { g := branchy(); g.parent = map[string]string{"f2": "f1"}; return g },
 			want: application.ScopeResolution{Mode: report.ScopeModeNone, Target: originMain, TargetSHA: "m2",
 				Unresolved: "HEAD and origin/main share no history in this clone: fetch it (fetch-depth: 0) or pass --base"}},
@@ -152,11 +153,34 @@ func TestResolveScope(t *testing.T) {
 		{name: "without a trusted default the working-tree target_branch is used",
 			git: func() fakeGit {
 				g := branchy()
-				g.refs = map[string]string{"HEAD": "f2", "origin/develop": "m2"}
+				g.refs = map[string]string{"HEAD": "f2", originDevelop: "m2"}
 				return g
 			},
 			req:  application.ScopeRequest{ConfigTarget: "develop", Policy: same},
-			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: "origin/develop", TargetSHA: "m2", Base: "m1"}},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originDevelop, TargetSHA: "m2", Base: "m1"}},
+		{name: "a config the repository does not track may name the target",
+			git:  func() fakeGit { g := branchy(); g.refs[originDevelop] = "m2"; return g },
+			req:  application.ScopeRequest{ConfigTarget: "develop"},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originDevelop, TargetSHA: "m2", Base: "m1"}},
+		{name: "main and master agree on a target their configs declare",
+			git: func() fakeGit {
+				g := branchy()
+				g.refs["master"], g.refs["origin/master"] = "m1", "m2"
+				g.files["m2"] = map[string]string{policyPath: "target_branch: dev"}
+				g.files["m1"] = map[string]string{policyPath: "target_branch: dev"}
+				return g
+			},
+			req:  application.ScopeRequest{ConfigTarget: "master", Policy: []application.PolicyFile{{Path: policyPath, Content: []byte("target_branch: dev"), Exists: true}}},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originDev, TargetSHA: "m2", Base: "m1"}},
+		{name: "with main and master both present, a branch's own target_branch decides nothing",
+			git: func() fakeGit {
+				g := branchy()
+				g.refs["master"], g.refs["origin/master"] = "m1", "m2"
+				return g
+			},
+			req: application.ScopeRequest{ConfigTarget: "master", Policy: same},
+			want: application.ScopeResolution{Mode: report.ScopeModeNone,
+				Unresolved: "both main and master exist and their configs name no common target_branch: pass --target or declare target_branch in both"}},
 		{name: "a slash-named target is looked up on the remote first",
 			git: func() fakeGit {
 				g := branchy()

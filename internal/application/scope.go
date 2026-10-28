@@ -206,16 +206,19 @@ func withPolicyGuard(ctx context.Context, g ScopeGit, req ScopeRequest, res Scop
 }
 
 // resolveTarget decides which branch the change lands on, in this order:
-// --target, then the trusted default branch (origin/HEAD, else main or master
-// when exactly one exists) together with the target_branch its config
-// declares, and only without a trusted default the target_branch of the
-// working-tree config.
+// --target; then, for a config the repository does not track, its
+// target_branch; then the trusted default branch (origin/HEAD, else main or
+// master when exactly one exists) together with the target_branch the config
+// at that tip declares; and only when the repository has no default branch at
+// all, the target_branch of the working-tree config.
 //
-// The working-tree config is the branch's own copy. When a trusted default
-// exists its config decides, so a branch cannot point the guard at itself by
-// editing target_branch; the edit shows up as a policy change instead. A repo
-// with no trusted default has nothing to check the edit against, so there the
-// working-tree value is used and the tamper check does not hold.
+// The working-tree config is the branch's own copy. Whenever a trusted
+// reference exists its copy of the config decides, so a branch cannot point the
+// guard at itself by editing target_branch; the edit shows up as a policy
+// change instead. If both main and master exist, their configs must agree on a
+// target, or the scope stays unresolved. A repo with no default branch has
+// nothing to check the edit against, so there the working-tree value is used
+// and the tamper check does not hold.
 //
 // A name that was given and resolves to nothing is an answer ("why"), never a
 // reason to try the next source.
@@ -223,26 +226,53 @@ func resolveTarget(ctx context.Context, g ScopeGit, req ScopeRequest) (ref, sha,
 	if req.Target != "" {
 		return namedTarget(ctx, g, req.Target, "--target")
 	}
-	defRef, defSHA, defWhy, err := trustedDefault(ctx, g)
+	if len(req.Policy) == 0 && req.ConfigTarget != "" {
+		// A config outside the repository is not the branch's to edit.
+		return namedTarget(ctx, g, req.ConfigTarget, "target_branch in the config")
+	}
+	def, err := trustedDefault(ctx, g)
 	if err != nil {
 		return "", "", "", err
 	}
-	if defWhy != "" {
+	switch {
+	case len(def.ambiguous) > 0:
+		return declaredByAll(ctx, g, def, req)
+	case def.why != "":
 		if req.ConfigTarget != "" {
 			return namedTarget(ctx, g, req.ConfigTarget, "target_branch in the config")
 		}
-		return "", "", defWhy, nil
+		return "", "", def.why, nil
 	}
 	if len(req.Policy) > 0 {
-		declared, err := g.TargetBranchAt(ctx, defSHA, req.Policy[0].Path)
+		declared, err := g.TargetBranchAt(ctx, def.sha, req.Policy[0].Path)
 		if err != nil {
 			return "", "", "", err
 		}
 		if declared != "" {
-			return namedTarget(ctx, g, declared, "target_branch in the config at "+defRef)
+			return namedTarget(ctx, g, declared, "target_branch in the config at "+def.ref)
 		}
 	}
-	return defRef, defSHA, "", nil
+	return def.ref, def.sha, "", nil
+}
+
+// declaredByAll resolves the target when main and master both exist: each
+// one's config must declare the same target_branch. The working tree is not
+// asked.
+func declaredByAll(ctx context.Context, g ScopeGit, def defaultBranch, req ScopeRequest) (ref, sha, why string, err error) {
+	var agreed string
+	for i, candidate := range def.ambiguous {
+		declared := ""
+		if len(req.Policy) > 0 {
+			if declared, err = g.TargetBranchAt(ctx, candidate.sha, req.Policy[0].Path); err != nil {
+				return "", "", "", err
+			}
+		}
+		if declared == "" || (i > 0 && declared != agreed) {
+			return "", "", def.why, nil
+		}
+		agreed = declared
+	}
+	return namedTarget(ctx, g, agreed, "target_branch declared by both default branches")
 }
 
 // namedTarget resolves a branch name someone gave, saying where it came from
@@ -258,34 +288,51 @@ func namedTarget(ctx context.Context, g ScopeGit, name, source string) (ref, sha
 	return ref, sha, "", nil
 }
 
+// branchRef is a resolved branch.
+type branchRef struct{ ref, sha string }
+
+// defaultBranch is what trustedDefault found: one branch, a reason it found
+// none, or the several conventional branches that exist and so are ambiguous.
+type defaultBranch struct {
+	branchRef
+	why       string
+	ambiguous []branchRef
+}
+
 // trustedDefault is the branch changes land on when nobody names one: the
 // remote's default, else main or master when exactly one exists.
-func trustedDefault(ctx context.Context, g ScopeGit) (ref, sha, why string, err error) {
+func trustedDefault(ctx context.Context, g ScopeGit) (defaultBranch, error) {
 	if head, ok := g.OriginHead(ctx); ok {
 		sha, found, err := g.Lookup(ctx, head)
 		if err != nil {
-			return "", "", "", err
+			return defaultBranch{}, err
 		}
 		if found {
-			return head, sha, "", nil
+			return defaultBranch{branchRef: branchRef{head, sha}}, nil
 		}
 	}
-	var present []string
+	var present []branchRef
+	var names []string
 	for _, name := range conventionalTargets {
-		if _, _, found, err := lookupBranch(ctx, g, name); err != nil {
-			return "", "", "", err
-		} else if found {
-			present = append(present, name)
+		ref, sha, found, err := lookupBranch(ctx, g, name)
+		if err != nil {
+			return defaultBranch{}, err
+		}
+		if found {
+			present = append(present, branchRef{ref, sha})
+			names = append(names, name)
 		}
 	}
 	switch len(present) {
 	case 1:
-		ref, sha, _, err := lookupBranch(ctx, g, present[0])
-		return ref, sha, "", err
+		return defaultBranch{branchRef: present[0]}, nil
 	case 0:
-		return "", "", "no target branch: pass --target, set target_branch in the config, or set origin/HEAD (git remote set-head origin -a)", nil
+		return defaultBranch{why: "no target branch: pass --target, set target_branch in the config, or set origin/HEAD (git remote set-head origin -a)"}, nil
 	default:
-		return "", "", fmt.Sprintf("both %s exist: pass --target or set target_branch in the config", strings.Join(present, " and ")), nil
+		return defaultBranch{
+			why:       fmt.Sprintf("both %s exist and their configs name no common target_branch: pass --target or declare target_branch in both", strings.Join(names, " and ")),
+			ambiguous: present,
+		}, nil
 	}
 }
 
