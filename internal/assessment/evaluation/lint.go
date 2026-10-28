@@ -142,7 +142,7 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
 				Message: side + ": " + glob + " matches only source no dependency producer analyses: its language's" +
 					" extractor finds no project under the analysis root, so the rule can never be evaluated"})
-		case rule.Guard && vacuous:
+		case rule.Guard && vacuous && !nodeKindedSelector(glob):
 			out = append(out, PolicyDiagnostic{Code: LintGuardRule, Severity: LintSeverityInfo, Path: path,
 				Message: "guard rule: " + side + " " + glob + " matches nothing by design"})
 		case rule.Guard && inv.matches(rule.Type, selectorFrom, orMatchAll(rule.From)) &&
@@ -157,8 +157,7 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 				Message: side + ": " + glob + " selects only modules that own no scanned source; fix the module paths or the selector, or set guard: true"})
 		case vacuous:
 			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
-				Message: side + ": " + glob + " matches no scanned source" + inv.vacuityHint(glob) +
-					"; fix the selector or set guard: true"})
+				Message: side + ": " + glob + " matches no scanned source" + inv.vacuityHint(glob) + deadSelectorAdvice(glob)})
 		}
 	}
 	return out
@@ -209,9 +208,22 @@ func orMatchAll(selector string) string {
 	return selector
 }
 
+// deadSelectorAdvice ends a dead-selector message with the fix. A selector
+// spelled as a graph node ID cannot be guarded: nothing turns a kind prefix into
+// an endpoint path, so the guard advice would send the reader the wrong way.
+func deadSelectorAdvice(glob string) string {
+	if nodeKindedSelector(glob) {
+		return ""
+	}
+	return "; fix the selector or set guard: true"
+}
+
 // vacuityHint names why a dead selector can never match, when the spelling
 // itself is the defect.
 func (inv selectorInventory) vacuityHint(glob string) string {
+	if kind, endpoint, ok := nodeKindPrefix(glob); ok {
+		return " (a selector is the endpoint path, not a graph node ID: write " + endpoint + " without the " + kind + ": prefix)"
+	}
 	if unmatchableSelector(glob) {
 		return " (selectors are relative paths or dotted/crate names: no leading !, ./, ../ or /, and no !( negation)"
 	}

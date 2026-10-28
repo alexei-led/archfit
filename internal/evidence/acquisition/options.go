@@ -22,9 +22,10 @@ const (
 	toolScipSymbols   = "scip-symbols"
 	toolJscpd         = "jscpd"
 
-	metricCycle         = "cycle"
-	metricBlastRadius   = "blast_radius"
-	metricEncapsulation = "encapsulation"
+	metricCycle           = "cycle"
+	metricBlastRadius     = "blast_radius"
+	metricEncapsulation   = "encapsulation"
+	metricCouplingBalance = "coupling_balance"
 )
 
 // CoverageOptions is the narrow analyzer activation input built by the config

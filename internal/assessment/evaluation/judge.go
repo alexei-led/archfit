@@ -20,7 +20,10 @@ const (
 	// AnswerNotDecided: no rule denies the edge, but a fail-gated rule that
 	// needs the whole graph (a cycle rule, the seam gate) could still block it.
 	AnswerNotDecided = "not_decided"
-	// AnswerAllowed: an allowlist entry or the layer order permits the edge.
+	// AnswerAllowed: an allowlist entry or the layer order permits the edge, and
+	// no fail-gated rule needs the whole graph. A whole-graph rule leaves the
+	// edge not decided even when an allowlist permits it: the pair is allowed,
+	// the graph the cycle needs is not in the query.
 	AnswerAllowed = "allowed"
 	// AnswerUnconstrained: no rule decides the edge. This is not permission.
 	AnswerUnconstrained = "unconstrained"

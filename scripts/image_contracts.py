@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +43,7 @@ class ImageContract:
         *,
         network: str = "none",
         timeout: int = 600,
+        copy: bool = True,
     ) -> Path:
         output = self.output / name
         output.mkdir()
@@ -69,7 +72,10 @@ class ImageContract:
         ]
         if fixture:
             args += ["--mount", f"type=bind,source={fixture},target=/trusted,readonly"]
-            script = "cp -R /trusted /tmp/repo; cd /tmp/repo; " + script
+            if copy:
+                script = "cp -R /trusted /tmp/repo; cd /tmp/repo; " + script
+            else:
+                script = "cd /tmp; " + script
         args += [self.image, "-ec", script]
         (output / "command.json").write_text(json.dumps(args, indent=2))
         try:
@@ -397,6 +403,219 @@ def python314_case(contract: ImageContract) -> None:
         )
 
 
+DOTNET_FIXTURE = ROOT / "internal/testdata/dotnet"
+DOTNET_HELPER = "dotnet /opt/archfit/dotnet-roslyn/archfit-roslyn.dll"
+DOTNET_IDENTITY = re.compile(
+    rf"archfit-roslyn \S+; Microsoft\.CodeAnalysis \S+; SDK {re.escape(lc.TOOL_MANIFEST['versions']['dotnet'])}"
+)
+
+
+def helper_status_failures(document: dict[str, Any]) -> list[str]:
+    """Image statuses are fixed: one SDK, empty NuGet cache, no network (plan D7)."""
+    projects = document.get("projects", [])
+
+    def entry(project: str, tfm: str | None = None) -> dict[str, Any]:
+        return next(
+            (
+                p
+                for p in projects
+                if p.get("path") == f"{project}/{project}.csproj"
+                and (tfm is None or p.get("tfm") == tfm)
+            ),
+            {},
+        )
+
+    failures = []
+    legacy = entry("Legacy", "net8.0")
+    if legacy.get(
+        "status"
+    ) != "partial" or "Microsoft.NETCore.App.Ref 8.0" not in legacy.get("reason", ""):
+        failures.append(
+            f"Legacy net8.0 must be partial naming the 8.0 reference pack: {legacy}"
+        )
+    broken = entry("Broken")
+    if broken.get(
+        "status"
+    ) != "failed" or "Archfit.Fixture.Missing.Sdk" not in broken.get("reason", ""):
+        failures.append(f"Broken must be failed naming its SDK: {broken}")
+    return failures
+
+
+DOTNET_CONFIG = """version: 2
+languages:
+  dotnet:
+    enabled: true
+    projects: [Fixture.slnx]
+analyzers:
+  syntax:
+    enabled: true
+  scip:
+    enabled: false
+  clones:
+    enabled: false
+layers: [core, adapter]
+modules:
+  contracts:
+    paths: ['Application/Contracts.cs']
+    layer: core
+    owner: team-core
+  domain:
+    paths: ['Domain/Domain.cs']
+    layer: core
+    owner: team-core
+  repository:
+    paths: ['Infrastructure/Repository.cs']
+    layer: adapter
+    owner: team-adapter
+  tests:
+    paths: ['Tests/**']
+    layer: adapter
+    owner: team-adapter
+"""
+# The warning on stderr is the only full per-project text: the roslyn coverage row
+# keeps one shortened line.
+DOTNET_PROJECT_STATUSES = {
+    "Legacy": r"Legacy/Legacy\.csproj partial: net8\.0: .*Microsoft\.NETCore\.App\.Ref 8\.0",
+    "Broken": r"Broken/Broken\.csproj failed: MSB4236: SDK 'Archfit\.Fixture\.Missing\.Sdk'",
+    "Tests": r"Tests/Tests\.csproj partial: MSB4236: SDK 'Archfit\.Fixture\.Missing\.Sdk'",
+    "Unresolved": r"Unresolved/Unresolved\.csproj partial: ",
+}
+DOTNET_COMPLETE = ("Domain", "Application", "Infrastructure")
+
+
+def prepare_dotnet_fixture(path: Path) -> None:
+    shutil.copytree(DOTNET_FIXTURE, path, ignore=shutil.ignore_patterns("bin", "obj"))
+    (path / ".archfit.yaml").write_text(DOTNET_CONFIG)
+    for file in path.rglob("*"):
+        file.chmod(0o755 if file.is_dir() else 0o644)
+
+
+def dotnet_extraction_failures(state: dict[str, Any], stderr: str) -> list[str]:
+    """Deterministic image extraction: one SDK, empty NuGet cache, no network (plan D7)."""
+    failures = []
+    tools = rows(state)
+    msbuild = tools.get("dotnet-msbuild", {})
+    if (
+        msbuild.get("status") != "partial"
+        or "Broken/Broken.csproj" not in msbuild.get("reason", "")
+        or "Archfit.Fixture.Missing.Sdk" not in msbuild.get("reason", "")
+    ):
+        failures.append(
+            f"dotnet-msbuild must be partial naming Broken's SDK: {msbuild}"
+        )
+    if tools.get("roslyn", {}).get("status") != "partial":
+        failures.append(f"roslyn must be partial: {tools.get('roslyn')}")
+    if "3 of 7 projects partial, 1 failed" not in stderr:
+        failures.append("stderr must report 3 of 7 projects partial, 1 failed")
+    for project, pattern in DOTNET_PROJECT_STATUSES.items():
+        if not re.search(pattern, stderr):
+            failures.append(f"{project} status not reported as expected")
+    for project in DOTNET_COMPLETE:
+        if f"{project}/{project}.csproj" in stderr:
+            failures.append(f"{project} must be complete, but stderr names it")
+    seams = {
+        (s.get("from_module"), s.get("to_module")): s.get("strength")
+        for s in state.get("seams", [])
+    }
+    # The dto hint folds into model at the seam: relationship classification owns that.
+    for edge, strength in {
+        ("repository", "contracts"): "model",
+        ("repository", "domain"): "intrusive",
+    }.items():
+        if seams.get(edge) != strength:
+            failures.append(f"seam {edge} must be {strength}: {seams.get(edge)}")
+    if any(source == "tests" for source, _ in seams):
+        failures.append("Tests must emit no fallback or file edges")
+    return failures
+
+
+def dotnet_extraction_cases(contract: ImageContract) -> None:
+    fixture = contract.output / "fixture-dotnet"
+    prepare_dotnet_fixture(fixture)
+    before = tree_hash(fixture)
+    analyze = "archfit analyze --json --quiet --refresh"
+    for uid in ("65532:65532", "27182:27182"):
+        output = contract.run(
+            f"dotnet-archfit-{uid.split(':')[0]}",
+            uid,
+            saved_command(
+                "analyze",
+                f"{analyze} --root /tmp/repo --config /tmp/repo/.archfit.yaml",
+            ),
+            fixture,
+            timeout=900,
+        )
+        report_extraction(contract, output, "analyze")
+    # D6: the snapshot makes the original tree safe to analyze while read-only.
+    output = contract.run(
+        "dotnet-archfit-readonly",
+        "27182:27182",
+        saved_command(
+            "analyze",
+            f"{analyze} --root /trusted --config /trusted/.archfit.yaml",
+        ),
+        fixture,
+        timeout=900,
+        copy=False,
+    )
+    report_extraction(contract, output, "analyze")
+    contract.expect(
+        "dotnet: analysis of the readonly original leaves it unchanged",
+        tree_hash(fixture) == before,
+    )
+
+
+def report_extraction(contract: ImageContract, output: Path, label: str) -> None:
+    state = contract.read_state(output, label)
+    rc = output / f"{label}.rc"
+    contract.expect(
+        f"{output.name}: analyze succeeds",
+        rc.is_file() and rc.read_text().strip() == "0",
+    )
+    stderr_file = output / f"{label}.stderr"
+    stderr = stderr_file.read_text() if stderr_file.is_file() else ""
+    failures = dotnet_extraction_failures(state, stderr)
+    contract.expect(f"{output.name}: deterministic extraction", not failures, failures)
+
+
+def dotnet_cases(contract: ImageContract) -> None:
+    before = tree_hash(DOTNET_FIXTURE)
+    contract.run(
+        "dotnet-sdk",
+        "65532:65532",
+        f"dotnet --list-sdks | grep -F {lc.TOOL_MANIFEST['versions']['dotnet']}; "
+        + saved_command("version", f"{DOTNET_HELPER} --version"),
+    )
+    for uid in ("65532:65532", "12345:12345"):
+        output = contract.run(
+            f"dotnet-helper-{uid.split(':')[0]}",
+            uid,
+            saved_command("version", f"{DOTNET_HELPER} --version")
+            + saved_command("fixture", f"{DOTNET_HELPER} /tmp/repo Fixture.slnx"),
+            DOTNET_FIXTURE,
+            timeout=900,
+        )
+        try:
+            identity = (output / "version.json").read_text().strip()
+            document = json.loads((output / "fixture.json").read_text())
+        except (OSError, ValueError) as exc:
+            contract.expect(f"{output.name}: helper output", False, str(exc))
+            continue
+        contract.expect(
+            f"{output.name}: helper identity",
+            bool(DOTNET_IDENTITY.fullmatch(identity)),
+            identity,
+        )
+        failures = helper_status_failures(document)
+        contract.expect(
+            f"{output.name}: deterministic statuses", not failures, failures
+        )
+    contract.expect(
+        "dotnet: trusted fixture unchanged", tree_hash(DOTNET_FIXTURE) == before
+    )
+    dotnet_extraction_cases(contract)
+
+
 def negative_cases(contract: ImageContract) -> None:
     spec = next(s for s in lc.FIXTURES if s.name == "typescript")
     fixture = contract.output / "fixture-negative"
@@ -581,6 +800,7 @@ def main() -> int:
         inventory(contract)
         language_cases(contract)
         python314_case(contract)
+        dotnet_cases(contract)
         negative_cases(contract)
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         contract.expect("contract completed", False, str(exc))

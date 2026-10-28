@@ -24,7 +24,7 @@
 | Dimension | Status | Gate | Confidence | Denominator | Findings |
 | --- | --- | --- | --- | --- | ---: |
 | intent | measured | pass | high | declared rules evaluated 1/1 | 0 |
-| structure | measured | fail | high | discovered dependencies resolved inside the declared module map 1/1 | 1 |
+| structure | measured | fail | high | discovered first-party dependencies resolved inside the declared module map 1/1 | 1 |
 | modularity | measured | pass | low | declared modules with a declared public surface 0/2 | 0 |
 | coupling | measured | warn | high | cross-boundary edges scored 1/1 | 1 |
 | change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
@@ -105,7 +105,7 @@
 - `declared_external_systems`: 0 count
 - `analyzers_reporting_coverage`: 3 count (3/3)
 - `coverage_gaps`: 0 count
-- `analyzers_not_applicable`: 8 count
+- `analyzers_not_applicable`: 11 count
 - `coverage`: 1 ratio
 
 ## Evidence coverage
@@ -116,13 +116,16 @@
 | dependency-cruiser | absent | — |
 | grimp | absent | — |
 | cargo | absent | — |
+| dotnet-msbuild | absent | — |
 | loc | ok | — |
 | deploy-unit | ok | — |
 | jscpd | disabled | off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees) |
 | scip | disabled | off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength |
 | ast-grep/syntax | disabled | off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface |
 | ast-grep | disabled | — |
+| supplied-coverage | disabled | off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it |
 | cargo-modules | absent | — |
+| roslyn | absent | — |
 
 ## Coupling seams (1)
 
@@ -246,13 +249,16 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - dependency-cruiser: absent
 - grimp: absent
 - cargo: absent
+- dotnet-msbuild: absent
 - loc: ok (2 files)
 - deploy-unit: ok
 - jscpd: disabled — off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees)
 - scip: disabled — off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength
 - ast-grep/syntax: disabled — off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface
 - ast-grep: disabled
+- supplied-coverage: disabled — off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it
 - cargo-modules: absent
+- roslyn: absent
 
 ## Finding index (2)
 

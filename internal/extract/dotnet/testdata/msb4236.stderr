@@ -1,0 +1,4 @@
+{{ROOT}}/Broken/Broken.csproj : error : Could not resolve SDK "Archfit.Fixture.Missing.Sdk". Exactly one of the probing messages below indicates why we could not resolve the SDK. Investigate and resolve that message to correctly specify the SDK.
+{{ROOT}}/Broken/Broken.csproj : error :   SDK resolver "Microsoft.DotNet.MSBuildWorkloadSdkResolver" returned null.
+{{ROOT}}/Broken/Broken.csproj : error :   Unable to find package Archfit.Fixture.Missing.Sdk. No packages exist with this id in source(s): nuget.org
+{{ROOT}}/Broken/Broken.csproj : error MSB4236: The SDK 'Archfit.Fixture.Missing.Sdk/1.0.0' specified could not be found.

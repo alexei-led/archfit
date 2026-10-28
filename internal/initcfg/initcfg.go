@@ -56,14 +56,15 @@ type DiscoveredConfig struct {
 	Edges []ModuleEdge
 	// PyPackage is the primary Python top-level package name (e.g. "ccgram").
 	PyPackage string
-	// HasGo, HasPython, HasTS and HasRust are the extractor registry's
-	// applicability answers (Presence), not discovery results: a language is
-	// present when its extractor would analyse it, even if discovery found no
-	// module to propose.
+	// HasGo, HasPython, HasTS, HasRust and HasDotNet are the extractor
+	// registry's applicability answers (Presence), not discovery results: a
+	// language is present when its extractor would analyse it, even if
+	// discovery found no module to propose.
 	HasGo     bool
 	HasPython bool
 	HasTS     bool
 	HasRust   bool
+	HasDotNet bool
 	// ImportGraphComplete is true when Edges is the module graph check will
 	// judge the starter rules over (see graphGap). Render gates a starter rule
 	// on fail only when this graph shows it clean.
@@ -83,6 +84,10 @@ type Presence struct {
 	TypeScript bool
 	Python     bool
 	Rust       bool
+	DotNet     bool
+	// DotNetProjects are the repo-relative .csproj paths the .NET extractor
+	// evaluates (its solution, configured projects, or project walk).
+	DotNetProjects []string
 	// GoMembers are the absolute Go module directories the Go extractor loads
 	// (go.work members, a root go.mod, or nested go.mod dirs).
 	GoMembers []string
@@ -99,22 +104,23 @@ type Presence struct {
 // languageMode renders a language's enabled mode. A present language is
 // enabled explicitly; an absent one stays at the config default `auto`, so a
 // presence probe that missed a project can never switch its analysis off.
-// Rust is `auto` even when present: missing cargo then reports a coverage gap
-// instead of failing the run.
+// Rust and .NET are `auto` even when present: a missing cargo or dotnet then
+// reports a coverage gap instead of failing the run.
 func languageMode(lang string, present bool) string {
-	if present && lang != langRust {
+	if present && lang != langRust && lang != langDotNet {
 		return "true"
 	}
 	return "auto"
 }
 
-// Discover detects Go, Python, TypeScript, and Rust modules at root.
+// Discover detects Go, Python, TypeScript, Rust, and .NET modules at root.
 // presence decides which languages are present; it comes from the extractor
 // registry, so discovery and analysis agree on what is in the tree. Go
 // discovery runs `go list` in every member presence names (a go.work
 // monorepo with no root go.mod included). Python and TypeScript discovery
 // still find their own module candidates; Rust discovery reads the root
-// Cargo.toml it has always used.
+// Cargo.toml it has always used; .NET discovery reads the project list
+// presence carries.
 //
 // Layers are kept only when discovery assigns at least two of them: a single
 // layer orders nothing, and Render then asks the owner to declare layers.
@@ -166,6 +172,11 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 		return DiscoveredConfig{}, err
 	}
 	add(langTypeScript, tsMods)
+	// .NET modules are judged like the file-path languages: a test project owns
+	// no production source, so it is not proposed.
+	if presence.DotNet {
+		add(langDotNet, discoverDotNet(presence.DotNetProjects))
+	}
 	judged := len(allModules)
 
 	// Rust discovery runs `cargo metadata` at root, so it still needs the root
@@ -209,6 +220,7 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 		HasPython:           presence.Python,
 		HasTS:               presence.TypeScript,
 		HasRust:             presence.Rust,
+		HasDotNet:           presence.DotNet,
 		ImportGraphComplete: gap == "",
 		GraphGap:            gap,
 	}, nil
@@ -417,7 +429,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	// languages: section — always emitted so operators can flip modes without
 	// needing to know the YAML shape. enabled is true|false|auto.
 	b.WriteString("languages:\n")
-	for _, lang := range []string{langGo, langPython, langTypeScript, langRust} {
+	for _, lang := range []string{langGo, langPython, langTypeScript, langRust, langDotNet} {
 		var present bool
 		switch lang {
 		case langGo:
@@ -428,6 +440,8 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 			present = cfg.HasTS
 		case langRust:
 			present = cfg.HasRust
+		case langDotNet:
+			present = cfg.HasDotNet
 		}
 		fmt.Fprintf(&b, "  %s:\n    enabled: %s\n", lang, languageMode(lang, present))
 		if lang == langPython && cfg.PyPackage != "" {
@@ -435,20 +449,31 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 		}
 	}
 	b.WriteString("\n")
-	if cfg.HasRust {
-		b.WriteString("# Rust deep analysis: explicit so single-crate Rust does not degenerate to one crate node.\n")
+	if cfg.HasRust || cfg.HasDotNet {
+		if cfg.HasRust {
+			b.WriteString("# Rust deep analysis: explicit so single-crate Rust does not degenerate to one crate node.\n")
+		}
+		if cfg.HasDotNet {
+			b.WriteString("# .NET type graph from the Roslyn helper (ARCHFIT_DOTNET_ROSLYN); false keeps the project-only graph.\n")
+		}
 		b.WriteString("analyzers:\n")
-		b.WriteString("  cargo_modules:\n")
-		b.WriteString("    enabled: true\n")
-		b.WriteString("  scip:\n")
-		b.WriteString("    enabled: true\n")
+		if cfg.HasRust {
+			b.WriteString("  cargo_modules:\n")
+			b.WriteString("    enabled: true\n")
+			b.WriteString("  scip:\n")
+			b.WriteString("    enabled: true\n")
+		}
+		if cfg.HasDotNet {
+			b.WriteString("  roslyn:\n")
+			b.WriteString("    enabled: true\n")
+		}
 		b.WriteString("\n")
 	}
 	b.WriteString("# Optional analyzers (deeper facts; off by default because they are slow).\n")
 	b.WriteString("#   scip needs the target to be installable: npm ci for TS/JS, cargo metadata for Rust.\n")
 	b.WriteString("#   Large tree? Give one more time, e.g. scip: { enabled: true, timeout: \"10m\" }.\n")
-	if cfg.HasRust {
-		// A live analyzers: block (cargo_modules + scip) already exists above. Emitting
+	if cfg.HasRust || cfg.HasDotNet {
+		// A live analyzers: block (cargo_modules + scip, roslyn) already exists above. Emitting
 		// a second "# analyzers:" header here would trap a user who uncomments it into a
 		// duplicate top-level key (a hard config-load error). Point at the block above.
 		b.WriteString("# Extend the analyzers: block above with:\n")

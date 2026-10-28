@@ -76,6 +76,36 @@ func TestCycle_RustModuleCycleIsPoor(t *testing.T) {
 	}
 }
 
+// TestCycle_DotNetFileCycleIsPoor: MSBuild forbids project reference cycles,
+// so a cycle built only from .NET edges is between files of one project —
+// language-permitted, banded like a Rust intra-crate cycle. A cycle that mixes
+// in another language's edge stays critical.
+func TestCycle_DotNetFileCycleIsPoor(t *testing.T) {
+	a := metricstest.Node{Kind: metricstest.NodeKindFile, Path: "Core/A.cs"}
+	b := metricstest.Node{Kind: metricstest.NodeKindFile, Path: "Core/B.cs"}
+	for _, tc := range []struct {
+		name        string
+		backLang    string
+		wantBand    string
+		wantDisplay string
+	}{
+		{"only .NET edges", metricstest.LangDotNet, "poor", "1 intra-project file cycles (.NET — language-permitted, not import cycles)"},
+		{"a non-.NET edge in the cycle", metricstest.LangGo, bandCritical, "1 import cycles"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			edges := []metricstest.Edge{
+				{From: a.ID(), To: b.ID(), Kind: metricstest.EdgeKindImports, Language: metricstest.LangDotNet},
+				{From: b.ID(), To: a.ID(), Kind: metricstest.EdgeKindImports, Language: tc.backLang},
+			}
+			g := metricstest.NewFixture([]metricstest.Node{a, b}, edges)
+			res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.Classify(g, nil)})
+			if res.Value != 1 || res.Band != tc.wantBand || res.Display != tc.wantDisplay {
+				t.Errorf("cycle = %v %q %q, want 1 %q %q", res.Value, res.Band, res.Display, tc.wantBand, tc.wantDisplay)
+			}
+		})
+	}
+}
+
 // TestCycle_PolyglotGoCycleStaysCritical is the H-1 regression: a Go import cycle
 // must stay critical even when Rust crate-dep edges dominate the graph by count.
 // The old global-majority heuristic wrongly softened it to poor.

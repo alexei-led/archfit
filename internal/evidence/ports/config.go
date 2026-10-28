@@ -3,6 +3,7 @@ package ports
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ToolMode is the enable state of a language extractor or analyzer.
@@ -82,6 +83,12 @@ type ExtractConfig struct {
 	CargoFeatures  []string // cargo features to activate (empty = default)
 	IncludeDevDeps bool     // include dev-dependencies as edges
 	ModuleGraph    bool     // run cargo-modules to build intra-crate module graph (opt-in)
+
+	// .NET-specific. omitempty keeps every other language's encoding, and so
+	// its measurement settings hash, byte-identical to before these fields.
+	DotNetProjects    []string      `json:",omitempty"` // languages.dotnet.projects: solutions or .csproj files; empty = auto
+	TypeGraphDisabled bool          `json:",omitempty"` // analyzers.roslyn.enabled: false forces the project-only graph
+	TypeGraphTimeout  time.Duration `json:",omitempty"` // analyzers.roslyn.timeout; 0 = the extractor default
 }
 
 // SyntaxConfig is the request passed to a SyntaxProvider.

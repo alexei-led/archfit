@@ -358,7 +358,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 			}
 		}
 	}
-	resolverStateHash, err := tsResolverStateHash(s.Root, workDir)
+	resolverStateHash, err := tsResolverStateHash(e.Cache, s.Root, workDir)
 	if err != nil {
 		return e.runner
 	}
@@ -382,7 +382,8 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 	if s.Root == workDir {
 		excludes = []string{"node_modules/**"}
 	}
-	inputs := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), excludes)
+	inputs, skip := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), excludes)
+	e.Cache.NoteSkip(skip)
 	treeHash, err := factcache.HashTree(s.Root, inputs)
 	if err != nil {
 		return e.runner
@@ -399,7 +400,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 	}
 }
 
-func tsResolverStateHash(roots ...string) (string, error) {
+func tsResolverStateHash(cache *factcache.Store, roots ...string) (string, error) {
 	parts := map[string]string{}
 	seen := map[string]struct{}{}
 	for _, root := range roots {
@@ -414,7 +415,8 @@ func tsResolverStateHash(roots ...string) (string, error) {
 			continue
 		}
 		seen[abs] = struct{}{}
-		files := nodeResolverInputs(abs)
+		files, skip := nodeResolverInputs(abs)
+		cache.NoteSkip(skip)
 		if len(files) == 0 {
 			continue
 		}
@@ -444,19 +446,19 @@ func tsResolverStateHash(roots ...string) (string, error) {
 	return factcache.HashJSON(parts)
 }
 
-func nodeResolverInputs(root string) []string {
+func nodeResolverInputs(root string) ([]string, string) {
 	base := filepath.Join(root, "node_modules")
 	if _, err := os.Stat(base); err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, ""
 		}
-		return []string{"node_modules"}
+		return []string{"node_modules"}, ""
 	}
-	files := factcache.ListInputs(base, factcache.MatchAll, nil)
+	files, skip := factcache.ListInputs(base, factcache.MatchAll, nil)
 	for i, file := range files {
 		files[i] = filepath.ToSlash(filepath.Join("node_modules", file))
 	}
-	return files
+	return files, skip
 }
 
 // cacheableDepcruise vetoes caching output the extractor would report as

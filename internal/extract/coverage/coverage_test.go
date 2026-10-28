@@ -33,31 +33,21 @@ func (p fixtureParser) Parse([]byte) ([]evidence.CoverageFact, error) {
 	return out, p.err
 }
 
-func TestIngest_DisabledIsByteIdenticalToAbsentOnFixedInput(t *testing.T) {
+// TestIngest_DisabledPublishesItsStatusRow: an off analyzer still reports one
+// row, so a consumer can tell "not configured" from "not in the report".
+func TestIngest_DisabledPublishesItsStatusRow(t *testing.T) {
 	root := t.TempDir()
-	ingestor := New(nil)
-	absentFacts, absentRow := ingestor.IngestAll(root, Options{})
-	disabledFacts, disabledRow := ingestor.IngestAll(root, Options{
+	ingests, row := New(nil).IngestAll(root, Options{
 		Enabled: false,
 		Gate:    "fail",
 		Sources: []Source{{Path: "must-not-be-read.info", Format: FormatLCOV}},
 	})
-	absent, err := json.Marshal(struct {
-		Facts []evidence.CoverageIngest `json:"facts,omitempty"`
-		Row   evidence.Coverage         `json:"row"`
-	}{absentFacts, absentRow})
-	if err != nil {
-		t.Fatal(err)
+	if len(ingests) != 0 {
+		t.Fatalf("disabled ingestion read %d sources, want none", len(ingests))
 	}
-	disabled, err := json.Marshal(struct {
-		Facts []evidence.CoverageIngest `json:"facts,omitempty"`
-		Row   evidence.Coverage         `json:"row"`
-	}{disabledFacts, disabledRow})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(absent) != string(disabled) {
-		t.Fatalf("absent = %s, explicit disabled = %s", absent, disabled)
+	want := evidence.Coverage{Tool: ToolName, Status: evidence.StatusDisabled, Reason: ReasonDisabled}
+	if row.Tool != want.Tool || row.Status != want.Status || row.Reason != want.Reason {
+		t.Errorf("row = %+v, want %+v", row, want)
 	}
 }
 
@@ -677,11 +667,16 @@ func fixtureOptions() Options {
 
 func writeCoverageFile(t *testing.T, root, rel, contents string) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	scanRoot, err := os.OpenRoot(root)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+	defer func() { _ = scanRoot.Close() }()
+	local := filepath.FromSlash(rel)
+	if err := scanRoot.MkdirAll(filepath.Dir(local), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := scanRoot.WriteFile(local, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

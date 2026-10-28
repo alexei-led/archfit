@@ -38,6 +38,26 @@ func TestLangAliasesInInstallEnum(t *testing.T) {
 	}
 }
 
+// TestLangHelpNamesEveryLanguage keeps the --lang help of analyze and check in
+// step with the registry: every language and alias it accepts is listed.
+func TestLangHelpNamesEveryLanguage(t *testing.T) {
+	t.Parallel()
+	for _, cmd := range []any{AnalyzeCmd{}, CheckCmd{}} {
+		f, ok := reflect.TypeOf(cmd).FieldByName("Lang")
+		if !ok {
+			t.Fatalf("%T has no Lang field", cmd)
+		}
+		help := f.Tag.Get("help")
+		for _, lang := range registry.All() {
+			for _, name := range append([]string{lang.ID}, lang.Aliases...) {
+				if !strings.Contains(help, name) {
+					t.Errorf("%T --lang help %q does not name %q", cmd, help, name)
+				}
+			}
+		}
+	}
+}
+
 // installEnumTag reads the comma-separated kong `enum` struct tag off
 // DoctorCmd.Lang via reflection so the test tracks the tag without duplicating
 // its literal.
@@ -54,13 +74,13 @@ func installEnumTag(t *testing.T) []string {
 	return strings.Split(tag, ",")
 }
 
-// TestBuildExtractorsOrder pins the go → ts → python build order (the
+// TestBuildExtractorsOrder pins the go → ts → python → rust → dotnet build order (the
 // graph-merge order the engine golden test depends on) and that each extractor
 // reports the canonical language name.
 func TestBuildExtractorsOrder(t *testing.T) {
 	t.Parallel()
 	exs := registry.Build(&toolrun.RunnerMock{}, config.Default().ExtractConfigs(), nil)
-	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust}
+	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust, config.LangDotNet}
 	if len(exs) != len(want) {
 		t.Fatalf("registry.Build returned %d extractors, want %d", len(exs), len(want))
 	}
@@ -107,6 +127,8 @@ func TestLanguageByAlias(t *testing.T) {
 		"py":         config.LangPython,
 		"rust":       config.LangRust,
 		"rs":         config.LangRust,
+		"dotnet":     config.LangDotNet,
+		"csharp":     config.LangDotNet,
 		"":           "",
 		"ruby":       "",
 	}
@@ -122,7 +144,7 @@ func TestLanguageByAlias(t *testing.T) {
 func TestPrimaryExtractorTools(t *testing.T) {
 	t.Parallel()
 	got := registry.PrimaryTools()
-	want := []string{toolGoPackages, toolDepCruiser, toolGrimp, toolCargo}
+	want := []string{toolGoPackages, toolDepCruiser, toolGrimp, toolCargo, toolDotNetMSBuild}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("registry.PrimaryTools() = %v, want %v", got, want)
 	}

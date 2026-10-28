@@ -2,7 +2,9 @@ package evaluation
 
 import (
 	"fmt"
+	"maps"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,8 +57,8 @@ const gateOffPosture = gateOff
 func buildDimensions(diag *result.Result, in stateInput, routed map[string][]state.FindingRef) state.Dimensions {
 	dims := state.Dimensions{
 		Intent:         intentDimension(diag, in.Policy, in.Facts),
-		Structure:      structureDimension(diag),
-		Modularity:     modularityDimension(diag, in.Policy),
+		Structure:      structureDimension(diag, in.Facts),
+		Modularity:     modularityDimension(diag, in.Policy, in.Facts),
 		Coupling:       couplingDimension(diag),
 		ChangeLocality: changeLocalityDimension(diag, in.Policy),
 		Complexity:     complexityDimension(diag, in.Policy, in.Facts),
@@ -86,20 +88,16 @@ func gateFor(d state.Dimension) state.GateState {
 	if d.Gate == state.GateFail {
 		return state.GateFail
 	}
-	// A tripped ratchet fails the dimension that owns its metric even when that
-	// dimension is unmeasured: the metric was compared, so the blocker is real.
+	// A hard-gate finding fails its dimension even when the dimension is
+	// unmeasured: a tripped ratchet was compared, and a rule violation was
+	// found in the edges that were observed, so the blocker is real either way.
 	for _, ref := range d.Findings {
-		if ref.Kind == finding.KindGate && finding.IsMetricRatchet(ref.RuleID) {
+		if ref.Kind == finding.KindGate {
 			return state.GateFail
 		}
 	}
 	if d.Status == state.Unmeasured {
 		return state.GateNotApplicable
-	}
-	for _, ref := range d.Findings {
-		if ref.Kind == finding.KindGate {
-			return state.GateFail
-		}
 	}
 	if len(d.Findings) > 0 {
 		return state.GateWarn
@@ -160,10 +158,28 @@ type primaryInventory struct {
 	known      bool
 	applicable int
 	completed  int
+	// gaps name the incomplete files of a language with scoped evidence
+	// (Observations.ScopedDependencyEvidence), as "<tool>: <gap list>".
+	gaps []string
 }
 
-func primaryDependencyInventory(diag *result.Result) primaryInventory {
+// primaryDependencyInventory counts the applicable primary extractors and those
+// that completed. A primary whose row is ok still has not completed when its
+// language's scoped evidence names incomplete files: the row counts the
+// projects it evaluated, not the file edges the graph needs.
+func primaryDependencyInventory(diag *result.Result, f Observations) primaryInventory {
 	out := primaryInventory{known: len(diag.PrimaryExtractorTools) > 0}
+	incompleteTools := map[string]struct{}{}
+	for _, language := range slices.Sorted(maps.Keys(f.ScopedDependencyEvidence)) {
+		gaps := scopedIncomplete(f, language)
+		tool, ok := primaryToolForLanguage(diag, language)
+		if len(gaps) == 0 || !ok {
+			continue
+		}
+		incompleteTools[tool] = struct{}{}
+		ev := f.ScopedDependencyEvidence[language]
+		out.gaps = append(out.gaps, ev.Tool+": "+gapSummary(ev, gaps))
+	}
 	gapped := make(map[string]struct{}, len(diag.CoverageGaps))
 	for _, gap := range diag.CoverageGaps {
 		gapped[gap.Tool] = struct{}{}
@@ -183,7 +199,7 @@ func primaryDependencyInventory(diag *result.Result) primaryInventory {
 			}
 		}
 		out.applicable++
-		if len(rows) == 1 && rows[0].Status == modevidence.StatusOK {
+		if _, incomplete := incompleteTools[tool]; !incomplete && len(rows) == 1 && rows[0].Status == modevidence.StatusOK {
 			out.completed++
 			continue
 		}
@@ -224,15 +240,20 @@ func ruleNeedsPatterns(ruleType string) bool {
 	return ruleType == ruleTypeForbiddenPattern
 }
 
-func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}) bool {
+func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}, f Observations) bool {
 	rows := coverageRows(diag.ToolCoverage, syntaxCoverageTool)
 	if len(rows) != 1 || rows[0].Status != modevidence.StatusOK {
 		return false
 	}
 	// The syntax row is aggregate, while language opt-outs are reported on the
 	// per-language primary rows. An aggregate success cannot cover a scoped
-	// language that configuration removed from the syntax invocation.
+	// language that configuration removed from the syntax invocation. A
+	// language with scoped dependency evidence ran its producers, so its
+	// partial rows name dependency gaps, not an opt-out.
 	for language := range languages {
+		if _, scoped := f.ScopedDependencyEvidence[language]; scoped {
+			continue
+		}
 		tool, ok := primaryToolForLanguage(diag, language)
 		if !ok {
 			return false
@@ -310,7 +331,7 @@ func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.Policy
 		// producer can emit a relationship to that source-file vocabulary.
 		if unsupportedOrAmbiguousSourcePattern(p.Topology.ModuleMap, rule.To) &&
 			!knownSourceVocabulary(p.Topology.ModuleMap, rule.To, files, f.SourceSelectors) {
-			return ruleScope{status: ruleScopeUnknown}
+			return unsupportedTargetScope(rule.To)
 		}
 		return restrictToTargetVocabulary(
 			patternRuleScope(p.Topology.ModuleMap, rule.From, files, f.SourceSelectors, inv.rustModules),
@@ -348,18 +369,19 @@ func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.Policy
 // policy defect unless the rule is a guard. A guard holds while either side
 // matches nothing: no edge can start at a source that is not there or reach a
 // target that is not there, whatever state the dependency producer is in, so a
-// partial producer run cannot hold it unevaluated. vacuous() already refuses a
-// selector the inventory cannot judge. A selector that matches only source no
-// dependency producer analyses is neither: the code is there and nothing reads
-// its relationships, so guard or not the rule stays unevaluated with a reason
-// saying so. decided is false when the selectors are live, so the caller
-// scopes the rule as usual.
+// partial producer run cannot hold it unevaluated. A selector spelled as a graph
+// node ID is the exception: it can never match, however the tree changes, so a
+// guard cannot hold it. vacuous() already refuses a selector the inventory
+// cannot judge. A selector that matches only source no dependency producer
+// analyses is neither: the code is there and nothing reads its relationships, so
+// guard or not the rule stays unevaluated with a reason saying so. decided is
+// false when the selectors are live, so the caller scopes the rule as usual.
 func vacuityScope(rule policy.RuleDef, inv selectorInventory) (scope ruleScope, decided bool) {
 	side, glob, vacuous := inv.vacuousSelector(rule)
 	switch {
 	case !vacuous:
 		return ruleScope{}, false
-	case !rule.Guard || inv.matchesOnlyUnanalysed(rule.Type, side, glob):
+	case !rule.Guard || nodeKindedSelector(glob) || inv.matchesOnlyUnanalysed(rule.Type, side, glob):
 		return ruleScope{status: ruleScopeUnknown, reason: inv.vacuityReason(rule.Type, side, glob)}, true
 	default:
 		return ruleScope{status: ruleScopeNotApplicable}, true
@@ -489,7 +511,7 @@ func moduleSelectorScope(rule policy.RuleDef, topology policy.TopologyView, inv 
 	if rule.ToModule == "" {
 		if unsupportedOrAmbiguousSourcePattern(topology.ModuleMap, rule.To) &&
 			!knownSourceVocabulary(topology.ModuleMap, rule.To, files, f.SourceSelectors) {
-			return ruleScope{status: ruleScopeUnknown}
+			return unsupportedTargetScope(rule.To)
 		}
 		return restrictToTargetVocabulary(scope, topology.ModuleMap.SelectorLanguages(rule.To))
 	}
@@ -613,21 +635,23 @@ func ruleFileSelector(moduleMap policy.ModuleMap, file string, selectors map[str
 	return language, selector, supported
 }
 
+// unsupportedTargetPrefix starts the unevaluated reason of a rule whose to:
+// path names a file type no dependency producer analyses. Like a dead selector
+// it is the owner's to fix: no analyzer install can make the rule evaluable.
+// The brief and agent digest read the same prefix.
+const unsupportedTargetPrefix = "selector names a file type no dependency producer analyses: "
+
+// unsupportedTargetScope is the unknown scope of a rule whose to: path names a
+// file type no dependency producer analyses.
+func unsupportedTargetScope(glob string) ruleScope {
+	return ruleScope{status: ruleScopeUnknown, reason: unsupportedTargetPrefix + selectorTo + " " + glob}
+}
+
 func knownSourceVocabulary(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string) bool {
 	for _, file := range files {
-		language, selector, supported := ruleFileSelector(moduleMap, file, selectors)
-		if !supported || selector == "" {
-			continue
-		}
-		if rulePatternMatches(pattern, file, selector) {
+		_, selector, supported := ruleFileSelector(moduleMap, file, selectors)
+		if supported && selector != "" && rulePatternMatches(pattern, file, selector) {
 			return true
-		}
-		if language == "python" && !strings.ContainsAny(pattern, "/:") {
-			root, _, _ := strings.Cut(selector, ".")
-			patternRoot, _, dotted := strings.Cut(pattern, ".")
-			if dotted && root == patternRoot {
-				return true
-			}
 		}
 	}
 	return false
@@ -653,9 +677,26 @@ func explicitlySupportedSourcePattern(moduleMap policy.ModuleMap, pattern string
 	return supported
 }
 
+// unsupportedOrAmbiguousSourcePattern reports a selector spelled as a source
+// file path whose extension names no supported language, or names one only
+// through a wildcard. Only a file path has an extension: a selector without a
+// slash names a dotted module or package (a Python module, a .NET assembly such
+// as Microsoft.EntityFrameworkCore*), and one led by a dotted segment names a
+// Go import path (gopkg.in/yaml.v3). Their last dot separates a name segment.
 func unsupportedOrAmbiguousSourcePattern(moduleMap policy.ModuleMap, pattern string) bool {
+	if !strings.Contains(pattern, sepPath) || importPathDomain(pattern) {
+		return false
+	}
 	ext := path.Ext(pattern)
 	return ext != "" && !explicitlySupportedSourcePattern(moduleMap, pattern)
+}
+
+// importPathDomain reports a slash selector whose leading segment holds a dot:
+// a Go import-path domain (go.uber.org, k8s.io, github.com), never a
+// first-party directory.
+func importPathDomain(pattern string) bool {
+	segment, _, _ := strings.Cut(literalPrefix(pattern), sepPath)
+	return strings.Contains(segment, sepDotted)
 }
 
 // restrictToTargetVocabulary drops languages whose node vocabulary the rule's
@@ -700,7 +741,7 @@ func restrictToTargetVocabulary(s ruleScope, addressable map[string]struct{}) ru
 
 func primaryToolForLanguage(diag *result.Result, language string) (string, bool) {
 	// PrimaryExtractorTools is injected in the registry's append-only language
-	// order (Go, TypeScript, Python, Rust). Keep adapter tool names out of core;
+	// order (Go, TypeScript, Python, Rust, .NET). Keep adapter tool names out of core;
 	// an unknown language or shortened inventory abstains instead of guessing.
 	index := -1
 	switch language {
@@ -712,6 +753,8 @@ func primaryToolForLanguage(diag *result.Result, language string) (string, bool)
 		index = 2
 	case "rust":
 		index = 3
+	case "dotnet":
+		index = 4
 	}
 	if index < 0 || index >= len(diag.PrimaryExtractorTools) {
 		return "", false
@@ -776,12 +819,13 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observation
 
 	active, evaluated := 0, 0
 	var unevaluatedRules []string
+	fired := firedRules(diag.Findings)
 	for _, rule := range rules {
 		if rule.Gate == gateOffPosture {
 			continue
 		}
 		active++
-		if ruleUnevaluatedReason(diag, rule, p, f) == "" {
+		if ruleUnevaluatedReason(diag, rule, p, f, fired) == "" {
 			evaluated++
 		} else {
 			unevaluatedRules = append(unevaluatedRules, rule.ID)
@@ -821,12 +865,14 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observation
 }
 
 // structureDimension reports dependency structure and direction. Its
-// denominator is how much of the discovered edge set resolved to a declared
-// module: an edge whose target is outside the module map was discovered but
-// says nothing about this repository's internal structure.
-func structureDimension(diag *result.Result) state.Dimension {
+// denominator is how much of the discovered FIRST-PARTY edge set resolved to a
+// declared module: an edge to a library was discovered but can never resolve
+// inside the module map, so counting it would cap the ratio by construction in
+// any library-using repository. First-party edges no module owns stay in the
+// denominator — those are the gap the module map itself leaves.
+func structureDimension(diag *result.Result, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionStructure, state.OwnerStructure)
-	primaries := primaryDependencyInventory(diag)
+	primaries := primaryDependencyInventory(diag, f)
 	reasons := map[string]string{
 		state.FactPrimaryDependencyInventory: "no applicable primary dependency inventory completed over this tree",
 		state.FactInternalEdgeClassification: "module, direction, layer, or cycle classification is incomplete for the discovered internal dependencies",
@@ -844,6 +890,9 @@ func structureDimension(diag *result.Result) state.Dimension {
 	if primaries.complete() {
 		observed = append(observed, state.FactPrimaryDependencyInventory)
 	}
+	if len(primaries.gaps) > 0 {
+		reasons[state.FactPrimaryDependencyInventory] = "dependency evidence is incomplete for source files: " + strings.Join(primaries.gaps, "; ")
+	}
 	if primaries.completed > 0 && ce != nil &&
 		ce.ClassifiedInternalDependencies == ce.InternalDependencies && metricsProduced(diag.Metrics, "cycle") {
 		observed = append(observed, state.FactInternalEdgeClassification)
@@ -854,7 +903,8 @@ func structureDimension(diag *result.Result) state.Dimension {
 	}
 
 	external := ce.DependencyEdges - ce.InternalDependencies
-	dim.Coverage = state.Coverage{Basis: "discovered dependencies resolved inside the declared module map", Observed: ce.InternalDependencies, Total: ce.DependencyEdges}
+	firstPartyEdges := ce.InternalDependencies + ce.UnmappedFirstPartyDependencies
+	dim.Coverage = state.Coverage{Basis: "discovered first-party dependencies resolved inside the declared module map", Observed: ce.InternalDependencies, Total: firstPartyEdges}
 	dim.Metrics = []state.MetricValue{
 		count("internal_edges", ce.InternalDependencies, provRelationship),
 		count("library_edges", ce.LibraryDependencies, provRelationship),
@@ -879,7 +929,7 @@ func structureDimension(diag *result.Result) state.Dimension {
 // modularityDimension reports cohesion, hubs, and public surface over the
 // declared module set. Its denominator is the declared modules: modularity is a
 // statement about boundaries somebody drew, so an undeclared tree has none.
-func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimension {
+func modularityDimension(diag *result.Result, p policy.PolicySnapshot, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionModularity, state.OwnerModularity)
 	modules := len(p.Topology.Modules)
 	reasons := map[string]string{
@@ -901,7 +951,7 @@ func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dim
 
 	observed := []string{state.FactDeclaredModuleInventory}
 	var notApplicable []string
-	primaries := primaryDependencyInventory(diag)
+	primaries := primaryDependencyInventory(diag, f)
 	ce := diag.ClassifiedEdges
 	switch {
 	case primaries.known && primaries.applicable == 0:
@@ -955,6 +1005,16 @@ func couplingDimension(diag *result.Result) state.Dimension {
 		state.FactCouplingVolatility:               "volatility is undeclared on one or more scored cross-boundary edges, so no rung is invented",
 		state.FactExtractorResolutionWithinCeiling: "dependency-cruiser left more than a tenth of import specifiers unresolved; omitted edges may understate the candidate denominator",
 	}
+	tsPartial, roslyn := score.TSUnresolvedPartial(*diag), score.RoslynIncomplete(*diag)
+	if roslyn {
+		// Both producers may block the fact in a mixed repository: name each.
+		const roslynReason = "roslyn left symbols unresolved or projects unloaded; an unresolved reference may hide a cross-boundary edge"
+		if tsPartial {
+			reasons[state.FactExtractorResolutionWithinCeiling] += "; " + roslynReason
+		} else {
+			reasons[state.FactExtractorResolutionWithinCeiling] = roslynReason
+		}
+	}
 	if ce == nil || ce.Scored+ce.Abstained == 0 {
 		applyPromotion(&dim, nil, nil, reasons)
 		return dim
@@ -969,7 +1029,7 @@ func couplingDimension(diag *result.Result) state.Dimension {
 	} else {
 		reasons[state.FactCouplingVolatility] = unratedVolatilityReason(ce.UnratedVolatilityEdges, ce.UnratedVolatilityModules)
 	}
-	if !score.TSUnresolvedPartial(*diag) {
+	if !tsPartial && !roslyn {
 		observed = append(observed, state.FactExtractorResolutionWithinCeiling)
 	}
 	applyPromotion(&dim, observed, nil, reasons)
@@ -1137,7 +1197,7 @@ func complexityDimension(diag *result.Result, p policy.PolicySnapshot, f Observa
 		// letting out-of-claim syntax facts promote an absent graph.
 		observed = append(observed, state.FactDeclaredModuleGraph)
 	}
-	primaries := primaryDependencyInventory(diag)
+	primaries := primaryDependencyInventory(diag, f)
 	edges := diag.ClassifiedEdges
 	graphComplete := graph != nil && primaries.complete() && edges != nil &&
 		edges.ClassifiedInternalDependencies == edges.InternalDependencies &&

@@ -15,6 +15,10 @@ type Coverage struct {
 	UnresolvedPrecisionOnly int    `json:"unresolved_precision_only,omitempty"`
 	Status                  string `json:"status"`
 	Reason                  string `json:"reason,omitempty"`
+	// Details is the per-unit table behind the row: one line per project,
+	// target or package, so a consumer reads the units without the row's
+	// shortened reason. A row that names every unit still shortens Reason.
+	Details []string `json:"details,omitempty"`
 	// MeasurementSettingsHash identifies configuration consumed by this run.
 	MeasurementSettingsHash string `json:"measurement_settings_hash,omitempty"`
 }

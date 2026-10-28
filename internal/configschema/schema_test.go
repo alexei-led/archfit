@@ -91,7 +91,7 @@ func TestSchemaSuppliedCoverageContract(t *testing.T) {
 	if !slices.Equal(coverageSourceDef.Required, []string{"path"}) {
 		t.Errorf("CoverageSource.required = %v, want [path]", coverageSourceDef.Required)
 	}
-	wantFormats := []any{"auto", "go-coverprofile", "lcov", "coverage-py-json", "llvm-cov-json"}
+	wantFormats := []any{"auto", "go-coverprofile", "lcov", "coverage-py-json", "llvm-cov-json", "cobertura"}
 	if got := coverageSourceDef.Properties["format"].Enum; !slices.Equal(got, wantFormats) {
 		t.Errorf("CoverageSource.format enum = %v, want %v", got, wantFormats)
 	}

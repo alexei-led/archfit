@@ -200,6 +200,7 @@ modules:
       - internal/extract/ts
       - internal/extract/py
       - internal/extract/rust
+      - internal/extract/dotnet
       - internal/extract/scip
       - internal/extract/astgrep
       - internal/extract/deployunit
@@ -709,6 +710,17 @@ languages:
     enabled: false
   python:
     enabled: false
+  # tools/dotnet/archfit-roslyn is the Roslyn helper archfit ships, not part of
+  # archfit's Go architecture; the image contract and language contracts test it.
+  dotnet:
+    enabled: false
+# The helper's C# source is an artifact this repo ships, not Go architecture: it
+# owns no module, so map completeness blocks on it. The exclude clears that.
+# The LOC and complexity walkers ignore exclude (internal/scope versus loc, the
+# known fragmentation), so the helper's lines still count in production_loc;
+# disabling languages.dotnet keeps its files out of the dependency graph.
+exclude:
+  - tools/dotnet/**
 analyzers:
   # Syntax-facts provider (ast-grep). Enabled for dogfooding — produces
   # syntax_facts (declarations, exported surface, roles, routes) visible in

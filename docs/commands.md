@@ -32,7 +32,7 @@ Successful `analyze` runs exit `0` for every verdict. Use `check` when the verdi
 | `0` | `healthy` | Success for report-only and setup commands. `analyze` also exits `0` for `needs_attention` and `blocked`. |
 | `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `hook git` found an in-scope repair or owner decision; `agents-md --check` found a missing or stale block. |
 | `2` | `needs_attention` | `policy can-import` found a target with no decision. The Claude hook uses `2` to block a stop under its protocol. |
-| `3` | Config, usage, or runtime error | General command error. `hook git` uses `3` when archfit cannot run. |
+| `3` | Config, usage, or runtime error | General command error. `hook git` uses `3` when archfit cannot run. A run stopped by `SIGINT` or `SIGTERM` also exits `3`: archfit stops its tools, removes its temporary copies, and reports the results as incomplete. A second signal exits at once. |
 
 `check` exits `2` when there is no blocker, but evidence or diagnostics need attention. `--require-tools` makes missing required tools affect the verdict. `analyze` stays report-only.
 
@@ -64,7 +64,7 @@ These flags apply only to commands that list them below.
 | `--json`, `--markdown`, `--sarif` | Shorthand for one matching `--format`. Do not combine shorthands with `--format`. |
 | `--no-advisories` | Omit advisory findings. Omitted findings do not count as diagnostics. |
 | `--min-severity <level>` | Filter advisories: `low`, `medium`, `high`, or `critical`. |
-| `--lang <name>` | Force language detection. Repeatable: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`). |
+| `--lang <name>` | Force language detection. Repeatable: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`), `dotnet` (`csharp`). |
 | `--require-tools` | Treat missing required analyzers as failures in the rendered verdict. It does not change `analyze` exit status. |
 | `--ai-summary` | Add an off-gate AI summary. Requires AI settings in the config. |
 
@@ -129,6 +129,20 @@ Reports the module, layer, owner, public surface, allowlists, and selected rules
 
 Reports whether a source file can import each target. A denied target exits `1`. A target without a decision exits `2`. A denial also carries `instead` (the alternatives the rule's owners declared) and `candidates`: each alternative that names a package a module owns, judged again from the same file.
 
+The answer runs no analyzer. It spells the edge the language's extractor would emit and runs the rule pass on that edge. Write the target in the language's graph vocabulary:
+
+| Language | Target |
+| --- | --- |
+| Go | A package directory or an import path. |
+| TypeScript | A source file. |
+| Python | A dotted module or a `.py` file inside the packages grimp builds. |
+| .NET | A `.cs` file or an external assembly name, such as `Microsoft.EntityFrameworkCore`. |
+| Rust | Not decided: crate roots need `cargo metadata`. |
+
+A rule that needs the whole graph, such as `module_cycle`, leaves a target not decided unless another rule denies it. It outranks an allowlist or the layer order: those permit the pair, and only the whole graph can say whether the pair closes a cycle. `can-import` runs no analyzer, so it cannot answer that.
+
+.NET answers are not decided when `analyzers.roslyn.enabled` is `false` (check then reads project edges), when the file is in no selected project's directory, and when the target names a first-party assembly or a project computes its `AssemblyName`. A file that check never reads is `unconstrained` with the reason: an excluded file, a file under `obj/` or `bin/`, or a file of a project with a `test` or `tests` path segment. A test project marked only by `IsTestProject` needs MSBuild evaluation, so its files are judged like production files.
+
 | Flag | Meaning |
 | --- | --- |
 | `-c, --config <file>` | Config path. |
@@ -149,7 +163,7 @@ Reports whether a source file can import each target. A denied target exits `1`.
 
 ### `doctor`
 
-`archfit doctor [flags]` checks analyzer availability. `--fix` installs tools that archfit can install.
+`archfit doctor [flags]` checks analyzer availability. `--fix` installs tools that archfit can install. For .NET it also prints the SDK and helper versions that the current directory's `global.json` selects, and fails when that pin cannot be satisfied.
 
 | Flag | Meaning |
 | --- | --- |

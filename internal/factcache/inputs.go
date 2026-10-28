@@ -2,6 +2,7 @@ package factcache
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -24,27 +25,51 @@ var hashSkipDirs = map[string]struct{}{
 // retaining their logical paths. Caller exclusions prune complete subtrees.
 // Unreadable inputs, cycles, or excessive enumeration return a directory sentinel
 // so HashTree vetoes caching instead of serving incomplete or expensive keys.
-func ListInputs(root string, match func(rel string) bool, exclude []string) []string {
+//
+// The second result is the user-facing disclosure when the ENTRY CAP is what
+// stopped enumeration, else "". Only that cause is disclosed: a tree over the
+// cap never gets a cache key however healthy it is, so every run re-extracts,
+// while an unreadable path or a symlink cycle is a property of one path. A
+// caller holding the run's fact store records it there for the acquiring stage
+// to print; a caller enumerating a sub-scope drops it.
+func ListInputs(root string, match func(rel string) bool, exclude []string) ([]string, string) {
+	return listInputs(root, match, exclude, maxInputEntries)
+}
+
+// listInputs is ListInputs with the cap as a parameter, so a test can drive the
+// real walk over a handful of files instead of 20,000.
+func listInputs(root string, match func(rel string) bool, exclude []string, entryCap int) ([]string, string) {
 	physical, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return []string{"."}
+		return []string{"."}, ""
 	}
-	w := inputWalker{match: match, exclude: exclude, active: make(map[string]bool)}
+	w := inputWalker{match: match, exclude: exclude, active: make(map[string]bool), entryCap: entryCap}
 	if err := w.walk(physical, "", 0); err != nil {
-		return []string{"."}
+		return []string{"."}, capSkipNote(w.entries, w.entryCap)
 	}
 	slices.Sort(w.files)
-	return w.files
+	return w.files, ""
 }
 
 const maxInputEntries = 20_000
 
+// capSkipNote is the disclosure for an input tree too large to key. Entries
+// counts what the walk visited, and the walk stops at the first entry over the
+// cap, so entries > cap happens only when the cap is what stopped it.
+func capSkipNote(entries, entryCap int) string {
+	if entries <= entryCap {
+		return ""
+	}
+	return fmt.Sprintf("fact cache skipped: input tree has more than %d filesystem entries", entryCap)
+}
+
 type inputWalker struct {
-	match   func(string) bool
-	exclude []string
-	active  map[string]bool
-	files   []string
-	entries int
+	match    func(string) bool
+	exclude  []string
+	active   map[string]bool
+	files    []string
+	entries  int
+	entryCap int
 }
 
 func (w *inputWalker) walk(dir, rel string, depth int) error {
@@ -65,7 +90,7 @@ func (w *inputWalker) walk(dir, rel string, depth int) error {
 		}
 		for _, entry := range entries {
 			w.entries++
-			if w.entries > maxInputEntries {
+			if w.entries > w.entryCap {
 				return fs.ErrInvalid
 			}
 			if err := w.entry(filepath.Join(dir, entry.Name()), filepath.ToSlash(filepath.Join(rel, entry.Name())), entry, depth); err != nil {
