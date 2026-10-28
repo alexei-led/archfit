@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/jsonout"
 	reporttest "github.com/alexei-led/archfit/v3/internal/testutil/report"
 )
 
@@ -41,9 +42,21 @@ func gateTask(id, rule string) taskSpec {
 func document(verdict report.StateVerdict, specs ...taskSpec) report.Document {
 	d := report.NewDocument()
 	d.State.Verdict = verdict
+	// The state report carries what the verdict rests on, so the fixtures the
+	// App ingests are consistent with it: a blocked run fails its hard gates, a
+	// healthy one passes them, anything else leaves them unmeasured.
+	d.State.Decision.ActiveBlockers = len(specs)
+	switch verdict {
+	case report.StateBlocked:
+		d.State.Decision.HardGates = report.HardGateFail
+	case report.StateHealthy:
+		d.State.Decision.HardGates = report.HardGatePass
+	}
 	for _, s := range specs {
 		d.State.Findings = append(d.State.Findings, report.Finding{
 			ID: s.id, Kind: report.FindingKindGate, RuleID: s.rule, Status: report.FindingStatusNew, Severity: s.severity,
+			MatchedBy: map[string]string{},
+			Origin:    s.origin,
 			Edge: report.FindingEdge{
 				From: report.FindingEndpoint{Path: s.from}, To: report.FindingEndpoint{Path: s.to}, Kind: s.edgeKind,
 			},
@@ -220,8 +233,9 @@ func pinFixture(t *testing.T, path string, got []byte) {
 	}
 }
 
-// TestCasesFixtures pins the agent JSON and the check text of the five
-// change-status cases. The App ingest test reads the JSON files.
+// TestCasesFixtures pins, for each of the five change-status cases, the agent
+// JSON, the check text, and the state report (archfit.architecture-state.v1).
+// The App ingests the state report: the *.state.json files are its fixtures.
 func TestCasesFixtures(t *testing.T) {
 	for _, tc := range changeCases()[:5] {
 		t.Run(tc.name, func(t *testing.T) {
@@ -234,6 +248,13 @@ func TestCasesFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			pinFixture(t, base+".txt", text.Bytes())
+			// The state report is what the App ingests: the same case, as
+			// `check --format json` prints it.
+			var state bytes.Buffer
+			if err := jsonout.New().Render(d, &state); err != nil {
+				t.Fatal(err)
+			}
+			pinFixture(t, base+".state.json", state.Bytes())
 		})
 	}
 }
