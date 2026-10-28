@@ -93,7 +93,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	sc := s.Options.Scope
-	sc.WorkDir, sc.Root, sc.Base = scanDir(root, bundleDir), root, req.BaseRef
+	sc.WorkDir, sc.Root, sc.Base, sc.AddedBase = scanDir(root, bundleDir), root, req.BaseRef, req.AddedBase
 	s.reportPhase("Discovering project")
 	resolved, err := scope.Resolve(ctx, sc, gitResolver{workDir: sc.WorkDir, runner: s.Runner})
 	if err != nil {
@@ -218,7 +218,9 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	)
 	// The files the change adds: the evidence the uncovered-change check reads.
 	observations.AddedFiles = addedSet(resolved.Added)
-	observations.UncoveredCauses = uncoveredCauses(resolved.Added, snapshot, s.Options.Exclusions, s.Options.Coverage)
+	added := addedFacts(resolved.Added, snapshot, observations.UnwalkedSourceProduction,
+		s.Options.Exclusions, s.Options.Coverage, s.Options.Acquisition.FileClass)
+	observations.UncoveredCauses, observations.AddedClasses, observations.AddedUnread = added.causes, added.classes, added.unread
 	// Config values schema v2 still loads but classification cannot read, and
 	// warn-gated rules whose selector matches nothing, are disclosed with the
 	// run's other config warnings. config lint reports the same defects.

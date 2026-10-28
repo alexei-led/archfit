@@ -258,11 +258,19 @@ func uncoveredChange(ev RuleEvidence, p policy.AssessmentPolicy) []finding.Findi
 			why[file] = verdict{reason, cause}
 			continue
 		}
-		if ev.FileClasses[file] != fileclass.Production {
+		class, walked := ev.FileClasses[file]
+		if !walked {
+			class = ev.AddedClasses[file]
+		}
+		if class != fileclass.Production {
 			continue
 		}
 		if _, unanalysed := ev.UnanalysedFiles[file]; unanalysed {
 			why[file] = verdict{uncoveredUnanalysed, "no dependency producer reads this file"}
+			continue
+		}
+		if _, unread := ev.AddedUnread[file]; unread {
+			why[file] = verdict{uncoveredUnanalysed, "the source walk skips its directory and no analyzer reported it"}
 			continue
 		}
 		language, selector, supported := ruleFileSelector(mm, file, ev.SourceSelectors)

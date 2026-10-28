@@ -99,3 +99,81 @@ func TestCheckUncoveredChangeIgnoresOldCode(t *testing.T) {
 		t.Errorf("change %q notices %+v, want a plain pass", res.Change.Status, res.Change.Notices)
 	}
 }
+
+// TestCheckUncoveredChangeEdges covers the ways added code used to slip past
+// change_gate: fail: an untracked file on a fresh branch (the target-branch
+// mode has no base), and a file in a directory the source walk skips.
+func TestCheckUncoveredChangeEdges(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T) string
+		want  string
+	}{
+		{name: "an untracked file on a branch with no commits yet", want: unownedPkgC, setup: func(t *testing.T) string {
+			dir := scopeRepo(t, lintCleanModules+hookRuleSection+failChange, hookCleanA)
+			writeFixtureFile(t, dir, unownedPkgC, movedImport)
+			return dir
+		}},
+		{name: "an untracked file on the target branch itself", want: unownedPkgC, setup: func(t *testing.T) string {
+			dir := scopeRepo(t, lintCleanModules+hookRuleSection+failChange, hookCleanA)
+			gitFixture(t, dir, "checkout", "-q", branchMain)
+			writeFixtureFile(t, dir, unownedPkgC, movedImport)
+			return dir
+		}},
+		// target/ is skipped by the source walk but loaded by go/packages: the
+		// file is unowned. A dot directory is read by nothing: unanalysed.
+		{name: "a file in a directory the source walk skips", want: "pkg/target/t.go", setup: func(t *testing.T) string {
+			dir := scopeRepo(t, lintCleanModules+hookRuleSection+failChange, hookCleanA)
+			commitFiles(t, dir, map[string]string{"pkg/target/t.go": "package target\n\nimport \"example.com/test/pkg/b/impl\"\n\nvar _ = impl.Secret()\n"})
+			return dir
+		}},
+		{name: "a file in a dot directory", want: ".tools/x.go", setup: func(t *testing.T) string {
+			dir := scopeRepo(t, lintCleanModules+hookRuleSection+failChange, hookCleanA)
+			commitFiles(t, dir, map[string]string{".tools/x.go": "package tools\n\nimport \"example.com/test/pkg/b/impl\"\n\nvar _ = impl.Secret()\n"})
+			return dir
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			code, res := checkUncovered(t, tc.setup(t))
+			if res.Change.Status != claimTypeUnknown || code != 2 {
+				t.Fatalf("change %q exit %d, want unknown 2: unread added code must not pass", res.Change.Status, code)
+			}
+			if len(res.Change.UnevaluatedRules) != 1 || !strings.Contains(res.Change.UnevaluatedRules[0].Reason, tc.want) {
+				t.Errorf("unevaluated = %+v, want it to name %s", res.Change.UnevaluatedRules, tc.want)
+			}
+		})
+	}
+}
+
+// TestCheckUncoveredChangeUnderRoot: with --root a subtree, an untracked file
+// in that subtree is still added.
+func TestCheckUncoveredChangeUnderRoot(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	sub := repo + "/svc"
+	for name, content := range map[string]string{
+		markerGoMod:       goModStub,
+		filePkgAA:         hookCleanA,
+		hookImplFile:      implSource(),
+		defaultConfigPath: lintCleanModules + hookRuleSection + failChange,
+	} {
+		writeFixtureFile(t, sub, name, content)
+	}
+	gitInitFixtureRepo(t, repo)
+	gitCommitFixture(t, repo)
+	gitFixture(t, repo, "branch", "-M", branchMain)
+	gitFixture(t, repo, "checkout", "-q", "-b", "feature")
+	writeFixtureFile(t, sub, unownedPkgC, movedImport)
+
+	code, out, stderr := runArchfit(t, cmdCheck, "-c", sub+"/"+defaultConfigPath, "--root", sub, "--format=agent")
+	var res uncoveredResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("decode: %v\nstdout: %s\nstderr: %s", err, out, stderr)
+	}
+	if res.Change.Status != claimTypeUnknown || code != 2 || len(res.Change.UnevaluatedRules) != 1 ||
+		!strings.Contains(res.Change.UnevaluatedRules[0].Reason, unownedPkgC) {
+		t.Fatalf("change %q exit %d unevaluated %+v, want unknown naming %s", res.Change.Status, code, res.Change.UnevaluatedRules, unownedPkgC)
+	}
+}

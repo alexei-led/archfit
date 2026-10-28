@@ -423,19 +423,46 @@ func disabledLanguages(cov CoverageOptions) map[string]struct{} {
 	return disabled
 }
 
-// uncoveredCauses names why each added production source file the
-// configuration declared out of scope is not read: the `exclude:` glob that
-// matches it, or the language switch that is off. Only added files are named,
-// so the map stays the size of the change.
-func uncoveredCauses(added []string, f evidencecontract.Facts, exclusions []string, cov CoverageOptions) map[string]string {
+// addedFileFacts are the facts the uncovered-change check needs about files a
+// change adds, beyond the source walk.
+type addedFileFacts struct {
+	// causes names, for the added production source files declared out of
+	// scope, the `exclude:` glob or language switch that did it.
+	causes map[string]string
+	// classes classifies, by path, the added source files the walk skipped
+	// (dot directories, build/, target/, mocks/, ...).
+	classes map[string]fileclass.FileClass
+	// unread are the walk-skipped added production files no analyzer reported:
+	// nothing in this run read them.
+	unread map[string]struct{}
+}
+
+// addedFacts classifies the files a change adds. A file the source walk visited
+// keeps its walked class; one the walk skipped is classified by path with the
+// configured file_class globs, the way unwalkedSourceProduction does, so a
+// production file in a skipped directory is not mistaken for no file at all.
+// Only added files are considered, so the maps stay the size of the change.
+func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bool, exclusions []string, cov CoverageOptions, cfg syntax.FileClassConfig) addedFileFacts {
 	disabled := disabledLanguages(cov)
-	var out map[string]string
+	out := addedFileFacts{}
 	for _, file := range added {
-		if f.FileClassIndex[file] != fileclass.Production {
+		language, _, supported := (policy.ModuleMap{}).RuleSelectorForFile(file)
+		class, walked := f.FileClassIndex[file]
+		if !walked {
+			if !supported {
+				continue
+			}
+			class = syntax.ClassifyFile(language, file, nil, cfg)
+			if out.classes == nil {
+				out.classes = make(map[string]fileclass.FileClass)
+			}
+			out.classes[file] = class
+		}
+		if !fileclass.IsProduction(class) {
 			continue
 		}
 		cause := ""
-		if language, _, ok := (policy.ModuleMap{}).RuleSelectorForFile(file); ok {
+		if supported {
 			if _, off := disabled[language]; off {
 				cause = "languages." + language + ".enabled: false"
 			}
@@ -448,13 +475,19 @@ func uncoveredCauses(added []string, f evidencecontract.Facts, exclusions []stri
 				}
 			}
 		}
-		if cause == "" {
+		if cause != "" {
+			if out.causes == nil {
+				out.causes = make(map[string]string)
+			}
+			out.causes[file] = cause
 			continue
 		}
-		if out == nil {
-			out = make(map[string]string)
+		if _, seen := unwalked[file]; !walked && !seen {
+			if out.unread == nil {
+				out.unread = make(map[string]struct{})
+			}
+			out.unread[file] = struct{}{}
 		}
-		out[file] = cause
 	}
 	return out
 }

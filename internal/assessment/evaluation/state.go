@@ -110,6 +110,7 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 			FileClasses: inScopeFileClasses(in.Facts), UnanalysedFiles: in.Facts.UnanalysedFiles,
 			SourceSelectors: in.Facts.SourceSelectors, CrateOwners: in.Facts.CrateOwners,
 			AddedFiles: in.Facts.AddedFiles, UncoveredCauses: in.Facts.UncoveredCauses,
+			AddedClasses: in.Facts.AddedClasses, AddedUnread: in.Facts.AddedUnread,
 		}, in.Policy.Assessment)
 		if u, ok := uncoveredChangeUnevaluated(uncovered); ok {
 			unevaluated = append(unevaluated, u)

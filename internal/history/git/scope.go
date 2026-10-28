@@ -95,16 +95,27 @@ func IsAncestor(ctx context.Context, dir, a, b string, runner toolrun.Runner) (b
 }
 
 // Added returns the sorted repository-relative files the working tree holds
-// that base does not: files added since base (committed, staged, or edited in
-// place) and the new names of renamed files, plus untracked files git does not
-// ignore. A file only modified is not listed.
-// It runs: git diff --name-only --diff-filter=AR -M <base>, then
-// git ls-files --others --exclude-standard
+// that base does not: files added since the fork point (committed, staged, or
+// edited in place) and the new names of renamed files, plus untracked files git
+// does not ignore. A file only modified is not listed.
+//
+// The comparison starts at the merge-base of HEAD and base, so a file the base
+// branch deleted after the fork is not counted as added by this branch. Paths
+// are read NUL-separated, so a name git would quote (non-ASCII bytes, quotes,
+// control characters) or that has edge spaces arrives as it is on disk, and
+// untracked files are listed from the repository root whatever dir is.
+// It runs: git merge-base HEAD <base>, git diff --name-only -z
+// --diff-filter=AR -M <fork>, and git ls-files -z --others --exclude-standard
+// --full-name -- :/
 func Added(ctx context.Context, dir, base string, runner toolrun.Runner) ([]string, error) {
+	from := base
+	if fork, found, err := MergeBase(ctx, dir, "HEAD", base, runner); err == nil && found {
+		from = fork
+	}
 	seen := map[string]struct{}{}
 	for _, args := range [][]string{
-		{"diff", nameOnly, "--diff-filter=AR", "-M", base},
-		{"ls-files", "--others", "--exclude-standard"},
+		{"diff", nameOnly, "-z", "--diff-filter=AR", "-M", from},
+		{"ls-files", "-z", "--others", "--exclude-standard", "--full-name", "--", ":/"},
 	} {
 		out, err := run(ctx, dir, runner, args...)
 		if err != nil {
@@ -113,9 +124,9 @@ func Added(ctx context.Context, dir, base string, runner toolrun.Runner) ([]stri
 		if out.ExitCode != 0 {
 			return nil, fmt.Errorf("git %s exited %d: %s", strings.Join(args, " "), out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 		}
-		for _, line := range strings.Split(strings.TrimSpace(string(out.Stdout)), "\n") {
-			if line = strings.TrimSpace(line); line != "" {
-				seen[line] = struct{}{}
+		for _, name := range strings.Split(string(out.Stdout), "\x00") {
+			if name != "" {
+				seen[name] = struct{}{}
 			}
 		}
 	}

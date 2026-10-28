@@ -59,6 +59,9 @@ type Request struct {
 	// command, so it names the repository instead.
 	ValidationConfig string
 	ValidationRoot   string
+	// AddedBase is the ref the added-file set is measured against when BaseRef
+	// is empty (scope.Config.AddedBase).
+	AddedBase string
 	// GateReasonsInState keeps the coupling gate's reasons off stderr: the
 	// state carries them as gate_reasons and check reports them as attention.
 	GateReasonsInState bool
@@ -79,6 +82,8 @@ type AnalysisRequest struct {
 	ValidationRoot   string
 	// GateReasonsInState: see Request.
 	GateReasonsInState bool
+	// AddedBase: see Request.
+	AddedBase string
 	// ApplyToolGate lets a missing required analyzer stamp the verdict fail and
 	// hard-gate the run. Only analyze/check set it: baseline, explain, enrich,
 	// config compare, and the --base sub-run render a verdict but consume no
@@ -551,7 +556,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
 		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
 		ValidationArgs: req.ValidationArgs, ValidationConfig: req.ValidationConfig, ValidationRoot: req.ValidationRoot,
-		GateReasonsInState: req.GateReasonsInState,
+		GateReasonsInState: req.GateReasonsInState, AddedBase: req.AddedBase,
 	})
 	if err != nil {
 		// A controlled stage failure already carries the user-facing wording; the

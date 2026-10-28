@@ -172,17 +172,23 @@ func Resolve(ctx context.Context, cfg Config, r Resolver) (Scope, error) {
 	// Best-effort: a git failure here leaves Changed empty rather than aborting
 	// the scan.
 	var changed, added []string
+	addedBase := cfg.Base
+	if addedBase == "" {
+		addedBase = cfg.AddedBase
+	}
+	if addedBase != "" && gitRoot != "" {
+		if ar, ok := r.(AddedResolver); ok {
+			if a, aerr := ar.Added(ctx, addedBase); aerr == nil {
+				added = rebaseChangedFiles(prefix, a)
+				sort.Strings(added)
+			}
+		}
+	}
 	if cfg.Base != "" && gitRoot != "" {
 		if head, herr := r.HeadRef(ctx); herr == nil {
 			if c, cerr := r.Changed(ctx, cfg.Base, head); cerr == nil {
 				changed = rebaseChangedFiles(prefix, c)
 				sort.Strings(changed)
-			}
-		}
-		if ar, ok := r.(AddedResolver); ok {
-			if a, aerr := ar.Added(ctx, cfg.Base); aerr == nil {
-				added = rebaseChangedFiles(prefix, a)
-				sort.Strings(added)
 			}
 		}
 	}

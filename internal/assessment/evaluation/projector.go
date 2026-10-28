@@ -25,6 +25,7 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 			UnanalysedFiles:          in.Facts.UnanalysedFiles, SourceSelectors: in.Facts.SourceSelectors,
 			CrateOwners: in.Facts.CrateOwners,
 			AddedFiles:  in.Facts.AddedFiles, UncoveredCauses: in.Facts.UncoveredCauses,
+			AddedClasses: in.Facts.AddedClasses, AddedUnread: in.Facts.AddedUnread,
 		},
 		Rules:              rules,
 		Metrics:            metrics,

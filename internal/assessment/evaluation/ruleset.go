@@ -32,6 +32,8 @@ type RuleEvidence struct {
 	// names; the uncovered-change check reads them.
 	AddedFiles      map[string]struct{}
 	UncoveredCauses map[string]string
+	AddedClasses    map[string]fileclass.FileClass
+	AddedUnread     map[string]struct{}
 }
 
 // Ruleset is the compiled policy rule set. Stage adapters build one and hand it

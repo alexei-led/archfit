@@ -277,8 +277,8 @@ func executeScan(ctx context.Context, deps *appDeps, req scanRequest, advance fu
 		NoAdvisories:   req.noAdvisories,
 		RequireTools:   req.requireTools,
 		ValidationArgs: scanValidationArgs(req), ValidationConfig: req.validationConfig, ValidationRoot: req.validationRoot,
-		GateReasonsInState: req.lint,
-		Identity:           identityInputs(ctx, deps.Runner, req.configPath, req.root, bundleDir, req.baseRef),
+		GateReasonsInState: req.lint, AddedBase: addedBase(req),
+		Identity: identityInputs(ctx, deps.Runner, req.configPath, req.root, bundleDir, req.baseRef),
 	})
 	if err != nil {
 		return application.Response{}, config.Config{}, applicationExitError(err)
@@ -386,4 +386,14 @@ func analyzeTarget(configPath, root string) string {
 		dir = abs
 	}
 	return filepath.Base(dir)
+}
+
+// addedBase is what check measures added files against when it compares with
+// no base: on the target branch the whole tree is the change, yet files not in
+// HEAD are still new and must be read. analyze reports no added files.
+func addedBase(req scanRequest) string {
+	if req.lint && req.baseRef == "" {
+		return "HEAD"
+	}
+	return ""
 }
