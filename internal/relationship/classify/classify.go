@@ -425,6 +425,7 @@ func classify(e graph.Edge, mi moduleIndex, c Config, effectiveVol map[string]co
 		DistanceBasis:          distBasis,
 		StrengthFromLLM:        strengthFromLLM,
 		StrengthFromNonHighLLM: strengthFromNonHighLLM,
+		StrengthPinned:         resolved.fromPin,
 		Connascence:            connascenceFromHints(e.ConnascenceHints),
 	}
 }

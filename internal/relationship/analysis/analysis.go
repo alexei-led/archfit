@@ -324,7 +324,7 @@ func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, modules m
 		tm, _ := moduleForNode(e.To, mm)
 		fromDef, fromClassified := modules[fm]
 		toDef, toClassified := modules[tm]
-		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
+		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, StrengthPinned: cl.StrengthPinned, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
 	}
 	return set
 }

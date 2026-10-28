@@ -711,6 +711,12 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		if got := idx[key].Strength; got != coupling.StrengthModel {
 			t.Errorf("strength = %q, want model (pinned label)", got)
 		}
+		if !idx[key].StrengthPinned {
+			t.Error("StrengthPinned = false: a consumer cannot tell the owner's verdict from extractor evidence")
+		}
+		if idx[key].StrengthFromLLM {
+			t.Error("StrengthFromLLM = true for a config label: provenance must stay distinguishable")
+		}
 	})
 
 	t.Run("approved label refines public-glob kind", func(t *testing.T) {

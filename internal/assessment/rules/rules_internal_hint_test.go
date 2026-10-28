@@ -83,6 +83,15 @@ func TestInternalAccessRules_FallBackToTheExtractorHint(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "an approved label's intrusive pin is not extractor evidence",
+			edge: func() relationship.Edge {
+				e := hintEdge(importer, undeclaredTarget, edgeKindImports, hintIntrusive)
+				e.Provenance.StrengthPinned = true
+				return e
+			}(),
+			want: 0,
+		},
+		{
 			name: "non-intrusive hint on an undeclared target does not fire",
 			edge: hintEdge(importer, undeclaredTarget, edgeKindImports, "functional"),
 			want: 0,
