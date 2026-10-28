@@ -37,6 +37,7 @@ const (
 	projA       = "A/A.csproj"
 	toolDotnet  = "dotnet"
 	targetB     = "x/B.csproj"
+	goneProj    = "Gone/Gone.csproj"
 	argVersion  = "--version"
 	argMSBuild  = "msbuild"
 	mauiProj    = "Maui/Maui.csproj"
@@ -546,13 +547,13 @@ func TestExtract_SolutionSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	ev := e.LastEvaluation()
-	if ev.Solution != "A.slnx" || ev.SkippedProjects != 1 || !slices.Equal(ev.MissingProjects, []string{"Gone/Gone.csproj"}) {
+	if ev.Solution != "A.slnx" || ev.SkippedProjects != 1 || !slices.Equal(ev.MissingProjects, []string{goneProj}) {
 		t.Errorf("evaluation = %+v", ev)
 	}
 	if got := nodeIDs(facts); !slices.Equal(got, []string{nodeDomain}) {
 		t.Errorf("nodes = %v, want only the solution's project", got)
 	}
-	if cov.Status != evidence.StatusPartial || !strings.Contains(cov.Reason, "Gone/Gone.csproj") {
+	if cov.Status != evidence.StatusPartial || !strings.Contains(cov.Reason, goneProj) {
 		t.Errorf("coverage = %+v, want partial naming the missing project", cov)
 	}
 }
@@ -603,7 +604,7 @@ func TestExtract_SolutionFilterTarget(t *testing.T) {
 				return
 			}
 			ev := e.LastEvaluation()
-			if ev.Solution != webFilter || !slices.Equal(ev.MissingProjects, []string{"Gone/Gone.csproj"}) {
+			if ev.Solution != webFilter || !slices.Equal(ev.MissingProjects, []string{goneProj}) {
 				t.Errorf("evaluation = %+v", ev)
 			}
 			if got := nodeIDs(facts); !slices.Equal(got, []string{nodeDomain}) {
@@ -779,7 +780,7 @@ func TestNameAndCoverageTool(t *testing.T) {
 // partial row that names the path, not an absent language.
 func TestExtract_StaleConfiguredTargetIsReported(t *testing.T) {
 	root := tree(t, "src/A/A.csproj", "src/A/A.cs")
-	e := dotnet.New(newFake(t, root, nil), autoCfg(), []string{"Gone/Gone.csproj"})
+	e := dotnet.New(newFake(t, root, nil), autoCfg(), []string{goneProj})
 
 	_, cov, err := e.Extract(context.Background(), scope.Scope{Root: root})
 	if err != nil {
@@ -788,7 +789,7 @@ func TestExtract_StaleConfiguredTargetIsReported(t *testing.T) {
 	if cov.Status != evidence.StatusPartial {
 		t.Errorf("coverage status = %q, want partial: a stale target is not an absent language", cov.Status)
 	}
-	if !strings.Contains(cov.Reason, "Gone/Gone.csproj") || !strings.Contains(cov.Reason, "configured target not found") {
+	if !strings.Contains(cov.Reason, goneProj) || !strings.Contains(cov.Reason, "configured target not found") {
 		t.Errorf("coverage reason = %q, want the missing path named", cov.Reason)
 	}
 }
