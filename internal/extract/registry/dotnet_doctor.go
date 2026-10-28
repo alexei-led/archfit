@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -26,7 +27,6 @@ const (
 var (
 	globalJSONFileLine = regexp.MustCompile(`(?m)^global\.json file:\s*(.+?)\s*$`)
 	requestedSDKLine   = regexp.MustCompile(`(?m)^Requested SDK version:\s*(\S+)`)
-	dotnetDoctorEnv    = []string{"DOTNET_CLI_TELEMETRY_OPTOUT=1", "DOTNET_NOLOGO=1", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1"}
 )
 
 // dotnetSDKVersion is the SDK `dotnet --version` selects in dir.
@@ -55,7 +55,7 @@ func roslynHelperVersion(ctx context.Context, r toolrun.Runner, helperDir, dir s
 
 // runDotnet runs dotnet with args in dir; label names the command in errors.
 func runDotnet(ctx context.Context, r toolrun.Runner, dir, label string, args ...string) (toolrun.Output, error) {
-	out, err := r.Run(ctx, toolrun.ToolCmd{Name: cmdDotNet, Args: args, Env: dotnetDoctorEnv, WorkDir: dir, Timeout: dotnetVersionTimeout})
+	out, err := r.Run(ctx, toolrun.ToolCmd{Name: cmdDotNet, Args: args, Env: dotnet.Env(), WorkDir: dir, Timeout: dotnetVersionTimeout})
 	if err != nil {
 		return out, fmt.Errorf("%s in %s: %w", label, dir, err)
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,6 +39,13 @@ var msbuildEnv = []string{
 	"MSBUILDDISABLENODEREUSE=1",
 	"DOTNET_GENERATE_ASPNET_CERTIFICATE=false",
 	"DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false",
+}
+
+// Env returns the environment every dotnet call gets. Exported so `archfit
+// doctor`, which runs the SDK and the helper from the registry package, uses
+// the same list as analysis instead of restating it and drifting.
+func Env() []string {
+	return slices.Clone(msbuildEnv)
 }
 
 var (
