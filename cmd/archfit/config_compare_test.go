@@ -11,7 +11,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // TestConfigCompare covers `archfit config compare`: the identity result, a
@@ -33,6 +36,114 @@ func TestConfigCompare(t *testing.T) {
 	t.Run("stderr_side_labels", testCompareStderrSideLabels)
 	t.Run("id_preview", testCompareIDPreview)
 	t.Run("classification_mix", testCompareClassificationMix)
+	t.Run("policy_change", testComparePolicyChange)
+	t.Run("policy_declarations_effective", testPolicyDeclarationsEffective)
+}
+
+// testPolicyDeclarationsEffective pins that the classifier sees declarations
+// as they take effect: a re-include removes a default exclusion, auto does not
+// run an optional analyzer, a disabled metric is off.
+func testPolicyDeclarationsEffective(t *testing.T) {
+	t.Parallel()
+	off := false
+	plain := config.Config{}
+	tuned := config.Config{Exclude: []string{"!reports"}}
+	tuned.Analyzers.Syntax.Enabled = evidenceports.ModeAuto
+	tuned.Metrics.Entries = map[string]policy.MetricEntry{"cycle": {Enabled: &off}}
+	plain.Analyzers.Syntax.Enabled = evidenceports.ModeOn
+
+	p, q := policyDeclarations(plain), policyDeclarations(tuned)
+	if !slices.Contains(p.Exclude, "**/reports/**") || slices.Contains(q.Exclude, "**/reports/**") {
+		t.Errorf("effective exclusions: plain %v, re-included %v", p.Exclude, q.Exclude)
+	}
+	if p.Analyzers["syntax"] != "on" || q.Analyzers["syntax"] != "off" {
+		t.Errorf("syntax analyzer: on %q, auto %q, want on and off", p.Analyzers["syntax"], q.Analyzers["syntax"])
+	}
+	if q.Metrics["cycle"].Gate != string(config.GateOff) {
+		t.Errorf("disabled metric gate = %q, want off", q.Metrics["cycle"].Gate)
+	}
+
+	// module_review: gate warn runs the pass; deleting the block stops it.
+	review := config.Config{}
+	review.ModuleReview.Gate = string(config.GateWarn)
+	if got := policyDeclarations(review).ModuleReviewGate; got != string(config.GateWarn) {
+		t.Errorf("module_review gate warn: effective %q, want warn", got)
+	}
+	if got := policyDeclarations(config.Config{}).ModuleReviewGate; got != string(config.GateOff) {
+		t.Errorf("module_review absent: effective %q, want off (the pass does not run)", got)
+	}
+
+	// Extractor settings outside the enabled switch are declarations, by path,
+	// without listing them: a later config key is covered the day it exists.
+	rust := config.Config{}
+	rust.Languages.Rust.IncludeDevDeps = true
+	if policyDeclarations(rust).Declarations["languages"] == policyDeclarations(config.Config{}).Declarations["languages"] {
+		t.Error("languages.rust.include_dev_deps does not reach the declarations")
+	}
+	for _, inert := range []string{"ai", "outputs", "version", "rules", "modules"} {
+		if _, ok := p.Declarations[inert]; ok {
+			t.Errorf("declarations carry %q, which is inert or compared in order", inert)
+		}
+	}
+}
+
+// testComparePolicyChange pins the policy_change section end to end: a
+// candidate that removes the rule guarding the one edge and adds an exclude is
+// a loosening that names both; the identity run is none with empty lists.
+func testComparePolicyChange(t *testing.T) {
+	t.Parallel()
+	const rule = "rules:\n  - id: no_b_internal\n    type: forbidden_dependency\n    from: pkg/a/**\n    to: pkg/b/internal/**\n    gate: fail\n"
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+rule)
+	candidate := filepath.Join(filepath.Dir(cfgPath), "candidate.yaml")
+	if err := os.WriteFile(candidate, []byte("exclude: [\"gen/**\"]\n"+coupledModulesCfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	type policySection struct {
+		PolicyChange struct {
+			Direction    string `json:"direction"`
+			RulesRemoved []struct {
+				ID   string `json:"id"`
+				Gate string `json:"gate"`
+			} `json:"rules_removed"`
+			CoverageLost []struct {
+				Kind   string `json:"kind"`
+				Detail string `json:"detail"`
+			} `json:"coverage_lost"`
+			RulesAdded []json.RawMessage `json:"rules_added"`
+		} `json:"policy_change"`
+	}
+	decode := func(current, cand string) policySection {
+		_, stdout, stderr := runArchfit(t, cmdConfig, cmdCompare, cand, flagJSON, "-c", current)
+		var doc policySection
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+			t.Fatalf("invalid JSON: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+		}
+		return doc
+	}
+
+	got := decode(cfgPath, candidate).PolicyChange
+	if got.Direction != "loosening" {
+		t.Errorf("direction = %q, want loosening", got.Direction)
+	}
+	if len(got.RulesRemoved) != 1 || got.RulesRemoved[0].ID != "no_b_internal" || got.RulesRemoved[0].Gate != hardGateFail {
+		t.Errorf("rules_removed = %+v, want no_b_internal at gate fail", got.RulesRemoved)
+	}
+	if len(got.CoverageLost) != 1 || got.CoverageLost[0].Kind != "exclude_added" || got.CoverageLost[0].Detail != "gen/**" {
+		t.Errorf("coverage_lost = %+v, want the added exclude", got.CoverageLost)
+	}
+
+	same := decode(cfgPath, cfgPath).PolicyChange
+	if same.Direction != progressNone || same.RulesAdded == nil || len(same.RulesAdded) != 0 {
+		t.Errorf("identity: direction %q rules_added %v, want none and an empty list", same.Direction, same.RulesAdded)
+	}
+
+	_, text, _ := runArchfit(t, cmdConfig, cmdCompare, candidate, "-c", cfgPath)
+	for _, want := range []string{"policy change: loosening", "rule removed: no_b_internal", "coverage lost: exclude_added: gen/**"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text report is missing %q:\n%s", want, text)
+		}
+	}
 }
 
 // testCompareClassificationMix pins that a classification shift is reported.
