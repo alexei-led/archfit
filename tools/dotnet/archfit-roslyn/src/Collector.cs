@@ -10,6 +10,10 @@ internal sealed record Collected(
     string Tfm,
     int UnresolvedSymbols,
     IReadOnlyDictionary<string, int> UnresolvedById,
+    // CompileErrors are error diagnostics other than an unresolved name: the
+    // file does not compile, so the edges it would carry are not all real.
+    int CompileErrors,
+    IReadOnlyDictionary<string, int> CompileErrorsById,
     IReadOnlyList<string> UsedProjects,
     IReadOnlyList<IvtDeclaration> IvtDeclarations,
     IReadOnlyList<string> LinkedFiles,
@@ -44,8 +48,15 @@ internal sealed class Collector(Solution solution, string root)
         var compilation = await project.GetCompilationAsync(ct)
             ?? throw new InvalidOperationException($"no compilation for {project.FilePath}");
 
-        var unresolvedById = compilation.GetDiagnostics(ct)
-            .Where(d => d.Severity == DiagnosticSeverity.Error && UnresolvedIds.Contains(d.Id))
+        var errors = compilation.GetDiagnostics(ct)
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+        var unresolvedById = errors
+            .Where(d => UnresolvedIds.Contains(d.Id))
+            .GroupBy(d => d.Id)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var compileErrorsById = errors
+            .Where(d => !UnresolvedIds.Contains(d.Id))
             .GroupBy(d => d.Id)
             .ToDictionary(g => g.Key, g => g.Count());
 
@@ -79,6 +90,8 @@ internal sealed class Collector(Solution solution, string root)
             Tfm(project),
             unresolvedById.Values.Sum(),
             unresolvedById,
+            compileErrorsById.Values.Sum(),
+            compileErrorsById,
             UsedProjects(project, usedAssemblies),
             IvtDeclarations(compilation, project),
             linked,
@@ -382,7 +395,10 @@ internal sealed class Collector(Solution solution, string root)
         return declarations.ToList();
     }
 
-    private static string Tfm(Project project)
+    // Tfm is the project's target framework: the workspace's own property, else
+    // the framework in the name MSBuildWorkspace gives a multi-targeted
+    // project's framework ("Name(tfm)"). Empty for a framework-less evaluation.
+    internal static string Tfm(Project project)
     {
         if (project.AnalyzerOptions.AnalyzerConfigOptionsProvider.GlobalOptions
                 .TryGetValue("build_property.TargetFramework", out var tfm) && tfm.Length > 0)

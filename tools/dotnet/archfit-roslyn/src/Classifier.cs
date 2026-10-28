@@ -4,12 +4,16 @@ using Microsoft.CodeAnalysis;
 namespace ArchfitRoslyn;
 
 // Classifier turns a loaded solution plus workspace diagnostics into the
-// report, deciding each project's status (D5):
-//   failed   0 documents, or requested and never loaded
-//   partial  documents loaded, and a workspace failure or unresolved names
-//   complete documents loaded, no failure, no unresolved names
-// Every requested project gets an entry: one the workspace dropped, or whose
-// failure names no parsable project path, is failed, never omitted.
+// report, deciding each attempt's status (D5):
+//   failed   no source documents: nothing loaded to measure
+//   partial  documents loaded, and a name did not resolve or the compilation
+//            has an error
+//   complete documents loaded, every name resolved, no compile error
+// One entry per (project, target framework). Status and reason belong to the
+// attempt: a workspace failure on one attempt never decides another's, and a
+// failure that left no documents is not evidence that a loaded one is
+// incomplete. Every requested project gets an entry: one the workspace dropped,
+// or whose failure names no parsable project path, is failed, never omitted.
 internal static partial class Classifier
 {
     public static async Task<Report> ClassifyAsync(
@@ -28,38 +32,76 @@ internal static partial class Classifier
             .GroupBy(f => f.Project!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(f => f.Message).ToList(), StringComparer.Ordinal);
 
-        var collector = new Collector(solution, fullRoot);
-        var skipped = new SortedSet<string>(StringComparer.Ordinal);
-        var reports = new List<ProjectReport>();
+        // MSBuildWorkspace reports a multi-targeted project once per target
+        // framework, and its framework-less evaluation as one more project when
+        // that evaluation fails. Grouping the attempts by project file tells
+        // that evaluation apart from a framework's own attempt.
+        var attempts = new List<Attempt>();
         var loaded = new HashSet<string>(StringComparer.Ordinal);
-
         foreach (var project in solution.Projects)
         {
             if (project.FilePath is null || Relative(fullRoot, project.FilePath) is not { } path)
             {
                 continue;
             }
-            loaded.Add(Paths.Full(project.FilePath));
-            if (project.Language != LanguageNames.CSharp)
+            var full = Paths.Full(project.FilePath);
+            loaded.Add(full);
+            attempts.Add(new Attempt(project, path, full, Collector.Tfm(project)));
+        }
+
+        // The framework-less evaluation of a multi-targeted project is not a
+        // measurement: MSBuild's cross-targeting build imports no Compile
+        // target, so it loads no documents and its failure says nothing about
+        // the frameworks, which load separately. Omit it, and its failure, so
+        // it neither contradicts nor marks the framework entries.
+        var crossTargeting = attempts
+            .Where(a => a.Tfm == "" && a.Project.DocumentIds.Count == 0
+                && attempts.Any(o => o.FullPath == a.FullPath && o.Tfm != ""))
+            .Select(a => a.Project.Id)
+            .ToHashSet();
+        var crossTargetingPaths = attempts
+            .Where(a => crossTargeting.Contains(a.Project.Id))
+            .Select(a => a.FullPath)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var collector = new Collector(solution, fullRoot);
+        var skipped = new SortedSet<string>(StringComparer.Ordinal);
+        var reports = new List<ProjectReport>();
+
+        foreach (var attempt in attempts)
+        {
+            if (attempt.Project.Language != LanguageNames.CSharp)
             {
-                skipped.Add(path);
+                skipped.Add(attempt.Path);
                 continue;
             }
-            var projectFailures = failures.GetValueOrDefault(Paths.Full(project.FilePath)) ?? [];
-            if (project.DocumentIds.Count == 0)
+            if (crossTargeting.Contains(attempt.Project.Id))
+            {
+                continue;
+            }
+            var projectFailures = ProjectFailures(attempt.FullPath, failures, crossTargetingPaths);
+            if (attempt.Project.DocumentIds.Count == 0)
             {
                 // A project whose evaluation failed stays in the workspace with
                 // no documents; the failure may not name it parsably.
-                reports.Add(Failed(path, projectFailures.FirstOrDefault() ?? unattributed ?? NoDocuments, fullRoot));
+                reports.Add(Failed(attempt.Path, attempt.Tfm, projectFailures.FirstOrDefault() ?? unattributed ?? NoDocuments, fullRoot));
                 continue;
             }
-            var collected = await collector.CollectAsync(project, ct);
-            var status = projectFailures.Count == 0 && collected.UnresolvedSymbols == 0 ? Status.Complete : Status.Partial;
+            var collected = await collector.CollectAsync(attempt.Project, ct);
+            // The attempt's own compilation decides. A workspace failure names
+            // the project, not the evaluation it belongs to, so it is the cause
+            // of a framework that is already partial; it never marks a
+            // framework whose every name resolved and which has no compile
+            // error. A failure that lost evidence leaves no documents at all,
+            // which is the failed branch above.
+            var status = collected.UnresolvedSymbols == 0 && collected.CompileErrors == 0
+                ? Status.Complete
+                : Status.Partial;
             reports.Add(new ProjectReport(
-                path,
+                attempt.Path,
                 collected.Tfm,
                 status,
-                status == Status.Partial ? PartialReason(collected, projectFailures, fullRoot) : "",
+                status == Status.Complete ? "" : PartialReason(collected, projectFailures, fullRoot),
                 collected.UnresolvedSymbols,
                 collected.UsedProjects,
                 collected.IvtDeclarations,
@@ -77,7 +119,7 @@ internal static partial class Classifier
             }
             if (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             {
-                reports.Add(Failed(path, messages[0], fullRoot));
+                reports.Add(Failed(path, "", messages[0], fullRoot));
             }
             else
             {
@@ -90,7 +132,7 @@ internal static partial class Classifier
         {
             if (Relative(fullRoot, target) is { } path && !reported.Contains(path))
             {
-                reports.Add(Failed(path, unattributed ?? NotLoaded, fullRoot));
+                reports.Add(Failed(path, "", unattributed ?? NotLoaded, fullRoot));
             }
         }
 
@@ -102,11 +144,32 @@ internal static partial class Classifier
         return new Report(Report.CurrentSchemaVersion, skipped.ToList(), reports);
     }
 
+    private sealed record Attempt(Project Project, string Path, string FullPath, string Tfm);
+
     private const string NoDocuments = "the workspace loaded no source documents";
     private const string NotLoaded = "the workspace did not load the project";
 
-    private static ProjectReport Failed(string path, string message, string root) =>
-        new(path, "", Status.Failed, FailedReason(message, root), 0, [], [], [], []);
+    // IsCrossTargetingFailure reports MSBuild's failure to build the
+    // framework-less evaluation of a multi-targeted project. Its cross-targeting
+    // build defines no Compile target, so the helper never treats it as a
+    // measurement of the project.
+    internal static bool IsCrossTargetingFailure(string message) => CrossTargetingFailure().IsMatch(message);
+
+    // ProjectFailures are the workspace failures about one project file. The
+    // cross-targeting evaluation's failure is dropped for a multi-targeted
+    // project: the helper does not report that evaluation, so its failure is
+    // not a cause of anything the caller reads.
+    private static IReadOnlyList<string> ProjectFailures(
+        string fullPath, IReadOnlyDictionary<string, List<string>> failures, HashSet<string> crossTargetingPaths)
+    {
+        var messages = failures.GetValueOrDefault(fullPath) ?? [];
+        return crossTargetingPaths.Contains(fullPath)
+            ? messages.Where(m => !IsCrossTargetingFailure(m)).ToList()
+            : messages;
+    }
+
+    private static ProjectReport Failed(string path, string tfm, string message, string root) =>
+        new(path, tfm, Status.Failed, FailedReason(message, root), 0, [], [], [], []);
 
     // FailingProject returns the project a workspace failure is about: the
     // first quoted project path in the message ("Msbuild failed when
@@ -124,6 +187,9 @@ internal static partial class Classifier
         return $"{cause}; {fix}";
     }
 
+    // PartialReason names why a loaded attempt is partial, and is empty when it
+    // is complete: the attempt's own compilation decides, not another
+    // attempt's failure.
     internal static string PartialReason(Collected collected, IReadOnlyList<string> failures, string root)
     {
         var parts = new List<string>();
@@ -136,15 +202,22 @@ internal static partial class Classifier
         }
         if (collected.UnresolvedSymbols > 0)
         {
-            var ids = string.Join(", ", collected.UnresolvedById.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key} x{kv.Value}"));
             var noun = collected.UnresolvedSymbols == 1 ? "symbol" : "symbols";
-            parts.Add($"{collected.UnresolvedSymbols} unresolved {noun} ({ids})");
+            parts.Add($"{collected.UnresolvedSymbols} unresolved {noun} ({Ids(collected.UnresolvedById)})");
             fixes.Add(collected.UnresolvedById.ContainsKey("CS0518") && ReferencePack(collected.Tfm) is { } pack
                 ? $"reference pack {pack.Name} {pack.Version} is not installed: install the .NET {pack.Version} targeting pack or restore with NuGet access"
                 : "restore the project with NuGet access (`dotnet restore`) or install the missing references");
         }
-        return string.Join("; ", parts.Concat(fixes.Distinct()));
+        if (collected.CompileErrors > 0)
+        {
+            var noun = collected.CompileErrors == 1 ? "compile error" : "compile errors";
+            parts.Add($"{collected.CompileErrors} {noun} ({Ids(collected.CompileErrorsById)})");
+            fixes.Add("fix the compile errors: a file that does not compile keeps only the edges it resolved");
+        }        return string.Join("; ", parts.Concat(fixes.Distinct()));
     }
+
+    private static string Ids(IReadOnlyDictionary<string, int> byId) =>
+        string.Join(", ", byId.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key} x{kv.Value}"));
 
     // Cause names what a workspace failure says went wrong and the fix, with
     // the analysis root removed from paths.
@@ -187,6 +260,12 @@ internal static partial class Classifier
 
     [GeneratedRegex(@"^Msbuild failed when processing the file '[^']*' with message:\s*")]
     private static partial Regex MSBuildPrefix();
+
+    // The failure of MSBuild's cross-targeting build: its targets define no
+    // Compile target, which is why a multi-targeted project's framework-less
+    // evaluation loads no documents (MSB4057).
+    [GeneratedRegex(@"does not contain 'Compile' target", RegexOptions.IgnoreCase)]
+    private static partial Regex CrossTargetingFailure();
 
     [GeneratedRegex(@"^net(\d+\.\d+)(-.*)?$")]
     private static partial Regex NetCoreTfm();

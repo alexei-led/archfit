@@ -111,9 +111,20 @@ public class ClassifierTests
     [Fact]
     public void PartialReasonNamesTheMissingReferencePack()
     {
-        var collected = new Collected("net8.0", 12, new Dictionary<string, int> { ["CS0518"] = 10, ["CS0246"] = 2 }, [], [], [], []);
+        var collected = new Collected("net8.0", 12, new Dictionary<string, int> { ["CS0518"] = 10, ["CS0246"] = 2 }, 0, new Dictionary<string, int>(), [], [], [], []);
         Assert.Equal(
             "12 unresolved symbols (CS0246 x2, CS0518 x10); reference pack Microsoft.NETCore.App.Ref 8.0 is not installed: install the .NET 8.0 targeting pack or restore with NuGet access",
+            Classifier.PartialReason(collected, [], Root));
+    }
+
+    // A framework that does not compile is partial even when every name
+    // resolved: the edges it would carry are not all real.
+    [Fact]
+    public void PartialReasonNamesCompileErrors()
+    {
+        var collected = new Collected("net10.0", 0, new Dictionary<string, int>(), 1, new Dictionary<string, int> { ["CS0029"] = 1 }, [], [], [], []);
+        Assert.Equal(
+            "1 compile error (CS0029 x1); fix the compile errors: a file that does not compile keeps only the edges it resolved",
             Classifier.PartialReason(collected, [], Root));
     }
 }

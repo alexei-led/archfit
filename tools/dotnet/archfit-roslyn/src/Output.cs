@@ -32,8 +32,10 @@ internal static class Status
     public const string Failed = "failed";
 }
 
-// One entry per (project, target framework). A failed project has no TFM
-// ("") and no files.
+// One entry per (project, target framework), each with the status and reason
+// of its own attempt. A failed entry has no files; its TFM is the framework
+// whose evaluation loaded nothing, and "" when the project failed before its
+// frameworks were known (the framework-less evaluation itself is not an entry).
 internal sealed record ProjectReport(
     string Path,
     string Tfm,
