@@ -181,9 +181,9 @@ modules:
 // TestRun_Check_ModuleCycleFiresWhereNodeCycleCannot pins module_cycle on the
 // shape the node-level cycle rule is blind to: compiling Go whose two declared
 // modules depend on each other through different files and packages. Go edges
-// run file -> package, so `cycle` finds nothing; module_cycle reports each
-// direction at its import line, and explain names the module pair instead of
-// printing an empty edge.
+// run file -> package, so `cycle` finds nothing; module_cycle reports the
+// component once, locating both directions at their import lines, and explain
+// names the module pair instead of printing an empty edge.
 func TestRun_Check_ModuleCycleFiresWhereNodeCycleCannot(t *testing.T) {
 	t.Parallel()
 	const (
