@@ -24,7 +24,7 @@
 | Dimension | Status | Gate | Confidence | Denominator | Findings |
 | --- | --- | --- | --- | --- | ---: |
 | intent | measured | pass | high | declared rules evaluated 1/1 | 0 |
-| structure | measured | fail | high | discovered dependencies resolved inside the declared module map 1/1 | 1 |
+| structure | measured | fail | high | discovered first-party dependencies resolved inside the declared module map 1/1 | 1 |
 | modularity | measured | pass | low | declared modules with a declared public surface 0/2 | 0 |
 | coupling | measured | warn | high | cross-boundary edges scored 1/1 | 1 |
 | change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |

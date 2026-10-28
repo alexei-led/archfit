@@ -247,7 +247,8 @@ func cacheKey(root string, exclusions, formats []string, cache *factcache.Store,
 	if err != nil {
 		return ""
 	}
-	files := factcache.ListInputs(root, factcache.MatchAll, exclusions)
+	files, skip := factcache.ListInputs(root, factcache.MatchAll, exclusions)
+	cache.NoteSkip(skip)
 	treeHash, err := factcache.HashTree(root, files)
 	if err != nil {
 		return ""

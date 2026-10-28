@@ -119,7 +119,7 @@ Each extractor key is a SHA-256 digest of NUL-separated values:
 schema version, analyzer name, tool version, analyzer config hash, input tree hash
 ```
 
-The input tree hash covers sorted relative paths and file content hashes. Hashing uses content rather than modification times. Archfit skips `.git` and `.archfit-cache` during input discovery. It stops cache-key discovery after 20,000 filesystem entries or 64 directory levels. It also refuses an input hash over 32 MiB. In each case, the extractor runs without a cache key. The cache uses `.archfit-cache/facts/<analyzer>/<key>.json`. LLM responses use the separate `.archfit-cache/llm` directory.
+The input tree hash covers sorted relative paths and file content hashes. Hashing uses content rather than modification times. Archfit skips `.git` and `.archfit-cache` during input discovery. It stops cache-key discovery after 20,000 filesystem entries or 64 directory levels. It also refuses an input hash over 32 MiB. In each case, the extractor runs without a cache key. Hitting the entry cap is also reported on stderr (`warning: fact cache skipped: input tree has more than 20000 filesystem entries`), because a healthy tree over the cap would otherwise re-extract on every run with nothing saying why. The cache uses `.archfit-cache/facts/<analyzer>/<key>.json`. LLM responses use the separate `.archfit-cache/llm` directory.
 
 The fact cache is best effort. A missing, unreadable, or corrupt entry is a cache miss. A failed write does not fail analysis. A hit updates the entry time for eviction. The cache caps fact data at 1 GiB and evicts oldest entries until usage is at most 768 MiB.
 

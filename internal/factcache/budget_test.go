@@ -17,7 +17,8 @@ func TestListInputs_ExpansionBudgetNeverReturnsPartialHash(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if hash, err := HashTree(root, ListInputs(root, MatchAll, nil)); err == nil || hash != "" {
+	files, _ := ListInputs(root, MatchAll, nil)
+	if hash, err := HashTree(root, files); err == nil || hash != "" {
 		t.Fatalf("over-budget inventory must veto caching: hash=%q error=%v", hash, err)
 	}
 }
@@ -27,7 +28,8 @@ func TestListInputs_SymlinkCycleVetoesCache(t *testing.T) {
 	if err := os.Symlink(root, filepath.Join(root, "cycle")); err != nil {
 		t.Fatal(err)
 	}
-	if hash, err := HashTree(root, ListInputs(root, MatchAll, nil)); err == nil || hash != "" {
+	files, _ := ListInputs(root, MatchAll, nil)
+	if hash, err := HashTree(root, files); err == nil || hash != "" {
 		t.Fatalf("cyclic inputs must veto caching: hash=%q error=%v", hash, err)
 	}
 }

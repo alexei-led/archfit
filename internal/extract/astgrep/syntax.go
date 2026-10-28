@@ -513,21 +513,22 @@ func nameFromMatch(m sgSyntaxMatch) string {
 // csharpRouteRe reads a route template from an attribute or Map* call text: the
 // plain string literal that is the first argument of the verb itself, positional
 // or "template:". Anchoring on the verb skips a MapGroup prefix in a chained call,
-// and a "Name = ..." argument is the link name, not a template. Verbatim and
-// interpolated strings are not matched and fall back to the verb name.
+// and a "Name = ..." argument is the link name, not a template. Verbatim,
+// interpolated, and non-literal arguments are not matched, and the registration
+// then reports no route.
 var csharpRouteRe = regexp.MustCompile(`\b(?:Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete|Patch|Methods|Fallback))\s*\(\s*(?:template\s*:\s*)?"((?:[^"\\]|\\.)*)"`)
 
-// csharpVerbRe finds the attribute name or Map* method name that selects the verb.
-// Only the verbs the rules match, so a MapGroup prefix is never the verb.
-var csharpVerbRe = regexp.MustCompile(`\b(Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete|Patch|Methods|Fallback|IdentityApi))\b`)
-
-// csharpRouteName returns the route template, or the verb name when the route has
-// no literal template (for example [HttpGet] with the template on the class).
+// csharpRouteName returns the route template, or "" when the registration has no
+// literal template: bare [HttpGet], [HttpGet("")], [HttpGet(Name = ...)],
+// [Route] without an argument, MapFallback() without a pattern, and
+// MapIdentityApi<T>(). An empty template adds no path segment of its own — under
+// attribute routing the class [Route] is the route, and that attribute is
+// reported as its own fact — so the verb name is never a route name.
 func csharpRouteName(m sgSyntaxMatch) string {
-	if sub := csharpRouteRe.FindStringSubmatch(m.Text); len(sub) == 2 && sub[1] != "" {
+	if sub := csharpRouteRe.FindStringSubmatch(m.Text); len(sub) == 2 {
 		return sub[1]
 	}
-	return csharpVerbRe.FindString(m.Text)
+	return ""
 }
 
 // isNonExportedGoRule returns true for Go ruleIds that produce signal/structural

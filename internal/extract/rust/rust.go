@@ -289,7 +289,8 @@ func (e *Extractor) cachedRunner(s scope.Scope, analyzer, version string, exts [
 	// manifests and sources regardless of `exclude:` globs. Even target/ can
 	// contain explicitly configured source paths. Exclusion-config changes
 	// invalidate via cfgHash.
-	files := factcache.ListInputs(s.Root, factcache.MatchExts(exts, rustManifestNames), nil)
+	files, skip := factcache.ListInputs(s.Root, factcache.MatchExts(exts, rustManifestNames), nil)
+	e.Cache.NoteSkip(skip)
 	treeHash, err := factcache.HashTree(s.Root, files)
 	if err != nil {
 		return e.runner

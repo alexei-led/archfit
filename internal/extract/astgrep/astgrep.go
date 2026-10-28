@@ -91,7 +91,8 @@ func (a *Adapter) cachedRunner(ctx context.Context, root string, langs []string)
 	if err != nil {
 		return a.runner
 	}
-	files := factcache.ListInputs(root, factcache.MatchExts(exts, []string{".gitignore", ".ignore"}), nil)
+	files, skip := factcache.ListInputs(root, factcache.MatchExts(exts, []string{".gitignore", ".ignore"}), nil)
+	a.Cache.NoteSkip(skip)
 	treeHash, err := factcache.HashTree(root, files)
 	if err != nil {
 		return a.runner
