@@ -213,7 +213,8 @@ internal static partial class Classifier
             var noun = collected.CompileErrors == 1 ? "compile error" : "compile errors";
             parts.Add($"{collected.CompileErrors} {noun} ({Ids(collected.CompileErrorsById)})");
             fixes.Add("fix the compile errors: a file that does not compile keeps only the edges it resolved");
-        }        return string.Join("; ", parts.Concat(fixes.Distinct()));
+        }
+        return string.Join("; ", parts.Concat(fixes.Distinct()));
     }
 
     private static string Ids(IReadOnlyDictionary<string, int> byId) =>
