@@ -273,6 +273,12 @@ jobs:
             echo "count=${#selected[@]}"
             echo "pattern=^($(IFS='|'; echo "${selected[*]}"))$"
           } >> "$GITHUB_OUTPUT"
+      - name: Build the Roslyn helper
+        if: matrix.label == 'CLI'
+        # cmd/archfit's .NET policy-agreement test needs the helper, and this job
+        # sets ARCHFIT_REQUIRE_TOOLS=1: a missing helper is a failure there, not a
+        # skip, so the job that runs the test builds it.
+        run: make dotnet-roslyn
       - name: Run tests
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
