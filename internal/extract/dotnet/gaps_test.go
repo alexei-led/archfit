@@ -130,6 +130,114 @@ func TestLastDependencyGaps(t *testing.T) {
 	}
 }
 
+// restoreFix is the fix of a gap whose project stated no cause of its own.
+const restoreFix = "restore the projects with NuGet access (`dotnet restore`); the roslyn row names each project's cause"
+
+// Keys of a roslyn report project entry; keyPath is its file or project path.
+const (
+	keyTFM        = "tfm"
+	keyStatus     = "status"
+	keyReason     = "reason"
+	keyUnresolved = "unresolved_symbols"
+	keyIVT        = "ivt_declarations"
+	keyFiles      = "files"
+	keyEdges      = "edges"
+)
+
+// TestLastDependencyGapsHelperOnlyProject pins the gaps of a project the helper
+// loads through ProjectReference and the MSBuild evaluation did not select: it
+// has file edges like any evaluated project, so an incomplete one carries a gap
+// on its files, and a required rule over them reads as unevaluated instead of
+// passing on evidence nobody checked. The gap names the project's own cause, and
+// a project whose file membership is unavailable is still attributed by its
+// directory. A complete helper-only project, and a file any complete project
+// holds, carry no gap.
+func TestLastDependencyGapsHelperOnlyProject(t *testing.T) {
+	const (
+		helperProj    = "Helper/Helper.csproj"
+		helperCS      = "Helper/Helper.cs"
+		helperLooseCS = "Helper/Loose.cs" // under the project's directory, reported by no project
+		helperReason  = "1 unresolved symbol (CS0246); restore the project with NuGet access"
+		helperCause   = "Msbuild failed when processing the file 'Helper/Helper.csproj'"
+	)
+	// entry is a roslyn report entry for the helper-only project.
+	entry := func(status, reason string, files ...string) map[string]any {
+		reported := make([]any, 0, len(files))
+		for _, f := range files {
+			reported = append(reported, map[string]any{keyPath: f, keyEdges: []any{}})
+		}
+		return map[string]any{
+			keyPath: helperProj, keyTFM: "net10.0", keyStatus: status, keyReason: reason,
+			keyUnresolved: 1, keyIVT: []any{}, keyFiles: reported,
+		}
+	}
+	tests := []struct {
+		name      string
+		project   map[string]any
+		files     []string
+		wantFiles map[string]string // file -> gap prefix
+		wantFixes map[string]string // gap prefix -> fix prefix
+	}{
+		{
+			name:    "partial project its files carry its cause",
+			project: entry("partial", helperReason, helperCS),
+			// The evaluated partial project's file keeps its own gap in the same run.
+			files:     []string{helperCS, useCS},
+			wantFiles: map[string]string{helperCS: helperProj + " partial: " + helperReason, useCS: unresolvedProj + " partial: "},
+		},
+		{
+			name:      "partial project with no cause takes the restore fix",
+			project:   entry("partial", "", helperCS),
+			files:     []string{helperCS},
+			wantFiles: map[string]string{helperCS: helperProj + " partial"},
+			wantFixes: map[string]string{helperProj + " partial": restoreFix},
+		},
+		{
+			name:      "failed project without file membership is attributed by directory",
+			project:   entry("failed", helperCause),
+			files:     []string{helperLooseCS},
+			wantFiles: map[string]string{helperLooseCS: helperProj + " failed: " + helperCause},
+		},
+		{
+			name:      "complete project carries no gap",
+			project:   entry("complete", "", helperCS),
+			files:     []string{helperCS, helperLooseCS},
+			wantFiles: map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := copyFixture(t)
+			installHelper(t)
+			fake := newFake(t, root, fixtureReplies(t, root))
+			fake.helper = fakeHelper(replying(editReport(t, func(ps []map[string]any) []map[string]any {
+				return append(ps, tt.project)
+			})))
+			e := dotnet.New(fake, autoCfg(), nil)
+			if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+				t.Fatal(err)
+			}
+			gaps, attributed := e.LastDependencyGaps(tt.files)
+			if !attributed {
+				t.Fatal("gaps not attributed to projects")
+			}
+			if len(gaps.Files) != len(tt.wantFiles) {
+				t.Errorf("gap files = %v, want %v", gaps.Files, tt.wantFiles)
+			}
+			for file, prefix := range tt.wantFiles {
+				if !strings.HasPrefix(gaps.Files[file], prefix) {
+					t.Errorf("gap of %q = %q, want prefix %q", file, gaps.Files[file], prefix)
+				}
+			}
+			for gap, prefix := range tt.wantFixes {
+				if !strings.HasPrefix(gaps.Fixes[gap], prefix) {
+					t.Errorf("fix of %q = %q, want prefix %q", gap, gaps.Fixes[gap], prefix)
+				}
+			}
+		})
+	}
+}
+
 // edgesOnly ends the gap of a project a run without a helper report left on
 // its ProjectReference edges.
 const edgesOnly = " has project edges only"
