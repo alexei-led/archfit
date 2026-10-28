@@ -293,6 +293,56 @@ func TestTypeGraph_RecordedFixtureCoverage(t *testing.T) {
 	}
 }
 
+// The dotnet-msbuild row carries the per-project table too: status and the
+// frameworks MSBuild evaluated, so the evaluation result is readable without a
+// second run.
+func TestCoverage_EvaluationCarriesThePerProjectTable(t *testing.T) {
+	root := copyFixture(t)
+	installHelper(t)
+	fake := newFake(t, root, fixtureReplies(t, root))
+	fake.helper = fakeHelper(replying(recordedReport(t)))
+	e := dotnet.New(fake, autoCfg(), nil)
+	_, msbuild, err := e.Extract(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	details := msbuild.Details
+	if len(details) != 7 {
+		t.Fatalf("dotnet-msbuild details = %v, want one line per project", details)
+	}
+	for _, want := range []string{
+		"Application/Application.csproj ok frameworks=net10.0",
+		"Legacy/Legacy.csproj ok frameworks=net10.0,net8.0",
+	} {
+		if !slices.Contains(details, want) && !strings.HasPrefix(details[1], want) {
+			t.Errorf("dotnet-msbuild details = %v, want %q", details, want)
+		}
+	}
+	broken := details[slices.IndexFunc(details, func(d string) bool { return strings.HasPrefix(d, "Broken/") })]
+	if !strings.Contains(broken, "failed frameworks=") || !strings.Contains(broken, "reason: ") {
+		t.Errorf("broken detail = %q, want failed with its reason", broken)
+	}
+}
+
+// The roslyn row carries the per-project table behind its shortened reason, so
+// a consumer reads each project's status, frameworks, files and unresolved count
+// without running the helper by hand.
+func TestTypeGraph_CoverageCarriesThePerProjectTable(t *testing.T) {
+	e, _, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+	want := []string{
+		"Application/Application.csproj complete frameworks=net10.0 files=4 unresolved=0",
+		"Broken/Broken.csproj failed frameworks= files=0 unresolved=0 reason: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; run with NuGet access and a warm cache, or install the SDK",
+		"Domain/Domain.csproj complete frameworks=net10.0 files=1 unresolved=0",
+		"Infrastructure/Infrastructure.csproj complete frameworks=net10.0 files=1 unresolved=0",
+		"Legacy/Legacy.csproj partial frameworks=net10.0,net8.0 files=1 unresolved=31 reason: net8.0: 31 unresolved symbols (CS0246 x18, CS0400 x1, CS0518 x12); reference pack Microsoft.NETCore.App.Ref 8.0 is not installed: install the .NET 8.0 targeting pack or restore with NuGet access",
+		"Tests/Tests.csproj partial frameworks=net10.0 files=1 unresolved=1 reason: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; 1 unresolved symbol (CS0234 x1); run with NuGet access and a warm cache, or install the SDK; restore the project with NuGet access (`dotnet restore`) or install the missing references",
+		"Unresolved/Unresolved.csproj partial frameworks=net10.0 files=1 unresolved=3 reason: 3 unresolved symbols (CS0246 x3); restore the project with NuGet access (`dotnet restore`) or install the missing references",
+	}
+	if got := e.LastTypeGraphCoverage().Details; !slices.Equal(got, want) {
+		t.Errorf("roslyn details = %#v, want %#v", got, want)
+	}
+}
+
 func TestTypeGraph_RecordedFixtureProjects(t *testing.T) {
 	e, _, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
 	tg := e.LastTypeGraph()

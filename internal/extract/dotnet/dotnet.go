@@ -540,6 +540,11 @@ func coverageFor(ev Evaluation, version string, timedOut bool) evidence.Coverage
 	var problems []string
 	for _, p := range ev.Projects {
 		cov.Unresolved += len(p.Missing)
+		detail := p.Path + " " + p.Status + " frameworks=" + strings.Join(p.TargetFrameworks, ",")
+		if p.Reason != "" {
+			detail += " reason: " + p.Reason
+		}
+		cov.Details = append(cov.Details, detail)
 		if p.Status != ProjectOK {
 			problems = append(problems, p.Path+": "+p.Reason)
 		}
