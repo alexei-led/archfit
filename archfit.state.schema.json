@@ -949,6 +949,12 @@
         },
         "reason": {
           "type": "string"
+        },
+        "details": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "additionalProperties": false,
