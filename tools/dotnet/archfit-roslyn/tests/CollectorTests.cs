@@ -24,6 +24,22 @@ public class CollectorTests
         public class Base { protected void Hidden() { } private protected void Narrow() { } }
         """;
 
+    // A struct with user-defined operators: IsDto sees the operators, so the
+    // type is concrete and only the operator call can make a functional use.
+    private const string Money = """
+        namespace L;
+        public readonly struct Money
+        {
+            private readonly int _amount;
+            public Money(int amount) { _amount = amount; }
+            public static Money operator +(Money a, Money b) => new(a._amount + b._amount);
+            public static bool operator ==(Money a, Money b) => a._amount == b._amount;
+            public static bool operator !=(Money a, Money b) => a._amount != b._amount;
+            public override bool Equals(object? o) => o is Money m && m == this;
+            public override int GetHashCode() => _amount;
+        }
+        """;
+
     [Theory]
     [InlineData("implement", "class U : L.IPort { public void Send() { } }", "contract", "")]
     [InlineData("abstract member call", "class U { bool M(L.Rule r) => r.Allows(); }", "contract", "")]
@@ -57,6 +73,57 @@ public class CollectorTests
 
         var edge = Assert.Single(Edges(report, "App/U.cs"));
         Assert.Equal("model", edge.Hint);
+    }
+
+    // The accessor the expression invokes decides whether the use reaches an
+    // internal declaration. A public property with an internal setter is
+    // assignable from a friend assembly through IVT, and that assignment is the
+    // internal accessor's use, not the public property's.
+    [Theory]
+    [InlineData("internal setter assigned", "public int Value { get; internal set; }", "void M(L.Guarded g) => g.Value = 1;", "intrusive")]
+    [InlineData("internal setter compound assigned", "public int Value { get; internal set; }", "void M(L.Guarded g) => g.Value += 1;", "intrusive")]
+    [InlineData("internal setter incremented", "public int Value { get; internal set; }", "void M(L.Guarded g) => g.Value++;", "intrusive")]
+    [InlineData("internal getter read", "public int Value { internal get; set; }", "int M(L.Guarded g) => g.Value;", "intrusive")]
+    [InlineData("public setter assigned", "public int Value { get; set; }", "void M(L.Guarded g) => g.Value = 1;", "model")]
+    [InlineData("public accessors read", "public int Value { get; set; }", "int M(L.Guarded g) => g.Value;", "model")]
+    public async Task PropertyAccessorAccessibilityDecidesInternalUse(string name, string property, string body, string hint)
+    {
+        var lib = $$"""
+            [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("App")]
+            namespace L;
+            public class Guarded { {{property}} }
+            """;
+        var report = await Analyze(
+            ("Lib", [("Lib/Lib.cs", lib)], []),
+            ("App", [("App/U.cs", $"class U {{ {body} }}")], ["Lib"]));
+
+        var edge = Assert.Single(Edges(report, "App/U.cs"));
+        Assert.Equal((name, hint), (name, edge.Hint));
+    }
+
+    // An operator expression binds to the user-defined operator method, so the
+    // use is the call a method invocation would be.
+    [Theory]
+    [InlineData("operator +", "L.Money Add(L.Money a, L.Money b) => a + b;")]
+    [InlineData("operator ==", "bool Same(L.Money a, L.Money b) => a == b;")]
+    [InlineData("operator += compound", "void Add(L.Money a, L.Money b) => a += b;")]
+    public async Task UserDefinedOperatorsAreCalls(string name, string body)
+    {
+        var report = await Analyze(
+            ("Lib", [("Lib/Money.cs", Money)], []),
+            ("App", [("App/U.cs", $"class U {{ {body} }}")], ["Lib"]));
+
+        var edge = Assert.Single(Edges(report, "App/U.cs"));
+        Assert.Equal((name, "functional", "call"), (name, edge.Hint, edge.Reference));
+    }
+
+    // A built-in operator binds no method symbol, so it adds no use.
+    [Fact]
+    public async Task BuiltInOperatorsProduceNoEdge()
+    {
+        var report = await Analyze(("App", [("App/U.cs", "class U { int M(int a, int b) => a + b; }")], []));
+
+        Assert.Empty(Edges(report, "App/U.cs"));
     }
 
     [Fact]
