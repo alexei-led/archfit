@@ -51,10 +51,10 @@ rules:
 | `forbidden_dependency` | Finds edges matching both endpoint selectors. Requires one source selector and one target selector. Each side uses a path glob or module selector. A module selector matches only edges between different declared modules. |
 | `forbidden_layer_direction` | Finds dependencies from an inner layer to an outer layer. Uses `layers` order and module `layer` values. Declare at most one global rule of this type. |
 | `forbidden_pattern` | Finds ast-grep patterns in production files. Requires `patterns`; `from` is optional; `to` is invalid. Pattern IDs must be unique across all rules. |
-| `internal_api_access` | Finds access to internal module surfaces. Uses module `public` and `internal` declarations, then extractor hints when no declaration covers the target. |
+| `internal_api_access` | Finds access to internal module surfaces. Uses module `public` and `internal` declarations, then extractor hints when no declaration covers the target: an edge the extractor marks `intrusive` (a C# internal member reached through `InternalsVisibleTo`, a Python underscore import, a Rust private symbol) is a use of an undeclared internal surface and fires the rule. |
 | `public_api_only` | Finds access to internal module surfaces. Uses the same surface resolution as `internal_api_access`. |
 | `cycle` | Finds cycles between dependency graph nodes. Go's file-to-package graph does not produce these cycles. Use `module_cycle` for cycles across declared modules. |
-| `module_cycle` | Finds cycles between declared modules. It ignores unowned and external endpoints. Needs at least two declared modules with dependency evidence. |
+| `module_cycle` | Finds cycles between declared modules. It ignores unowned and external endpoints. Needs at least two declared modules with dependency evidence. One finding covers one strongly-connected component: its members are listed once, sorted, and `matched_by.cycle_modules` names the same set, so an eleven-module cycle is one finding and one agent task, not one per pair. |
 | `module_dependencies` | Enforces module `depends_on` and `visible_to` lists. It takes no `from` or `to`. |
 | `new_cross_module_dependency` | Finds cross-module edges. Baseline status separates known findings from new findings. |
 | `public_api_max` | Finds modules whose exported declaration count exceeds `max`. Requires `analyzers.syntax.enabled: true`. |
