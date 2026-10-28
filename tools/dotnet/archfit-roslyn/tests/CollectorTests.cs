@@ -164,6 +164,24 @@ public class CollectorTests
         Assert.DoesNotContain("'Compile' target", bogus.Reason);
     }
 
+    // A framework that loaded no documents is failed, and it carries its own
+    // framework: the caller names the framework whose evidence is missing
+    // instead of the whole project.
+    [Fact]
+    public async Task AFrameworkThatLoadedNothingIsFailedWithItsOwnReason()
+    {
+        var report = await AnalyzeAttempts(
+            [Failed(MultiProject, "The TargetFramework value 'missing1.0' was not recognized.")],
+            ("Multi(net10.0)", "class A { }"),
+            ("Multi(missing1.0)", ""));
+
+        var missing = report.Projects.Single(p => p.Tfm == "missing1.0");
+        Assert.Equal(Status.Failed, missing.Status);
+        Assert.Contains("The TargetFramework value 'missing1.0' was not recognized", missing.Reason);
+        Assert.Empty(missing.Files);
+        Assert.Equal(Status.Complete, report.Projects.Single(p => p.Tfm == "net10.0").Status);
+    }
+
     // A compilation that does not compile may have dropped edges, so an error
     // other than an unresolved name keeps the framework partial.
     [Fact]
