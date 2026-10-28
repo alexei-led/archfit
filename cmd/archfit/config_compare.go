@@ -83,7 +83,10 @@ func (c *CompareCmd) Run(deps *appDeps) error {
 		Current:   newReportOnlyStages(c.Config, c.Root, curCfg, deps),
 		Candidate: newReportOnlyStages(c.Candidate, c.Root, candCfg, deps),
 	}
-	cmp, err := service.Execute(ctx, application.CompareRequest{CurrentConfig: c.Config, CandidateConfig: c.Candidate, Root: c.Root, EvaluatedAt: evaluatedAt})
+	cmp, err := service.Execute(ctx, application.CompareRequest{
+		CurrentConfig: c.Config, CandidateConfig: c.Candidate, Root: c.Root, EvaluatedAt: evaluatedAt,
+		CurrentPolicy: policyDeclarations(curCfg), CandidatePolicy: policyDeclarations(candCfg),
+	})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -126,6 +129,9 @@ type configCompareDoc struct {
 	Findings   configCompareFindingsDoc `json:"findings"`
 	Coverage   configCompareCoverageDoc `json:"coverage"`
 	Warnings   []configCompareWarnDoc   `json:"warnings"`
+	// PolicyChange classifies what the candidate changes in what blocks and
+	// what is read, from the declarations alone.
+	PolicyChange policyChangeDoc `json:"policy_change"`
 }
 
 // configCompareSideDoc is one configuration's complete measurement.
@@ -195,8 +201,9 @@ func buildConfigCompareDoc(res application.CompareResult) configCompareDoc {
 			CandidateOnlyIDs: res.Findings.CandidateOnlyIDs,
 			BothIDs:          res.Findings.BothIDs,
 		},
-		Coverage: configCompareCoverageDoc{Status: res.Coverage.Status, Details: details},
-		Warnings: warnings,
+		Coverage:     configCompareCoverageDoc{Status: res.Coverage.Status, Details: details},
+		Warnings:     warnings,
+		PolicyChange: policyChangeDocOf(res.PolicyChange),
 	}
 }
 
@@ -272,6 +279,7 @@ func renderConfigCompareText(
 			_, _ = fmt.Fprintf(w, "  - %s: %s\n", warn.Code, warn.Text)
 		}
 	}
+	renderPolicyChangeText(w, policyChangeDocOf(res.PolicyChange))
 	_, _ = fmt.Fprintf(w, "\n%s\n", configCompareFooter)
 }
 
