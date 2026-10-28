@@ -38,7 +38,7 @@ Every analyzer reports one status per tool in `coverage.tools[]`. The status tel
 | --- | --- | --- |
 | `ok` | the tool ran and its evidence was complete | nothing |
 | `absent` | the tool does not apply to this repository's languages, or its project marker is missing | check the marker for that language |
-| `disabled` | the analyzer is opt-in and your config did not enable it | set `analyzers.<name>.enabled: true` when you want that evidence |
+| `disabled` | the analyzer is opt-in and your config did not enable it | set `analyzers.<name>.enabled: true` when you want that evidence (`coverage.enabled: true` for supplied coverage) |
 | `partial` | the tool ran, but its evidence is incomplete | read `reason`: it names the missing input and the command or key that fixes it |
 | `timed out` | the pass exceeded its budget | raise `analyzers.<name>.timeout`, or narrow the scope |
 
