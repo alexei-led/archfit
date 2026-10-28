@@ -196,6 +196,7 @@ Checks config rules against the source tree. It exits `1` when it reports an err
 | `-c, --config <file>` | Config path. |
 | `--root <dir>` | Project root. |
 | `--json` | Emit `archfit.config-lint.v1`. |
+| `--strict` | Report a blocking rule without a `rationale` as an error. Without it, `missing_rationale` is a warning. |
 
 ### `config compare <candidate>`
 

@@ -31,6 +31,7 @@ const (
 	LintPublicMatchesNothing = "public_matches_nothing"
 	LintAmbiguousOwnership   = "ambiguous_ownership"
 	LintUnknownModule        = "unknown_module"
+	LintMissingRationale     = "missing_rationale"
 )
 
 // PolicyDiagnostic is one configuration defect: a code, a severity, the config
@@ -106,6 +107,21 @@ func PolicyWarnings(p policy.PolicySnapshot, f Observations) []string {
 			out = append(out, "rules["+rule.ID+"] is not evaluated: "+selectorMatchesNothing(side, glob)+
 				" — fix the selector or set guard: true")
 		}
+	}
+	return out
+}
+
+// LintRationales warns on every blocking rule that does not say why it
+// exists. The rationale reaches the agent that hits the rule: without it the
+// agent can only fix the symptom. `config lint --strict` makes it an error.
+func LintRationales(rules []policy.RuleDef) []PolicyDiagnostic {
+	var out []PolicyDiagnostic
+	for _, rule := range rules {
+		if !rule.Blocks() || strings.TrimSpace(rule.Rationale) != "" {
+			continue
+		}
+		out = append(out, PolicyDiagnostic{Code: LintMissingRationale, Severity: LintSeverityWarning, Path: "rules[" + rule.ID + "].rationale",
+			Message: "blocking rule has no rationale: say which consequence it prevents, so the agent fixes the cause"})
 	}
 	return out
 }

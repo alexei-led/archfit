@@ -86,87 +86,87 @@ Layers, inner to outer: `model`, `support`, `core`, `application`, `adapter`, `c
 
 All code:
 
-- `layer_inversion`: must not import a layer outer to its own.
-- `module_boundaries`: must keep to the `depends_on` and `visible_to` lists in the module table.
+- `layer_inversion`: must not import a layer outer to its own. Why: An inner layer importing an outer one reverses the dependency direction. A change in the outer layer then breaks the core, and cycles follow.
+- `module_boundaries`: must keep to the `depends_on` and `visible_to` lists in the module table. Why: A module that reaches past its depends_on or visible_to list turns the module map into fiction: the next change to the target breaks an owner who never declared the dependency.
 
 Code in `**`:
 
-- `no_analysispipeline`: must not import `internal/analysispipeline/**`.
+- `no_analysispipeline`: must not import `internal/analysispipeline/**`. Why: The orchestration hub was removed. Reintroducing it puts stage ownership back in one place that decides everything.
 
 Code in `cmd/archfit/**`:
 
-- `cli_no_domain_implementation`: must not import `internal/{assessment/rules,assessment/metrics,assessment/score,assessment/status,assessment/decision,assessment/finding,relationship/classify,relationship/scoring,relationship/coupling}/**`.
+- `cli_no_domain_implementation`: must not import `internal/{assessment/rules,assessment/metrics,assessment/score,assessment/status,assessment/decision,assessment/finding,relationship/classify,relationship/scoring,relationship/coupling}/**`. Why: A rule, metric, scorer, status, decision, finding or classifier in cmd is a second place where the verdict is decided, and it drifts from the assessment.
 
 Code in `internal/**`:
 
-- `internal_no_labelsio`: must not import `internal/labels/labelsio/**`.
-- `no_stage_view`: must not import `internal/view/**`.
+- `internal_no_labelsio`: must not import `internal/labels/labelsio/**`. Why: Label files load in cmd only. Library code that reads them makes the verdict depend on a file nobody passed in, and unapproved labels can reach the gate.
+- `no_stage_view`: must not import `internal/view/**`. Why: A shared stage-view package re-creates the hub every stage depends on, and the capability owners lose their contracts.
 
 Code in `internal/application/**`:
 
-- `application_no_baseline`: must not import `internal/baseline/**`.
-- `application_no_cmd`: must not import `cmd/archfit/**`.
-- `application_no_concrete_adapters`: must not import `internal/{extract,toolrun,output}/**`.
-- `application_no_evidence_acquisition`: must not import `internal/evidence/acquisition/**`.
-- `application_no_factcache`: must not import `internal/factcache/**`.
-- `application_no_labelsio`: must not import `internal/labels/labelsio/**`.
-- `application_no_ownership`: must not import `internal/ownership/**`.
-- `application_no_persistence_adapters`: must not import `internal/history/**`.
+- `application_no_baseline`: must not import `internal/baseline/**`. Why: Baseline file I/O is an adapter. Use-case code that reads it directly hides persistence behind verdict logic.
+- `application_no_cmd`: must not import `cmd/archfit/**`. Why: Application importing cmd inverts the composition root: the library would depend on the CLI that wires it.
+- `application_no_concrete_adapters`: must not import `internal/{extract,toolrun,output}/**`. Why: The application states its needs as ports. A concrete extractor, tool runner or renderer inside it cannot be swapped or faked, and its tests need the real tools.
+- `application_no_evidence_acquisition`: must not import `internal/evidence/acquisition/**`. Why: The application sequences stages through the evidence port. Importing the acquisition service ties the use case to one concrete collector.
+- `application_no_factcache`: must not import `internal/factcache/**`. Why: The fact cache is an adapter. Application code that imports it hides cache effects inside use-case logic, and a stale cache can change a verdict unseen.
+- `application_no_labelsio`: must not import `internal/labels/labelsio/**`. Why: Label files load in cmd only. An application import of the loader lets unreviewed labels reach the gate.
+- `application_no_ownership`: must not import `internal/ownership/**`. Why: Ownership readers are adapters. Application code that imports them ties the use case to CODEOWNERS and git.
+- `application_no_persistence_adapters`: must not import `internal/history/**`. Why: History readers are adapters. Application code that imports git history ties the use case to git and breaks fixtures.
 
 Code in `internal/application/report.go`:
 
-- `projector_no_domain_internals`: must not import `internal/{relationship,evidence}/**`.
+- `projector_no_domain_internals`: must not import `internal/{relationship,evidence}/**`. Why: The projector copies decided values into report DTOs. Reaching into relationship or evidence internals rebuilds a decision inside the projection, where no rule test guards it.
 
 Code in `internal/assessment/**`:
 
-- `assessment_no_coupling_internals`: must not import `internal/relationship/coupling/**`.
-- `assessment_no_extract`: must not import `internal/extract/**`.
-- `assessment_no_raw_graph`: must not import `internal/model/graph/**`.
-- `assessment_no_relationship_internals`: must not import `internal/relationship/{classify,scoring,coupling,facts,labels,analysis}/**`.
-- `assessment_no_report_dtos`: must not import `internal/model/report/**`.
-- `assessment_no_toolrun`: must not import `internal/toolrun`.
+- `assessment_no_coupling_internals`: must not import `internal/relationship/coupling/**`. Why: Assessment that reads coupling internals re-derives relationship meaning. Two owners of classification disagree, and the verdict contradicts the report.
+- `assessment_no_extract`: must not import `internal/extract/**`. Why: Assessment reading extractor output decides on tool-specific facts, so the same rule gives different verdicts per producer.
+- `assessment_no_raw_graph`: must not import `internal/model/graph/**`. Why: A rule that reads the raw dependency graph bypasses relationship classification. A changed extractor shape then breaks rules, and one edge is judged two ways.
+- `assessment_no_relationship_internals`: must not import `internal/relationship/{classify,scoring,coupling,facts,labels,analysis}/**`. Why: Assessment must read the public relationship contract. Depending on a classifier or scorer package freezes its internals, and a refactor there changes verdicts.
+- `assessment_no_report_dtos`: must not import `internal/model/report/**`. Why: Report DTOs are the output contract. Assessment importing them couples verdict logic to the wire format, so a schema change rewrites decisions.
+- `assessment_no_toolrun`: must not import `internal/toolrun`. Why: Assessment that spawns tools makes the verdict depend on the tools installed on the host instead of on the evidence it was given.
 
 Code in `internal/assessment/state/**`:
 
-- `assessment_no_score_decision`: must not import `internal/assessment/score/**`.
+- `assessment_no_score_decision`: must not import `internal/assessment/score/**`. Why: The architecture decision comes from hard gates and finding classes, never from an averaged score. If the state package can reach the scorer, a metric can silently decide the verdict.
 
 Code in `internal/baseline/**`:
 
-- `baseline_no_score`: must not import `internal/assessment/score/**`.
+- `baseline_no_score`: must not import `internal/assessment/score/**`. Why: Persistence bound to the scorer ties stored baselines to a volatile implementation: a scoring change would invalidate accepted state.
 
 Code in `internal/evidence/**`:
 
-- `acquisition_no_assessment_judgment`: must not import `internal/assessment/{status,staleness,finding,rules,metrics,decision,agenttask}/**`.
+- `acquisition_no_assessment_judgment`: must not import `internal/assessment/{status,staleness,finding,rules,metrics,decision,agenttask}/**`. Why: Acquisition observes and never judges. A judgment here creates a second owner of rules and findings, and the verdict then depends on how evidence was collected.
 
 Code in `internal/evidence/*.go`:
 
-- `evidence_no_policy`: must not import `internal/policy/**`.
+- `evidence_no_policy`: must not import `internal/policy/**`. Why: The evidence contract carries facts. A policy import means the tool boundary has started to decide architecture, and evidence stops being comparable across configs.
 
 Code in `internal/model/**`:
 
-- `model_no_baseline`: must not import `internal/baseline`.
+- `model_no_baseline`: must not import `internal/baseline`. Why: Model packages are pure value types. Importing baseline persistence pulls a file format into every consumer of the model.
 
 Code in `internal/output/**`:
 
-- `output_no_decision`: must not import `internal/assessment/decision/**`.
-- `output_no_score`: must not import `internal/assessment/score/**`.
-- `renderer_no_assessment`: must not import `internal/assessment/**`.
-- `renderer_no_evidence`: must not import `internal/evidence/**`.
-- `renderer_no_relationship`: must not import `internal/relationship/**`.
-- `report_adapters_no_application`: must not import `internal/application/**`.
+- `output_no_decision`: must not import `internal/assessment/decision/**`. Why: Renderers display the decision and never make it. A decision inside a renderer gives one run different verdicts by format.
+- `output_no_score`: must not import `internal/assessment/score/**`. Why: Renderers bound to the scorer re-derive scores per format, and a scalar leaks into a decision that is made from hard gates.
+- `renderer_no_assessment`: must not import `internal/assessment/**`. Why: A renderer that reads assessment types can decide for itself. Text, JSON and SARIF would then report different answers for one run.
+- `renderer_no_evidence`: must not import `internal/evidence/**`. Why: A renderer shows what was measured. Reading raw evidence lets a format claim facts the verdict never used.
+- `renderer_no_relationship`: must not import `internal/relationship/**`. Why: A renderer must not reclassify relationships. A second classification path makes the report contradict the verdict.
+- `report_adapters_no_application`: must not import `internal/application/**`. Why: Renderers read report DTOs only. Importing application lets a renderer re-run or reinterpret a result, so two formats can disagree about one run.
 
 Code in `internal/relationship/**`:
 
-- `core_no_extract`: must not import `internal/extract/**`.
-- `core_no_toolrun`: must not import `internal/toolrun`.
-- `relationship_no_assessment`: must not import `internal/assessment/**`.
-- `relationship_no_report_dtos`: must not import `internal/model/report/**`.
+- `core_no_extract`: must not import `internal/extract/**`. Why: Core importing an extractor ties relationship analysis to one language producer; a second producer or a test fixture can no longer replace it.
+- `core_no_toolrun`: must not import `internal/toolrun`. Why: Core that runs processes cannot be tested without the tool and cannot say which evidence is missing, so the verdict starts to depend on the host.
+- `relationship_no_assessment`: must not import `internal/assessment/**`. Why: Relationship analysis importing assessment reverses the data flow into a cycle: classification would start to depend on rules and verdicts.
+- `relationship_no_report_dtos`: must not import `internal/model/report/**`. Why: Report DTOs are the output contract. Relationship analysis importing them couples classification to the wire format, so a schema change rewrites relationship facts.
 
 Code in `internal/{extract,toolrun,history,output,baseline,labels,factcache,ownership,config}/**`:
 
-- `adapter_no_cli`: must not import `cmd/**`.
+- `adapter_no_cli`: must not import `cmd/**`. Why: Adapters importing cmd invert the dependency: an adapter would depend on the command that selects it.
 
 Code in `internal/{policy,relationship,assessment,evidence,model,scope,syntax}/**`:
 
-- `core_no_cmd`: must not import `cmd/**`.
+- `core_no_cmd`: must not import `cmd/**`. Why: Core must not know the CLI. A core import of cmd makes a command impossible to replace and hides domain decisions in the composition root.
 <!-- archfit:end -->
