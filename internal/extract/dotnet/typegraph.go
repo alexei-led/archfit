@@ -512,32 +512,36 @@ func hasFileNamed(dir, name string) bool {
 // per project and per run.
 const reasonDroppedLink = "a symlink target outside the copied tree is not reproduced in the snapshot"
 
-// markDroppedLinks makes the project whose directory most closely holds each
+// markDroppedLinks makes every project whose directory most closely holds a
 // dropped link partial, naming the link: the snapshot does not have the link's
-// target, so the project's file edges are not proven to be the original tree's.
+// target, so the projects' file edges are not proven to be the original tree's.
 // It returns the links no project directory holds, which the row reports
 // instead.
 func markDroppedLinks(projects []TypeGraphProject, dropped []string) []string {
 	var unattributed []string
 	for _, link := range dropped {
-		i := projectHoldingLink(projects, link)
-		if i < 0 {
+		owners := projectsHoldingLink(projects, link)
+		if len(owners) == 0 {
 			unattributed = append(unattributed, link)
 			continue
 		}
-		p := &projects[i]
-		if p.Status == TypeGraphComplete {
-			p.Status = TypeGraphPartial
+		for _, i := range owners {
+			p := &projects[i]
+			if p.Status == TypeGraphComplete {
+				p.Status = TypeGraphPartial
+			}
+			p.Reason = joinReason(reasonDroppedLink+": "+link, p.Reason)
 		}
-		p.Reason = joinReason(reasonDroppedLink+": "+link, p.Reason)
 	}
 	return unattributed
 }
 
-// projectHoldingLink returns the index of the project whose directory most
-// closely holds link, or -1: a link at the root belongs to the root project.
-func projectHoldingLink(projects []TypeGraphProject, link string) int {
-	best, bestLen := -1, -1
+// projectsHoldingLink returns the indexes of the projects whose directory most
+// closely holds link: every project at the deepest directory that holds it, or
+// none. A link at the root belongs to the root-level project(s).
+func projectsHoldingLink(projects []TypeGraphProject, link string) []int {
+	best := make([]int, 0, 2)
+	bestLen := -1
 	for i, p := range projects {
 		dir := filepath.ToSlash(filepath.Dir(p.Path))
 		if dir != "." && link != dir && !strings.HasPrefix(link, dir+"/") {
@@ -547,8 +551,11 @@ func projectHoldingLink(projects []TypeGraphProject, link string) int {
 		if dir != "." {
 			n = len(dir)
 		}
-		if n > bestLen {
-			best, bestLen = i, n
+		switch {
+		case n > bestLen:
+			best, bestLen = append(best[:0], i), n
+		case n == bestLen:
+			best = append(best, i)
 		}
 	}
 	return best
