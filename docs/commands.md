@@ -158,7 +158,7 @@ Reports whether a source file can import each target. A denied target exits `1`.
 | `-n, --dry-run` | Print install commands without running them. Requires `--fix`. |
 | `--format <name>` | `text` (default) or `json`. `json` prints the tool rows and the agent loop as `archfit.doctor.v1`. It cannot be combined with `--fix`. |
 
-After the tool table and the LLM settings, `doctor` reports the agent loop: the harnesses it finds (Claude Code, Codex, git), each archfit hook as `active` or `inactive` (not installed, or, for Codex, not trusted yet), the target branch, the scope `check` would use, and whether a policy file differs from the target. Codex keeps hook trust in `~/.codex/config.toml` (`CODEX_HOME`); `doctor` cannot recompute the trusted hash, so a trusted Codex hook is `active (hash not verified)`. In JSON this is `agent_loop`.
+After the tool table and the LLM settings, `doctor` reports the agent loop: the harnesses it finds (Claude Code, Codex, git), each archfit hook as `active` or `inactive` (not installed; for Claude Code, `disableAllHooks` in `.claude/settings.json` or `.claude/settings.local.json`; for Codex, not trusted yet), the target branch, the scope `check` would use, and whether a policy file differs from the target. Codex keeps hook trust in `~/.codex/config.toml` (`CODEX_HOME`); `doctor` cannot recompute the trusted hash, so a trusted Codex hook is `active (hash not verified)`. In JSON this is `agent_loop`.
 
 ### `config init`
 
@@ -243,18 +243,18 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 | --- | --- |
 | `--harness <name>` | Required: `claude`, `codex`, or `git`. |
 | `--dir <path>` | Repository to install into. Default: `.`. |
-| `-c, --config <file>` | Config path the hooks pass on, relative to the hook working directory. Default: `.archfit.yaml`. |
+| `-c, --config <file>` | Config path the hooks pass on, relative to the repository root. Default: `.archfit.yaml`. |
 
 `install` keeps every other key and hook in the settings file, replaces an earlier `archfit hook run` entry instead of adding a second one, and removes entries of the removed `archfit hook claude`. It never replaces a pre-commit hook that archfit did not write: it exits `3` and names the file. It prints one line per file written. Codex runs the hooks only after you trust them.
 
 ### `hook run <event>`
 
-`archfit hook run <event> [flags]` is what the installed hooks call. Events are `session-start`, `post-tool-use`, `stop`, and `pre-commit`. The first three read the hook event (`session_id`, `cwd`, `stop_hook_active`) on stdin and keep the session in `.archfit-cache/session/<session_id>.json`. `stop` and `pre-commit` stop a change only when `change.status` is `fail`; `post-tool-use` reports an import that `policy can-import` denies, once per session.
+`archfit hook run <event> [flags]` is what the installed hooks call. Events are `session-start`, `post-tool-use`, `stop`, and `pre-commit`. The first three read the hook event (`session_id`, `cwd`, `stop_hook_active`) on stdin and keep the session in `.archfit-cache/session/<session_id>.json`. `stop` and `pre-commit` stop a change only when `change.status` is `fail`; `post-tool-use` reports an import that `policy can-import` denies once while it stays: an import removed and added again is reported again. A pass forgets a stop's block, so the same blockers coming back block again; a `SubagentStop` is blocked once and never suppresses the main agent's stop.
 
 | Flag | Meaning |
 | --- | --- |
 | `--harness <name>` | `claude` (default) or `codex`. Both use the same protocol. |
-| `-c, --config <file>` | Config path, relative to the hook working directory. |
+| `-c, --config <file>` | Config path, relative to the root of the repository that holds the event `cwd`, so an agent that changed directory still finds it. `pre-commit` reads it relative to its working directory, which git sets to the root. |
 
 `pre-commit` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default. `archfit hook claude` and `archfit hook git` are removed: run `archfit hook install` again, or call `hook run stop` and `hook run pre-commit`.
 
