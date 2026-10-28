@@ -1,5 +1,31 @@
 # Release notes
 
+## v3.4.0
+
+### Summary
+
+The agent loop runs without the agent remembering to call it. `archfit hook install` wires Claude Code, Codex, or a git pre-commit hook, and `archfit doctor` says whether the loop is active. A denied import now says where to go instead. Code a change adds that no analysis reads is visible, and can stop the change. `config compare` classifies a policy change as tightening or loosening. The worker instructions shrink to an AGENTS.md block of at most 15 lines and a skill under 1 KB.
+
+### Changes
+
+- `archfit hook install --harness claude|codex|git` merges archfit's hooks into `.claude/settings.json` or `.codex/hooks.json` and keeps every other hook. With `git`, it writes the pre-commit hook (honours `core.hooksPath`; a foreign hook is left alone, exit 3). Codex runs a project hook only after you trust it. Install warns when the hooks would load a different config, or none: `-c` is relative to the repository root, not to `--dir`.
+- `archfit hook run <event>` replaces `hook claude` and `hook git`, which are removed. The installed hooks call it:
+  - `session-start` records the session base and prints a three-line bootstrap.
+  - `post-tool-use` judges the imports the session added with the same rule pass as `policy can-import`. It reports each new denial once and never blocks on its own errors.
+  - `stop` checks against the session base. It blocks once on `change.status: fail` and does not repeat an unchanged result.
+  - `pre-commit` judges the staged content.
+- `archfit doctor` reports the agent loop: harnesses found, each archfit hook `active` or `inactive` (not installed; Claude `disableAllHooks`; Codex not trusted yet), the target branch, the scope `check` would use, and the policy guard. `--format json` prints it as `archfit.doctor.v1`, beside the tool rows.
+- `policy can-import` names where to go instead. A denial carries `instead` (the rule's `alternatives`). Each alternative that names a module or package becomes a candidate, re-judged by the same rule pass: `allowed`, `denied`, or `not_decided`. A permitted placement is not proof that the code does the same thing.
+- Code a change adds that no analysis covers is visible (`map/uncovered_change`, under `--base`): production source that no module owns, that an `exclude:` glob or a language switch removes, or that no analyzer reads. `module_review.change_gate` sets the posture. `warn` (default) adds an `uncovered_change` notice. `fail` makes the change `unknown` with `ask_owner`, the files, and the `paths:` glob to add. A waiver or the baseline does not apply.
+- `config compare --json` adds `policy_change`. `direction` is `none`, `tightening`, `loosening`, or `mixed`. It lists rules removed or loosened, waivers added, allowlists widened, coverage lost, other declarations changed, and the tightening mirrors. It is classified from declarations as they take effect. A difference that cannot be ordered counts as loosening. A non-finite `min_delta` is rejected.
+- `archfit agents-md` emits a block of at most 15 lines: the preflight and final commands, `policy where`, `doctor`, the protected files, and when to ask the owner. The module table and rule list are gone. The `archfit` skill is the worker loop only (body under 1 KB); owner material lives in `docs/agents.md`.
+- The state-report fixtures for the five contract cases ship in `internal/output/agentout/testdata/cases/`, one with coverage `details` and one without.
+- CI runs the architecture drift check in the image built from the change, where the Action measures, instead of on the runner.
+
+### Upgrade
+
+Re-run `archfit hook install` for each harness you use. The old `hook claude` and `hook git` commands are gone. With Codex, trust the new hooks once. Regenerate the AGENTS.md block with `archfit agents-md --write`; `agents-md --check` fails on the old, longer block. Reinstall the skill with `archfit skill install --force`. It no longer ships reference files; delete `references/` from an installed copy. `module_review.change_gate` defaults to `warn`, so no change blocks until you set it to `fail`. A consumer of `config compare --json` gains `policy_change`; the other fields are unchanged.
+
 ## v3.3.0
 
 ### Summary
