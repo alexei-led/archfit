@@ -168,6 +168,8 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if err != nil {
 		return application.Acquired{}, err
 	}
+	// Every extractor has run by now, so the run's cache decisions are known.
+	discloseCacheSkips(s.stderr(), warnLabel, store.Skips())
 	coverage := append(append([]evidence.Coverage(nil), graphResult.Coverages...), ruleCoverage...)
 	crateRootDirs := map[string]string{}
 	// cargo-modules is an opt-in module-graph analyzer, not a file extractor: its
@@ -443,6 +445,17 @@ func (s *Service) loadLabels(bundleDir string, modules map[string]policy.ModuleD
 
 // labelsFileName is the pinned-label file every bundle carries.
 const labelsFileName = ".archfit-labels.yaml"
+
+// discloseCacheSkips prints the fact-cache decisions that cost this run its
+// cache — an input tree too large to key, for instance, leaves every extractor
+// re-running on every invocation. Without this the run only gets slower and
+// nothing says why. Disclosed on stderr, not as a config warning: nothing in
+// the configuration fixes it.
+func discloseCacheSkips(w io.Writer, label string, skips []string) {
+	for _, skip := range skips {
+		_, _ = fmt.Fprintln(w, "warning: "+label+skip)
+	}
+}
 
 func (s *Service) stderr() io.Writer {
 	if s != nil && s.Stderr != nil {
