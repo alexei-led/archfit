@@ -311,6 +311,48 @@ func TestTypeGraph_RecordedFixtureProjects(t *testing.T) {
 	}
 }
 
+// The helper omits the framework-less evaluation of a multi-targeted project.
+// A helper that still reports it as failed names no framework, so when every
+// framework the project evaluates loaded, the entry measured nothing: it must
+// not hold the project. When an evaluated framework has no loaded entry the
+// failure may name it and stays.
+func TestTypeGraph_FrameworklessFailureDoesNotHoldTheLoadedFrameworks(t *testing.T) {
+	withOuterFailure := func(dropNet8 bool) string {
+		return editReport(t, func(ps []map[string]any) []map[string]any {
+			out := make([]map[string]any, 0, len(ps)+1)
+			for _, p := range ps {
+				if p[keyPath] == legacyProj {
+					if dropNet8 && p["tfm"] == "net8.0" {
+						continue
+					}
+					p["status"], p["reason"], p["unresolved_symbols"] = "complete", "", 0
+				}
+				out = append(out, p)
+			}
+			return append(out, map[string]any{
+				keyPath: legacyProj, "tfm": "", "status": "failed", "unresolved_symbols": 0,
+				"reason": "Project does not contain 'Compile' target.; fix the project so `dotnet build` loads it",
+				"files":  []any{},
+			})
+		})
+	}
+
+	e, _, _, _ := fixtureRun(t, autoCfg(), replying(withOuterFailure(false)))
+	legacy := typeProject(t, e.LastTypeGraph(), legacyProj)
+	if legacy.Status != dotnet.TypeGraphComplete || legacy.Reason != "" {
+		t.Errorf("legacy = %+v, want complete: the framework-less evaluation measured nothing", legacy)
+	}
+	if !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, targetNet8}) {
+		t.Errorf("legacy frameworks = %v", legacy.TargetFrameworks)
+	}
+
+	e, _, _, _ = fixtureRun(t, autoCfg(), replying(withOuterFailure(true)))
+	legacy = typeProject(t, e.LastTypeGraph(), legacyProj)
+	if legacy.Status != dotnet.TypeGraphPartial || !strings.Contains(legacy.Reason, targetNet8) {
+		t.Errorf("legacy = %+v, want partial naming %s: its framework did not load", legacy, targetNet8)
+	}
+}
+
 func TestTypeGraph_HelperInvocation(t *testing.T) {
 	_, fake, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
 	if len(fake.helperCalls) != 2 {
