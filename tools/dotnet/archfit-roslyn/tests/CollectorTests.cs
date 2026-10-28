@@ -309,7 +309,8 @@ public class CollectorTests
             ["Lib/AssemblyInfo.cs", "Lib/Gen.cs", "Lib/Lib.cs", "Lib/View.Designer.cs", "Shared/Marker.cs"],
             lib.Files.Select(f => f.Path));
         Assert.Equal([false, true, false, true, false], lib.Files.Select(f => f.Generated));
-        // With the attribute the use binds directly; it is still intrusive.
+        // With the attribute the use resolves through the inaccessible-candidate path
+        // (the PublicKey=00 form grants no real access); the hint is still intrusive.
         Assert.Equal("intrusive", Assert.Single(Edges(report, "App/U.cs")).Hint);
     }
 
