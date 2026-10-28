@@ -1332,7 +1332,11 @@ func TestTypeGraph_SnapshotCleanupFailureIsReported(t *testing.T) {
 		return toolrun.Output{Stdout: []byte(recordedReport(t))}, nil
 	})
 
-	if cov := e.LastTypeGraphCoverage(); !strings.Contains(cov.Reason, "snapshot cleanup failed") || !strings.Contains(cov.Reason, "locked") {
-		t.Errorf("roslyn reason %q does not report the snapshot left behind", cov.Reason)
+	cov := e.LastTypeGraphCoverage()
+	if !strings.Contains(cov.Reason, "snapshot cleanup failed") || !strings.Contains(cov.Reason, "<snapshot>/Domain/obj/locked") {
+		t.Errorf("roslyn reason %q does not report the snapshot left behind with a stable path", cov.Reason)
+	}
+	if strings.Contains(cov.Reason, locked) {
+		t.Errorf("roslyn reason %q carries the random snapshot directory: the same failure would print differently on every run", cov.Reason)
 	}
 }

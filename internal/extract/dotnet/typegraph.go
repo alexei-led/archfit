@@ -334,11 +334,12 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 		if ctx.Err() != nil {
 			return typeGraphResult{}, err
 		}
-		return failedRun("", err.Error(), fallback), nil
+		return failedRun("", "prepare the snapshot: "+snapshotCauseText(err.Error(), root, s.GitRoot, ""), fallback), nil
 	}
 	defer func() {
 		if rerr := os.RemoveAll(snap.dir); rerr != nil && err == nil {
-			res.cov.Reason = joinReason(res.cov.Reason, "snapshot cleanup failed: "+rerr.Error())
+			cause := snapshotCauseText(rerr.Error(), root, s.GitRoot, snap.dir)
+			res.cov.Reason = joinReason(res.cov.Reason, "snapshot cleanup failed: "+cause)
 		}
 	}()
 	var borrowed []ProjectEvaluation
@@ -826,6 +827,26 @@ func joinReason(a, b string) string {
 		return b
 	}
 	return a + "; " + b
+}
+
+// snapshotCauseText makes a snapshot failure reproducible: the analysis root,
+// the repository root and the random snapshot directory become stable labels,
+// while what lies below them stays readable. Every other helper reason goes
+// through snapshotMapper; these two paths fail before or after the mapper
+// exists, so they scrub the same facts here.
+func snapshotCauseText(text, root, gitRoot, snapshotDir string) string {
+	for _, r := range []struct{ path, label string }{
+		{snapshotDir, "<snapshot>"},
+		{gitRoot, "<repo>"},
+		{root, "."},
+	} {
+		if r.path == "" {
+			continue
+		}
+		text = strings.ReplaceAll(text, r.path+"/", r.label+"/")
+		text = strings.ReplaceAll(text, r.path, r.label)
+	}
+	return text
 }
 
 // fileEdgeKey identifies one aggregated file edge.
