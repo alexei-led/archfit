@@ -35,7 +35,9 @@ type Input struct {
 	Gates         map[string]policy.MetricConfig
 	// ModuleReview is the module_review gate mode: fail makes production
 	// source no declared module owns a gate finding.
-	ModuleReview       policy.GateMode
+	ModuleReview policy.GateMode
+	// UncoveredChange is the module_review.change_gate mode; empty means warn.
+	UncoveredChange    policy.GateMode
 	Now                time.Time
 	AdvisoryCandidates []relationship.AdvisoryCandidate
 	StaleLabelKeys     []string
@@ -66,6 +68,12 @@ func evaluate(in Input) Result {
 		} else {
 			adv = append(adv, f)
 		}
+	}
+	// Files the change adds that no analysis covers are advisories: visible,
+	// never a repair. The change_gate: fail posture adds a decision entry in
+	// the state instead (uncoveredChangeUnevaluated), so the change is unknown.
+	if in.UncoveredChange != policy.GateOff {
+		adv = append(adv, uncoveredChange(in.Evidence, in.Policy)...)
 	}
 	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
 	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)

@@ -10,6 +10,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
@@ -204,4 +205,162 @@ func fileOwner(mm policy.ModuleMap, file, language, selector string) (string, bo
 		return "", false
 	}
 	return mm.ModuleForNode(selector, language)
+}
+
+// Reasons a file the change adds is not covered, in matched_by["reason"].
+const (
+	uncoveredUnowned          = "unowned"
+	uncoveredExcluded         = "excluded"
+	uncoveredLanguageDisabled = "language_disabled"
+	uncoveredUnanalysed       = "unanalysed"
+)
+
+// matchedByReason and matchedByCause name an uncovered-change finding's why:
+// the class, and the exclusion or switch behind it.
+const (
+	matchedByReason = "reason"
+	matchedByCause  = "cause"
+)
+
+// UncoveredChangePrefix starts the reason of the decision entry the
+// change_gate: fail posture adds. The agent result reads the same prefix.
+const UncoveredChangePrefix = "uncovered change:"
+
+// uncoveredChange returns one map/uncovered_change finding per production
+// source file the change adds that no analysis covers. A file is covered when
+// a declared module owns it and a dependency producer reads it; it is not when
+// it is unowned, matched by an `exclude:` glob, in a language the config turns
+// off, or in a language no producer analyses here. The finding names which, so
+// an owner-approved exclusion stays distinguishable from a hole.
+//
+// Without a base nothing is "added", so nothing is reported: the files that
+// were always unowned are map/uncovered_path's, not the change's.
+func uncoveredChange(ev RuleEvidence, p policy.AssessmentPolicy) []finding.Finding {
+	if len(ev.AddedFiles) == 0 {
+		return nil
+	}
+	mm := p.Topology.ModuleMap.WithCrateOwners(ev.CrateOwners)
+	added := make([]string, 0, len(ev.AddedFiles))
+	for file := range ev.AddedFiles {
+		added = append(added, file)
+	}
+	sort.Strings(added)
+
+	type verdict struct{ reason, cause string }
+	why := make(map[string]verdict)
+	unownedByDir := make(map[string][]unownedFile)
+	for _, file := range added {
+		if cause, out := ev.UncoveredCauses[file]; out {
+			reason := uncoveredLanguageDisabled
+			if strings.HasPrefix(cause, "exclude:") {
+				reason = uncoveredExcluded
+			}
+			why[file] = verdict{reason, cause}
+			continue
+		}
+		class, walked := ev.FileClasses[file]
+		if !walked {
+			class = ev.AddedClasses[file]
+		}
+		if class != fileclass.Production {
+			continue
+		}
+		if _, unanalysed := ev.UnanalysedFiles[file]; unanalysed {
+			why[file] = verdict{uncoveredUnanalysed, "no dependency producer reads this file"}
+			continue
+		}
+		if _, unread := ev.AddedUnread[file]; unread {
+			why[file] = verdict{uncoveredUnanalysed, "the source walk skips its directory and no analyzer reported it"}
+			continue
+		}
+		language, selector, supported := ruleFileSelector(mm, file, ev.SourceSelectors)
+		if !supported {
+			continue
+		}
+		if _, owned := fileOwner(mm, file, language, selector); owned {
+			continue
+		}
+		if selector == "" && language == languageRust {
+			continue
+		}
+		why[file] = verdict{reason: uncoveredUnowned}
+		dir := path.Dir(file)
+		unownedByDir[dir] = append(unownedByDir[dir], unownedFile{path: file, language: language, selector: selector})
+	}
+
+	out := make([]finding.Finding, 0, len(why))
+	for _, file := range added {
+		v, uncovered := why[file]
+		if !uncovered {
+			continue
+		}
+		matched := map[string]string{matchedBySubject: file, matchedByReason: v.reason}
+		explanation := "no declared module owns it"
+		switch v.reason {
+		case uncoveredUnowned:
+			dir := path.Dir(file)
+			if glob := suggestedPath(dir, unownedByDir[dir]); glob != "" {
+				matched[matchedBySuggestedPath] = glob
+			}
+		case uncoveredExcluded:
+			matched[matchedByCause] = v.cause
+			explanation = "it matches " + v.cause
+		case uncoveredLanguageDisabled:
+			matched[matchedByCause] = v.cause
+			explanation = "its language is switched off (" + v.cause + ")"
+		case uncoveredUnanalysed:
+			matched[matchedByCause] = v.cause
+			explanation = v.cause
+		}
+		out = append(out, finding.Finding{
+			ID:        fingerprint(finding.RuleIDMapUncoveredChange, file),
+			Kind:      finding.KindAdvisory,
+			RuleID:    finding.RuleIDMapUncoveredChange,
+			Status:    finding.StatusNew,
+			Why:       fmt.Sprintf("the change adds production source %q that no analysis covers: %s", file, explanation),
+			MatchedBy: matched,
+			Locations: []relationship.Location{{File: file}},
+		})
+	}
+	return out
+}
+
+// uncoveredChangeUnevaluated is the decision entry the change_gate: fail
+// posture adds when the change adds uncovered code: the change cannot pass
+// because part of it was not read. It lists the files and the glob to add, and
+// ignores waivers and the baseline: an accepted hole is still a hole.
+func uncoveredChangeUnevaluated(findings []finding.Finding) (state.UnevaluatedRule, bool) {
+	if len(findings) == 0 {
+		return state.UnevaluatedRule{}, false
+	}
+	files := make([]string, 0, min(len(findings), maxUncoveredLocations))
+	globs := map[string]struct{}{}
+	reasons := map[string]struct{}{}
+	for i, f := range findings {
+		if i < maxUncoveredLocations {
+			files = append(files, f.MatchedBy[matchedBySubject])
+		}
+		reasons[f.MatchedBy[matchedByReason]] = struct{}{}
+		if glob := f.MatchedBy[matchedBySuggestedPath]; glob != "" {
+			globs[glob] = struct{}{}
+		}
+	}
+	list := strings.Join(files, ", ")
+	if len(findings) > len(files) {
+		list += fmt.Sprintf(" (+%d more)", len(findings)-len(files))
+	}
+	reason := fmt.Sprintf("%s %d added production file(s) are not covered (%s): %s", UncoveredChangePrefix, len(findings), joinSorted(reasons), list)
+	if len(globs) > 0 {
+		reason += "; add to a module's paths: " + joinSorted(globs)
+	}
+	return state.UnevaluatedRule{RuleID: finding.RuleIDMapUncoveredChange, Reason: reason}, true
+}
+
+func joinSorted(set map[string]struct{}) string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return strings.Join(out, ", ")
 }

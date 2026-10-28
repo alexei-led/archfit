@@ -277,9 +277,11 @@ Metric `gate` accepts `off`, `warn`, or `fail`. Unset means `fail`. A blocking m
 
 ## Module review
 
-`module_review` accepts `stale_after` and `gate`. `stale_after` is a Go duration string and has no default. The gate accepts `off`, `warn`, or `fail` and defaults to `warn` when review is configured.
+`module_review` accepts `stale_after`, `gate`, and `change_gate`. `stale_after` is a Go duration string and has no default. The gate accepts `off`, `warn`, or `fail` and defaults to `warn` when review is configured.
 
 The review reports unowned production paths, module path globs that match no graph node, and stale `reviewed_at` dates. Only `map/uncovered_path` can block. The gate applies to unowned production source. The other findings remain diagnostics. `2160h` is 90 days.
+
+`change_gate` covers code a change adds (`map/uncovered_change`, with `--base`): production source that no module owns, that an `exclude:` glob matches, that is in a language the config turns off, or that no analyzer reads. Each finding names which, and the `exclude:` glob or language switch. `warn` (the default) reports a notice on the change. `fail` makes the change `unknown` with the files and the `paths:` glob to add, whatever a waiver or the baseline says. `off` reports nothing. It is separate from `coverage.gate`, which concerns supplied test-coverage files.
 
 ## File classification
 

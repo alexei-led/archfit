@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
@@ -11,6 +12,9 @@ import (
 // Exit code git rev-parse, merge-base and cat-file use for "no such object" or
 // "no common ancestor", as opposed to a failure to run.
 const gitNotFound = 1
+
+// nameOnly asks git diff for paths and nothing else.
+const nameOnly = "--name-only"
 
 // run executes git in dir and returns its output. A failure to start is an
 // error; a non-zero exit code is returned for the caller to judge.
@@ -88,6 +92,61 @@ func IsAncestor(ctx context.Context, dir, a, b string, runner toolrun.Runner) (b
 	default:
 		return false, fmt.Errorf("git merge-base --is-ancestor exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
+}
+
+// Added returns the sorted repository-relative files the working tree holds
+// that base does not: files added since the fork point (committed, staged, or
+// edited in place) and the new names of renamed files, plus untracked files git
+// does not ignore. A file only modified is not listed.
+//
+// Before the first commit (base names no commit) every file in the index and
+// every untracked file is added.
+//
+// The comparison starts at the merge-base of HEAD and base, so a file the base
+// branch deleted after the fork is not counted as added by this branch. Paths
+// are read NUL-separated, so a name git would quote (non-ASCII bytes, quotes,
+// control characters) or that has edge spaces arrives as it is on disk, and
+// untracked files are listed from the repository root whatever dir is.
+// It runs: git merge-base HEAD <base>, git diff --name-only -z
+// --diff-filter=AR -M <fork>, and git ls-files -z --others --exclude-standard
+// --full-name -- :/
+func Added(ctx context.Context, dir, base string, runner toolrun.Runner) ([]string, error) {
+	from := base
+	if fork, found, err := MergeBase(ctx, dir, "HEAD", base, runner); err == nil && found {
+		from = fork
+	}
+	lists := [][]string{
+		{"diff", nameOnly, "-z", "--diff-filter=AR", "-M", from},
+		{"ls-files", "-z", "--others", "--exclude-standard", "--full-name", "--", ":/"},
+	}
+	if _, exists, err := Lookup(ctx, dir, from, runner); err != nil {
+		return nil, err
+	} else if !exists {
+		// Before the first commit there is nothing to diff against: every file
+		// in the index and every untracked file is new.
+		lists[0] = []string{"ls-files", "-z", "--cached", "--full-name", "--", ":/"}
+	}
+	seen := map[string]struct{}{}
+	for _, args := range lists {
+		out, err := run(ctx, dir, runner, args...)
+		if err != nil {
+			return nil, err
+		}
+		if out.ExitCode != 0 {
+			return nil, fmt.Errorf("git %s exited %d: %s", strings.Join(args, " "), out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		}
+		for _, name := range strings.Split(string(out.Stdout), "\x00") {
+			if name != "" {
+				seen[name] = struct{}{}
+			}
+		}
+	}
+	files := make([]string, 0, len(seen))
+	for f := range seen {
+		files = append(files, f)
+	}
+	slices.Sort(files)
+	return files, nil
 }
 
 // FileAt returns the bytes of path at rev, read as a git object. exists is

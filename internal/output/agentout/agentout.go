@@ -81,6 +81,18 @@ const (
 	ReasonScopeUnresolved = "scope_unresolved"
 )
 
+// Change notice kinds: facts about this change that do not block it.
+const (
+	// NoticeUncoveredChange: the change adds production source no analysis
+	// covers. Under module_review.change_gate: fail it makes the change unknown
+	// instead.
+	NoticeUncoveredChange = "uncovered_change"
+)
+
+// uncoveredChangeRuleID is the rule of the advisory findings behind
+// NoticeUncoveredChange (finding.RuleIDMapUncoveredChange).
+const uncoveredChangeRuleID = "map/uncovered_change"
+
 // Repository attention kinds.
 const (
 	// AttentionUnmeasuredRatchet: a metric ratchet cannot be evaluated because
@@ -118,6 +130,12 @@ const deadSelectorPrefix = "selector matches nothing:"
 // path naming a file type no dependency producer analyses: the owner fixes the
 // rule, since no analyzer install makes it evaluable.
 const unsupportedTargetPrefix = "selector names a file type no dependency producer analyses:"
+
+// uncoveredChangePrefix starts the reason of the unevaluated entry that the
+// module_review.change_gate: fail posture adds when the change adds code no
+// analysis covers (evaluation.UncoveredChangePrefix). It is missing evidence
+// the agent cannot restore: the owner decides whether a module covers the file.
+const uncoveredChangePrefix = "uncovered change:"
 
 // unmeasuredRatchetPrefix starts the reason of an unevaluated ratchet entry:
 // the stored reference does not compare, so only the owner can move it.
@@ -196,6 +214,8 @@ type Change struct {
 	ReasonDetail string `json:"reason_detail,omitempty"`
 	// PolicyChange is set with ReasonPolicyChanged.
 	PolicyChange *PolicyChange `json:"policy_change,omitempty"`
+	// Notices are facts about this change that do not block it.
+	Notices []Notice `json:"notices"`
 	// Blockers are the in-scope repairs, grouped by edge and sorted code
 	// changes first, then severity, then lowest finding ID.
 	Blockers []Repair `json:"blockers"`
@@ -208,6 +228,16 @@ type Change struct {
 // Blocks reports whether a hook or a gate must stop the change: the one
 // judgement every consumer of the result shares.
 func (c Change) Blocks() bool { return c.Status == ChangeFail }
+
+// Notice is one non-blocking fact about the change.
+type Notice struct {
+	// Kind is one of the Notice* constants.
+	Kind string `json:"kind"`
+	// Count is how many findings the notice stands for.
+	Count int `json:"count"`
+	// Reason says what the owner can do about it, in one sentence.
+	Reason string `json:"reason"`
+}
 
 // Repository is the repository-level state the change did not cause.
 type Repository struct {
@@ -324,7 +354,7 @@ func Build(d report.Document) Result {
 			existing = append(existing, rep)
 		}
 	}
-	change := Change{Blockers: nonNil(blockers), EvidenceGaps: evidenceGaps(d.CoverageGaps), UnevaluatedRules: []UnevaluatedRule{}}
+	change := Change{Blockers: nonNil(blockers), EvidenceGaps: evidenceGaps(d.CoverageGaps), UnevaluatedRules: []UnevaluatedRule{}, Notices: []Notice{}}
 	attention := []Attention{}
 	for _, rule := range unevaluatedRules(s.Decision.UnevaluatedRequiredRules) {
 		switch {
@@ -344,6 +374,9 @@ func Build(d report.Document) Result {
 	}
 	var next NextAction
 	change.Status, next = judge(change)
+	if notice, ok := uncoveredChangeNotice(s.Findings, change.UnevaluatedRules); ok {
+		change.Notices = append(change.Notices, notice)
+	}
 	if len(existing) > 0 {
 		var rules []string
 		count := 0
@@ -373,6 +406,30 @@ func Build(d report.Document) Result {
 	}
 	res.Summary = summarize(res, len(existing))
 	return res
+}
+
+// uncoveredChangeNotice reports files the change adds that no analysis covers.
+// Under change_gate: fail the same files are already an unevaluated rule, which
+// makes the change unknown, so the notice would only repeat it.
+func uncoveredChangeNotice(findings []report.Finding, unevaluated []UnevaluatedRule) (Notice, bool) {
+	for _, rule := range unevaluated {
+		if strings.HasPrefix(rule.Reason, uncoveredChangePrefix) {
+			return Notice{}, false
+		}
+	}
+	n := 0
+	for _, f := range findings {
+		if f.RuleID == uncoveredChangeRuleID && f.Status != report.FindingStatusFixed {
+			n++
+		}
+	}
+	if n == 0 {
+		return Notice{}, false
+	}
+	return Notice{
+		Kind: NoticeUncoveredChange, Count: n,
+		Reason: fmt.Sprintf("the change adds %d production file(s) no analysis covers: a violation in them would not be seen; set module_review.change_gate: fail to make this change unknown", n),
+	}, true
 }
 
 // applyScope folds the scope resolution into the change. A changed policy makes
@@ -429,6 +486,11 @@ func judge(c Change) (ChangeStatus, NextAction) {
 	for _, gap := range c.EvidenceGaps {
 		if gap.Gate == string(report.GateFail) {
 			return ChangeUnknown, ActionRestoreEvidence
+		}
+	}
+	for _, rule := range c.UnevaluatedRules {
+		if strings.HasPrefix(rule.Reason, uncoveredChangePrefix) {
+			return ChangeUnknown, ActionAskOwner
 		}
 	}
 	if len(c.UnevaluatedRules) > 0 {

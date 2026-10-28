@@ -79,6 +79,8 @@ type GatePolicy struct {
 	Metrics      map[string]MetricConfig
 	Coupling     CouplingGate
 	ModuleReview GateMode
+	// UncoveredChange is the module_review.change_gate posture; empty means warn.
+	UncoveredChange GateMode
 }
 
 // PolicySnapshot is the per-run policy contract. Ownership and deploy units are
