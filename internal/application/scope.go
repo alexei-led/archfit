@@ -36,6 +36,9 @@ type ScopeGit interface {
 	IsAncestor(ctx context.Context, a, b string) (bool, error)
 	// FileAt reads a repository-relative path at rev as a git object.
 	FileAt(ctx context.Context, rev, path string) (content []byte, exists bool, err error)
+	// TargetBranchAt reads target_branch from the config at path as it is at
+	// rev. It is empty when the file or the key is absent.
+	TargetBranchAt(ctx context.Context, rev, path string) (string, error)
 }
 
 // PolicyFile is one protected policy file as the working tree holds it.
@@ -51,7 +54,8 @@ type PolicyFile struct {
 type ScopeRequest struct {
 	// Target is --target.
 	Target string
-	// ConfigTarget is target_branch from the config.
+	// ConfigTarget is target_branch from the working-tree config. It is used
+	// only when the repository has no trusted default branch.
 	ConfigTarget string
 	// Base is --base: empty or BaseAuto to resolve it, any other value is a ref.
 	Base string
@@ -201,27 +205,62 @@ func withPolicyGuard(ctx context.Context, g ScopeGit, req ScopeRequest, res Scop
 	return res, nil
 }
 
-// resolveTarget applies the target precedence: --target, target_branch,
-// origin/HEAD, then main or master when exactly one exists. A name that was
-// given and resolves to nothing is an answer ("why"), never a reason to try
-// the next source.
+// resolveTarget decides which branch the change lands on, in this order:
+// --target, then the trusted default branch (origin/HEAD, else main or master
+// when exactly one exists) together with the target_branch its config
+// declares, and only without a trusted default the target_branch of the
+// working-tree config.
+//
+// The working-tree config is the branch's own copy. When a trusted default
+// exists its config decides, so a branch cannot point the guard at itself by
+// editing target_branch; the edit shows up as a policy change instead. A repo
+// with no trusted default has nothing to check the edit against, so there the
+// working-tree value is used and the tamper check does not hold.
+//
+// A name that was given and resolves to nothing is an answer ("why"), never a
+// reason to try the next source.
 func resolveTarget(ctx context.Context, g ScopeGit, req ScopeRequest) (ref, sha, why string, err error) {
-	for _, named := range []struct{ name, source string }{
-		{req.Target, "--target"},
-		{req.ConfigTarget, "target_branch in the config"},
-	} {
-		if named.name == "" {
-			continue
+	if req.Target != "" {
+		return namedTarget(ctx, g, req.Target, "--target")
+	}
+	defRef, defSHA, defWhy, err := trustedDefault(ctx, g)
+	if err != nil {
+		return "", "", "", err
+	}
+	if defWhy != "" {
+		if req.ConfigTarget != "" {
+			return namedTarget(ctx, g, req.ConfigTarget, "target_branch in the config")
 		}
-		ref, sha, found, err := lookupBranch(ctx, g, named.name)
+		return "", "", defWhy, nil
+	}
+	if len(req.Policy) > 0 {
+		declared, err := g.TargetBranchAt(ctx, defSHA, req.Policy[0].Path)
 		if err != nil {
 			return "", "", "", err
 		}
-		if !found {
-			return "", "", fmt.Sprintf("target %q (%s) names no commit here: fetch it or fix the name", named.name, named.source), nil
+		if declared != "" {
+			return namedTarget(ctx, g, declared, "target_branch in the config at "+defRef)
 		}
-		return ref, sha, "", nil
 	}
+	return defRef, defSHA, "", nil
+}
+
+// namedTarget resolves a branch name someone gave, saying where it came from
+// when it names nothing.
+func namedTarget(ctx context.Context, g ScopeGit, name, source string) (ref, sha, why string, err error) {
+	ref, sha, found, err := lookupBranch(ctx, g, name)
+	if err != nil {
+		return "", "", "", err
+	}
+	if !found {
+		return "", "", fmt.Sprintf("target %q (%s) names no commit here: fetch it or fix the name", name, source), nil
+	}
+	return ref, sha, "", nil
+}
+
+// trustedDefault is the branch changes land on when nobody names one: the
+// remote's default, else main or master when exactly one exists.
+func trustedDefault(ctx context.Context, g ScopeGit) (ref, sha, why string, err error) {
 	if head, ok := g.OriginHead(ctx); ok {
 		sha, found, err := g.Lookup(ctx, head)
 		if err != nil {
@@ -255,7 +294,7 @@ func resolveTarget(ctx context.Context, g ScopeGit, req ScopeRequest) (ref, sha,
 // same name may be stale.
 func lookupBranch(ctx context.Context, g ScopeGit, name string) (ref, sha string, found bool, err error) {
 	candidates := []string{name}
-	if !strings.Contains(name, "/") {
+	if !strings.HasPrefix(name, remoteName+"/") && !strings.HasPrefix(name, "refs/") {
 		candidates = []string{remoteName + "/" + name, name}
 	}
 	for _, candidate := range candidates {

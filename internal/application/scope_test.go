@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
@@ -44,6 +45,14 @@ func (f fakeGit) MergeBase(_ context.Context, a, b string) (string, bool, error)
 		}
 	}
 	return "", false, nil
+}
+func (f fakeGit) TargetBranchAt(_ context.Context, rev, path string) (string, error) {
+	for _, line := range strings.Split(f.files[rev][path], "\n") {
+		if name, ok := strings.CutPrefix(line, "target_branch: "); ok {
+			return strings.TrimSpace(name), nil
+		}
+	}
+	return "", nil
 }
 func (f fakeGit) FileAt(_ context.Context, rev, path string) ([]byte, bool, error) {
 	content, ok := f.files[rev][path]
@@ -87,9 +96,9 @@ func TestResolveScope(t *testing.T) {
 			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originMain, TargetSHA: "m2", Base: "m1"}},
 		{name: "--target wins and a bare name prefers the remote", git: branchy, req: application.ScopeRequest{Target: "dev", ConfigTarget: branchMain, Policy: same},
 			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originDev, TargetSHA: "m2", Base: "m1"}},
-		{name: "target_branch beats origin/HEAD", git: func() fakeGit { g := branchy(); g.originHead = originDev; return g },
+		{name: "a working-tree target_branch does not beat origin/HEAD", git: func() fakeGit { g := branchy(); g.originHead = originDev; return g },
 			req:  application.ScopeRequest{ConfigTarget: branchMain, Policy: same},
-			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originMain, TargetSHA: "m2", Base: "m1"}},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originDev, TargetSHA: "m2", Base: "m1"}},
 		{name: "origin/HEAD names the target", git: func() fakeGit { g := branchy(); g.originHead = originDev; return g }, req: application.ScopeRequest{Policy: same},
 			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originDev, TargetSHA: "m2", Base: "m1"}},
 		{name: "on the target branch the whole tree is the change", git: func() fakeGit { g := branchy(); g.refs[headRef] = "m2"; return g }, req: application.ScopeRequest{Policy: same},
@@ -122,6 +131,41 @@ func TestResolveScope(t *testing.T) {
 		{name: "a changed policy file is reported", git: branchy,
 			req:  application.ScopeRequest{Policy: []application.PolicyFile{{Path: policyPath, Content: []byte("rules: b"), Exists: true}}},
 			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originMain, TargetSHA: "m2", Base: "m1", PolicyChanged: []string{policyPath}}},
+		{name: "the trusted default's config names the target; the branch's own target_branch is ignored",
+			git: func() fakeGit {
+				g := branchy()
+				g.refs["origin/release/2.0"] = "m2"
+				g.files["m2"] = map[string]string{policyPath: "target_branch: release/2.0\nrules: a"}
+				return g
+			},
+			req:  application.ScopeRequest{ConfigTarget: "feature", Policy: []application.PolicyFile{{Path: policyPath, Content: []byte("target_branch: feature\nrules: a"), Exists: true}}},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: "origin/release/2.0", TargetSHA: "m2", Base: "m1", PolicyChanged: []string{policyPath}}},
+		{name: "a branch that points target_branch at itself still meets the default branch's policy",
+			git: func() fakeGit {
+				g := branchy()
+				g.refs["origin/feature"] = "f2"
+				g.files["f2"] = map[string]string{policyPath: "target_branch: feature"}
+				return g
+			},
+			req:  application.ScopeRequest{ConfigTarget: "feature", Policy: []application.PolicyFile{{Path: policyPath, Content: []byte("target_branch: feature"), Exists: true}}},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originMain, TargetSHA: "m2", Base: "m1", PolicyChanged: []string{policyPath}}},
+		{name: "without a trusted default the working-tree target_branch is used",
+			git: func() fakeGit {
+				g := branchy()
+				g.refs = map[string]string{"HEAD": "f2", "origin/develop": "m2"}
+				return g
+			},
+			req:  application.ScopeRequest{ConfigTarget: "develop", Policy: same},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: "origin/develop", TargetSHA: "m2", Base: "m1"}},
+		{name: "a slash-named target is looked up on the remote first",
+			git: func() fakeGit {
+				g := branchy()
+				g.refs["origin/release/2.0"] = "m2"
+				g.refs["release/2.0"] = "m1"
+				return g
+			},
+			req:  application.ScopeRequest{Target: "release/2.0", Policy: same},
+			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: "origin/release/2.0", TargetSHA: "m2", Base: "m1"}},
 		{name: "a policy the target moved after the fork is stale, not changed", git: func() fakeGit { g := branchy(); g.files["m2"] = map[string]string{policyPath: "rules: c"}; return g },
 			req:  application.ScopeRequest{Policy: same},
 			want: application.ScopeResolution{Mode: report.ScopeModeMergeBase, Target: originMain, TargetSHA: "m2", Base: "m1", PolicyStale: []string{policyPath}}},

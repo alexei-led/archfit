@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/goccy/go-yaml"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
+
 	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
@@ -40,6 +44,21 @@ func (g scopeGit) IsAncestor(ctx context.Context, a, b string) (bool, error) {
 	return historygit.IsAncestor(ctx, g.dir, a, b, g.runner)
 }
 
+func (g scopeGit) TargetBranchAt(ctx context.Context, rev, path string) (string, error) {
+	content, exists, err := g.FileAt(ctx, rev, path)
+	if err != nil || !exists {
+		return "", err
+	}
+	var doc struct {
+		TargetBranch string `yaml:"target_branch"`
+	}
+	// A config that does not parse names no target; the config load reports it.
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return "", nil //nolint:nilerr // the config load reports an unreadable config
+	}
+	return strings.TrimSpace(doc.TargetBranch), nil
+}
+
 func (g scopeGit) FileAt(ctx context.Context, rev, path string) ([]byte, bool, error) {
 	return historygit.FileAt(ctx, g.dir, rev, path, g.runner)
 }
@@ -50,18 +69,31 @@ func policyFileNames(configPath string) []string {
 	return []string{filepath.Base(configPath), defaultBaselinePath, defaultLabelsPath}
 }
 
-// policyFiles lists the bundle's policy files as the working tree holds them,
-// with paths relative to the repository root. A bundle outside the repository
-// has no target tip to compare with: it yields no files.
-func policyFiles(ctx context.Context, g scopeGit, configPath string) ([]application.PolicyFile, error) {
-	if !g.InRepository(ctx) {
-		return nil, nil
+// sameRepository reports whether two directories are in one git repository.
+func sameRepository(ctx context.Context, runner toolrun.Runner, a, b string) bool {
+	rootA, errA := historygit.RepoRoot(ctx, a, runner)
+	rootB, errB := historygit.RepoRoot(ctx, b, runner)
+	if errA != nil || errB != nil {
+		return false
 	}
-	gitRoot, err := historygit.RepoRoot(ctx, g.dir, g.runner)
+	realA, errA := filepath.EvalSymlinks(rootA)
+	realB, errB := filepath.EvalSymlinks(rootB)
+	return errA == nil && errB == nil && realA == realB
+}
+
+// policyFiles lists the bundle's policy files as the working tree holds them,
+// with paths relative to the repository root. dir is the analysis root, whose
+// repository the target is read from. A bundle in another repository, or in
+// none, has no target tip to compare with: it yields no files.
+func policyFiles(ctx context.Context, runner toolrun.Runner, dir, configPath string) ([]application.PolicyFile, error) {
+	bundleDir, err := filepath.Abs(filepath.Dir(configPath))
 	if err != nil {
 		return nil, err
 	}
-	bundleDir, err := filepath.Abs(filepath.Dir(configPath))
+	if !sameRepository(ctx, runner, dir, bundleDir) {
+		return nil, nil
+	}
+	gitRoot, err := historygit.RepoRoot(ctx, bundleDir, runner)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +123,7 @@ func resolveCheckScope(ctx context.Context, deps *appDeps, req *scanRequest, tar
 		dir = filepath.Dir(req.configPath)
 	}
 	git := scopeGit{runner: deps.Runner, dir: dir}
-	files, err := policyFiles(ctx, scopeGit{runner: deps.Runner, dir: filepath.Dir(req.configPath)}, req.configPath)
+	files, err := policyFiles(ctx, deps.Runner, dir, req.configPath)
 	if err != nil {
 		return application.ScopeResolution{}, fmt.Errorf("read the policy files: %w", err)
 	}
@@ -109,11 +141,15 @@ func resolveCheckScope(ctx context.Context, deps *appDeps, req *scanRequest, tar
 // directory, read as git objects, and returns it. ok is false when the target
 // has no config to judge with.
 func materializePolicyAtTarget(ctx context.Context, deps *appDeps, req scanRequest, res application.ScopeResolution) (dir string, ok bool, err error) {
-	files, err := policyFiles(ctx, scopeGit{runner: deps.Runner, dir: filepath.Dir(req.configPath)}, req.configPath)
+	rootDir := req.root
+	if rootDir == "" {
+		rootDir = filepath.Dir(req.configPath)
+	}
+	files, err := policyFiles(ctx, deps.Runner, rootDir, req.configPath)
 	if err != nil || len(files) == 0 {
 		return "", false, err
 	}
-	g := scopeGit{runner: deps.Runner, dir: filepath.Dir(req.configPath)}
+	g := scopeGit{runner: deps.Runner, dir: rootDir}
 	tmp, err := os.MkdirTemp("", "archfit-target-policy-")
 	if err != nil {
 		return "", false, err

@@ -176,6 +176,8 @@ type PolicyChange struct {
 type PolicyView struct {
 	Status   ChangeStatus `json:"status"`
 	Blockers []Repair     `json:"blockers"`
+	// BlockersOmitted counts the blockers the size budget moved out.
+	BlockersOmitted int `json:"blockers_omitted,omitempty"`
 }
 
 // Change is the part of the result that decides whether the change lands.

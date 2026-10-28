@@ -205,6 +205,9 @@
             "$ref": "#/$defs/Repair"
           },
           "type": "array"
+        },
+        "blockers_omitted": {
+          "type": "integer"
         }
       },
       "additionalProperties": false,

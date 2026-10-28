@@ -9,8 +9,10 @@ import (
 
 // ruleNoBImpl is the rule hookRuleSection declares.
 const (
-	ruleNoBImpl = "no_b_impl"
-	changePass  = "pass"
+	ruleNoBImpl         = "no_b_impl"
+	changePass          = "pass"
+	reasonPolicyChanged = "policy_changed_on_branch"
+	branchMain          = "main"
 )
 
 // scopeAgent is the part of the agent result the scope tests read.
@@ -44,7 +46,7 @@ type scopeAgent struct {
 func scopeRepo(t *testing.T, cfg, a string) string {
 	t.Helper()
 	dir := hookRepo(t, cfg, a, "")
-	gitFixture(t, dir, "branch", "-M", "main")
+	gitFixture(t, dir, "branch", "-M", branchMain)
 	gitFixture(t, dir, "checkout", "-q", "-b", "feature")
 	return dir
 }
@@ -78,7 +80,7 @@ func TestCheckScope_PolicyDeletedOnBranch(t *testing.T) {
 	commitFiles(t, dir, map[string]string{filePkgAA: hookViolatingA, defaultConfigPath: lintCleanModules})
 
 	code, res, stderr := checkAgent(t, dir)
-	if res.Change.Status != claimTypeUnknown || res.Change.Reason != "policy_changed_on_branch" || res.NextAction != "ask_owner" {
+	if res.Change.Status != claimTypeUnknown || res.Change.Reason != reasonPolicyChanged || res.NextAction != "ask_owner" {
 		t.Fatalf("change %q reason %q next_action %q, want unknown policy_changed_on_branch ask_owner\nstderr: %s", res.Change.Status, res.Change.Reason, res.NextAction, stderr)
 	}
 	if len(res.Change.Blockers) != 0 {
@@ -91,7 +93,7 @@ func TestCheckScope_PolicyDeletedOnBranch(t *testing.T) {
 	if pc.UnderTargetPolicy.Status != hardGateFail || len(pc.UnderTargetPolicy.Blockers) != 1 || pc.UnderTargetPolicy.Blockers[0].RuleIDs[0] != ruleNoBImpl {
 		t.Errorf("under the target's policy = %+v, want fail with the no_b_impl violation", pc.UnderTargetPolicy)
 	}
-	if res.Scope == nil || res.Scope.Mode != "merge_base" || res.Scope.Target != "main" {
+	if res.Scope == nil || res.Scope.Mode != "merge_base" || res.Scope.Target != branchMain {
 		t.Errorf("scope = %+v, want merge_base against main", res.Scope)
 	}
 	if code != 2 {
@@ -154,7 +156,7 @@ func TestCheckScope_OwnerAddsARule(t *testing.T) {
 			if err := json.Unmarshal([]byte(stdout), &res); err != nil {
 				t.Fatalf("decode: %v\n%s\n%s", err, stdout, stderr)
 			}
-			if res.Change.Status != claimTypeUnknown || res.Change.Reason != "policy_changed_on_branch" {
+			if res.Change.Status != claimTypeUnknown || res.Change.Reason != reasonPolicyChanged {
 				t.Fatalf("change %q reason %q, want unknown policy_changed_on_branch\nstderr: %s", res.Change.Status, res.Change.Reason, stderr)
 			}
 			if len(res.Change.Blockers) != tc.wantBlockers {
@@ -206,7 +208,7 @@ func TestCheckScope_UnresolvedTarget(t *testing.T) {
 func TestCheckScope_OnTheTargetBranch(t *testing.T) {
 	t.Parallel()
 	dir := scopeRepo(t, lintCleanModules+hookRuleSection, hookViolatingA)
-	gitFixture(t, dir, "checkout", "-q", "main")
+	gitFixture(t, dir, "checkout", "-q", branchMain)
 
 	code, res, stderr := checkAgent(t, dir)
 	if res.Change.Status != hardGateFail || res.Scope == nil || res.Scope.Mode != "target_branch" || res.Scope.Base != "" {
@@ -224,8 +226,8 @@ func TestCheckScope_ExplicitBase(t *testing.T) {
 	dir := scopeRepo(t, lintCleanModules+hookRuleSection, hookCleanA)
 	commitFiles(t, dir, map[string]string{filePkgAA: hookViolatingA})
 
-	_, res, stderr := checkAgent(t, dir, "--base", "main")
-	if res.Change.Status != hardGateFail || res.Scope == nil || res.Scope.Mode != "explicit" || res.Scope.Base != "main" {
+	_, res, stderr := checkAgent(t, dir, "--base", branchMain)
+	if res.Change.Status != hardGateFail || res.Scope == nil || res.Scope.Mode != "explicit" || res.Scope.Base != branchMain {
 		t.Fatalf("change %q scope %+v, want fail in explicit mode against main\nstderr: %s", res.Change.Status, res.Scope, stderr)
 	}
 }
@@ -237,7 +239,7 @@ func TestCheckScope_TargetMovedThePolicy(t *testing.T) {
 	t.Parallel()
 	dir := scopeRepo(t, lintCleanModules+hookRuleSection, hookCleanA)
 	commitFiles(t, dir, map[string]string{filePkgAA: hookCleanA + "\n// work on the branch\n"})
-	gitFixture(t, dir, "checkout", "-q", "main")
+	gitFixture(t, dir, "checkout", "-q", branchMain)
 	commitFiles(t, dir, map[string]string{defaultConfigPath: lintCleanModules + hookRuleSection + "\n# tightened on main\n"})
 	gitFixture(t, dir, "checkout", "-q", "feature")
 
@@ -250,5 +252,54 @@ func TestCheckScope_TargetMovedThePolicy(t *testing.T) {
 	}
 	if code != 2 {
 		t.Errorf("exit = %d, want 2", code)
+	}
+}
+
+// TestCheckScope_BranchCannotRetargetItself: a branch that drops a rule and
+// points target_branch at itself must not neutralise the guard. The default
+// branch's config decides the target, so the edit is a policy change.
+func TestCheckScope_BranchCannotRetargetItself(t *testing.T) {
+	t.Parallel()
+	dir := scopeRepo(t, lintCleanModules+hookRuleSection, hookCleanA)
+	commitFiles(t, dir, map[string]string{
+		filePkgAA:         hookViolatingA,
+		defaultConfigPath: "target_branch: feature\n" + lintCleanModules,
+	})
+	gitFixture(t, dir, "update-ref", "refs/remotes/origin/feature", "HEAD")
+
+	_, res, stderr := checkAgent(t, dir)
+	if res.Change.Status != claimTypeUnknown || res.Change.Reason != reasonPolicyChanged {
+		t.Fatalf("change %q reason %q, want unknown policy_changed_on_branch\nstderr: %s", res.Change.Status, res.Change.Reason, stderr)
+	}
+	if res.Scope == nil || res.Scope.Target != branchMain {
+		t.Errorf("scope = %+v, want the default branch main as the target, not the branch itself", res.Scope)
+	}
+	if pc := res.Change.PolicyChange; pc == nil || pc.UnderTargetPolicy.Status != hardGateFail {
+		t.Errorf("under the target's policy = %+v, want the violation to fail there", pc)
+	}
+}
+
+// TestCheckScope_PolicyInAnotherRepository: a config that lives in its own
+// repository is not compared with the analysed repository's tip, even when that
+// repository tracks a file of the same name.
+func TestCheckScope_PolicyInAnotherRepository(t *testing.T) {
+	t.Parallel()
+	root := scopeRepo(t, lintCleanModules, hookCleanA)
+	commitFiles(t, root, map[string]string{filePkgAA: hookViolatingA})
+	policyRepo := t.TempDir()
+	writeFixtureFile(t, policyRepo, defaultConfigPath, lintCleanModules+hookRuleSection)
+	gitInitFixtureRepo(t, policyRepo)
+	gitCommitFixture(t, policyRepo)
+
+	code, stdout, stderr := runArchfit(t, cmdCheck, "-c", filepath.Join(policyRepo, defaultConfigPath), "--root", root, "--format=agent")
+	var res scopeAgent
+	if err := json.Unmarshal([]byte(stdout), &res); err != nil {
+		t.Fatalf("decode: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	if res.Change.Reason != "" || res.Change.PolicyChange != nil {
+		t.Fatalf("reason %q policy_change %+v: an external policy repository must not be compared with the root's tip", res.Change.Reason, res.Change.PolicyChange)
+	}
+	if res.Change.Status != hardGateFail || code != 1 {
+		t.Errorf("change %q exit %d, want fail 1: the violation is the branch's", res.Change.Status, code)
 	}
 }

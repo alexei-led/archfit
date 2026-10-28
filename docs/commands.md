@@ -88,7 +88,7 @@ archfit check --format agent --base HEAD -c .archfit.yaml
 | Flag | Meaning |
 | --- | --- |
 | `--base <ref>` | What the change is compared with. Default `auto`: the merge-base of `HEAD` and the target branch. On the target branch itself the whole tree is the change. Any other value is a git ref. |
-| `--target <branch>` | The branch the change lands on. Default: `target_branch` from the config, then `origin/HEAD`, then `main` or `master` when exactly one exists. A bare name is looked up on `origin` first. |
+| `--target <branch>` | The branch the change lands on. Default: the repository's default branch (`origin/HEAD`, else `main` or `master` when exactly one exists), or the `target_branch` that branch's own `.archfit.yaml` declares. A name is looked up on `origin` first. |
 
 `check` never falls back to `HEAD` when it cannot resolve the target or the base. It reports `change.status: unknown` with `reason: scope_unresolved` and exits `2`. Fetch the history (`fetch-depth: 0`) or pass `--target` or `--base`.
 
