@@ -10,13 +10,23 @@ import (
 // langDotNet is the graph language tag of the .NET extractor.
 const langDotNet = "dotnet"
 
+// hintIntrusive is the strength hint every extractor emits for a use of a
+// member its declaring code keeps out of the surface.
+const hintIntrusive = "intrusive"
+
 // hintEdge is a dependency edge carrying an extractor strength hint, the shape
 // the classifier hands the internal-access rules.
 func hintEdge(from, to, kind, strength string) relationship.Edge {
+	return hintEdgeIn(langDotNet, from, to, kind, strength)
+}
+
+// hintEdgeIn is hintEdge tagged with the language of the extractor that
+// produced the hint.
+func hintEdgeIn(lang, from, to, kind, strength string) relationship.Edge {
 	return relationship.Edge{
 		FromID: from, ToID: to,
 		FromPath: relationship.NodePath(from), ToPath: relationship.NodePath(to),
-		Kind: kind, Language: langDotNet, Strength: relationship.Strength(strength),
+		Kind: kind, Language: lang, Strength: relationship.Strength(strength),
 	}
 }
 
@@ -44,17 +54,32 @@ func TestInternalAccessRules_FallBackToTheExtractorHint(t *testing.T) {
 	}{
 		{
 			name: "intrusive hint with no declared surface fires",
-			edge: hintEdge(importer, undeclaredTarget, edgeKindImports, "intrusive"),
-			want: 1, wantSig: "intrusive",
+			edge: hintEdge(importer, undeclaredTarget, edgeKindImports, hintIntrusive),
+			want: 1, wantSig: hintIntrusive,
+		},
+		{
+			name: "python underscore hint fires without any declaration",
+			edge: hintEdgeIn(langPython, "module:myapp.api.views", "module:myapp.util", edgeKindImports, hintIntrusive),
+			want: 1, wantSig: hintIntrusive,
+		},
+		{
+			name: "rust private-symbol SCIP hint fires without any declaration",
+			edge: hintEdgeIn(langRust, "package:shop::shipping", "package:shop::other", edgeKindDependsOn, hintIntrusive),
+			want: 1, wantSig: hintIntrusive,
+		},
+		{
+			name: "go type-info hint fires without any declaration",
+			edge: hintEdgeIn(langGo, "file:internal/shipping/api/api.go", undeclaredTarget, edgeKindImports, hintIntrusive),
+			want: 1, wantSig: hintIntrusive,
 		},
 		{
 			name: "declared internal glob fires and names itself",
-			edge: hintEdge(importer, nodeBillingDomPk, edgeKindImports, "intrusive"),
+			edge: hintEdge(importer, nodeBillingDomPk, edgeKindImports, hintIntrusive),
 			want: 1, wantGlob: globBillingAll,
 		},
 		{
 			name: "declared public glob wins over the intrusive hint",
-			edge: hintEdge(importer, publicTarget, edgeKindImports, "intrusive"),
+			edge: hintEdge(importer, publicTarget, edgeKindImports, hintIntrusive),
 			want: 0,
 		},
 		{
@@ -79,15 +104,15 @@ func TestInternalAccessRules_FallBackToTheExtractorHint(t *testing.T) {
 		{
 			name: "a plain go import into an undeclared target does not fire",
 			edge: relationship.Edge{
-				FromID: "file:internal/shipping/api/api.go", ToID: "package:internal/shipping/domain",
-				FromPath: "internal/shipping/api/api.go", ToPath: "internal/shipping/domain",
+				FromID: "file:internal/shipping/api/api.go", ToID: undeclaredTarget,
+				FromPath: "internal/shipping/api/api.go", ToPath: relationship.NodePath(undeclaredTarget),
 				Kind: edgeKindImports, Language: langGo,
 			},
 			want: 0,
 		},
 		{
 			name: "an intrusive hint inside one module does not fire",
-			edge: hintEdge("file:internal/billing/api/api.go", "file:internal/billing/domain/store.cs", edgeKindImports, "intrusive"),
+			edge: hintEdge("file:internal/billing/api/api.go", "file:internal/billing/domain/store.cs", edgeKindImports, hintIntrusive),
 			want: 0,
 		},
 	}
