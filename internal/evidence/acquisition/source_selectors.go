@@ -446,6 +446,7 @@ type addedFileFacts struct {
 func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bool, exclusions []string, cov CoverageOptions, cfg syntax.FileClassConfig) addedFileFacts {
 	disabled := disabledLanguages(cov)
 	loaded := loadedFiles(f)
+	testdataExcluded := slices.Contains(exclusions, testdataExclusion)
 	out := addedFileFacts{}
 	for _, file := range added {
 		language, _, supported := (policy.ModuleMap{}).RuleSelectorForFile(file)
@@ -455,9 +456,11 @@ func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bo
 				continue
 			}
 			class = syntax.ClassifyFile(language, file, nil, cfg)
-			if inTestdata(file) {
+			if inTestdata(file) && testdataExcluded {
 				// A testdata tree holds fixtures, not production code; the path
-				// classifier knows only the language's own test-file names.
+				// classifier knows only the language's own test-file names. A
+				// config that re-includes testdata ("!testdata") put it in scope,
+				// so then the classifier and the exclusions decide.
 				class = fileclass.Test
 			}
 			if out.classes == nil {
@@ -515,6 +518,10 @@ func loadedFiles(f evidencecontract.Facts) map[string]struct{} {
 	}
 	return out
 }
+
+// testdataExclusion is the default exclusion of fixture trees
+// (scope.DefaultExclusions); a config's "!testdata" removes it.
+const testdataExclusion = "**/testdata/**"
 
 // inTestdata reports whether a slash path has a testdata directory segment.
 func inTestdata(file string) bool {

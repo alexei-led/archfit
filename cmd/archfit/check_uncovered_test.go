@@ -202,3 +202,17 @@ func TestCheckUncoveredChangeFalsePositives(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckUncoveredChangeReincludedTestdata: a config that re-includes
+// testdata puts it in scope, so unowned code added there is not waved through
+// as a fixture.
+func TestCheckUncoveredChangeReincludedTestdata(t *testing.T) {
+	t.Parallel()
+	dir := scopeRepo(t, "exclude:\n  - \"!testdata\"\n"+lintCleanModules+hookRuleSection+failChange, hookCleanA)
+	commitFiles(t, dir, map[string]string{"pkg/testdata/x.go": movedImport})
+	code, res := checkUncovered(t, dir)
+	if res.Change.Status != claimTypeUnknown || code != 2 || len(res.Change.UnevaluatedRules) != 1 ||
+		!strings.Contains(res.Change.UnevaluatedRules[0].Reason, "pkg/testdata/x.go") {
+		t.Fatalf("change %q exit %d unevaluated %+v, want unknown naming pkg/testdata/x.go", res.Change.Status, code, res.Change.UnevaluatedRules)
+	}
+}
