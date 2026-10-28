@@ -24,6 +24,18 @@ The configuration schema remains version `2`. Review the full [configuration ref
 
 The `config init` and `config update` commands no longer generate `public:` globs for Go or TypeScript modules.
 
+## Rebuild an older configuration
+
+Archfit does not migrate a configuration schema older than version 2, or one that still sets the retired `coupling.gate.min_band` or `max_drop`. Do not change only the `version` field. Back up the file, draft a current one, and copy the reviewed policy into the draft:
+
+```sh
+cp .archfit.yaml .archfit.yaml.bak
+archfit config init --root . --output /tmp/.archfit.yaml
+archfit analyze --config /tmp/.archfit.yaml --root .
+```
+
+Review the output before you replace the active file.
+
 ## Re-anchor a baseline
 
 The v3 engine cannot compare a v2 baseline. Re-anchor it to carry forward matching accepted findings:

@@ -78,7 +78,7 @@ func TestCheckUncoveredChange(t *testing.T) {
 			strict := scopeRepo(t, tc.cfg+failChange, hookCleanA)
 			commitFiles(t, strict, tc.files)
 			code, res := checkUncovered(t, strict)
-			if res.Change.Status != claimTypeUnknown || res.NextAction != "ask_owner" || code != 2 {
+			if res.Change.Status != claimTypeUnknown || res.NextAction != nextAskOwner || code != 2 {
 				t.Fatalf("change_gate: fail: change %q next_action %q exit %d, want unknown ask_owner 2", res.Change.Status, res.NextAction, code)
 			}
 			if len(res.Change.UnevaluatedRules) != 1 || res.Change.UnevaluatedRules[0].RuleID != "map/uncovered_change" {

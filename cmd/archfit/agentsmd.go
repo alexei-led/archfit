@@ -160,7 +160,9 @@ func renderAgentsBlock(config string) string {
 	fmt.Fprintf(&b, "- Module owner, layer, allowlists and rules for a path: `archfit policy where%s <path>`.\n", flag)
 	b.WriteString("- At session start, or when unsure the hooks run: `archfit doctor`.\n")
 	fmt.Fprintf(&b, "- Never edit %s, `.archfit-baseline.json` or `.archfit-labels.yaml`, and never add a waiver, to make a check pass.\n", code(config))
-	b.WriteString("- `ask_owner` or `change.status: unknown`: stop, report the rule and what you need, and ask the architecture owner.\n")
+	// restore_evidence comes first: most unknown results are evidence the
+	// worker can restore, and only what it cannot clear goes to the owner.
+	b.WriteString("- `restore_evidence`: do what the result names (install the analyzer, merge or rebase the target), then run again. `ask_owner`, or an `unknown` you cannot clear: stop, report the rule and what you need, and ask the architecture owner.\n")
 	b.WriteString(agentsMDEnd + "\n")
 	return b.String()
 }

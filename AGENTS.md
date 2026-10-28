@@ -54,5 +54,5 @@ This project is indexed by GitNexus as **archfit** (11188 symbols, 36851 relatio
 - Module owner, layer, allowlists and rules for a path: `archfit policy where <path>`.
 - At session start, or when unsure the hooks run: `archfit doctor`.
 - Never edit `.archfit.yaml`, `.archfit-baseline.json` or `.archfit-labels.yaml`, and never add a waiver, to make a check pass.
-- `ask_owner` or `change.status: unknown`: stop, report the rule and what you need, and ask the architecture owner.
+- `restore_evidence`: do what the result names (install the analyzer, merge or rebase the target), then run again. `ask_owner`, or an `unknown` you cannot clear: stop, report the rule and what you need, and ask the architecture owner.
 <!-- archfit:end -->

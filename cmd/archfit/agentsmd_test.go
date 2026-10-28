@@ -156,6 +156,12 @@ func TestAgentsMDNamesANonDefaultConfig(t *testing.T) {
 	}
 }
 
+// next_action values the agent results and the block name.
+const (
+	nextAskOwner        = "ask_owner"
+	nextRestoreEvidence = "restore_evidence"
+)
+
 // TestAgentsMDStaysSmall pins the size budget and the loop it carries: a
 // worker reads the block in every session, so it holds the commands and the
 // escalation path and nothing a lookup can answer.
@@ -167,7 +173,7 @@ func TestAgentsMDStaysSmall(t *testing.T) {
 	}
 	for _, want := range []string{
 		"archfit policy can-import <file> <target>", "archfit check --format agent", "archfit policy where <path>",
-		"archfit doctor", ".archfit-baseline.json", ".archfit-labels.yaml", "ask_owner",
+		"archfit doctor", ".archfit-baseline.json", ".archfit-labels.yaml", nextRestoreEvidence, nextAskOwner,
 	} {
 		if !strings.Contains(block, want) {
 			t.Errorf("block is missing %q:\n%s", want, block)

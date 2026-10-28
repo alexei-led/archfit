@@ -17,7 +17,8 @@ metadata:
    `archfit policy where <path>` gives a path's module, allowlists and rules.
 2. Before you finish: `archfit check --format agent`; follow `next_action`:
    - `repair`: fix the source within the goal and constraints; run `validate`.
-   - `restore_evidence`: install or fix the named analyzer; run again.
+   - `restore_evidence`: install or fix the named analyzer, or merge or
+     rebase the target when the result says so; run again.
    - `ask_owner`, or `unknown` you cannot fix: stop; report the rule, the
      file and what you need. Do not retry the same change.
    - `none`: done, even with exit 2. `repository.attention` is not yours.
