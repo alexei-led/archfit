@@ -202,7 +202,7 @@
           {
             "confidence": "high",
             "coverage": {
-              "basis": "discovered dependencies resolved inside the declared module map",
+              "basis": "discovered first-party dependencies resolved inside the declared module map",
               "observed": 1,
               "total": 1
             },

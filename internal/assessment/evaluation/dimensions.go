@@ -863,9 +863,11 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observation
 }
 
 // structureDimension reports dependency structure and direction. Its
-// denominator is how much of the discovered edge set resolved to a declared
-// module: an edge whose target is outside the module map was discovered but
-// says nothing about this repository's internal structure.
+// denominator is how much of the discovered FIRST-PARTY edge set resolved to a
+// declared module: an edge to a library was discovered but can never resolve
+// inside the module map, so counting it would cap the ratio by construction in
+// any library-using repository. First-party edges no module owns stay in the
+// denominator — those are the gap the module map itself leaves.
 func structureDimension(diag *result.Result, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionStructure, state.OwnerStructure)
 	primaries := primaryDependencyInventory(diag, f)
@@ -899,7 +901,8 @@ func structureDimension(diag *result.Result, f Observations) state.Dimension {
 	}
 
 	external := ce.DependencyEdges - ce.InternalDependencies
-	dim.Coverage = state.Coverage{Basis: "discovered dependencies resolved inside the declared module map", Observed: ce.InternalDependencies, Total: ce.DependencyEdges}
+	firstPartyEdges := ce.InternalDependencies + ce.UnmappedFirstPartyDependencies
+	dim.Coverage = state.Coverage{Basis: "discovered first-party dependencies resolved inside the declared module map", Observed: ce.InternalDependencies, Total: firstPartyEdges}
 	dim.Metrics = []state.MetricValue{
 		count("internal_edges", ce.InternalDependencies, provRelationship),
 		count("library_edges", ce.LibraryDependencies, provRelationship),

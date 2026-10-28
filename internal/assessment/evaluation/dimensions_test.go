@@ -764,14 +764,45 @@ func TestCompletedEmptyDependencyInventoryIsMeasured(t *testing.T) {
 
 // TestStructureUsesTheDependencyOnlyDenominator pins STR-3: containment edges,
 // clone-only pairs, and declared external systems stay out of the structure
-// claim even though coupling's existing summary still carries them.
+// claim even though coupling's existing summary still carries them. Library
+// edges stay out of the denominator too — the bitwarden shape (19,749 internal
+// + 8 unmapped first-party + 11,653 library) read as 19,749/31,410, a ratio no
+// library-using repository can pass — while first-party edges no module owns
+// stay in, because those are the gap the module map leaves.
 func TestStructureUsesTheDependencyOnlyDenominator(t *testing.T) {
 	t.Parallel()
+	tests := []struct {
+		name         string
+		internal     int
+		unmapped     int
+		library      int
+		wantObserved int
+		wantTotal    int
+	}{
+		{name: "mixed", internal: 15, unmapped: 2, library: 3, wantObserved: 15, wantTotal: 17},
+		{name: "library-heavy", internal: 15, unmapped: 2, library: 11653, wantObserved: 15, wantTotal: 17},
+		{name: "no library edges", internal: 15, unmapped: 2, library: 0, wantObserved: 15, wantTotal: 17},
+		{name: "every first-party edge unmapped", internal: 0, unmapped: 5, library: 0, wantObserved: 0, wantTotal: 5},
+		{name: "only library edges", internal: 0, unmapped: 0, library: 20, wantObserved: 0, wantTotal: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag, in := dimensionsFixture()
+			diag.ClassifiedEdges.InternalDependencies = tc.internal
+			diag.ClassifiedEdges.UnmappedFirstPartyDependencies = tc.unmapped
+			diag.ClassifiedEdges.LibraryDependencies = tc.library
+			diag.ClassifiedEdges.DependencyEdges = tc.internal + tc.unmapped + tc.library
+			dim := evaluation.BuildDimensions(diag, in, nil).Structure
+			if dim.Coverage.Observed != tc.wantObserved || dim.Coverage.Total != tc.wantTotal {
+				t.Errorf("structure coverage = %d/%d, want first-party %d/%d",
+					dim.Coverage.Observed, dim.Coverage.Total, tc.wantObserved, tc.wantTotal)
+			}
+		})
+	}
+
 	diag, in := dimensionsFixture()
 	dim := evaluation.BuildDimensions(diag, in, nil).Structure
-	if dim.Coverage.Observed != 15 || dim.Coverage.Total != 20 {
-		t.Errorf("structure coverage = %d/%d, want dependency-only 15/20", dim.Coverage.Observed, dim.Coverage.Total)
-	}
 	for name, want := range map[string]float64{
 		"internal_edges": 15, "library_edges": 3, "unmapped_first_party_edges": 2,
 		"same_module_edges": 3, "connected_modules": 2,
