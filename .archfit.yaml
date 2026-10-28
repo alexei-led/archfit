@@ -368,7 +368,7 @@ rules:
     gate: fail
     rationale: "Core that runs processes cannot be tested without the tool and cannot say which evidence is missing, so the verdict starts to depend on the host."
     alternatives:
-      - "Consume evidence through internal/evidence/ports; run the tool in an adapter under internal/extract"
+      - "Consume the neutral evidence contract in internal/model/evidence and internal/evidence; the tool run belongs in an extractor adapter, not in this package"
   # Subtree form, not a per-package enumeration: a new assessment package is
   # covered the day it is created, never the day someone remembers to list it.
   - id: assessment_no_toolrun
@@ -378,7 +378,7 @@ rules:
     gate: fail
     rationale: "Assessment that spawns tools makes the verdict depend on the tools installed on the host instead of on the evidence it was given."
     alternatives:
-      - "Consume evidence through internal/evidence/ports; run the tool in an adapter under internal/extract"
+      - "Consume the neutral evidence contract in internal/model/evidence and internal/evidence; the tool run belongs in an extractor adapter, not in this package"
   - id: core_no_extract
     type: forbidden_dependency
     from: internal/relationship/**
@@ -386,7 +386,7 @@ rules:
     gate: fail
     rationale: "Core importing an extractor ties relationship analysis to one language producer; a second producer or a test fixture can no longer replace it."
     alternatives:
-      - "Consume evidence through internal/evidence/ports"
+      - "Consume the neutral evidence contract in internal/model/evidence and internal/evidence"
   - id: assessment_no_extract
     type: forbidden_dependency
     from: internal/assessment/**
@@ -394,7 +394,7 @@ rules:
     gate: fail
     rationale: "Assessment reading extractor output decides on tool-specific facts, so the same rule gives different verdicts per producer."
     alternatives:
-      - "Consume evidence through internal/evidence/ports"
+      - "Consume the neutral evidence contract in internal/model/evidence and internal/evidence"
   - id: internal_no_labelsio
     type: forbidden_dependency
     from: internal/**

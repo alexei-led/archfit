@@ -3,9 +3,12 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-yaml"
 )
 
 func TestConfigLint_ExitCodesAndOutput(t *testing.T) {
@@ -191,4 +194,80 @@ func TestSelfConfigBlockingRulesHaveRationales(t *testing.T) {
 	if code != 0 || strings.Contains(stdout, "missing_rationale") {
 		t.Fatalf("config lint --strict on the self config: exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
+}
+
+// TestSelfConfigAlternativesAreImportable: an alternative that names a package
+// is advice an agent follows with an import. Judge each one by the policy that
+// judges the import: the package must not be denied from where the rule's own
+// importers live.
+func TestSelfConfigAlternativesAreImportable(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..")
+	raw, err := os.ReadFile(filepath.Join(root, defaultConfigPath)) //nolint:gosec // the repository policy file, a constant path
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Rules []struct {
+			ID           string   `yaml:"id"`
+			From         string   `yaml:"from"`
+			Alternatives []string `yaml:"alternatives"`
+		} `yaml:"rules"`
+	}
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	// Only internal packages are import destinations. cmd/archfit appears in
+	// advice as the place to wire an adapter; a file reference is where to add
+	// code, not what to import.
+	pkgRef := regexp.MustCompile(`internal/[a-z0-9_/]+(\.go)?`)
+	checked := 0
+	for _, rule := range cfg.Rules {
+		importer := firstGoFileUnder(t, root, rule.From)
+		for _, alt := range rule.Alternatives {
+			for _, target := range pkgRef.FindAllString(alt, -1) {
+				if strings.HasSuffix(target, ".go") || importer == "" {
+					continue
+				}
+				target = strings.TrimSuffix(target, "/")
+				checked++
+				code, stdout, stderr := runArchfit(t, "policy", "can-import", importer, target, "-c", filepath.Join(root, defaultConfigPath))
+				if code == 1 || strings.Contains(stdout, `"answer":"denied"`) {
+					t.Errorf("rule %s: alternative %q sends %s to %s, which the policy denies (exit %d)\n%s%s", rule.ID, alt, importer, target, code, stdout, stderr)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no alternative named a package: the check is vacuous")
+	}
+}
+
+// firstGoFileUnder returns a production Go file under the literal directory a
+// rule selector starts with, relative to root, or "" when none is found.
+func firstGoFileUnder(t *testing.T, root, selector string) string {
+	t.Helper()
+	dir := selector
+	if open := strings.IndexAny(dir, "{*"); open >= 0 {
+		dir = dir[:open]
+	}
+	if strings.HasSuffix(selector, ".go") && !strings.ContainsAny(selector, "{*") {
+		return selector
+	}
+	dir = strings.TrimSuffix(dir, "/")
+	if dir == "" {
+		return ""
+	}
+	var found string
+	_ = filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			rel, _ := filepath.Rel(root, path)
+			found = filepath.ToSlash(rel)
+		}
+		return nil
+	})
+	return found
 }
