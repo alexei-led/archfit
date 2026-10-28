@@ -320,3 +320,110 @@ func TestHookRunSessionStartBeforeTheFirstCommit(t *testing.T) {
 		t.Errorf("session = %+v, want an empty base and a start time", sess)
 	}
 }
+
+// TestHookRunReportsAViolationThatComesBack: a violation the agent removes and
+// then adds again is reported again after the edit and blocks the stop again.
+// Neither the reported denial nor the stop's block outlives the fix.
+func TestHookRunReportsAViolationThatComesBack(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, fixed string }{
+		{name: "the import edited out", fixed: hookCleanA + "\n// fixed\n"},
+		{name: "the file reverted to the base", fixed: hookCleanA},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
+			run := func(event, hookRunEvent string, extra map[string]any) (int, string, string) {
+				return runHook(t, harnessEvent(t, event, dir, extra), "run", hookRunEvent)
+			}
+			if code, _, stderr := run(harnessEventSessionStart, hookEventSessionStart, nil); code != 0 {
+				t.Fatalf("session start: exit %d\n%s", code, stderr)
+			}
+			for round, content := range []string{hookViolatingA, tc.fixed, hookViolatingA} {
+				writeFixtureFile(t, dir, filePkgAA, content)
+				wantCode, want := 2, ruleNoBImpl
+				if content == tc.fixed {
+					wantCode, want = 0, ""
+				}
+				code, stdout, stderr := run(harnessEventPostToolUse, hookEventPostToolUse, nil)
+				hookOutputCase{wantCode: wantCode, wantStderr: want}.check(t, code, stdout, stderr)
+				code, stdout, stderr = run(harnessEventStop, hookEventStop, map[string]any{stopHookActive: false})
+				if code != wantCode || stdout != "" || !strings.Contains(stderr, want) {
+					t.Fatalf("round %d stop: exit %d, want %d\nstdout %q\nstderr %q", round, code, wantCode, stdout, stderr)
+				}
+			}
+		})
+	}
+}
+
+// TestHookRunSubagentStopDoesNotUseUpTheBlock: a subagent shares the session;
+// its stop is blocked once but must not suppress the main agent's stop.
+func TestHookRunSubagentStopDoesNotUseUpTheBlock(t *testing.T) {
+	t.Parallel()
+	dir := hookRepo(t, hookTraceCfg, hookCleanA, hookViolatingA)
+	for _, event := range []string{harnessEventSubagentStop, harnessEventStop} {
+		code, stdout, stderr := runHook(t, harnessEvent(t, event, dir, map[string]any{stopHookActive: false}), "run", hookEventStop)
+		if code != 2 || stdout != "" || !strings.Contains(stderr, ruleNoBImpl) {
+			t.Fatalf("%s: exit %d, want 2 with the blocker\nstdout %q\nstderr %q", event, code, stdout, stderr)
+		}
+	}
+}
+
+// TestHookRunFromASubdirectory: the agent's shell changed directory, so the
+// event cwd is below the repository root; the config is still found there.
+func TestHookRunFromASubdirectory(t *testing.T) {
+	t.Parallel()
+	dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
+	sub := filepath.Join(dir, "pkg", "a")
+	writeFixtureFile(t, dir, filePkgAA, hookViolatingA)
+	code, stdout, stderr := runHook(t, harnessEvent(t, harnessEventPostToolUse, sub, nil), "run", hookEventPostToolUse)
+	hookOutputCase{wantCode: 2, wantStderr: ruleNoBImpl}.check(t, code, stdout, stderr)
+	code, stdout, stderr = runHook(t, harnessEvent(t, harnessEventStop, sub, nil), "run", hookEventStop)
+	if code != 2 || stdout != "" || !strings.Contains(stderr, ruleNoBImpl) {
+		t.Fatalf("stop: exit %d, want 2 with the blocker\nstdout %q\nstderr %q", code, stdout, stderr)
+	}
+}
+
+// TestHookRunPostToolUseWaitsForARelativeImportTarget: an import of a file the
+// agent has not written yet cannot be judged; once the file exists, the next
+// tool call judges it, though the importer did not change.
+func TestHookRunPostToolUseWaitsForARelativeImportTarget(t *testing.T) {
+	t.Parallel()
+	const (
+		app     = "web/app.ts"
+		private = "web/private.ts"
+		cfg     = `version: 2
+modules:
+  web:
+    paths: ["web/**"]
+    owner: team-web
+    subdomain: core
+    volatility: low
+rules:
+  - id: no_private
+    type: forbidden_dependency
+    gate: fail
+    from: web/app.ts
+    to: web/private.ts
+`
+	)
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		tsPackageJSON: `{"name": "fixture", "private": true}`, app: "export const a = 1;\n", defaultConfigPath: cfg,
+	} {
+		writeFixtureFile(t, dir, name, content)
+	}
+	gitInitFixtureRepo(t, dir)
+	gitCommitFixture(t, dir)
+	postToolUse := func() (int, string, string) {
+		return runHook(t, harnessEvent(t, harnessEventPostToolUse, dir, nil), "run", hookEventPostToolUse)
+	}
+
+	writeFixtureFile(t, dir, app, "import { p } from './private';\nexport const a = p;\n")
+	code, stdout, stderr := postToolUse()
+	hookOutputCase{}.check(t, code, stdout, stderr)
+
+	writeFixtureFile(t, dir, private, "export const p = 1;\n")
+	code, stdout, stderr = postToolUse()
+	hookOutputCase{wantCode: 2, wantStderr: app + " imports " + private + ", which rule no_private denies"}.check(t, code, stdout, stderr)
+}

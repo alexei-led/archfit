@@ -36,8 +36,10 @@ var tsResolveSuffixes = []string{"", ".ts", ".tsx", ".js", ".jsx", "/index.ts", 
 // introduce, spelled as policy can-import takes a target: a Go import path, a
 // repository-relative TypeScript or JavaScript file, a dotted Python module.
 // added holds the 1-based added line numbers; nil means every line is new.
-// isFile reports whether a repository-relative path is a file.
-func importTargets(lang, file string, content []byte, added map[int]bool, isFile func(string) bool) []string {
+// isFile reports whether a repository-relative path is a file. unresolved is
+// true when a relative TypeScript or JavaScript import names a file inside the
+// repository that does not exist yet: it can be judged once it does.
+func importTargets(lang, file string, content []byte, added map[int]bool, isFile func(string) bool) (targets []string, unresolved bool) {
 	isAdded := func(n int) bool { return added == nil || added[n] }
 	lines := strings.Split(string(content), "\n")
 	var out []string
@@ -50,8 +52,12 @@ func importTargets(lang, file string, content []byte, added map[int]bool, isFile
 				continue
 			}
 			for _, m := range tsImport.FindAllStringSubmatch(line, -1) {
-				if target, ok := resolveRelative(file, m[1], isFile); ok {
+				target, inRepo, ok := resolveRelative(file, m[1], isFile)
+				switch {
+				case ok:
 					out = append(out, target)
+				case inRepo:
+					unresolved = true
 				}
 			}
 		}
@@ -63,7 +69,7 @@ func importTargets(lang, file string, content []byte, added map[int]bool, isFile
 		}
 	}
 	slices.Sort(out)
-	return slices.Compact(out)
+	return slices.Compact(out), unresolved
 }
 
 // goImports reads the import paths on added lines, inside an import block or
@@ -118,20 +124,21 @@ func pyImports(line string) []string {
 }
 
 // resolveRelative resolves a relative specifier against the importing file,
-// as a bundler would for the common extensions. A bare specifier, one that
-// leaves the repository, or one that names no file is not resolved.
-func resolveRelative(file, spec string, isFile func(string) bool) (string, bool) {
+// as a bundler would for the common extensions. A bare specifier or one that
+// leaves the repository is not resolved and not inRepo; one inside the
+// repository that names no file yet is inRepo but not resolved.
+func resolveRelative(file, spec string, isFile func(string) bool) (target string, inRepo, ok bool) {
 	if !strings.HasPrefix(spec, "./") && !strings.HasPrefix(spec, "../") {
-		return "", false
+		return "", false, false
 	}
 	base := path.Join(path.Dir(file), spec)
 	if base == ".." || strings.HasPrefix(base, "../") {
-		return "", false
+		return "", false, false
 	}
 	for _, suffix := range tsResolveSuffixes {
 		if candidate := base + suffix; isFile(candidate) {
-			return candidate, true
+			return candidate, true, true
 		}
 	}
-	return "", false
+	return "", true, false
 }

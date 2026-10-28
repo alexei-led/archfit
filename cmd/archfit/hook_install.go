@@ -73,7 +73,7 @@ func harnessConfigFile(harness string) string {
 type HookInstallCmd struct {
 	Harness string `required:"" enum:"claude,codex,git" help:"Harness to install for: claude (.claude/settings.json), codex (.codex/hooks.json), or git (the pre-commit hook)."`
 	Dir     string `help:"Repository to install into." default:"." type:"path"`
-	Config  string `short:"c" help:"Config path the installed hooks pass to archfit hook run, relative to the hook's working directory." default:".archfit.yaml"`
+	Config  string `short:"c" help:"Config path the installed hooks pass to archfit hook run, relative to the repository root." default:".archfit.yaml"`
 }
 
 func (*HookInstallCmd) Help() string {

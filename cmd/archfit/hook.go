@@ -61,7 +61,7 @@ type HookCmd struct {
 type HookRunCmd struct {
 	Event   string `arg:"" enum:"session-start,post-tool-use,stop,pre-commit" help:"Hook event: session-start, post-tool-use, stop, or pre-commit."`
 	Harness string `help:"Agent harness that runs the hook: claude or codex. Both read the same protocol." enum:"claude,codex" default:"claude"`
-	Config  string `short:"c" help:"Path to config file, relative to the hook's working directory." default:".archfit.yaml"`
+	Config  string `short:"c" help:"Path to config file, relative to the repository root (the git toplevel of the event cwd)." default:".archfit.yaml"`
 	// IndexFile is the index git commit hands its hooks: git commit -a and git
 	// commit <path> stage into a temporary one. Hidden: git sets it, a user does not.
 	IndexFile string `name:"index-file" env:"GIT_INDEX_FILE" hidden:"" help:"pre-commit: index to judge (default: GIT_INDEX_FILE, else the repository's index)."`
@@ -72,8 +72,10 @@ func (*HookRunCmd) Help() string {
 without an installer can call them from its own hook system.
 
 session-start, post-tool-use, and stop read the hook event on stdin
-(session_id, cwd, stop_hook_active) and resolve --config against the event cwd.
-They remember the session in .archfit-cache/session/<session_id>.json.
+(session_id, cwd, hook_event_name, stop_hook_active) and resolve --config
+against the root of the repository that holds the event cwd, so an agent that
+changed directory still finds it. They remember the session in
+.archfit-cache/session/<session_id>.json.
 
   session-start   records HEAD as the session base and prints the bootstrap
                   the harness adds to the agent's context
@@ -93,6 +95,10 @@ They remember the session in .archfit-cache/session/<session_id>.json.
                                                 exit 0 with a systemMessage
                     unknown                     exit 0 with a systemMessage
                     pass                        exit 0, silent
+                  A pass or an unknown change forgets the block, so the same
+                  blockers coming back block again. A SubagentStop is blocked
+                  once through stop_hook_active and never suppresses the main
+                  agent's stop.
                   Nothing changed since the session base (HEAD is the base and
                   the tree is clean, .archfit-cache aside) skips the run.
   pre-commit      judges what the commit will contain: the staged content (the
@@ -109,10 +115,14 @@ hook that runs: its base is HEAD. Malformed stdin exits 1. An archfit error in
 post-tool-use or stop fails open: exit 0 with a systemMessage.`
 }
 
+// harnessSubagentStop is the hook_event_name Claude Code gives a subagent's stop.
+const harnessSubagentStop = "SubagentStop"
+
 // hookEvent is the part of a Claude Code or Codex hook event the hooks read.
 type hookEvent struct {
 	SessionID      string `json:"session_id"`
 	Cwd            string `json:"cwd"`
+	HookEventName  string `json:"hook_event_name"`
 	StopHookActive bool   `json:"stop_hook_active"`
 }
 
@@ -137,15 +147,21 @@ func (c *HookRunCmd) Run(deps *appDeps) error {
 	case hookEventSessionStart:
 		return sessionStart(ctx, deps, dir, event.SessionID)
 	case hookEventPostToolUse:
-		return postToolUse(ctx, deps, dir, configIn(dir, c.Config), event.SessionID)
+		return postToolUse(ctx, deps, dir, c.Config, event.SessionID)
 	default:
-		return stopHook(ctx, deps, dir, configIn(dir, c.Config), event)
+		return stopHook(ctx, deps, dir, c.Config, event)
 	}
 }
 
 // stopHook blocks a stop once on a change that fails, judged against the
 // session base: a commit made during the session does not hide what it added.
-func stopHook(ctx context.Context, deps *appDeps, dir, configPath string, event hookEvent) error {
+//
+// It does not block twice on the same blockers over the same tree. A pass, or
+// a change it cannot judge, forgets the block, so the same blockers coming back
+// later block again. A subagent shares the session but neither records nor
+// applies that suppression: its stop is blocked once through stop_hook_active,
+// as the main agent's, and cannot use up the main agent's block.
+func stopHook(ctx context.Context, deps *appDeps, dir, config string, event hookEvent) error {
 	sess, err := openSession(ctx, deps.Runner, dir, event.SessionID)
 	if err != nil {
 		return systemMessage(deps, "archfit hook failed open: "+err.Error())
@@ -155,9 +171,9 @@ func stopHook(ctx context.Context, deps *appDeps, dir, configPath string, event 
 		return systemMessage(deps, "archfit hook failed open: "+err.Error())
 	}
 	if untouched {
-		return nil
+		return forgetBlock(deps, sess, "")
 	}
-	result, err := sessionResult(ctx, deps, configPath, sess.BaseSHA)
+	result, err := sessionResult(ctx, deps, configIn(sess.repo, config), sess.BaseSHA)
 	if err != nil {
 		return systemMessage(deps, "archfit hook failed open: "+err.Error())
 	}
@@ -166,6 +182,9 @@ func stopHook(ctx context.Context, deps *appDeps, dir, configPath string, event 
 	case hookBlock:
 		if event.StopHookActive {
 			return systemMessage(deps, "archfit still reports blockers after one repair attempt:\n"+brief)
+		}
+		if event.HookEventName == harnessSubagentStop {
+			return &exitError{code: 2, msg: strings.TrimSuffix(brief, "\n")}
 		}
 		digest := blockDigest(result)
 		if digest == sess.BlockedDigest {
@@ -178,10 +197,26 @@ func stopHook(ctx context.Context, deps *appDeps, dir, configPath string, event 
 		}
 		return &exitError{code: 2, msg: strings.TrimSuffix(brief, "\n")}
 	case hookAllow:
-		return nil
+		return forgetBlock(deps, sess, "")
 	default:
-		return systemMessage(deps, brief)
+		return forgetBlock(deps, sess, brief)
 	}
+}
+
+// forgetBlock clears the block the stop hook recorded, then shows msg as a
+// systemMessage when there is one. A save that fails does not block: it only
+// leaves the next identical result suppressed.
+func forgetBlock(deps *appDeps, sess *hookSession, msg string) error {
+	if sess.BlockedDigest != "" {
+		sess.BlockedDigest = ""
+		if err := sess.save(); err != nil {
+			msg += "archfit: could not record the session: " + err.Error() + "\n"
+		}
+	}
+	if msg == "" {
+		return nil
+	}
+	return systemMessage(deps, msg)
 }
 
 // blockDigest identifies a blocked result by the tree it measured and its
