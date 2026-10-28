@@ -111,7 +111,7 @@ public class ClassifierTests
     [Fact]
     public void PartialReasonNamesTheMissingReferencePack()
     {
-        var collected = new Collected("net8.0", 12, new Dictionary<string, int> { ["CS0518"] = 10, ["CS0246"] = 2 }, 0, new Dictionary<string, int>(), [], "", [], [], [], []);
+        var collected = new Collected("net8.0", 12, new Dictionary<string, int> { ["CS0518"] = 10, ["CS0246"] = 2 }, 0, new Dictionary<string, int>(), [], "", "", [], [], [], []);
         Assert.Equal(
             "12 unresolved symbols (CS0246 x2, CS0518 x10); reference pack Microsoft.NETCore.App.Ref 8.0 is not installed: install the .NET 8.0 targeting pack or restore with NuGet access",
             Classifier.PartialReason(collected, [], Root));
@@ -125,7 +125,7 @@ public class ClassifierTests
     public void PartialReasonNamesUnreadableFiles()
     {
         var unreadable = new List<string> { "test/Dummy.cs: NullReferenceException" };
-        var collected = new Collected("net10.0", 0, new Dictionary<string, int>(), 0, new Dictionary<string, int>(), unreadable, "", [], [], [], []);
+        var collected = new Collected("net10.0", 0, new Dictionary<string, int>(), 0, new Dictionary<string, int>(), unreadable, "", "", [], [], [], []);
         Assert.Equal(
             "1 file could not be analysed (test/Dummy.cs: NullReferenceException); Roslyn threw while binding the project, which an incomplete reference set causes: restore the project with NuGet access (`dotnet restore`) or install the missing references",
             Classifier.PartialReason(collected, [], Root));
@@ -136,7 +136,7 @@ public class ClassifierTests
     [Fact]
     public void PartialReasonNamesADiagnosticsFailure()
     {
-        var collected = new Collected("net10.0", 0, new Dictionary<string, int>(), 0, new Dictionary<string, int>(), [], "NullReferenceException", [], [], [], []);
+        var collected = new Collected("net10.0", 0, new Dictionary<string, int>(), 0, new Dictionary<string, int>(), [], "NullReferenceException", "", [], [], [], []);
         Assert.Equal(
             "the compiler failed to report diagnostics (NullReferenceException); Roslyn threw while binding the project, which an incomplete reference set causes: restore the project with NuGet access (`dotnet restore`) or install the missing references",
             Classifier.PartialReason(collected, [], Root));
@@ -145,7 +145,7 @@ public class ClassifierTests
     [Fact]
     public void PartialReasonNamesCompileErrors()
     {
-        var collected = new Collected("net10.0", 0, new Dictionary<string, int>(), 1, new Dictionary<string, int> { ["CS0029"] = 1 }, [], "", [], [], [], []);
+        var collected = new Collected("net10.0", 0, new Dictionary<string, int>(), 1, new Dictionary<string, int> { ["CS0029"] = 1 }, [], "", "", [], [], [], []);
         Assert.Equal(
             "1 compile error (CS0029 x1); fix the compile errors: a file that does not compile keeps only the edges it resolved",
             Classifier.PartialReason(collected, [], Root));

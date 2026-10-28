@@ -21,6 +21,9 @@ internal sealed record Collected(
     // DiagnosticsFailure names the exception the compiler threw while reporting
     // its diagnostics, "" when it reported them.
     string DiagnosticsFailure,
+    // Codegen names a code generator whose types the design-time compilation
+    // cannot produce, "" when none is detected.
+    string Codegen,
     IReadOnlyList<string> UsedProjects,
     IReadOnlyList<IvtDeclaration> IvtDeclarations,
     IReadOnlyList<string> LinkedFiles,
@@ -99,6 +102,7 @@ internal sealed class Collector(Solution solution, string root)
             compileErrorsById,
             unreadable,
             diagnosticsFailure,
+            Codegen(project),
             UsedProjects(project, usedAssemblies),
             IvtDeclarations(compilation, project),
             linked,
@@ -120,6 +124,19 @@ internal sealed class Collector(Solution solution, string root)
             return ([], e.GetType().Name);
         }
     }
+
+    // Codegen names a generator whose output this compilation does not have.
+    // The Razor SDK compiles .razor and .cshtml through a source generator that
+    // the workspace loads but that produces nothing here, so the namespaces and
+    // components it declares stay unresolved (verified on eShop: 25 analyzers
+    // including the Razor compiler, 18 .razor additional files, no generated
+    // tree). Protobuf/Grpc.Tools needs no note: its design-time build does
+    // include the generated sources.
+    private static string Codegen(Project project) =>
+        project.AdditionalDocuments.Any(d => d.FilePath is { } path
+            && (path.EndsWith(".razor", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase)))
+            ? "Razor"
+            : "";
 
     // ErrorDiagnostics counts the compilation's errors, split into unresolved
     // names and the rest. The same Roslyn fault can throw here, and a framework

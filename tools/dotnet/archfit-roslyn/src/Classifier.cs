@@ -234,9 +234,18 @@ internal static partial class Classifier
         {
             var noun = collected.UnresolvedSymbols == 1 ? "symbol" : "symbols";
             parts.Add($"{collected.UnresolvedSymbols} unresolved {noun} ({Ids(collected.UnresolvedById)})");
-            fixes.Add(collected.UnresolvedById.ContainsKey("CS0518") && ReferencePack(collected.Tfm) is { } pack
-                ? $"reference pack {pack.Name} {pack.Version} is not installed: install the .NET {pack.Version} targeting pack or restore with NuGet access"
-                : "restore the project with NuGet access (`dotnet restore`) or install the missing references");
+            switch (collected.Codegen)
+            {
+                case "Razor":
+                    parts.Add("names declared by Razor components (.razor files) do not resolve: the Razor source generator runs inside a build, not in this design-time compilation");
+                    fixes.Add("these files' edges are unmeasured; set `UseRazorSourceGenerator=false` on the project and build it so the generated sources exist, or exclude the project");
+                    break;
+                default:
+                    fixes.Add(collected.UnresolvedById.ContainsKey("CS0518") && ReferencePack(collected.Tfm) is { } pack
+                        ? $"reference pack {pack.Name} {pack.Version} is not installed: install the .NET {pack.Version} targeting pack or restore with NuGet access"
+                        : "install the missing references (`dotnet restore`), or generate the sources these names come from");
+                    break;
+            }
         }
         if (collected.CompileErrors > 0)
         {
@@ -319,6 +328,10 @@ internal static partial class Classifier
     // evaluation loads no documents (MSB4057).
     [GeneratedRegex(@"does not contain 'Compile' target", RegexOptions.IgnoreCase)]
     private static partial Regex CrossTargetingFailure();
+
+    // MSBuild's diagnostic line: "path(line,col): error CODE: message".
+    [GeneratedRegex(@":\s*error\s+[A-Za-z]+\d+\s*:")]
+    private static partial Regex ErrorDiagnostic();
 
     [GeneratedRegex(@"^net(\d+\.\d+)(-.*)?$")]
     private static partial Regex NetCoreTfm();
