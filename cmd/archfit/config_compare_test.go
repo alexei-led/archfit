@@ -59,8 +59,31 @@ func testPolicyDeclarationsEffective(t *testing.T) {
 	if p.Analyzers["syntax"] != "on" || q.Analyzers["syntax"] != "off" {
 		t.Errorf("syntax analyzer: on %q, auto %q, want on and off", p.Analyzers["syntax"], q.Analyzers["syntax"])
 	}
-	if q.Metrics["cycle"].Gate != "off" {
+	if q.Metrics["cycle"].Gate != string(config.GateOff) {
 		t.Errorf("disabled metric gate = %q, want off", q.Metrics["cycle"].Gate)
+	}
+
+	// module_review: gate warn runs the pass; deleting the block stops it.
+	review := config.Config{}
+	review.ModuleReview.Gate = string(config.GateWarn)
+	if got := policyDeclarations(review).ModuleReviewGate; got != string(config.GateWarn) {
+		t.Errorf("module_review gate warn: effective %q, want warn", got)
+	}
+	if got := policyDeclarations(config.Config{}).ModuleReviewGate; got != string(config.GateOff) {
+		t.Errorf("module_review absent: effective %q, want off (the pass does not run)", got)
+	}
+
+	// Extractor settings outside the enabled switch are declarations, by path,
+	// without listing them: a later config key is covered the day it exists.
+	rust := config.Config{}
+	rust.Languages.Rust.IncludeDevDeps = true
+	if policyDeclarations(rust).Declarations["languages"] == policyDeclarations(config.Config{}).Declarations["languages"] {
+		t.Error("languages.rust.include_dev_deps does not reach the declarations")
+	}
+	for _, inert := range []string{"ai", "outputs", "version", "rules", "modules"} {
+		if _, ok := p.Declarations[inert]; ok {
+			t.Errorf("declarations carry %q, which is inert or compared in order", inert)
+		}
 	}
 }
 

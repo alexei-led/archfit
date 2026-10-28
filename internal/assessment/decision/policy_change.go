@@ -1,8 +1,9 @@
 package decision
 
 import (
+	"encoding/json"
 	"fmt"
-	"reflect"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -63,8 +64,11 @@ type PolicyInput struct {
 	Rules   []policy.RuleDef
 	Waivers []policy.WaiverDef
 	// Modules: paths, depends_on and visible_to are ordered here; every other
-	// module field belongs in Declarations.
+	// module field is in ModuleDeclarations.
 	Modules map[string]policy.ModuleDef
+	// ModuleDeclarations maps a module name to the canonical encoding of its
+	// other fields (layer, role, public, internal, owner, review dates, ...).
+	ModuleDeclarations map[string]string
 	// Metrics maps a configured metric name to its ratchet. A metric without an
 	// entry ratchets at the default (fail, no tolerance).
 	Metrics map[string]MetricDecl
@@ -76,7 +80,8 @@ type PolicyInput struct {
 	Languages map[string]string
 	// Analyzers map an optional analyzer id to whether it runs (on, off).
 	Analyzers map[string]string
-	// ModuleReviewGate is module_review.gate (off, warn, fail; "" is warn).
+	// ModuleReviewGate is the effective module_review gate: off when the
+	// review pass does not run, else warn or fail.
 	ModuleReviewGate string
 	// Declarations are every other declaration that can change a verdict,
 	// keyed by config path, in a canonical encoding. They cannot be ordered, so
@@ -236,7 +241,9 @@ func compareRules(current, candidate PolicyInput, out *PolicyChange) {
 		curMin, candMin := floatOrZero(cur.MinDelta), floatOrZero(cand.MinDelta)
 		if curMin != candMin {
 			change := RuleChange{ID: id, Field: "min_delta", From: strconv.FormatFloat(curMin, 'g', -1, 64), To: strconv.FormatFloat(candMin, 'g', -1, 64)}
-			if candMin > curMin {
+			// A tolerance that cannot be ordered (NaN, infinity) turns the
+			// ratchet off: loosening.
+			if candMin > curMin || !finite(curMin) || !finite(candMin) {
 				out.RulesLoosened = append(out.RulesLoosened, change)
 			} else {
 				out.RulesTightened = append(out.RulesTightened, change)
@@ -274,16 +281,24 @@ func compareRule(cur, cand policy.RuleDef, out *PolicyChange) {
 	} else if (cur.Max == nil) != (cand.Max == nil) {
 		out.RulesLoosened = append(out.RulesLoosened, RuleChange{ID: cur.ID, Field: "max", From: maxString(cur.Max), To: maxString(cand.Max)})
 	}
-	selector := func(r policy.RuleDef) string {
-		return fmt.Sprintf("type=%s from=%s to=%s from_module=%s to_module=%s threshold=%s",
-			r.Type, r.From, r.To, r.FromModule, r.ToModule, maxString(r.Threshold))
+	// Everything else a rule declares (type, selectors, patterns, guard,
+	// threshold) cannot be ordered: a moved selector or a new guard stops
+	// checking what the rule checked. Rationale, alternatives and docs are
+	// text for the reader and never change a verdict.
+	if from, to := ruleDeclaration(cur), ruleDeclaration(cand); from != to {
+		out.RulesLoosened = append(out.RulesLoosened, RuleChange{ID: cur.ID, Field: "declaration", From: from, To: to})
 	}
-	if selector(cur) != selector(cand) {
-		out.RulesLoosened = append(out.RulesLoosened, RuleChange{ID: cur.ID, Field: "selector", From: selector(cur), To: selector(cand)})
+}
+
+// ruleDeclaration encodes a rule without the fields compared in order (gate,
+// max) and the reader-only text (rationale, alternatives, docs).
+func ruleDeclaration(r policy.RuleDef) string {
+	r.Gate, r.Max, r.Rationale, r.Alternatives, r.Docs = "", nil, "", nil, ""
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return fmt.Sprintf("%#v", r)
 	}
-	if !reflect.DeepEqual(cur.Patterns, cand.Patterns) {
-		out.RulesLoosened = append(out.RulesLoosened, RuleChange{ID: cur.ID, Field: "patterns", From: fmt.Sprintf("%d patterns", len(cur.Patterns)), To: fmt.Sprintf("%d patterns", len(cand.Patterns))})
-	}
+	return string(raw)
 }
 
 func compareWaivers(current, candidate []policy.WaiverDef, out *PolicyChange) {
@@ -382,7 +397,7 @@ func comparePolicyCoverage(current, candidate PolicyInput, out *PolicyChange) {
 			out.DeclarationsChanged = append(out.DeclarationsChanged, DeclarationChange{Key: "modules." + name, To: "added: " + strings.Join(candidate.Modules[name].Paths, ", ")})
 		}
 	}
-	from, to := orWarn(current.ModuleReviewGate), orWarn(candidate.ModuleReviewGate)
+	from, to := orOff(current.ModuleReviewGate), orOff(candidate.ModuleReviewGate)
 	detail := "module_review.gate: " + from + " -> " + to
 	switch {
 	case gateRank(to) < gateRank(from):
@@ -427,20 +442,20 @@ func languageModes(current, candidate map[string]string, out *PolicyChange) {
 }
 
 // compareDeclarations reports every unordered declaration that differs. A
-// module's own declarations are skipped when the module exists on one side
-// only: adding or removing it is reported once, above.
-func compareDeclarations(current PolicyInput, candidate PolicyInput, out *PolicyChange) {
+// module's own declarations are compared only when the module exists on both
+// sides: adding or removing it is reported once, above.
+func compareDeclarations(current, candidate PolicyInput, out *PolicyChange) {
 	for _, key := range unionKeys(current.Declarations, candidate.Declarations) {
-		if parts := strings.SplitN(key, ".", 3); len(parts) == 3 && parts[0] == "modules" {
-			_, inCurrent := current.Modules[parts[1]]
-			_, inCandidate := candidate.Modules[parts[1]]
-			if !inCurrent || !inCandidate {
-				continue
-			}
+		if current.Declarations[key] != candidate.Declarations[key] {
+			out.DeclarationsChanged = append(out.DeclarationsChanged, DeclarationChange{Key: key, From: current.Declarations[key], To: candidate.Declarations[key]})
 		}
-		current, candidate := current.Declarations, candidate.Declarations
-		if current[key] != candidate[key] {
-			out.DeclarationsChanged = append(out.DeclarationsChanged, DeclarationChange{Key: key, From: current[key], To: candidate[key]})
+	}
+	for _, name := range sortedKeys(current.Modules) {
+		if _, both := candidate.Modules[name]; !both {
+			continue
+		}
+		if from, to := current.ModuleDeclarations[name], candidate.ModuleDeclarations[name]; from != to {
+			out.DeclarationsChanged = append(out.DeclarationsChanged, DeclarationChange{Key: "modules[" + name + "]", From: from, To: to})
 		}
 	}
 }
@@ -518,6 +533,8 @@ func floatOrZero(v *float64) float64 {
 	return *v
 }
 
+func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
 func onOff(on bool) string {
 	if on {
 		return modeOn
@@ -525,9 +542,9 @@ func onOff(on bool) string {
 	return gateOffValue
 }
 
-func orWarn(gate string) string {
+func orOff(gate string) string {
 	if gate == "" {
-		return gateWarnValue
+		return gateOffValue
 	}
 	return gate
 }

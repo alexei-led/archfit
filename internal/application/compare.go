@@ -42,6 +42,9 @@ type PolicyDeclarations struct {
 	// Declarations are every other verdict-relevant declaration, keyed by
 	// config path, canonically encoded.
 	Declarations map[string]string
+	// ModuleDeclarations maps a module to its other fields, canonically
+	// encoded.
+	ModuleDeclarations map[string]string
 }
 
 // PolicyMetric is one metric ratchet's declaration.
@@ -174,7 +177,7 @@ func policyInput(d PolicyDeclarations) decision.PolicyInput {
 	return decision.PolicyInput{
 		Rules: d.Rules, Waivers: d.Waivers, Modules: d.Modules, Metrics: metrics,
 		Exclude: d.Exclude, Languages: d.Languages, Analyzers: d.Analyzers, ModuleReviewGate: d.ModuleReviewGate,
-		Declarations: d.Declarations,
+		Declarations: d.Declarations, ModuleDeclarations: d.ModuleDeclarations,
 	}
 }
 

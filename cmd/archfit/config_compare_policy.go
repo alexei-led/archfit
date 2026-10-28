@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
+
+	"github.com/goccy/go-yaml"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
 	"github.com/alexei-led/archfit/v3/internal/config"
@@ -71,12 +74,24 @@ type policyCoverageDoc struct {
 	Detail string `json:"detail"`
 }
 
+// inertConfigKeys are the top-level config keys that never change a verdict:
+// the off-gate AI provider, accepted output fields, the schema version.
+var inertConfigKeys = []string{"ai", "outputs", "version"}
+
+// orderedConfigKeys are compared field by field, in order, by the classifier;
+// they are left out of the unordered declarations.
+var orderedConfigKeys = []string{"rules", "waivers", "modules", "exclude"}
+
 // policyDeclarations reads the declarations a policy change is classified
 // from, as they take effect: metric gates with their default (fail), disabled
 // metrics as off, exclusions merged with the defaults and re-includes applied,
-// optional analyzers as on or off (auto does not run one). Every other
-// declaration that can change a verdict goes into Declarations, which the
-// classifier cannot order and so counts as loosening.
+// optional analyzers as on or off (auto does not run one), module_review as the
+// gate its pass runs at.
+//
+// Declarations hold the whole configuration by config path, minus what is
+// classified in order and what is inert. It is built by subtraction, not by
+// listing fields, so a key added to the configuration later is compared from
+// the day it exists: an unknown difference counts as loosening.
 func policyDeclarations(cfg config.Config) application.PolicyDeclarations {
 	metrics := map[string]application.PolicyMetric{}
 	for name, entry := range cfg.Metrics.MetricEntries() {
@@ -92,34 +107,32 @@ func policyDeclarations(cfg config.Config) application.PolicyDeclarations {
 		}
 		return string(evidenceports.ModeOff)
 	}
-	declarations := map[string]string{
-		"layers":                       canonical(cfg.Layers),
-		"target_branch":                cfg.TargetBranch,
-		"coverage":                     canonical(cfg.Coverage),
-		"coupling":                     canonical(cfg.Coupling),
-		"file_class":                   canonical(cfg.FileClass),
-		"external_systems":             canonical(cfg.ExternalSystems),
-		"languages.go.gate":            string(cfg.Languages.Go.Gate),
-		"languages.go.modules":         canonical(cfg.Languages.Go.Modules),
-		"languages.typescript.gate":    string(cfg.Languages.TypeScript.Gate),
-		"languages.python.gate":        string(cfg.Languages.Python.Gate),
-		"languages.rust.gate":          string(cfg.Languages.Rust.Gate),
-		"analyzers.syntax.gate":        string(cfg.Analyzers.Syntax.Gate),
-		"analyzers.scip.gate":          string(cfg.Analyzers.Scip.Gate),
-		"analyzers.scip.timeout":       cfg.Analyzers.Scip.Timeout,
-		"analyzers.clones.gate":        string(cfg.Analyzers.Clones.Gate),
-		"analyzers.clones.timeout":     cfg.Analyzers.Clones.Timeout,
-		"analyzers.cargo_modules.gate": string(cfg.Analyzers.CargoModules.Gate),
+
+	// The remainder of the configuration: enabled switches, the module review
+	// gate and metric entries are compared in order above.
+	rest := cfg
+	rest.Languages.Go.Enabled, rest.Languages.TypeScript.Enabled = "", ""
+	rest.Languages.Python.Enabled, rest.Languages.Rust.Enabled = "", ""
+	rest.Analyzers.Syntax.Enabled, rest.Analyzers.Scip.Enabled = "", ""
+	rest.Analyzers.Clones.Enabled, rest.Analyzers.CargoModules.Enabled = "", ""
+	rest.ModuleReview.Gate = ""
+	rest.Metrics.Entries = nil
+	declarations := configByPath(rest)
+	for _, key := range append(slices.Clone(inertConfigKeys), orderedConfigKeys...) {
+		delete(declarations, key)
 	}
-	review := cfg.ModuleReview
-	review.Gate = ""
-	declarations["module_review"] = canonical(review)
+
+	moduleDeclarations := make(map[string]string, len(cfg.Modules))
 	for name, m := range cfg.Modules {
-		for field, value := range map[string]any{
-			"layer": m.Layer, "role": m.Role, "public": m.Public, "internal": m.Internal,
-			"owner": m.Owner, "subdomain": m.Subdomain, "volatility": m.Volatility, "deploy_unit": m.DeployUnit,
-		} {
-			declarations["modules."+name+"."+field] = canonical(value)
+		m.Paths, m.DependsOn, m.VisibleTo = nil, nil, nil
+		moduleDeclarations[name] = canonical(m)
+	}
+
+	reviewGate := string(config.GateOff)
+	if cfg.ForStaleness().Enabled {
+		reviewGate = cfg.ModuleReview.Gate
+		if reviewGate == "" {
+			reviewGate = string(config.GateWarn)
 		}
 	}
 	return application.PolicyDeclarations{
@@ -133,17 +146,39 @@ func policyDeclarations(cfg config.Config) application.PolicyDeclarations {
 			"syntax": runs(cfg.Analyzers.Syntax.Enabled), "scip": runs(cfg.Analyzers.Scip.Enabled),
 			"clones": runs(cfg.Analyzers.Clones.Enabled), "cargo_modules": runs(cfg.Analyzers.CargoModules.Enabled),
 		},
-		ModuleReviewGate: cfg.ModuleReview.Gate,
-		Declarations:     declarations,
+		ModuleReviewGate:   reviewGate,
+		Declarations:       declarations,
+		ModuleDeclarations: moduleDeclarations,
 	}
 }
 
-// canonical encodes a declaration for comparison: Go structs marshal in field
-// order and maps in key order, so equal declarations encode equally.
+// wholeConfigKey holds the whole configuration when it cannot be split by key.
+const wholeConfigKey = "config"
+
+// configByPath encodes each top-level key of a configuration, as its YAML
+// names it, canonically.
+func configByPath(cfg config.Config) map[string]string {
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		return map[string]string{wholeConfigKey: canonical(cfg)}
+	}
+	var top map[string]any
+	if err := yaml.Unmarshal(raw, &top); err != nil {
+		return map[string]string{wholeConfigKey: canonical(cfg)}
+	}
+	out := make(map[string]string, len(top))
+	for key, value := range top {
+		out[key] = canonical(value)
+	}
+	return out
+}
+
+// canonical encodes a declaration for comparison: JSON sorts map keys and
+// writes struct fields in order, so equal declarations encode equally.
 func canonical(v any) string {
 	raw, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Sprintf("%v", v)
+		return fmt.Sprintf("%#v", v)
 	}
 	return string(raw)
 }

@@ -1,6 +1,7 @@
 package decision_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
@@ -14,6 +15,7 @@ const (
 	ruleNoImpl = "no_impl"
 	typeForbid = "forbidden_dependency"
 	modApp     = "app"
+	modStore   = "store"
 )
 
 func basePolicy() decision.PolicyInput {
@@ -24,14 +26,16 @@ func basePolicy() decision.PolicyInput {
 			{ID: "api_ceiling", Type: "public_api_max", Gate: gateWarn, Max: &maxDecls},
 		},
 		Modules: map[string]policy.ModuleDef{
-			modApp:  {Paths: []string{"app/**"}, DependsOn: []string{"store"}},
-			"store": {Paths: []string{"store/**"}},
+			modApp:   {Paths: []string{"app/**"}, DependsOn: []string{modStore}},
+			modStore: {Paths: []string{"store/**"}},
 		},
-		Metrics:      map[string]decision.MetricDecl{"cycle": {Gate: gateFail}},
-		Exclude:      []string{"gen/**"},
-		Languages:    map[string]string{"go": "auto"},
-		Analyzers:    map[string]string{"scip": "on"},
-		Declarations: map[string]string{"layers": `["domain","app"]`, "modules.app.public": `["app/api/**"]`},
+		Metrics:            map[string]decision.MetricDecl{"cycle": {Gate: gateFail}},
+		Exclude:            []string{"gen/**"},
+		Languages:          map[string]string{"go": "auto"},
+		Analyzers:          map[string]string{"scip": "on"},
+		ModuleReviewGate:   gateWarn,
+		Declarations:       map[string]string{"layers": `["domain","app"]`},
+		ModuleDeclarations: map[string]string{modApp: `{"public":["app/api/**"]}`, modStore: `{}`},
 	}
 }
 
@@ -58,7 +62,7 @@ func TestComparePolicies(t *testing.T) {
 		{name: "a moved selector counts as loosened", want: decision.PolicyLoosening,
 			edit: func(p *decision.PolicyInput) { p.Rules[0].To = "store/internal/**" },
 			assert: func(t *testing.T, c decision.PolicyChange) {
-				if len(c.RulesLoosened) != 1 || c.RulesLoosened[0].Field != "selector" {
+				if len(c.RulesLoosened) != 1 || c.RulesLoosened[0].Field != "declaration" {
 					t.Errorf("rules loosened = %+v", c.RulesLoosened)
 				}
 			}},
@@ -120,20 +124,36 @@ func TestComparePolicies(t *testing.T) {
 				p.Modules[modApp] = m
 			}},
 		{name: "a module's public surface broadened", want: decision.PolicyLoosening,
-			edit: func(p *decision.PolicyInput) { p.Declarations["modules.app.public"] = `["app/**"]` }},
+			edit: func(p *decision.PolicyInput) { p.ModuleDeclarations[modApp] = `{"public":["app/**"]}` }},
+		{name: "a dotted module name's declarations are compared", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) {
+				p.Modules["billing.api"] = policy.ModuleDef{Paths: []string{"billing/**"}}
+				p.ModuleDeclarations["billing.api"] = `{"public":["billing/**"]}`
+			}},
+		{name: "a rule made a guard", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) { p.Rules[0].Guard = true }},
+		{name: "a rule's rationale reworded is no change", want: decision.PolicyNoChange,
+			edit: func(p *decision.PolicyInput) { p.Rules[0].Rationale = "reworded" }},
+		{name: "a NaN tolerance turns the ratchet off", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) {
+				nan := math.NaN()
+				p.Metrics["cycle"] = decision.MetricDecl{Gate: gateFail, MinDelta: &nan}
+			}},
 		{name: "the layer order changed", want: decision.PolicyLoosening,
 			edit: func(p *decision.PolicyInput) { p.Declarations["layers"] = `["app","domain"]` }},
 		{name: "a removed module's own declarations are not reported twice", want: decision.PolicyLoosening,
-			edit: func(p *decision.PolicyInput) { delete(p.Modules, modApp); delete(p.Declarations, "modules.app.public") },
+			edit: func(p *decision.PolicyInput) { delete(p.Modules, modApp); delete(p.ModuleDeclarations, modApp) },
 			assert: func(t *testing.T, c decision.PolicyChange) {
 				if len(c.DeclarationsChanged) != 0 {
 					t.Errorf("declarations changed = %+v, want the removal reported once, as coverage lost", c.DeclarationsChanged)
 				}
 			}},
 		{name: "a module removed", want: decision.PolicyLoosening,
-			edit: func(p *decision.PolicyInput) { delete(p.Modules, "store") }},
+			edit: func(p *decision.PolicyInput) { delete(p.Modules, modStore) }},
 		{name: "module review lowered", want: decision.PolicyLoosening,
 			edit: func(p *decision.PolicyInput) { p.ModuleReviewGate = gateOff }},
+		{name: "module review raised to fail", want: decision.PolicyTightening,
+			edit: func(p *decision.PolicyInput) { p.ModuleReviewGate = gateFail }},
 		{name: "a rule added", want: decision.PolicyTightening,
 			edit: func(p *decision.PolicyInput) {
 				p.Rules = append(p.Rules, policy.RuleDef{ID: "new", Type: typeForbid, From: "a/**", To: "b/**"})
