@@ -90,6 +90,8 @@ func TestVacuousSelectorsNeverCountAsConformance(t *testing.T) {
 			wantReason: genericReason},
 		{name: "guard with a vacuous target", rule: policy.RuleDef{From: selShipping, To: "internal/view/**", Guard: true}},
 		{name: "guard with a vacuous source", rule: policy.RuleDef{From: "internal/view/**", To: selBilling, Guard: true}},
+		{name: "guard cannot hold a node ID selector", rule: policy.RuleDef{From: selShipping, To: selExternalPrefix, Guard: true},
+			wantReason: "selector matches nothing: to " + selExternalPrefix},
 		{name: "rule type that ignores selectors", rule: policy.RuleDef{Type: metricCycle, From: "internal/nowhere/**"}},
 		{name: "forbidden pattern over a renamed directory", rule: policy.RuleDef{Type: ruleTypePattern, From: selCatalog},
 			wantReason: "selector matches nothing: from internal/catalog/**"},
