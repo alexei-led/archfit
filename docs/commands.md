@@ -210,6 +210,8 @@ Measures one source tree under the current and candidate configs. It is report-o
 
 The text report shows changed findings, edge counts, and classification mix. It has no repository score. JSON includes `score_delta`. See [results](results.md#config-comparison).
 
+Both forms also classify the policy change from the two configs' declarations, with no measurement involved. JSON `policy_change` has `direction`: `none`, `tightening`, `loosening`, or `mixed`. A loosening always needs a human approver. Loosening lists: `rules_removed`, `rules_loosened` (gate lowered, a raised `max`, a changed selector or patterns, a metric gate lowered as `metric/<name>`), `waivers_added`, `allowlists_widened` (`depends_on` or `visible_to`: `any` is an absent key, `none` an empty list), `coverage_lost` (`exclude_added`, `language_disabled`, `analyzer_disabled`, `module_removed`, `module_paths_removed`, `module_review_gate_lowered`). Tightening lists: `rules_added`, `rules_tightened`, `waivers_removed`, `allowlists_narrowed`, `coverage_gained`. A changed selector counts as loosened, because a moved selector stops checking what it checked before.
+
 ### `config enrich <kind>`
 
 Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `volatility`, and `subdomain`.

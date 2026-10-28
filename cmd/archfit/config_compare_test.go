@@ -33,6 +33,66 @@ func TestConfigCompare(t *testing.T) {
 	t.Run("stderr_side_labels", testCompareStderrSideLabels)
 	t.Run("id_preview", testCompareIDPreview)
 	t.Run("classification_mix", testCompareClassificationMix)
+	t.Run("policy_change", testComparePolicyChange)
+}
+
+// testComparePolicyChange pins the policy_change section end to end: a
+// candidate that removes the rule guarding the one edge and adds an exclude is
+// a loosening that names both; the identity run is none with empty lists.
+func testComparePolicyChange(t *testing.T) {
+	t.Parallel()
+	const rule = "rules:\n  - id: no_b_internal\n    type: forbidden_dependency\n    from: pkg/a/**\n    to: pkg/b/internal/**\n    gate: fail\n"
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+rule)
+	candidate := filepath.Join(filepath.Dir(cfgPath), "candidate.yaml")
+	if err := os.WriteFile(candidate, []byte("exclude: [\"gen/**\"]\n"+coupledModulesCfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	type policySection struct {
+		PolicyChange struct {
+			Direction    string `json:"direction"`
+			RulesRemoved []struct {
+				ID   string `json:"id"`
+				Gate string `json:"gate"`
+			} `json:"rules_removed"`
+			CoverageLost []struct {
+				Kind   string `json:"kind"`
+				Detail string `json:"detail"`
+			} `json:"coverage_lost"`
+			RulesAdded []json.RawMessage `json:"rules_added"`
+		} `json:"policy_change"`
+	}
+	decode := func(current, cand string) policySection {
+		_, stdout, stderr := runArchfit(t, cmdConfig, cmdCompare, cand, flagJSON, "-c", current)
+		var doc policySection
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+			t.Fatalf("invalid JSON: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+		}
+		return doc
+	}
+
+	got := decode(cfgPath, candidate).PolicyChange
+	if got.Direction != "loosening" {
+		t.Errorf("direction = %q, want loosening", got.Direction)
+	}
+	if len(got.RulesRemoved) != 1 || got.RulesRemoved[0].ID != "no_b_internal" || got.RulesRemoved[0].Gate != hardGateFail {
+		t.Errorf("rules_removed = %+v, want no_b_internal at gate fail", got.RulesRemoved)
+	}
+	if len(got.CoverageLost) != 1 || got.CoverageLost[0].Kind != "exclude_added" || got.CoverageLost[0].Detail != "gen/**" {
+		t.Errorf("coverage_lost = %+v, want the added exclude", got.CoverageLost)
+	}
+
+	same := decode(cfgPath, cfgPath).PolicyChange
+	if same.Direction != progressNone || same.RulesAdded == nil || len(same.RulesAdded) != 0 {
+		t.Errorf("identity: direction %q rules_added %v, want none and an empty list", same.Direction, same.RulesAdded)
+	}
+
+	_, text, _ := runArchfit(t, cmdConfig, cmdCompare, candidate, "-c", cfgPath)
+	for _, want := range []string{"policy change: loosening", "rule removed: no_b_internal", "coverage lost: exclude_added: gen/**"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text report is missing %q:\n%s", want, text)
+		}
+	}
 }
 
 // testCompareClassificationMix pins that a classification shift is reported.
