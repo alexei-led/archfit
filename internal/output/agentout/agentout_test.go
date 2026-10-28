@@ -107,6 +107,12 @@ func withUnevaluated(d report.Document, reasons ...string) report.Document {
 	return d
 }
 
+// withTools sets the analyzer coverage rows the state report carries.
+func withTools(d report.Document, rows ...report.StateToolCoverage) report.Document {
+	d.State.Coverage.Tools = rows
+	return d
+}
+
 func render(t *testing.T, d report.Document) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -153,11 +159,16 @@ func changeCases() []e1Case {
 	warnTool.CoverageGaps = []report.CoverageGap{{Tool: "sg", Gate: string(report.GateWarn)}}
 
 	return []e1Case{
-		{name: "new violation", doc: document(report.StateBlocked, introduced), wantStatus: ChangeFail, wantAction: ActionRepair},
+		{name: "new violation", doc: withTools(document(report.StateBlocked, introduced),
+			report.StateToolCoverage{Tool: "go/packages", Status: report.StatusOK},
+			report.StateToolCoverage{Tool: "dotnet-msbuild", Status: report.StatusOK, Details: []string{
+				"src/App/App.csproj ok frameworks=net10.0", "src/Domain/Domain.csproj ok frameworks=net8.0,net10.0",
+			}}), wantStatus: ChangeFail, wantAction: ActionRepair},
 		{name: "existing violation", doc: document(report.StateBlocked, preExisting), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionExistingViolation}},
 		{name: "unmeasured ratchet from profile drift", doc: withUnevaluated(document(report.StateNeedsAttention), "reference not comparable (drift: measurement_profile): 3 metric ratchets cannot be evaluated"), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionUnmeasuredRatchet}},
 		{name: "dead selector", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches nothing: from internal/x/**"), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionDeadSelector}},
-		{name: "missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial"), wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence},
+		{name: "missing evidence", doc: withTools(withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial"),
+			report.StateToolCoverage{Tool: "go/packages", Status: report.StatusPartial, Reason: "1 of 12 packages failed to load"}), wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence},
 
 		{name: "no base: every blocker is in scope", doc: document(report.StateBlocked, gateTask("a1", "no_x")), wantStatus: ChangeFail, wantAction: ActionRepair},
 		{name: "code change wins over owner decision", doc: document(report.StateBlocked, ownerTask, gateTask("a1", "no_x")), wantStatus: ChangeFail, wantAction: ActionRepair},
