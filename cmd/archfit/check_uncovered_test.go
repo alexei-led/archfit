@@ -11,6 +11,8 @@ const (
 	movedImport  = "package c\n\nimport \"example.com/test/pkg/b/impl\"\n\nvar _ = impl.Secret()\n"
 	failChange   = "module_review:\n  change_gate: fail\n"
 	tsDisabled   = "languages:\n  typescript:\n    enabled: false\n"
+	dotnetOff    = "languages:\n  dotnet:\n    enabled: false\n"
+	programCS    = "src/App/Program.cs"
 	excludeTools = "exclude:\n  - \"gen/**\"\n"
 )
 
@@ -56,6 +58,9 @@ func TestCheckUncoveredChange(t *testing.T) {
 		{name: "a file of a language the config turned off", cfg: tsDisabled + lintCleanModules + hookRuleSection,
 			files:     map[string]string{webAppTS: "import { secret } from '../pkg/b/impl';\nexport const x = secret;\n"},
 			wantInRsn: []string{"language_disabled", webAppTS}},
+		{name: "a C# file with languages.dotnet off", cfg: dotnetOff + lintCleanModules + hookRuleSection,
+			files:     map[string]string{programCS: "namespace App;\n\npublic static class Program { public static void Main() {} }\n"},
+			wantInRsn: []string{"language_disabled", programCS}},
 		{name: "a file under an exclude: glob", cfg: excludeTools + lintCleanModules + hookRuleSection, files: map[string]string{"gen/g.go": movedImport},
 			wantInRsn: []string{"excluded", "gen/g.go"}},
 	} {
