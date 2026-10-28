@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -404,6 +405,7 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 	}
 	res = foldReport(report, projects)
 	markChangedRestoreInputs(res.graph.Projects, changed, moved)
+	markAboveRepoInputs(res.graph.Projects, projects, root, snap.top, snap.aboveRepo)
 	res.unattributed = markDroppedLinks(res.graph.Projects, snap.dropped)
 	if len(snap.aboveRepo) > 0 {
 		res.details = append(res.details, "build inputs above the copied tree are not in the snapshot: "+strings.Join(snap.aboveRepo, ", "))
@@ -414,6 +416,95 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 		res.cov.Reason = joinReason(borrowReason(len(borrowed), changed, moved, unrestored), res.cov.Reason)
 	}
 	return res, nil
+}
+
+// reasonAboveRepoInput is the cause of a project that would inherit a build
+// input from above the copied tree.
+const reasonAboveRepoInput = "it inherits a build input from above the copied tree that the snapshot does not have"
+
+// markAboveRepoInputs makes every project that would inherit a build-input file
+// from above top partial, naming the file: the snapshot stops at the repository
+// root, so the helper compiles without a constant, an SDK pin, or a package
+// source the original build reads. A file of the same name between the project
+// directory and top (inclusive) shadows the ancestor file, except a
+// NuGet.config, which layers with every ancestor one. Test projects are left
+// out: their file edges are dropped, so no rule reads their completeness.
+func markAboveRepoInputs(reported []TypeGraphProject, evaluated []ProjectEvaluation, root, top string, above []string) {
+	if len(above) == 0 || top == "" {
+		return
+	}
+	tests := make(map[string]bool, len(evaluated))
+	for _, p := range evaluated {
+		tests[p.Path] = p.isTest()
+	}
+	for i := range reported {
+		p := &reported[i]
+		if tests[p.Path] {
+			continue
+		}
+		dir := filepath.Join(root, filepath.FromSlash(filepath.Dir(p.Path)))
+		inherited := inheritedAbove(dir, top, above)
+		if len(inherited) == 0 {
+			continue
+		}
+		if p.Status == TypeGraphComplete {
+			p.Status = TypeGraphPartial
+		}
+		p.Reason = joinReason(reasonAboveRepoInput+": "+strings.Join(inherited, ", "), p.Reason)
+	}
+}
+
+// inheritedAbove returns the build-input files in above that MSBuild would read
+// for the project in projectDir: the nearest ancestor file of each name, unless
+// a file of that name from the project directory up to top shadows it, plus
+// every NuGet.config, which layers instead of shadowing. above is nearest
+// first.
+func inheritedAbove(projectDir, top string, above []string) []string {
+	nearest := map[string]string{}
+	var inherited []string
+	for _, f := range above {
+		name := strings.ToLower(filepath.Base(f))
+		if name == nugetConfigName {
+			inherited = append(inherited, f)
+			continue
+		}
+		if _, ok := nearest[name]; !ok {
+			nearest[name] = f
+		}
+	}
+	for name, f := range nearest {
+		if !shadowed(projectDir, top, name) {
+			inherited = append(inherited, f)
+		}
+	}
+	slices.Sort(inherited)
+	return inherited
+}
+
+// shadowed reports whether dir or one of its ancestors up to top holds a file
+// named name.
+func shadowed(dir, top, name string) bool {
+	top = filepath.Clean(top)
+	for dir = filepath.Clean(dir); ; dir = filepath.Dir(dir) {
+		if hasFileNamed(dir, name) {
+			return true
+		}
+		if dir == top || filepath.Dir(dir) == dir {
+			return false
+		}
+	}
+}
+
+// hasFileNamed reports a file directly in dir named name, ignoring case: NuGet
+// accepts any case.
+func hasFileNamed(dir, name string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(entries, func(e fs.DirEntry) bool {
+		return !e.IsDir() && strings.EqualFold(e.Name(), name)
+	})
 }
 
 // reasonDroppedLink is the cause a link dropped from the snapshot states, both

@@ -41,7 +41,7 @@ var restoreViewKeys = []string{"sources", "centralPackageVersionsManagementEnabl
 // analysis level), NuGet.config carries settings beyond the source list, and
 // the Directory.* files can add references and properties restore reads.
 var packageInputFiles = map[string]struct{}{
-	"global.json": {}, "nuget.config": {},
+	"global.json": {}, nugetConfigName: {},
 	"directory.packages.props": {}, "directory.build.props": {}, "directory.build.targets": {},
 }
 

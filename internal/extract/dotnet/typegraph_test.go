@@ -1106,6 +1106,67 @@ func TestTypeGraph_SnapshotIsRemovedAndOriginalNeverWritten(t *testing.T) {
 	}
 }
 
+// TestTypeGraph_AncestorAboveRepoInputMakesProjectsPartial: MSBuild reads build
+// inputs above the repository root, which the snapshot does not have. A project
+// that would inherit one is partial and names it, and its files are dependency
+// gaps, so a required rule stays unevaluated instead of judging a snapshot
+// compiled without the inherited constant. A file in the repository tree that
+// MSBuild would use instead shadows the ancestor one, so nothing changes.
+func TestTypeGraph_AncestorAboveRepoInputMakesProjectsPartial(t *testing.T) {
+	const props = `<Project><PropertyGroup><DefineConstants>$(DefineConstants);ARCHFIT_ANCESTOR</DefineConstants></PropertyGroup></Project>`
+	for _, tt := range []struct {
+		name        string
+		repoProps   bool
+		wantPartial bool
+	}{
+		{name: "inherited from above the repository root", wantPartial: true},
+		{name: "shadowed by a repository-root file", repoProps: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			outer := t.TempDir()
+			writeFile(t, outer, "Directory.Build.props", props)
+			repo := filepath.Join(outer, "repo")
+			root := filepath.Join(repo, "src")
+			writeFile(t, root, domainProj, "")
+			writeFile(t, root, "Domain/Domain.cs", "namespace Domain; public class Thing { }")
+			if tt.repoProps {
+				writeFile(t, repo, "Directory.Build.props", props)
+			}
+			before := treeState(t, outer)
+			installHelper(t)
+			fake := newFake(t, root, map[string]reply{domainProj: ok(t, root, "domain.json")})
+			fake.helper = fakeHelper(func(context.Context, string) (toolrun.Output, error) {
+				return toolrun.Output{Stdout: []byte(domainOnlyReport)}, nil
+			})
+			e := dotnet.New(fake, autoCfg(), nil)
+			if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, GitRoot: repo, SubtreePrefix: subtreeDir}); err != nil {
+				t.Fatal(err)
+			}
+			ancestor := filepath.Join(outer, "Directory.Build.props")
+			p := typeProject(t, e.LastTypeGraph(), domainProj)
+			if !tt.wantPartial {
+				if p.Status != dotnet.TypeGraphComplete || strings.Contains(p.Reason, ancestor) {
+					t.Errorf("project = %+v, want complete: the repository's own Directory.Build.props shadows the ancestor one", p)
+				}
+			} else {
+				if p.Status != dotnet.TypeGraphPartial || !strings.Contains(p.Reason, ancestor) {
+					t.Errorf("project = %+v, want partial naming %s", p, ancestor)
+				}
+				gaps, attributed := e.LastDependencyGaps([]string{"Domain/Domain.cs"})
+				if !attributed || gaps.Files["Domain/Domain.cs"] == "" {
+					t.Errorf("dependency gaps = %+v attributed %v, want Domain/Domain.cs incomplete", gaps, attributed)
+				}
+				if cov := e.LastTypeGraphCoverage(); cov.Status != evidence.StatusPartial {
+					t.Errorf("roslyn coverage = %+v, want partial", cov)
+				}
+			}
+			if after := treeState(t, outer); !mapsEqual(after, before) {
+				t.Errorf("the original tree changed:\nbefore %v\nafter  %v", before, after)
+			}
+		})
+	}
+}
+
 func mapsEqual[V comparable](a, b map[string]V) bool {
 	if len(a) != len(b) {
 		return false
