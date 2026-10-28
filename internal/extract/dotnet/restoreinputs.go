@@ -209,14 +209,14 @@ func dgspecMapper(data []byte, project string, mapper snapshotMapper) (snapshotM
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return mapper, true // parseRestoreGraph reports the malformed graph as an input mismatch
 	}
-	keys := slices.Sorted(maps.Keys(doc.Restore))
-	if len(keys) == 0 {
-		keys = slices.Sorted(maps.Keys(doc.Projects))
-	}
-	for _, key := range keys {
-		root, ok := strings.CutSuffix(filepath.ToSlash(key), "/"+filepath.ToSlash(project))
-		if ok && root != "" {
-			return mapper.addPrefix(root, ""), true
+	// The top-level restore entry names the project this graph was generated
+	// for; the projects map is the fallback for a graph that omits it.
+	for _, keys := range [][]string{slices.Sorted(maps.Keys(doc.Restore)), slices.Sorted(maps.Keys(doc.Projects))} {
+		for _, key := range keys {
+			root, ok := strings.CutSuffix(filepath.ToSlash(key), "/"+filepath.ToSlash(project))
+			if ok && root != "" {
+				return mapper.addPrefix(root, ""), true
+			}
 		}
 	}
 	return mapper, false
