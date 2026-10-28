@@ -52,6 +52,22 @@ func document(verdict report.StateVerdict, specs ...taskSpec) report.Document {
 	case report.StateHealthy:
 		d.State.Decision.HardGates = report.HardGatePass
 	}
+	// A run with origins was compared with a base; the state says so, or a
+	// consumer would read an origin on a finding of an uncompared run.
+	introduced := []string{}
+	for _, s := range specs {
+		if s.origin == report.OriginIntroduced {
+			introduced = append(introduced, s.id)
+		}
+		if s.origin != "" {
+			resolved := []string{}
+			d.State.Comparison.Status = report.ComparisonComparable
+			d.State.Comparison.BaseRef = "main"
+			d.State.Comparison.OriginStatus = report.OriginStatusComparable
+			d.State.Comparison.IntroducedFindingIDs = &introduced
+			d.State.Comparison.ResolvedFindingIDs = &resolved
+		}
+	}
 	for _, s := range specs {
 		d.State.Findings = append(d.State.Findings, report.Finding{
 			ID: s.id, Kind: report.FindingKindGate, RuleID: s.rule, Status: report.FindingStatusNew, Severity: s.severity,
