@@ -238,7 +238,7 @@ internal static partial class Classifier
             {
                 case "Razor":
                     parts.Add("names declared by Razor components (.razor files) do not resolve: the Razor source generator runs inside a build, not in this design-time compilation");
-                    fixes.Add("these files' edges are unmeasured; set `UseRazorSourceGenerator=false` on the project and build it so the generated sources exist, or exclude the project");
+                    fixes.Add("these files' edges are unmeasured; list the other projects in `languages.dotnet.projects`, or accept these edges as unmeasured");
                     break;
                 default:
                     fixes.Add(collected.UnresolvedById.ContainsKey("CS0518") && ReferencePack(collected.Tfm) is { } pack

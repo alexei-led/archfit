@@ -162,4 +162,16 @@ public class ClassifierTests
             "1 compile error (CS0029 x1); fix the compile errors: a file that does not compile keeps only the edges it resolved",
             Classifier.PartialReason(collected, [], Root));
     }
+
+    // A project whose types a source generator declares is partial for that
+    // reason: the names do not resolve, and no restore would produce them.
+    [Fact]
+    public void PartialReasonNamesRazorCodegen()
+    {
+        var unresolved = new Dictionary<string, int> { ["CS0234"] = 2, ["CS0246"] = 1 };
+        var collected = new Collected("net10.0", 3, unresolved, 0, new Dictionary<string, int>(), [], "", "Razor", [], [], [], []);
+        Assert.Equal(
+            "3 unresolved symbols (CS0234 x2, CS0246 x1); names declared by Razor components (.razor files) do not resolve: the Razor source generator runs inside a build, not in this design-time compilation; these files' edges are unmeasured; list the other projects in `languages.dotnet.projects`, or accept these edges as unmeasured",
+            Classifier.PartialReason(collected, [], Root));
+    }
 }
