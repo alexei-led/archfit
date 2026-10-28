@@ -16,6 +16,8 @@ func TestDoctorDiscoversOwnedAnalyzerPrograms(t *testing.T) {
 			seen[name] = true
 			return toolrun.ToolInfo{}, false
 		},
+		// The agent loop section asks git about the repository.
+		RunFunc: toolrun.New().Run,
 	}
 	var output bytes.Buffer
 	if err := (&DoctorCmd{}).Run(&appDeps{Runner: runner, Stdout: &output}); err != nil {

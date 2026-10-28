@@ -21,6 +21,8 @@ func runDoctorCmd(t *testing.T, dir string) string {
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{}, false
 		},
+		// The agent loop section asks git about the repository.
+		RunFunc: toolrun.New().Run,
 	}
 	deps := &appDeps{Runner: runner, Stdout: &buf}
 	if err := (&DoctorCmd{}).Run(deps); err != nil {
