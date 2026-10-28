@@ -1,0 +1,93 @@
+# Embedded ast-grep rules for C# (ASP.NET Core) route and function extraction,
+# ast-grep 0.51.0. Attribute syntax like `[HttpGet]` does not parse as a pattern, so
+# these rules use node kinds with a name regex; the route path is read from the match
+# text in syntax.go.
+#
+# ruleId → Kind mapping (see syntax.go):
+#   cs-method            → method   (methods and constructors with a body)
+#   cs-local-function    → function (local functions with a body)
+#   cs-route-attribute   → route    ([HttpGet|Post|Put|Delete|Patch] and [Route] attributes)
+#   cs-route-minimal-api → route    (minimal API endpoint registrations, see below)
+#   cs-parse-error       → none; marks the file partial (tree-sitter ERROR node, for
+#                          example the C# 14 `extension` block)
+#
+# Function facts carry the extent the complexity dimension measures. A declaration
+# without a body (abstract, interface, partial, extern) has no length and is skipped.
+# The extent starts at the first attribute line, as the grammar puts attributes
+# inside the declaration.
+# Lambdas and property accessors are not functions here, as arrow functions are not
+# in the TypeScript rules: they have no declared name to report.
+
+id: cs-method
+language: CSharp
+rule:
+  all:
+    - any:
+        - kind: method_declaration
+        - kind: constructor_declaration
+    - has:
+        field: body
+        any:
+          - kind: block
+          - kind: arrow_expression_clause
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: cs-local-function
+language: CSharp
+rule:
+  all:
+    - kind: local_function_statement
+    - has:
+        field: body
+        any:
+          - kind: block
+          - kind: arrow_expression_clause
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: cs-route-attribute
+language: CSharp
+rule:
+  kind: attribute
+  has:
+    field: name
+    kind: identifier
+    regex: '^(Http(Get|Post|Put|Delete|Patch)|Route)$'
+---
+# Minimal API endpoint registrations: the RouteHandlerBuilder verbs (MapGet, MapPost,
+# MapPut, MapDelete, MapPatch, MapMethods, MapFallback) and MapIdentityApi<TUser>,
+# which registers the Identity endpoint set in one call. MapGroup is a prefix, not an
+# endpoint. Framework feature endpoints (MapHealthChecks, MapHub, MapControllers,
+# MapRazorPages, MapOpenApi, MapFallbackToFile) are not routes of the application.
+# A call inside a method that has the same verb name is a forwarding wrapper (an
+# extension MapGet that calls the framework MapGet): its callers are the endpoints,
+# so the wrapper's own call is not counted.
+id: cs-route-minimal-api
+language: CSharp
+rule:
+  kind: invocation_expression
+  has:
+    field: function
+    kind: member_access_expression
+    has:
+      field: name
+      any:
+        - kind: identifier
+          regex: '^Map(Get|Post|Put|Delete|Patch|Methods|Fallback)$'
+        - kind: generic_name
+          regex: '^MapIdentityApi<'
+  not:
+    inside:
+      kind: method_declaration
+      stopBy: end
+      has:
+        field: name
+        regex: '^Map(Get|Post|Put|Delete|Patch|Methods|Fallback)$'
+---
+id: cs-parse-error
+language: CSharp
+rule:
+  kind: ERROR

@@ -18,6 +18,8 @@ type Coverage struct {
 	UnresolvedPrecisionOnly int    `json:"unresolved_precision_only,omitempty"`
 	Status                  string `json:"status"`
 	Reason                  string `json:"reason,omitempty"`
+	// Details is the per-unit table behind the row, one line per unit.
+	Details []string `json:"details,omitempty"`
 }
 
 // Coverage status constants are shared by extractor adapters.

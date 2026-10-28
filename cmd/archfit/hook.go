@@ -138,7 +138,7 @@ func (c *HookRunCmd) Run(deps *appDeps) error {
 	if err := json.Unmarshal(raw, &event); err != nil {
 		return &exitError{code: 1, msg: fmt.Sprintf("archfit hook: malformed hook event: %v", err)}
 	}
-	ctx := context.Background()
+	ctx := deps.runContext()
 	dir := event.Cwd
 	if dir == "" {
 		dir = "."
@@ -232,7 +232,7 @@ func blockDigest(r agentout.Result) string {
 }
 
 func (c *HookRunCmd) preCommit(deps *appDeps) error {
-	result, err := stagedHookResult(context.Background(), deps, c.Config, headRef, c.IndexFile)
+	result, err := stagedHookResult(deps.runContext(), deps, c.Config, headRef, c.IndexFile)
 	if err != nil {
 		return &exitError{code: 3, msg: "archfit hook: " + err.Error()}
 	}

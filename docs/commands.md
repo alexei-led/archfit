@@ -32,7 +32,7 @@ Successful `analyze` runs exit `0` for every verdict. Use `check` when the verdi
 | `0` | `healthy` | Success for report-only and setup commands. `analyze` also exits `0` for `needs_attention` and `blocked`. |
 | `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `hook run pre-commit` found an in-scope repair or owner decision; `agents-md --check` found a missing or stale block. |
 | `2` | `needs_attention` | `policy can-import` found a target with no decision. `hook run stop` and `hook run post-tool-use` use `2` to give the agent feedback under the harness protocol. |
-| `3` | Config, usage, or runtime error | General command error. `hook run pre-commit` uses `3` when archfit cannot run. |
+| `3` | Config, usage, or runtime error | General command error. `hook run pre-commit` uses `3` when archfit cannot run. A run stopped by `SIGINT` or `SIGTERM` also exits `3`: archfit stops its tools, removes its temporary copies, and reports the results as incomplete. A second signal exits at once. |
 
 `check` exits `2` when there is no blocker, but evidence or diagnostics need attention. `--require-tools` makes missing required tools affect the verdict. `analyze` stays report-only.
 
@@ -64,7 +64,7 @@ These flags apply only to commands that list them below.
 | `--json`, `--markdown`, `--sarif` | Shorthand for one matching `--format`. Do not combine shorthands with `--format`. |
 | `--no-advisories` | Omit advisory findings. Omitted findings do not count as diagnostics. |
 | `--min-severity <level>` | Filter advisories: `low`, `medium`, `high`, or `critical`. |
-| `--lang <name>` | Force language detection. Repeatable: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`). |
+| `--lang <name>` | Force language detection. Repeatable: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`), `dotnet` (`csharp`). |
 | `--require-tools` | Treat missing required analyzers as failures in the rendered verdict. It does not change `analyze` exit status. |
 | `--ai-summary` | Add an off-gate AI summary. Requires AI settings in the config. |
 
@@ -129,6 +129,20 @@ Reports the module, layer, owner, public surface, allowlists, and selected rules
 
 Reports whether a source file can import each target. A denied target exits `1`. A target without a decision exits `2`.
 
+The answer runs no analyzer. It spells the edge the language's extractor would emit and runs the rule pass on that edge. Write the target in the language's graph vocabulary:
+
+| Language | Target |
+| --- | --- |
+| Go | A package directory or an import path. |
+| TypeScript | A source file. |
+| Python | A dotted module or a `.py` file inside the packages grimp builds. |
+| .NET | A `.cs` file or an external assembly name, such as `Microsoft.EntityFrameworkCore`. |
+| Rust | Not decided: crate roots need `cargo metadata`. |
+
+A rule that needs the whole graph, such as `module_cycle`, leaves a target not decided unless another rule denies it. It outranks an allowlist or the layer order: those permit the pair, and only the whole graph can say whether the pair closes a cycle. `can-import` runs no analyzer, so it cannot answer that.
+
+.NET answers are not decided when `analyzers.roslyn.enabled` is `false` (check then reads project edges), when the file is in no selected project's directory, and when the target names a first-party assembly or a project computes its `AssemblyName`. A file that check never reads is `unconstrained` with the reason: an excluded file, a file under `obj/` or `bin/`, or a file of a project with a `test` or `tests` path segment. A test project marked only by `IsTestProject` needs MSBuild evaluation, so its files are judged like production files.
+
 | Flag | Meaning |
 | --- | --- |
 | `-c, --config <file>` | Config path. |
@@ -149,14 +163,14 @@ Reports whether a source file can import each target. A denied target exits `1`.
 
 ### `doctor`
 
-`archfit doctor [flags]` checks analyzer availability. `--fix` installs tools that archfit can install.
+`archfit doctor [flags]` checks analyzer availability. `--fix` installs tools that archfit can install. For .NET it also prints the SDK and helper versions that the current directory's `global.json` selects, and fails when that pin cannot be satisfied.
 
 | Flag | Meaning |
 | --- | --- |
 | `--fix` | Install missing supported tools. `--install` is an alias. |
 | `--lang <name>` | Limit installation to `go`, `ts`, `py`, or `rust`. Repeatable. Default: all. |
 | `-n, --dry-run` | Print install commands without running them. Requires `--fix`. |
-| `--format <name>` | `text` (default) or `json`. `json` prints the tool rows and the agent loop as `archfit.doctor.v1`. It cannot be combined with `--fix`. |
+| `--format <name>` | `text` (default) or `json`. `json` prints the tool rows (`ok`, `missing`, or `invalid` with its `error`) and the agent loop as `archfit.doctor.v1`. It cannot be combined with `--fix`. An `invalid` tool fails `doctor` in both formats, after the full report. |
 
 After the tool table and the LLM settings, `doctor` reports the agent loop: the harnesses it finds (Claude Code, Codex, git), each archfit hook as `active` or `inactive` (not installed; for Claude Code, `disableAllHooks` in `.claude/settings.json` or `.claude/settings.local.json`; for Codex, not trusted yet), the target branch, the scope `check` would use, and whether a policy file differs from the target. Codex keeps hook trust in `~/.codex/config.toml` (`CODEX_HOME`); `doctor` cannot recompute the trusted hash, so a trusted Codex hook is `active (hash not verified)`. In JSON this is `agent_loop`.
 

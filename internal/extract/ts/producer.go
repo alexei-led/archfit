@@ -128,7 +128,9 @@ func (e *Extractor) inspectProducer(ctx context.Context, binary, interpreter str
 }
 
 func eligibleSources(root string) ([]string, error) {
-	files := factcache.ListInputs(root, isSource, []string{"node_modules/**", "**/node_modules/**"})
+	// The caller turns a sentinel into a loud "unreadable, cyclic, or too large"
+	// error, so the entry-cap disclosure ListInputs would return is redundant here.
+	files, _ := factcache.ListInputs(root, isSource, []string{"node_modules/**", "**/node_modules/**"})
 	base, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err

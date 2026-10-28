@@ -247,7 +247,7 @@ func TestListInputs_Symlinks(t *testing.T) {
 	link(filepath.Join(outside, "pkg"), "linkeddir")
 	link(filepath.Join(outside, "gone.go"), "dangling.go")
 
-	got := ListInputs(root, MatchExts([]string{goExt}, nil), nil)
+	got, _ := ListInputs(root, MatchExts([]string{goExt}, nil), nil)
 	want := []string{linkedFile, "linkeddir/input.go", plainFile}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ListInputs = %v, want %v", got, want)
@@ -273,7 +273,7 @@ func TestListInputs_Symlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(outside, "pkg/input.go", "package changed")
-	after, err = HashTree(root, ListInputs(root, MatchExts([]string{goExt}, nil), nil))
+	after, err = HashTree(root, got)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,9 +303,35 @@ func TestListInputs_IncludesProjectDotDirectories(t *testing.T) {
 	write(".venv/site.py", "cache")
 	write("src/app.ts", "export const app = 1")
 
-	got := ListInputs(root, MatchExts([]string{".ts", ".toml"}, nil), nil)
+	got, _ := ListInputs(root, MatchExts([]string{".ts", ".toml"}, nil), nil)
 	want := []string{".cargo/config.toml", ".storybook/main.ts", "src/app.ts"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ListInputs = %v, want %v", got, want)
+	}
+}
+
+// TestStoreNoteSkip pins the channel the acquiring stage drains: a note is
+// recorded once per distinct text (every extractor keys the same tree), and a
+// nil store has no channel at all and must not panic.
+func TestStoreNoteSkip(t *testing.T) {
+	t.Parallel()
+	s := NewStore(t.TempDir())
+	s.NoteSkip("")
+	s.NoteSkip("fact cache skipped: input tree has more than 20000 filesystem entries")
+	s.NoteSkip("fact cache skipped: input tree has more than 20000 filesystem entries")
+	s.NoteSkip("second note")
+
+	want := []string{
+		"fact cache skipped: input tree has more than 20000 filesystem entries",
+		"second note",
+	}
+	if got := s.Skips(); !slices.Equal(got, want) {
+		t.Errorf("Skips() = %v, want %v", got, want)
+	}
+
+	var nilStore *Store
+	nilStore.NoteSkip("ignored")
+	if got := nilStore.Skips(); got != nil {
+		t.Errorf("nil store Skips() = %v, want nil", got)
 	}
 }

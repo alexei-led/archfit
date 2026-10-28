@@ -99,8 +99,11 @@ type Provenance struct {
 	DistanceBasis          string
 	StrengthFromLLM        bool
 	StrengthFromNonHighLLM bool
-	ConnascenceKinds       []string
-	CloneLocationCount     int
+	// StrengthPinned records that an approved label supplied the strength
+	// verbatim: the value is the owner's verdict, not extractor evidence.
+	StrengthPinned     bool
+	ConnascenceKinds   []string
+	CloneLocationCount int
 }
 
 // Score is the relationship-owned score value produced by classification.

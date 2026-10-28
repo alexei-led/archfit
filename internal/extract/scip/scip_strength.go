@@ -480,7 +480,8 @@ func (a *Adapter) cacheKey(root, indexer, pkg, lang, version string, rustMetadat
 	if err != nil {
 		return ""
 	}
-	files := factcache.ListInputs(root, factcache.MatchExts(in.exts, in.basenames), nil)
+	files, skip := factcache.ListInputs(root, factcache.MatchExts(in.exts, in.basenames), nil)
+	a.Cache.NoteSkip(skip)
 	treeHash, err := factcache.HashTree(root, files)
 	if err != nil {
 		return ""

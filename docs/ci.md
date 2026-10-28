@@ -130,7 +130,7 @@ different measurement environment can make the baseline non-comparable. See
 
 ## Complete engine image and App adoption
 
-The v3.2 image bundles all supported language producers and optional tools. It does not enable
+The v3.2 image bundles the Go, TypeScript/JavaScript, Python, and Rust producers and optional tools. Images after v3.2.3 add the .NET SDK and the Roslyn helper. It does not enable
 all optional analysis for every project. Use the [locked tool environment](languages.md#install-analyzers)
 and preserve target-specific limitations rather than treating missing evidence as zero.
 

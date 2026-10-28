@@ -1,0 +1,30 @@
+{
+  "Properties": {
+    "TargetFramework": "net10.0",
+    "TargetFrameworks": "",
+    "IsTestProject": ""
+  },
+  "Items": {
+    "ProjectReference": [],
+    "PackageReference": [
+      {
+        "Identity": "Archfit.Fixture.Missing.Package",
+        "Version": "1.0.0",
+        "FullPath": "{{ROOT}}/Unresolved/Archfit.Fixture.Missing.Package",
+        "RootDir": "/",
+        "Filename": "Archfit.Fixture.Missing",
+        "Extension": ".Package",
+        "RelativeDir": "",
+        "Directory": "{{ROOT}}/Unresolved/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "{{ROOT}}/Unresolved/Unresolved.csproj",
+        "DefiningProjectDirectory": "{{ROOT}}/Unresolved/",
+        "DefiningProjectName": "Unresolved",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ]
+  }
+}

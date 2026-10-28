@@ -43,12 +43,14 @@ type doctorReport struct {
 	AgentLoop     agentLoop `json:"agent_loop"`
 }
 
-// toolRow is one analyzer or helper tool and whether it is on PATH.
+// toolRow is one analyzer or helper tool: ok (found), missing, or invalid (a
+// configured value it cannot use, which fails doctor as it fails analysis).
 type toolRow struct {
 	Name        string `json:"name"`
 	Status      string `json:"status"`
 	Path        string `json:"path,omitempty"`
 	InstallHint string `json:"install_hint,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // agentLoop is whether the agent feedback loop runs in this repository: the

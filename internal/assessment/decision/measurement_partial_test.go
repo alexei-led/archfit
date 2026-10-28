@@ -87,3 +87,44 @@ func TestPythonPartialMeasurementNeverClaimsCompleteInputs(t *testing.T) {
 		}
 	}
 }
+
+const roslynVersion = "archfit-roslyn 1.0.0; Microsoft.CodeAnalysis 5.6.0; SDK 10.0.402"
+
+// Unresolved Roslyn symbols are missing candidates, not lower precision: an
+// unresolved reference may hide a cross-boundary edge, so no partial basis
+// makes a partial Roslyn run comparable.
+func TestRoslynPartialMeasurementIsNotComparable(t *testing.T) {
+	for _, basis := range []evidence.MeasurementPartialBasis{"", evidence.PartialUnresolvedSpecifiers, evidence.PartialDegradedPrecision} {
+		p := measurementFixture()
+		semantics, _ := evidence.MeasurementContract("roslyn")
+		p.Producers = []evidence.MeasurementProducer{{Tool: "roslyn", SemanticsVersion: semantics, ToolVersion: roslynVersion, Status: evidence.StatusPartial, PartialBasis: basis}}
+		reasons := decision.CompareMeasurementProfiles(p, p)
+		if !strings.Contains(strings.Join(reasons, ";"), "producer roslyn has incomplete evidence") {
+			t.Fatalf("partial Roslyn run compared under basis %q: %v", basis, reasons)
+		}
+	}
+}
+
+func TestRoslynProducerVersionIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, version string
+		known         bool
+	}{
+		{"helper identity", roslynVersion, true},
+		{"empty", "", false},
+		{"unknown", "unknown", false},
+		{"helper version only", "archfit-roslyn 1.0.0", false},
+		{"no SDK", "archfit-roslyn 1.0.0; Microsoft.CodeAnalysis 5.6.0", false},
+		{"no Roslyn release", "archfit-roslyn 1.0.0; SDK 10.0.402", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := measurementFixture()
+			semantics, _ := evidence.MeasurementContract("roslyn")
+			p.Producers = []evidence.MeasurementProducer{{Tool: "roslyn", SemanticsVersion: semantics, ToolVersion: tc.version, Status: evidence.StatusOK}}
+			unknown := strings.Contains(strings.Join(decision.CompareMeasurementProfiles(p, p), ";"), "producer roslyn tool_version is unknown")
+			if unknown == tc.known {
+				t.Fatalf("version %q known = %v, want %v", tc.version, !unknown, tc.known)
+			}
+		})
+	}
+}

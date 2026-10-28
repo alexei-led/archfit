@@ -104,6 +104,14 @@ func Synthesize(d result.Result) Scorecard {
 				"(path aliases or missing installs may be dropping internal edges as external)")
 	}
 
+	// A partial or timed-out Roslyn run left symbols unresolved or projects
+	// unloaded: an unresolved reference may hide a cross-boundary edge. Cap to
+	// medium (mirrors the caps above): a partial run is never confident.
+	if RoslynIncomplete(d) {
+		applyMediumConfidenceCap(&cb,
+			"roslyn type graph partial (unresolved symbols or unloaded projects) — high confidence disallowed")
+	}
+
 	return Scorecard{
 		RubricVersion: RubricVersion,
 		Overall:       cb.Value,
@@ -209,6 +217,26 @@ func TSUnresolvedPartial(d result.Result) bool {
 			continue
 		}
 		if float64(c.Unresolved)/float64(c.SpecifiersSeen) > tsUnresolvedRatioCeiling {
+			return true
+		}
+	}
+	return false
+}
+
+// toolRoslyn is the ToolCoverage name the .NET type graph reports under.
+const toolRoslyn = "roslyn"
+
+// RoslynIncomplete reports a Roslyn row that is partial (unresolved symbols or
+// unloaded projects) or timed out (the run failed). Unlike a TypeScript
+// unresolved specifier, an unresolved symbol has no ratio ceiling: it is a
+// missing candidate, not lower precision, so any count counts.
+//
+// Exported for the same reason as TSUnresolvedPartial: the architecture-state
+// coupling envelope must reach the conclusion this package's confidence cap
+// does.
+func RoslynIncomplete(d result.Result) bool {
+	for _, c := range d.ToolCoverage {
+		if c.Tool == toolRoslyn && (c.Status == evidence.StatusPartial || c.Status == evidence.StatusTimedOut) {
 			return true
 		}
 	}

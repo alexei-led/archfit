@@ -63,6 +63,6 @@ func writeAdvisoryTasks(b *strings.Builder, tasks []report.AdvisoryTask) {
 		}
 	}
 	if hidden := len(tasks) - shown; hidden > 0 {
-		fmt.Fprintf(b, "\n_…and %d more advisory tasks (see --json for the full list)._\n", hidden)
+		fmt.Fprintf(b, "\n_…and %d more advisory tasks; their findings are listed in `--format json`._\n", hidden)
 	}
 }

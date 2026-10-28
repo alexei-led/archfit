@@ -50,7 +50,7 @@ The architecture-state verdict has three values:
 
 The verdict is not an average score. Missing evidence stays explicit. archfit does not convert unknown values to zero.
 
-Each of the nine dimensions has its own `status`, `confidence`, `gate`, `coverage`, `metrics`, `findings`, and `unknown` fields. Status is `measured`, `partial`, or `unmeasured`. A dimension gate is `pass`, `warn`, `fail`, or `not_applicable`. See [metrics](metrics.md) for the dimensions and their measures.
+Each of the nine dimensions has its own `status`, `confidence`, `gate`, `coverage`, `metrics`, `findings`, and `unknown` fields. Status is `measured`, `partial`, or `unmeasured`. A dimension gate is `pass`, `warn`, `fail`, or `not_applicable`. An `unmeasured` dimension is `not_applicable` unless a hard-gate finding routes to it: a violation found in the observed edges fails the dimension while its evidence is incomplete. See [metrics](metrics.md) for the dimensions and their measures.
 
 Findings appear once in the top-level `findings` array. Dimension `findings` arrays refer to those records by ID. A finding's status and severity describe its gate role and urgency. See [rules](rules.md) for rule behavior.
 
@@ -87,6 +87,10 @@ changes gate acceptance or the exit code.
   Accepted-baseline metric ratchets always have unknown base-tree origin.
 
 Read `comparison.origin_status` and `origin_reasons` for analyzer pairing.
+When a base analyzer timed out or left inputs out of its graph, its reason names
+the base row's own cause and fix after `base:`.
+A reason longer than the report's 400-rune bound is cut with `…`; the whole
+reason is written to stderr as a warning.
 Numeric `comparison.status` is separate: fingerprint differences can suppress
 numeric deltas while origin still compares observed IDs. Neither status proves
 that installed dependencies, generated files, or indexer resolution were identical.
@@ -115,6 +119,8 @@ The state JSON includes full findings, `agent_tasks`, and the coupling seam ledg
 An `agent_task` gives a constrained repair or an owner decision. It includes the finding and rule IDs, goal, constraints, files, and validation commands. Do not infer that an empty task list means the run is healthy. Check `verdict`, `decision`, diagnostics, and unmeasured required rules.
 
 Each seam record describes a cross-module relationship and its policy. The `policy` value distinguishes `violation`, `accepted`, `advisory`, `allowed`, and `observed`. A seam is not itself a finding. Use the associated finding IDs and gate result to identify blockers. See [coupling](coupling.md).
+
+A seam's `raw_distance` names the owners and deploy units on both sides. `same_owner` and `same_deploy_unit` are `null` unless both sides are known: an undeclared value is not a different one.
 
 ## JSON contracts
 

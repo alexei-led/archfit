@@ -180,6 +180,12 @@ type Classification struct {
 	// confidence was not high. Report-only — score confidence consumes the applied
 	// edge count rather than raw approved-label rows.
 	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
+	// StrengthPinned records that an approved label supplied Strength verbatim.
+	// A pin is the owner's verdict on how deeply two modules are coupled, not a
+	// report that a member was reached without access: a consumer that needs
+	// extractor evidence, such as internal_api_access, must not read a pinned
+	// intrusive strength as one.
+	StrengthPinned bool `json:"strength_pinned,omitempty"`
 	// Connascence carries deterministic static connascence evidence for this edge.
 	// The evidence is report-only: it never sets strength, distance or volatility.
 	Connascence []ConnascenceEvidence `json:"connascence,omitempty"`

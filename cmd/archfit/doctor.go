@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +22,7 @@ const installSubcmd = "install"
 // (the former `install` command, folded in so `doctor` both diagnoses and fixes).
 type DoctorCmd struct {
 	Fix    bool     `name:"fix" aliases:"install" help:"Install missing analyzer toolchains (archfit installs what it can)."`
-	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable." enum:"go,ts,py,rust"`
+	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable. .NET has no automatic install: install the .NET SDK and build the helper with make dotnet-roslyn." enum:"go,ts,py,rust"`
 	DryRun bool     `name:"dry-run" short:"n" help:"With --fix: print install commands without running them."`
 	Format string   `name:"format" help:"Output format: text or json. json prints the tool rows and the agent loop (archfit.doctor.v1)." enum:"text,json" default:"text"`
 }
@@ -31,7 +32,7 @@ func (*DoctorCmd) Help() string {
 }
 
 func (c *DoctorCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 	if c.Format == formatJSON && c.Fix {
 		return &exitError{code: 3, msg: "error: doctor --format json only reports; run doctor --fix without it"}
 	}
@@ -49,26 +50,56 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	for _, lang := range registry.All() {
 		tools = append(tools, lang.DoctorTools...)
 	}
+
+	// Versions are probed where analysis runs: here, where a global.json
+	// selects the .NET SDK.
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	// A tool configured to an unusable value fails doctor after the full
+	// report, as it fails analysis: a missing tool is not an error, a wrong one is.
+	var invalid []error
 	rows := make([]toolRow, 0, len(tools))
 	for _, t := range tools {
-		if info, ok := deps.Runner.Detect(ctx, t.Command); ok {
-			rows = append(rows, toolRow{Name: t.Name, Status: "ok", Path: info.Path})
-		} else {
+		path, found, err := locateTool(ctx, deps.Runner, t)
+		if err == nil && found && t.Version != nil {
+			var version string
+			if version, err = t.Version(ctx, deps.Runner, path, dir); err == nil {
+				path += " (" + version + ")"
+			}
+		}
+		switch {
+		case err != nil:
+			invalid = append(invalid, fmt.Errorf("%s: %w", t.Name, err))
+			rows = append(rows, toolRow{Name: t.Name, Status: "invalid", Error: err.Error()})
+		case found:
+			rows = append(rows, toolRow{Name: t.Name, Status: "ok", Path: path})
+		default:
 			rows = append(rows, toolRow{Name: t.Name, Status: "missing", InstallHint: t.InstallHint})
 		}
 	}
 	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
 	if c.Format == formatJSON {
-		return writeDoctorJSON(deps, doctorReport{
+		if err := writeDoctorJSON(deps, doctorReport{
 			SchemaVersion: doctorSchemaVersion, Tools: rows, AgentLoop: agentLoopStatus(ctx, deps, cfg.TargetBranch),
-		})
+		}); err != nil {
+			return err
+		}
+		return errors.Join(invalid...)
 	}
 
-	_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", "TOOL", "STATUS", "PATH / INSTALL")
+	nameWidth := len("TOOL")
+	for _, t := range tools {
+		nameWidth = max(nameWidth, len(t.Name))
+	}
+	row := func(name, status, detail string) {
+		_, _ = fmt.Fprintf(deps.Stdout, "%-*s %-8s %s\n", nameWidth, name, status, detail)
+	}
+	row("TOOL", "STATUS", "PATH / INSTALL")
 	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
-
-	for _, row := range rows {
-		_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", row.Name, row.Status, row.Path+row.InstallHint)
+	for _, r := range rows {
+		row(r.Name, r.Status, r.Path+r.InstallHint+r.Error)
 	}
 
 	// Off-gate LLM setup (config init/update/enrich, analyze/explain --ai-summary): provider config + key + cache.
@@ -109,9 +140,21 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	writeAgentLoop(deps.Stdout, agentLoopStatus(ctx, deps, cfg.TargetBranch))
 
 	if c.Fix {
-		return c.runFix(ctx, deps)
+		if err := c.runFix(ctx, deps); err != nil {
+			return err
+		}
 	}
-	return nil
+	return errors.Join(invalid...)
+}
+
+// locateTool finds one doctor tool: through its own probe when it has one,
+// else on PATH.
+func locateTool(ctx context.Context, runner toolrun.Runner, t registry.Tool) (string, bool, error) {
+	if t.Locate != nil {
+		return t.Locate()
+	}
+	info, ok := runner.Detect(ctx, t.Command)
+	return info.Path, ok, nil
 }
 
 // writeDoctorJSON writes the doctor report as one indented JSON document.

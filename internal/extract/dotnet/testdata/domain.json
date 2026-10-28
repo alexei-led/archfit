@@ -1,0 +1,11 @@
+{
+  "Properties": {
+    "TargetFramework": "net10.0",
+    "TargetFrameworks": "",
+    "IsTestProject": ""
+  },
+  "Items": {
+    "ProjectReference": [],
+    "PackageReference": []
+  }
+}

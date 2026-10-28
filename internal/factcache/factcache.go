@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 )
@@ -47,12 +48,44 @@ type Store struct {
 	// RefreshMode bypasses reads but still allows writes. Use it for
 	// `--refresh`: re-run the extractor, then replace the cached fact.
 	RefreshMode bool
+
+	// skips and skipSeen carry the disclosures about cache decisions this run
+	// made — text the acquiring stage prints on stderr. Recording happens on
+	// the run's single extraction goroutine.
+	skips    []string
+	skipSeen map[string]struct{}
 }
 
 // NewStore returns a Store rooted at dir (e.g. <configDir>/.archfit-cache/facts)
 // with the default size cap. The directory is created lazily on first Put.
 func NewStore(dir string) *Store {
 	return &Store{dir: dir, maxBytes: MaxBytes, evictToBytes: EvictToBytes}
+}
+
+// NoteSkip records one user-facing disclosure about this run's caching, for the
+// acquiring stage to print. A nil store and an empty note are no-ops. Identical
+// notes collapse: every extractor keys the same tree, and a tree that defeats
+// one extractor's key defeats all of them.
+func (s *Store) NoteSkip(note string) {
+	if s == nil || note == "" {
+		return
+	}
+	if s.skipSeen == nil {
+		s.skipSeen = make(map[string]struct{})
+	}
+	if _, seen := s.skipSeen[note]; seen {
+		return
+	}
+	s.skipSeen[note] = struct{}{}
+	s.skips = append(s.skips, note)
+}
+
+// Skips returns the recorded disclosures in first-seen order.
+func (s *Store) Skips() []string {
+	if s == nil {
+		return nil
+	}
+	return slices.Clone(s.skips)
 }
 
 // Get returns the blob stored under analyzer/key. Any miss — absent entry,

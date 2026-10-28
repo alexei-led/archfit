@@ -1,0 +1,15 @@
+The command could not be loaded, possibly because:
+  * You intended to execute a .NET application:
+      The application 'msbuild' does not exist or is not a managed .dll or .exe.
+  * You intended to execute a .NET SDK command:
+      A compatible .NET SDK was not found.
+
+Requested SDK version: 9.0.100
+global.json file: {{ROOT}}/global.json
+
+Installed SDKs:
+
+Install the [9.0.100] .NET SDK or update [{{ROOT}}/global.json] to match an installed SDK.
+
+Learn about SDK resolution:
+https://aka.ms/dotnet/sdk-not-found

@@ -352,7 +352,7 @@ func TestFind_RejectedPatternRunIsPartial(t *testing.T) {
 	if len(matches) != 1 || matches[0].Pattern != patternReflect {
 		t.Errorf("matches = %+v, want the go pattern's match kept", matches)
 	}
-	if cov.Status != "partial" || !strings.Contains(cov.Reason, `"bad-lang"`) || !strings.Contains(cov.Reason, "exit 2") {
+	if cov.Status != statusPartial || !strings.Contains(cov.Reason, `"bad-lang"`) || !strings.Contains(cov.Reason, "exit 2") {
 		t.Errorf("coverage = %+v, want partial naming bad-lang and its exit code", cov)
 	}
 	if strings.Contains(cov.Reason, "py-none") {

@@ -21,6 +21,10 @@ import (
 // artifact through the existing required-tool gate.
 const ToolName = "supplied-coverage"
 
+// ReasonDisabled is the published Reason on the StatusDisabled coverage row
+// this package emits when supplied coverage is off.
+const ReasonDisabled = "off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it"
+
 // Supported supplied-coverage format names. Concrete parsers implement the
 // pure byte-to-fact registry behind this vocabulary.
 const (
@@ -29,6 +33,7 @@ const (
 	FormatLCOV           = "lcov"
 	FormatCoveragePyJSON = "coverage-py-json"
 	FormatLLVMCovJSON    = "llvm-cov-json"
+	FormatCobertura      = "cobertura"
 )
 
 const (
@@ -108,6 +113,7 @@ func New(store *factcache.Store, supplied ...Parser) *Ingestor {
 		FormatLCOV:           lcovParser{},
 		FormatCoveragePyJSON: coveragePyJSONParser{},
 		FormatLLVMCovJSON:    llvmCovJSONParser{},
+		FormatCobertura:      coberturaParser{},
 	}
 	for _, parser := range supplied {
 		if parser != nil {
@@ -119,15 +125,16 @@ func New(store *factcache.Store, supplied ...Parser) *Ingestor {
 
 // SupportedFormats returns the closed config vocabulary in stable order.
 func SupportedFormats() []string {
-	return []string{FormatAuto, FormatGoCoverProfile, FormatLCOV, FormatCoveragePyJSON, FormatLLVMCovJSON}
+	return []string{FormatAuto, FormatGoCoverProfile, FormatLCOV, FormatCoveragePyJSON, FormatLLVMCovJSON, FormatCobertura}
 }
 
 // IngestAll processes every configured source and returns one normalized ingest
 // per source plus a report-only analyzer health row. Disabled coverage returns
-// no row, preserving the pre-feature output byte-for-byte.
+// no ingest and a disabled row, so a consumer sees the analyzer's status the
+// way it sees every other analyzer's.
 func (i *Ingestor) IngestAll(scanRoot string, options Options) ([]evidence.CoverageIngest, evidence.Coverage) {
 	if !options.Enabled {
-		return nil, evidence.Coverage{}
+		return nil, evidence.Coverage{Tool: ToolName, Status: evidence.StatusDisabled, Reason: ReasonDisabled}
 	}
 	normalizer, err := NewNormalizer(scanRoot)
 	if err != nil {
@@ -203,27 +210,16 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	out.Freshness = attestation.freshness
 
 	key := coverageCacheKey(normalizer.root, artifactRel, format, parser.Version(), attestation.sourceRef, data)
-	if i.store != nil {
-		if blob, hit := i.store.Get(cacheAnalyzer, key); hit {
-			var cached cachedFacts
-			if json.Unmarshal(blob, &cached) == nil {
-				attestation = bindAttestationToFacts(attestation, cached.Facts)
-				out.Freshness = attestation.freshness
-				if len(cached.Facts) > source.MaxFacts {
-					out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
-					return out
-				}
-				out.Facts = cached.Facts
-				out.Format = cached.Format
-				out.ToolVersion = cached.ToolVersion
-				stampFactMetadata(out.Facts, artifactRel, out.Format, out.ToolVersion, attestation.sourceRef)
-				out.Reason = attestation.reason
-				return out
-			}
-		}
+	if cachedOut, hit := i.lookupCached(key, source.MaxFacts, artifactRel, attestation, out); hit {
+		return cachedOut
 	}
 
-	facts, err := parser.Parse(data)
+	var facts []evidence.CoverageFact
+	if rooted, ok := parser.(rootAwareParser); ok {
+		facts, err = rooted.parseWithRoot(data, normalizer)
+	} else {
+		facts, err = parser.Parse(data)
+	}
 	parseWarning := ""
 	if err != nil {
 		if errors.Is(err, ErrLCOVSummaryDiscrepancy) {
@@ -255,7 +251,9 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		invalidReason = reasonInvalidCoverageFact
 	}
 	if out.UnresolvedPaths > 0 {
-		unresolvedReason = reasonUnresolvedCoveragePaths
+		// One example path names the root the report was produced under.
+		unresolvedReason = fmt.Sprintf("%s: %d path(s) name no file under the scan root, e.g. %s",
+			reasonUnresolvedCoveragePaths, out.UnresolvedPaths, normalized.firstUnresolved)
 	}
 	if len(out.Facts) == 0 {
 		emptyReason = reasonCoverageFactsEmpty
@@ -270,9 +268,37 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	return out
 }
 
+// lookupCached returns the stored ingest for key when the cache holds a decodable entry.
+func (i *Ingestor) lookupCached(key string, maxFacts int, artifactRel string, attestation attestationResult, out evidence.CoverageIngest) (evidence.CoverageIngest, bool) {
+	if i.store == nil {
+		return out, false
+	}
+	blob, hit := i.store.Get(cacheAnalyzer, key)
+	if !hit {
+		return out, false
+	}
+	var cached cachedFacts
+	if json.Unmarshal(blob, &cached) != nil {
+		return out, false
+	}
+	attestation = bindAttestationToFacts(attestation, cached.Facts)
+	out.Freshness = attestation.freshness
+	if len(cached.Facts) > maxFacts {
+		out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
+		return out, true
+	}
+	out.Facts = cached.Facts
+	out.Format = cached.Format
+	out.ToolVersion = cached.ToolVersion
+	stampFactMetadata(out.Facts, artifactRel, out.Format, out.ToolVersion, attestation.sourceRef)
+	out.Reason = attestation.reason
+	return out, true
+}
+
 type normalizedFacts struct {
 	facts           []evidence.CoverageFact
 	unresolvedPaths int
+	firstUnresolved string // lexically first unresolved path, for the reason
 	invalidFact     bool
 	limitExceeded   bool
 }
@@ -283,6 +309,9 @@ func normalizeParsedFacts(normalizer *Normalizer, facts []evidence.CoverageFact,
 		rel, err := normalizer.Normalize(fact.File)
 		if err != nil {
 			out.unresolvedPaths++
+			if out.firstUnresolved == "" || fact.File < out.firstUnresolved {
+				out.firstUnresolved = fact.File
+			}
 			continue
 		}
 		if fact.TotalUnits < 0 || fact.CoveredUnits < 0 || fact.CoveredUnits > fact.TotalUnits || fact.Unit == "" {
@@ -383,10 +412,14 @@ func coverageHealth(ingests []evidence.CoverageIngest, configured int) evidence.
 	}
 	missing := 0
 	versions := make(map[string]struct{})
+	// Two sources may cover one file (a test project also exercises the
+	// projects it references), so files are counted once across sources.
+	files := make(map[string]struct{})
 	var reasons []string
 	for idx, ingest := range ingests {
-		row.FilesSeen += len(ingest.Facts)
-		row.FilesApplicable += len(ingest.Facts)
+		for _, fact := range ingest.Facts {
+			files[fact.File] = struct{}{}
+		}
 		row.Unresolved += ingest.UnresolvedPaths
 		if ingest.ToolVersion != "" {
 			versions[ingest.ToolVersion] = struct{}{}
@@ -403,6 +436,7 @@ func coverageHealth(ingests []evidence.CoverageIngest, configured int) evidence.
 		versionList = append(versionList, version)
 	}
 	sort.Strings(versionList)
+	row.FilesSeen, row.FilesApplicable = len(files), len(files)
 	row.Version = strings.Join(versionList, ",")
 	row.Reason = strings.Join(reasons, "; ")
 	switch {

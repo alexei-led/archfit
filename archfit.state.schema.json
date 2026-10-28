@@ -675,7 +675,15 @@
           "type": "string"
         },
         "same_owner": {
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether both sides share the value, or null unless both sides are known."
         },
         "from_deploy_unit": {
           "type": "string"
@@ -684,7 +692,15 @@
           "type": "string"
         },
         "same_deploy_unit": {
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether both sides share the value, or null unless both sides are known."
         },
         "boundary_crossings": {
           "type": "integer"
@@ -933,6 +949,12 @@
         },
         "reason": {
           "type": "string"
+        },
+        "details": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "additionalProperties": false,

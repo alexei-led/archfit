@@ -10,7 +10,8 @@
 //     pass bounded to the most recent maxCommitsGitAuthor commits aggregates
 //     authors per file; the dominant author becomes the module owner. When that
 //     bounded pass resolves zero modules, a second, unbounded pass is tried
-//     before giving up (see resolveFromGitAuthor).
+//     before giving up (see resolveFromGitAuthor). One person's aliases count
+//     as one author (see authorAliases).
 //
 // When neither source exists, Resolve returns an empty map with SourceNone —
 // ownership is never fabricated. A git-log run that hits its timeout (gitTimeout)
@@ -380,13 +381,14 @@ func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix 
 	return runGitAuthorLog(ctx, workDir, subtreePrefix, modules, runner, 0)
 }
 
-// runGitAuthorLog runs one `git log --format=%ae --name-only` pass, bounded to
-// maxCommits (0 means unbounded — full history), and aggregates author emails
-// per file into a module→owner map. The second return is true only when the
-// subprocess itself hit gitTimeout; any other failure (non-git dir, git error)
-// returns an empty map with false, matching Resolve's "never an error" contract.
+// runGitAuthorLog runs one `git log --format=%aE%x09%aN --name-only` pass,
+// bounded to maxCommits (0 means unbounded — full history), and aggregates
+// authors per file into a module→owner map. %aE and %aN apply the repository's
+// .mailmap. The second return is true only when the subprocess itself hit
+// gitTimeout; any other failure (non-git dir, git error) returns an empty map
+// with false, matching Resolve's "never an error" contract.
 func runGitAuthorLog(ctx context.Context, workDir, subtreePrefix string, modules policy.ModuleMap, runner toolrun.Runner, maxCommits int) (map[string]string, bool) {
-	args := []string{"log", "--format=%ae", "--name-only"}
+	args := []string{"log", "--format=%aE%x09%aN", "--name-only"}
 	if maxCommits > 0 {
 		args = append(args, "-n", strconv.Itoa(maxCommits))
 	}
@@ -407,8 +409,9 @@ func runGitAuthorLog(ctx context.Context, workDir, subtreePrefix string, modules
 		return map[string]string{}, false
 	}
 
-	// module name → map[author]count
-	ownerCount := make(map[string]map[string]int)
+	type touch struct{ module, email string }
+	var touches []touch
+	aliases := newAuthorAliases()
 	var currentAuthor string
 
 	for _, line := range strings.Split(string(out.Stdout), "\n") {
@@ -416,9 +419,11 @@ func runGitAuthorLog(ctx context.Context, workDir, subtreePrefix string, modules
 		if line == "" {
 			continue
 		}
-		// Lines from --format=%ae are author emails; file paths follow.
+		// Author lines carry "email<TAB>name"; file paths follow.
 		if isAuthorLine(line) {
-			currentAuthor = line
+			email, name, _ := strings.Cut(line, "\t")
+			currentAuthor = strings.TrimSpace(email)
+			aliases.add(currentAuthor, strings.TrimSpace(name))
 			continue
 		}
 		if currentAuthor == "" {
@@ -438,13 +443,84 @@ func runGitAuthorLog(ctx context.Context, workDir, subtreePrefix string, modules
 		if !ok {
 			continue
 		}
-		if ownerCount[mod] == nil {
-			ownerCount[mod] = make(map[string]int)
-		}
-		ownerCount[mod][currentAuthor]++
+		touches = append(touches, touch{mod, currentAuthor})
+		aliases.touched(currentAuthor)
 	}
 
+	// module name → map[author]count, one author per alias group
+	canonical := aliases.canonical()
+	ownerCount := make(map[string]map[string]int)
+	for _, t := range touches {
+		if ownerCount[t.module] == nil {
+			ownerCount[t.module] = make(map[string]int)
+		}
+		ownerCount[t.module][canonical[t.email]]++
+	}
 	return dominantOwners(ownerCount), false
+}
+
+// authorAliases groups author identities that share an email or a name, so one
+// person committing as "Jane Doe <jane@work>" and "Jane Doe <jane@home>" is one
+// owner, not two: two owners for one person would read as a different-owner
+// boundary. Grouping by name follows git shortlog, which groups by name; a
+// .mailmap still decides first, because %aE and %aN apply it. Email and name
+// match case-insensitively. A group is named by its most-touching email
+// (alphabetically first on ties), so the owner stays an email.
+type authorAliases struct {
+	parent  map[string]string // union-find over "e:<email>" and "n:<name>" keys
+	touches map[string]int    // email → files touched in configured modules
+}
+
+func newAuthorAliases() *authorAliases {
+	return &authorAliases{parent: map[string]string{}, touches: map[string]int{}}
+}
+
+func (a *authorAliases) add(email, name string) {
+	key := "e:" + strings.ToLower(email)
+	a.find(key)
+	if name != "" {
+		a.union(key, "n:"+strings.ToLower(name))
+	}
+}
+
+func (a *authorAliases) touched(email string) { a.touches[email]++ }
+
+func (a *authorAliases) find(key string) string {
+	parent, seen := a.parent[key]
+	if !seen {
+		a.parent[key] = key
+		return key
+	}
+	if parent == key {
+		return key
+	}
+	root := a.find(parent)
+	a.parent[key] = root
+	return root
+}
+
+func (a *authorAliases) union(x, y string) {
+	if rx, ry := a.find(x), a.find(y); rx != ry {
+		a.parent[ry] = rx
+	}
+}
+
+// canonical maps every touching email to its group's name: the group's email
+// with the most touches, alphabetically first on ties.
+func (a *authorAliases) canonical() map[string]string {
+	best := map[string]string{} // group root → best email
+	for email, count := range a.touches {
+		root := a.find("e:" + strings.ToLower(email))
+		current, seen := best[root]
+		if !seen || count > a.touches[current] || (count == a.touches[current] && email < current) {
+			best[root] = email
+		}
+	}
+	out := make(map[string]string, len(a.touches))
+	for email := range a.touches {
+		out[email] = best[a.find("e:"+strings.ToLower(email))]
+	}
+	return out
 }
 
 // isAuthorLine heuristically identifies an author-email line in git log output.

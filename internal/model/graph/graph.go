@@ -16,6 +16,10 @@ const (
 	NodeKindPackage  NodeKind = "package"
 	NodeKindFile     NodeKind = "file"
 	NodeKindExternal NodeKind = "external"
+	// NodeKindProject is a .NET project, keyed by its repo-relative project
+	// file path. It is not a package: the type-leak rule reads package nodes as
+	// external package names, and a project path is not one.
+	NodeKindProject NodeKind = "project"
 )
 
 // EdgeKind classifies the relationship between two nodes.
@@ -136,6 +140,7 @@ const (
 	LangTypeScript = "typescript"
 	LangPython     = "python"
 	LangRust       = "rust"
+	LangDotNet     = "dotnet"
 )
 
 // CrateRoot maps a Rust crate's repo-relative source directory to its crate name.

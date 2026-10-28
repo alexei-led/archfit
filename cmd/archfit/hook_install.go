@@ -107,7 +107,7 @@ func (c *HookInstallCmd) Run(deps *appDeps) error {
 		err  error
 	)
 	if c.Harness == harnessGit {
-		path, err = installGitHook(context.Background(), deps.Runner, c.Dir, c.Config)
+		path, err = installGitHook(deps.runContext(), deps.Runner, c.Dir, c.Config)
 	} else {
 		path, err = installHarnessHooks(c.Dir, c.Harness, c.Config)
 	}
