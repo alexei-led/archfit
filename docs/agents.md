@@ -16,6 +16,12 @@ archfit policy can-import path/to/source.go path/to/target
 returns `denied`, `not_decided`, `allowed`, or `unconstrained`.
 
 - `denied`: do not add the import. Use the reported repair goal and constraints.
+  `instead` repeats what the rule's owners declared to do instead. `candidates`
+  lists each declared alternative that names a package a module owns, with the
+  module, whether it is in that module's public surface, and the rule pass's
+  answer for the same import from your file (`policy_check`). A candidate comes
+  only from the owners' own text, never from a guess. A permitted placement is
+  not proof that it does the same thing: read it before you move code there.
 - `not_decided`: a whole-graph rule or missing evidence can still block it.
   Add the import only if needed, then run `check`.
 - `allowed`: the current allowlist or layer order permits the import.

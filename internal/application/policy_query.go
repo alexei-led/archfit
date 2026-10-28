@@ -2,6 +2,9 @@ package application
 
 import (
 	"context"
+	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
@@ -49,7 +52,30 @@ type CanImportAnswer struct {
 	From     string
 	Language string
 	evaluation.EdgeJudgment
+	// Instead is what the owners of the denying rules declared to do instead.
+	Instead []string
+	// Candidates are the declared alternatives that resolve to a module or
+	// package, each judged again by the rule pass from the same file.
+	Candidates []Candidate
 }
+
+// Candidate is one owner-declared alternative that names a place the policy can
+// judge. A permitted placement is not proof that the alternative does the same
+// thing: the agent still has to read it.
+type Candidate struct {
+	// Path is the package or directory the alternative names.
+	Path string
+	// Module owns Path.
+	Module string
+	// PublicAPI says whether Path is part of Module's declared public surface.
+	PublicAPI bool
+	// PolicyCheck is the rule pass's answer for the import from the same file:
+	// allowed, denied, not_decided, or unconstrained.
+	PolicyCheck string
+}
+
+// pathToken finds the path-like words in an alternative's text.
+var pathToken = regexp.MustCompile(`[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+`)
 
 // PolicyQueryService answers pre-edit questions with the evaluator check
 // uses: the queried edge goes through the same relationship analysis, rule
@@ -72,33 +98,88 @@ func (s PolicyQueryService) CanImport(ctx context.Context, req CanImportRequest)
 	}
 	answers := make([]CanImportAnswer, 0, len(req.Targets))
 	for _, target := range req.Targets {
-		edge, err := s.Edges.Edge(ctx, req.From, target)
+		answer, err := s.judge(ctx, req, base, target)
 		if err != nil {
 			return nil, err
 		}
-		answer := CanImportAnswer{Target: target, From: edge.From, Language: edge.Language}
-		switch {
-		case edge.NotExtracted != "":
-			answer.Answer, answer.Reasons = evaluation.AnswerUnconstrained, []string{edge.NotExtracted}
-		case edge.Undecided != "":
-			answer.Answer, answer.Reasons = evaluation.AnswerNotDecided, []string{edge.Undecided}
-		default:
-			related := analysis.Analyze(analysis.Input{
-				Graph: edge.Graph, Policy: req.Policy.Relationship,
-			})
-			judged, err := evaluation.JudgeEdge(evaluation.JudgeInput{
-				Relationships: related.Relationships, Policy: req.Policy,
-				Accepted: base.Accepted, Now: req.Now, UnwalkedSourceProduction: edge.Production,
-			})
-			if err != nil {
-				return nil, err
-			}
-			answer.EdgeJudgment = boundJudgmentText(judged)
+		answer.Instead = instead(answer.Denials)
+		if answer.Candidates, err = s.candidates(ctx, req, base, answer); err != nil {
+			return nil, err
 		}
-		answer.Reasons = reportTexts(answer.Reasons, maxReportTextRunes)
 		answers = append(answers, answer)
 	}
 	return answers, nil
+}
+
+// instead lists, once each, what the denying rules declare to do instead.
+func instead(denials []evaluation.EdgeFinding) []string {
+	var out []string
+	for _, d := range denials {
+		for _, alt := range d.Alternatives {
+			if !slices.Contains(out, alt) {
+				out = append(out, alt)
+			}
+		}
+	}
+	return out
+}
+
+// candidates resolves each declared alternative to the packages it names that
+// a module owns, and asks the rule pass about the import of each from the same
+// file. An alternative that names no owned package yields no candidate: advice
+// is not a destination.
+func (s PolicyQueryService) candidates(ctx context.Context, req CanImportRequest, base Baseline, answer CanImportAnswer) ([]Candidate, error) {
+	moduleMap := req.Policy.Topology.ModuleMap
+	var out []Candidate
+	seen := map[string]bool{}
+	for _, alt := range answer.Instead {
+		for _, path := range pathToken.FindAllString(alt, -1) {
+			path = strings.TrimSuffix(path, "/")
+			module, owned := moduleMap.ModuleFor(path)
+			if !owned {
+				module, owned = moduleMap.ModuleFor(path + "/x")
+			}
+			if !owned || seen[path] || path == answer.Target || strings.HasSuffix(path, ".go") {
+				continue
+			}
+			seen[path] = true
+			judged, err := s.judge(ctx, req, base, path)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, Candidate{Path: path, Module: module, PublicAPI: moduleMap.Exposes(module, path), PolicyCheck: judged.Answer})
+		}
+	}
+	return out, nil
+}
+
+// judge answers the import of one target from req.From.
+func (s PolicyQueryService) judge(ctx context.Context, req CanImportRequest, base Baseline, target string) (CanImportAnswer, error) {
+	edge, err := s.Edges.Edge(ctx, req.From, target)
+	if err != nil {
+		return CanImportAnswer{}, err
+	}
+	answer := CanImportAnswer{Target: target, From: edge.From, Language: edge.Language}
+	switch {
+	case edge.NotExtracted != "":
+		answer.Answer, answer.Reasons = evaluation.AnswerUnconstrained, []string{edge.NotExtracted}
+	case edge.Undecided != "":
+		answer.Answer, answer.Reasons = evaluation.AnswerNotDecided, []string{edge.Undecided}
+	default:
+		related := analysis.Analyze(analysis.Input{
+			Graph: edge.Graph, Policy: req.Policy.Relationship,
+		})
+		judged, err := evaluation.JudgeEdge(evaluation.JudgeInput{
+			Relationships: related.Relationships, Policy: req.Policy,
+			Accepted: base.Accepted, Now: req.Now, UnwalkedSourceProduction: edge.Production,
+		})
+		if err != nil {
+			return CanImportAnswer{}, err
+		}
+		answer.EdgeJudgment = boundJudgmentText(judged)
+	}
+	answer.Reasons = reportTexts(answer.Reasons, maxReportTextRunes)
+	return answer, nil
 }
 
 // boundJudgmentText applies the report text bounds to the repair text of an
@@ -122,6 +203,7 @@ func boundEdgeFindings(in []evaluation.EdgeFinding) []evaluation.EdgeFinding {
 		f.Why = reportText(f.Why, maxReportTextRunes)
 		f.Goal = reportText(f.Goal, maxReportTaskTextRunes)
 		f.Constraints = reportTexts(f.Constraints, maxReportTaskTextRunes)
+		f.Alternatives = reportTexts(f.Alternatives, maxReportTaskTextRunes)
 		out[i] = f
 	}
 	return out
