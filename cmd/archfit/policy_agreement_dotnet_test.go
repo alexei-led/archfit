@@ -141,13 +141,16 @@ func writeDotNetAgreementRepo(t *testing.T) string {
 func TestErosion_PolicyQueryAgreesWithCheckDotNet(t *testing.T) {
 	skipShortWithoutRequiredTools(t)
 	requireTool(t, "dotnet")
-	// The helper is a build product, not an installed analyzer, so its absence
-	// skips even under ARCHFIT_REQUIRE_TOOLS, as the registry's .NET lane test does.
+	// The helper is a build product, not an installed analyzer. Locally its
+	// absence skips; CI builds it first, so under ARCHFIT_REQUIRE_TOOLS it fails.
 	helper := os.Getenv(roslynHelperEnv)
 	if helper == "" {
 		helper, _ = filepath.Abs(filepath.Join("..", "..", ".bin", "dotnet-roslyn"))
 	}
 	if _, err := os.Stat(filepath.Join(helper, "archfit-roslyn.dll")); err != nil { //nolint:gosec // helper directory from the test environment
+		if os.Getenv(requireToolsEnv) == "1" {
+			t.Fatalf("no built helper at %s; run make dotnet-roslyn", helper)
+		}
 		t.Skipf("no built helper at %s; run make dotnet-roslyn", helper)
 	}
 	t.Setenv(roslynHelperEnv, helper)
