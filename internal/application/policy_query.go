@@ -143,11 +143,18 @@ func (s PolicyQueryService) candidates(ctx context.Context, req CanImportRequest
 				continue
 			}
 			seen[path] = true
+			// A candidate the extractor cannot spell (a directory for a language
+			// that reads files, say) is not decided. It must not turn the
+			// denial that named it into an error.
+			check := evaluation.AnswerNotDecided
 			judged, err := s.judge(ctx, req, base, path)
-			if err != nil {
+			switch {
+			case err == nil:
+				check = judged.Answer
+			case ctx.Err() != nil:
 				return nil, err
 			}
-			out = append(out, Candidate{Path: path, Module: module, PublicAPI: moduleMap.Exposes(module, path), PolicyCheck: judged.Answer})
+			out = append(out, Candidate{Path: path, Module: module, PublicAPI: moduleMap.Exposes(module, path), PolicyCheck: check})
 		}
 	}
 	return out, nil
