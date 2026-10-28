@@ -3,6 +3,7 @@ package coverage
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -40,6 +41,8 @@ func parseFormat(format string, data []byte) ([]evidence.CoverageFact, error) {
 		parser = coveragePyJSONParser{}
 	case FormatLLVMCovJSON:
 		parser = llvmCovJSONParser{}
+	case FormatCobertura:
+		parser = coberturaParser{}
 	default:
 		return nil, fmt.Errorf("%w: unsupported format %q", ErrAmbiguousCoverageFormat, format)
 	}
@@ -73,6 +76,8 @@ func formatCandidatesForExtension(path string) []string {
 		return []string{FormatLCOV}
 	case ".json":
 		return []string{FormatCoveragePyJSON, FormatLLVMCovJSON}
+	case ".xml":
+		return []string{FormatCobertura}
 	default:
 		return nil
 	}
@@ -82,6 +87,9 @@ func formatCandidatesForMagic(data []byte) []string {
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return nil
+	}
+	if coberturaShape(trimmed) {
+		return []string{FormatCobertura}
 	}
 	firstLine := trimmed
 	if index := bytes.IndexByte(firstLine, '\n'); index >= 0 {
@@ -109,6 +117,24 @@ func formatCandidatesForMagic(data []byte) []string {
 		candidates = append(candidates, FormatLLVMCovJSON)
 	}
 	return candidates
+}
+
+// coberturaShape reports whether the document's root element is <coverage>.
+func coberturaShape(data []byte) bool {
+	data = bytes.TrimPrefix(data, utf8BOM)
+	if len(data) == 0 || data[0] != '<' {
+		return false
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		if start, ok := token.(xml.StartElement); ok {
+			return start.Name.Local == "coverage"
+		}
+	}
 }
 
 func coveragePyShape(raw json.RawMessage) bool {

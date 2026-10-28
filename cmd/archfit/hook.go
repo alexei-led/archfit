@@ -123,7 +123,7 @@ func (c *HookClaudeCmd) Run(deps *appDeps) error {
 	if event.HookEventName != hookEventStop && event.HookEventName != hookEventSubagentStop {
 		return nil
 	}
-	ctx := context.Background()
+	ctx := deps.runContext()
 	dir := event.Cwd
 	if dir == "" {
 		dir = "."
@@ -154,7 +154,7 @@ func (c *HookClaudeCmd) Run(deps *appDeps) error {
 }
 
 func (c *HookGitCmd) Run(deps *appDeps) error {
-	result, err := stagedHookResult(context.Background(), deps, c.Config, c.Base, c.IndexFile)
+	result, err := stagedHookResult(deps.runContext(), deps, c.Config, c.Base, c.IndexFile)
 	if err != nil {
 		return &exitError{code: 3, msg: "archfit hook: " + err.Error()}
 	}

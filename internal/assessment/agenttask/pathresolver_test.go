@@ -255,6 +255,33 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		}
 	})
 
+	// .NET nodes are repo-relative paths: a .cs file, or a project file the LOC
+	// walk never indexes. Both resolve literally, a root project file included,
+	// although its dotted, slash-free name looks like a Python module key.
+	for _, node := range []string{"src/Core/Auth/Login.cs", "src/Core/Core.csproj", "App.csproj"} {
+		t.Run("dotnet_node_resolves_literally/"+node, func(t *testing.T) {
+			root := t.TempDir()
+			writeFixtureFile(t, root, node)
+			onDisk := func(p string) bool {
+				_, err := os.Stat(filepath.Join(root, filepath.FromSlash(p)))
+				return err == nil
+			}
+			resolver := agenttask.NewPathResolver(map[string]struct{}{"src/Core/Auth/Login.cs": {}}, nil, nil, onDisk)
+			tasks := agenttask.Build(
+				[]finding.Finding{gateFindingWithModuleEdge(node)},
+				map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+				nil, nil, nil, nil,
+				resolver,
+			)
+			if len(tasks) != 1 {
+				t.Fatalf("tasks = %d, want 1", len(tasks))
+			}
+			if len(tasks[0].Files) != 1 || tasks[0].Files[0] != node {
+				t.Errorf("files = %v, want [%q]", tasks[0].Files, node)
+			}
+		})
+	}
+
 	t.Run("rust_crate_mod_key_resolves_via_crate_root", func(t *testing.T) {
 		root := t.TempDir()
 		writeFixtureFile(t, root, "crates/mycrate/src/lib.rs")

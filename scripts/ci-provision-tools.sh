@@ -22,6 +22,7 @@ fi
 
 toolchain_ready() {
     test -x "$prefix/bin/cargo-modules" &&
+        test -x "$prefix/dotnet/dotnet" &&
         test -x "$prefix/bin/scip-go" &&
         test -x "$prefix/rust/bin/rustc" &&
         test -x "$prefix/analyzers/node/node_modules/.bin/sg" &&
@@ -36,6 +37,7 @@ export_toolchain() {
     printf '%s\n' \
         "$prefix/analyzers/node/node_modules/.bin" \
         "$prefix/bin" \
+        "$prefix/dotnet" \
         "$prefix/go/bin" \
         "$prefix/node/bin" \
         "$prefix/rust/bin" \
@@ -47,6 +49,7 @@ export_toolchain() {
         GOTOOLCHAIN=local \
         CARGO_HOME=/tmp/archfit-cargo \
         "RUST_SRC_PATH=$prefix/rust/lib/rustlib/src/rust/library" \
+        "DOTNET_ROOT=$prefix/dotnet" \
         UV_PYTHON_DOWNLOADS=never >>"$GITHUB_ENV"
 }
 

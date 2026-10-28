@@ -10,6 +10,11 @@ dist/
 docs/
 testdata/
 
+# .NET build outputs and the helper's xUnit project are not image inputs.
+**/bin/
+**/obj/
+tools/dotnet/archfit-roslyn/tests/
+
 # Local indexes, package installs, caches and credentials are not build inputs.
 .gitnexus/
 **/node_modules/

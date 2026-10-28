@@ -2,12 +2,14 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"path/filepath"
 	"slices"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
 	"github.com/alexei-led/archfit/v3/internal/extract/golang"
 	"github.com/alexei-led/archfit/v3/internal/extract/py"
 	"github.com/alexei-led/archfit/v3/internal/extract/rust"
@@ -24,6 +26,14 @@ type Tool struct {
 	Name        string
 	Command     string
 	InstallHint string
+	// Locate replaces the PATH probe for a tool found another way (an
+	// environment variable naming a helper): its path, whether it is set, and
+	// why a set value is unusable. Nil probes Command on PATH.
+	Locate func() (path string, found bool, err error)
+	// Version reports the version of a found tool at path, run in dir (the
+	// directory doctor checks), or why the tool cannot run there. Nil shows no
+	// version.
+	Version func(ctx context.Context, r toolrun.Runner, path, dir string) (string, error)
 }
 
 // Configs maps canonical language IDs to projected extractor configuration.
@@ -76,18 +86,22 @@ type Descriptor struct {
 }
 
 // languages is the single ordered source of truth for supported
-// languages. Extractor build order (go → ts → py → rust) is load-bearing: the
+// languages. Extractor build order (go → ts → py → rust → dotnet) is load-bearing: the
 // graph merge dedups by NodeConvention priority but ties resolve by insertion
 // order, and the engine golden test pins it. Append new languages; never reorder.
 // Primary analyzer and optional Rust tool names.
 const (
 	analyzerSetupURL = "https://github.com/alexei-led/archfit/blob/main/docs/languages.md#install-analyzers"
+	dotnetSDKURL     = "https://dotnet.microsoft.com/download"
+	cmdDotNet        = "dotnet"
 
-	ToolGoPackages   = "go/packages"
-	ToolDepCruiser   = "dependency-cruiser"
-	ToolGrimp        = "grimp"
-	ToolCargo        = "cargo"
-	ToolCargoModules = "cargo-modules"
+	ToolGoPackages    = "go/packages"
+	ToolDepCruiser    = "dependency-cruiser"
+	ToolGrimp         = "grimp"
+	ToolCargo         = "cargo"
+	ToolCargoModules  = "cargo-modules"
+	ToolDotNetMSBuild = "dotnet-msbuild"
+	ToolRoslyn        = "roslyn"
 
 	SCIPGo         = "scip-go"
 	SCIPTypeScript = "scip-typescript"
@@ -109,8 +123,8 @@ var languages = []Descriptor{
 		PrimaryTool: ToolGoPackages,
 		InstallHint: "https://go.dev/dl (runtime SDK; go/packages is linked into archfit)",
 		DoctorTools: []Tool{
-			{"go", "go", "https://go.dev/dl"},
-			{SCIPGo, SCIPGo, analyzerSetupURL},
+			{"go", "go", "https://go.dev/dl", nil, nil},
+			{SCIPGo, SCIPGo, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -126,9 +140,9 @@ var languages = []Descriptor{
 		PrimaryTool: ToolDepCruiser,
 		InstallHint: analyzerSetupURL,
 		DoctorTools: []Tool{
-			{"node", "node", "https://nodejs.org"},
-			{ToolDepCruiser, "depcruise", analyzerSetupURL},
-			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL},
+			{"node", "node", "https://nodejs.org", nil, nil},
+			{ToolDepCruiser, "depcruise", analyzerSetupURL, nil, nil},
+			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -142,8 +156,8 @@ var languages = []Descriptor{
 		PrimaryTool: ToolGrimp,
 		InstallHint: "install uv (selects Python 3.14 + grimp==3.17), or put a separate Python 3.14+ environment with grimp==3.17 on PATH",
 		DoctorTools: []Tool{
-			{"python3", "python3", "https://www.python.org/downloads"},
-			{SCIPPython, SCIPPython, analyzerSetupURL},
+			{"python3", "python3", "https://www.python.org/downloads", nil, nil},
+			{SCIPPython, SCIPPython, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -158,9 +172,26 @@ var languages = []Descriptor{
 		PrimaryTool: ToolCargo,
 		InstallHint: "https://rustup.rs (rustup installs cargo)",
 		DoctorTools: []Tool{
-			{ToolCargo, ToolCargo, "https://rustup.rs"},
-			{SCIPRust, SCIPRust, "rustup component add rust-analyzer"},
-			{ToolCargoModules, ToolCargoModules, analyzerSetupURL},
+			{ToolCargo, ToolCargo, "https://rustup.rs", nil, nil},
+			{SCIPRust, SCIPRust, "rustup component add rust-analyzer", nil, nil},
+			{ToolCargoModules, ToolCargoModules, analyzerSetupURL, nil, nil},
+		},
+	},
+	{
+		ID:             "dotnet",
+		Aliases:        []string{"csharp"},
+		ProjectPresent: dotnetProjectPresent,
+		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, _ *factcache.Store) evidenceports.Extractor {
+			ex := dotnet.New(r, cfg, cfg.DotNetProjects)
+			ex.TypeGraph = dotnet.TypeGraphOptions{Disabled: cfg.TypeGraphDisabled, Timeout: cfg.TypeGraphTimeout}
+			return ex
+		},
+		QueryEdge:   dotnet.QueryEdge,
+		PrimaryTool: ToolDotNetMSBuild,
+		InstallHint: dotnetSDKURL + " (the .NET SDK provides dotnet msbuild)",
+		DoctorTools: []Tool{
+			{Name: cmdDotNet, Command: cmdDotNet, InstallHint: dotnetSDKURL, Version: dotnetSDKVersion},
+			{Name: "archfit-roslyn", InstallHint: "build it with `make dotnet-roslyn` and set ARCHFIT_DOTNET_ROSLYN to its directory (the image sets it)", Locate: locateRoslynHelper, Version: roslynHelperVersion},
 		},
 	},
 }
@@ -185,6 +216,23 @@ func pyProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
 
 func rustProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
 	return rust.Applicable(root, cfg.CargoManifest)
+}
+
+func dotnetProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
+	return dotnet.Applicable(root, cfg.Exclusions, cfg.DotNetProjects)
+}
+
+// locateRoslynHelper checks ARCHFIT_DOTNET_ROSLYN with the extractor's own
+// validator, so doctor and analysis cannot disagree about the helper.
+func locateRoslynHelper() (string, bool, error) {
+	return dotnet.HelperDir("")
+}
+
+// DotNetProjects returns the repo-relative .csproj paths the .NET extractor
+// evaluates under scanRoot, by its own project selection. Onboarding proposes
+// one module per project directory from this answer.
+func DotNetProjects(scanRoot string, cfg evidenceports.ExtractConfig) []string {
+	return dotnet.Projects(scanRoot, cfg.Exclusions, cfg.DotNetProjects)
 }
 
 // GoWorkOff reports whether the Go toolchain must be told to ignore the go.work
@@ -306,6 +354,18 @@ func RustExtractor(exs []evidenceports.Extractor) *rust.Extractor {
 	for _, ex := range exs {
 		if re, ok := ex.(*rust.Extractor); ok {
 			return re
+		}
+	}
+	return nil
+}
+
+// DotNetExtractor returns the *dotnet.Extractor from the extractor slice, or
+// nil when it is not present. The pipeline collects the roslyn type graph
+// coverage record from it after extraction.
+func DotNetExtractor(exs []evidenceports.Extractor) *dotnet.Extractor {
+	for _, ex := range exs {
+		if de, ok := ex.(*dotnet.Extractor); ok {
+			return de
 		}
 	}
 	return nil

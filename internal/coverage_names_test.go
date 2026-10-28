@@ -11,8 +11,10 @@ import (
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/v3/internal/extract/clones"
+	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
 	goextract "github.com/alexei-led/archfit/v3/internal/extract/golang"
 	"github.com/alexei-led/archfit/v3/internal/extract/py"
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
 	"github.com/alexei-led/archfit/v3/internal/extract/rust"
 	"github.com/alexei-led/archfit/v3/internal/extract/scip"
 	"github.com/alexei-led/archfit/v3/internal/extract/ts"
@@ -38,6 +40,8 @@ var (
 	toolScipName          = scip.New(nil, 0).CoverageTool()
 	toolScipSymbolsName   = scip.New(nil, 0).SymbolsCoverageTool()
 	toolJscpdName         = clones.CoverageTool()
+	toolDotNetMSBuildName = dotnet.New(nil, evidenceports.ExtractConfig{}, nil).CoverageTool()
+	toolRoslynName        = dotnet.New(nil, evidenceports.ExtractConfig{}, nil).LastTypeGraphCoverage().Tool
 )
 
 // TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames drives the real
@@ -48,13 +52,13 @@ var (
 func TestAnalyzerCoverageNamesRemainStable(t *testing.T) {
 	t.Parallel()
 	got := decision.AnalyzerFamilies(decision.FamilyOptions{
-		PrimaryTools: []string{toolGoPackagesName, toolDepCruiserName, toolGrimpName, toolCargoName},
-		Patterns:     true, Syntax: true, SCIP: true, Clones: true, CargoModules: true,
+		PrimaryTools: []string{toolGoPackagesName, toolDepCruiserName, toolGrimpName, toolCargoName, toolDotNetMSBuildName},
+		Patterns:     true, Syntax: true, SCIP: true, Clones: true, CargoModules: true, Roslyn: true,
 	})
 	want := []string{
-		toolGoPackagesName, toolDepCruiserName, toolGrimpName, toolCargoName,
+		toolGoPackagesName, toolDepCruiserName, toolGrimpName, toolCargoName, toolDotNetMSBuildName,
 		toolAstGrepName, toolAstGrepSyntaxName, toolScipName, toolScipSymbolsName,
-		toolJscpdName, toolCargoModulesName,
+		toolJscpdName, toolCargoModulesName, toolRoslynName,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("analyzer families = %d, want %d", len(got), len(want))
@@ -94,5 +98,22 @@ func TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames(t *testing.T) {
 					tc.tool, got, tc.want)
 			}
 		})
+	}
+}
+
+// The .NET rows keep the names the registry, the measurement contract and the
+// decision tables spell: a rename on either side fails here.
+func TestDotNetCoverageNamesMatchTheRegistryAndContract(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ adapter, registryName string }{
+		{toolDotNetMSBuildName, registry.ToolDotNetMSBuild},
+		{toolRoslynName, registry.ToolRoslyn},
+	} {
+		if tc.adapter != tc.registryName {
+			t.Errorf("adapter coverage name %q, registry %q", tc.adapter, tc.registryName)
+		}
+		if semantics, external := evidence.MeasurementContract(tc.adapter); semantics == "" || !external {
+			t.Errorf("MeasurementContract(%q) = (%q, %v), want an external contract", tc.adapter, semantics, external)
+		}
 	}
 }

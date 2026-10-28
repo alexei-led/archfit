@@ -9,7 +9,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,7 +61,7 @@ Common runs:
 }
 
 func (c *LintCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 	cfg, err := loadAnalysisConfig(ctx, c.Config)
 	if err != nil {
 		return configLoadError(err)

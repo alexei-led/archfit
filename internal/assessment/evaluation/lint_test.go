@@ -34,6 +34,8 @@ func lintFixture() (policy.PolicySnapshot, evaluation.Observations) {
 		{ID: "guard", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: "a/legacy/**", Guard: true},
 		{ID: "stale_guard", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: assessPathsB, Guard: true},
 		{ID: "external", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: "github.com/sirupsen/logrus"},
+		{ID: "external_prefix", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: selExternalPrefix},
+		{ID: "external_prefix_guard", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: selExternalPrefix, Guard: true},
 		{ID: "cycles", Type: metricCycle, Gate: gateFail, From: "nowhere/**"},
 	}
 	topology := policy.TopologyView{Modules: modules, Layers: []string{"domain", "app"}, ModuleMap: policy.BuildModuleMap(modules)}
@@ -64,6 +66,8 @@ func TestLintPolicyReportsEachDefectOnce(t *testing.T) {
 		{evaluation.LintUnknownSubdomain, evaluation.LintSeverityError, "modules.a.subdomain"},
 		{evaluation.LintUnknownVolatility, evaluation.LintSeverityError, "modules.a.volatility"},
 		{evaluation.LintAmbiguousOwnership, evaluation.LintSeverityError, "modules.b.paths"},
+		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[external_prefix].to"},
+		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[external_prefix_guard].to"},
 		{evaluation.LintGuardRule, evaluation.LintSeverityInfo, "rules[guard]"},
 		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[modpath].to"},
 		{evaluation.LintDeadSelector, evaluation.LintSeverityWarning, "rules[off_typo].from"},
@@ -83,11 +87,12 @@ func TestLintPolicyMessagesNameTheDefect(t *testing.T) {
 		messages[d.Path] += d.Message
 	}
 	for path, want := range map[string]string{
-		"rules[typo].to":       "to: b/missing/** matches no scanned source",
-		"rules[modpath].to":    "drop the Go module path example.com/m/",
-		"modules.a.volatility": `volatility "hgih" is not one of`,
-		"modules.a.layer":      `layer "domian" is not declared`,
-		"modules.b.paths":      "modules b, twin",
+		"rules[typo].to":            "to: b/missing/** matches no scanned source",
+		"rules[modpath].to":         "drop the Go module path example.com/m/",
+		"rules[external_prefix].to": "write Npgsql without the external: prefix",
+		"modules.a.volatility":      `volatility "hgih" is not one of`,
+		"modules.a.layer":           `layer "domian" is not declared`,
+		"modules.b.paths":           "modules b, twin",
 	} {
 		if !strings.Contains(messages[path], want) {
 			t.Errorf("%s message = %q, want it to contain %q", path, messages[path], want)
@@ -169,6 +174,7 @@ func TestLintAndCheckAgreeOnVacuousRules(t *testing.T) {
 		{From: selShipping, To: "!(internal/billing/api)"},
 		{From: selPyCore, To: "app.adaptr"},
 		{From: selShipping, To: "net/http"},
+		{From: selShipping, To: selExternalPrefix},
 		{From: selJava, To: selBilling},
 		{From: assessCore, To: selBilling},
 		{FromModule: modWarehouse, To: selBilling},

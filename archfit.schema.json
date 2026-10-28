@@ -86,6 +86,9 @@
         },
         "cargo_modules": {
           "$ref": "#/$defs/Analyzer"
+        },
+        "roslyn": {
+          "$ref": "#/$defs/TimedAnalyzer"
         }
       },
       "additionalProperties": false,
@@ -171,7 +174,8 @@
             "go-coverprofile",
             "lcov",
             "coverage-py-json",
-            "llvm-cov-json"
+            "llvm-cov-json",
+            "cobertura"
           ]
         },
         "sidecar_path": {
@@ -214,6 +218,40 @@
       "additionalProperties": false,
       "type": "object",
       "description": "DistributedMonolithDef configures the distributed-monolith seam rule (`coupling.gate.distributed_monolith:`)."
+    },
+    "DotNetLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+        },
+        "projects": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Projects are the solution (.slnx, .sln), solution filter (.slnf), or\nproject (.csproj) files to analyze, relative to the scan root. Empty =\nauto: the first .slnx or .sln at the root, else every .csproj outside\nobj/, bin/ and exclusions."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DotNetLanguage configures the .NET extractor (`languages.dotnet`)."
     },
     "ExternalSystemDef": {
       "properties": {
@@ -335,6 +373,9 @@
         },
         "rust": {
           "$ref": "#/$defs/RustLanguage"
+        },
+        "dotnet": {
+          "$ref": "#/$defs/DotNetLanguage"
         }
       },
       "additionalProperties": false,
@@ -692,7 +733,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`, `analyzers.clones`)."
+      "description": "TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`, `analyzers.clones`, `analyzers.roslyn`)."
     },
     "TypeScriptLanguage": {
       "properties": {

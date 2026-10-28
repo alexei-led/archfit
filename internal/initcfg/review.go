@@ -46,6 +46,19 @@ func RustDeepAnalysisSetting() SettingChange {
 	}
 }
 
+// SettingCodeDotNetTypeGraph is the settings change `config update --apply`
+// writes for a .NET project whose Roslyn analyzer setting is implicit.
+const SettingCodeDotNetTypeGraph = "add_dotnet_type_graph_default"
+
+// DotNetTypeGraphSetting is the settings entry for the explicit
+// `analyzers.roslyn.enabled: true`. The caller decides whether it applies.
+func DotNetTypeGraphSetting() SettingChange {
+	return SettingChange{
+		Code:   SettingCodeDotNetTypeGraph,
+		Reason: ".NET projects found; --apply sets analyzers.roslyn.enabled: true so the type graph is an explicit choice",
+	}
+}
+
 // ModuleIssue is one config-quality gap on a configured module that needs a
 // human decision. Code is one of the Issue* constants.
 type ModuleIssue struct {

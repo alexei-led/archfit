@@ -5,13 +5,16 @@ import (
 	"testing"
 )
 
-const detectJSONPath = "coverage.json"
+const (
+	detectJSONPath = "coverage.json"
+	goCoverSample  = "mode: set\nfile.go:1.1,1.2 1 1\n"
+)
 
 func TestDetectFormatUsesExtensionAndMagic(t *testing.T) {
 	cases := []struct {
 		name, path, input, want string
 	}{
-		{name: "Go magic", path: "coverage.out", input: "mode: set\nfile.go:1.1,1.2 1 1\n", want: FormatGoCoverProfile},
+		{name: "Go magic", path: "coverage.out", input: goCoverSample, want: FormatGoCoverProfile},
 		{name: "LCOV magic", path: "report", input: "TN:\nSF:file.ts\nDA:1,1\nend_of_record\n", want: FormatLCOV},
 		{name: "coverage.py JSON", path: detectJSONPath, input: `{"files":{"x.py":{"summary":{"covered_lines":1,"missing_lines":0,"num_statements":1}}}}`, want: FormatCoveragePyJSON},
 		{name: "llvm-cov JSON", path: detectJSONPath, input: `{"data":[{"files":[{"filename":"x.rs","summary":{"lines":{"covered":1,"count":1}}}]}]}`, want: FormatLLVMCovJSON},
@@ -40,7 +43,7 @@ func TestDetectFormatRejectsAmbiguity(t *testing.T) {
 			}
 		})
 	}
-	if _, err := detectFormat("coverage.info", []byte("mode: set\nfile.go:1.1,1.2 1 1\n")); !errors.Is(err, ErrAmbiguousCoverageFormat) {
+	if _, err := detectFormat("coverage.info", []byte(goCoverSample)); !errors.Is(err, ErrAmbiguousCoverageFormat) {
 		t.Fatalf("format conflict error = %v, want ambiguity", err)
 	}
 }

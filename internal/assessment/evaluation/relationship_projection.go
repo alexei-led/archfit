@@ -47,6 +47,16 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 	return out
 }
 
+// whenKnown publishes a same-owner or same-deploy-unit answer only when both
+// sides are known. Relationship reports false for an undeclared side, and a
+// published false would read as "different" where nobody declared anything.
+func whenKnown(same bool, from, to string) *bool {
+	if from == "" || to == "" {
+		return nil
+	}
+	return &same
+}
+
 // projectSeams copies the relationship seam ledger into the assessment result.
 // It is a pure rename of typed values: assessment never recomputes a seam, and
 // nothing here reads a threshold.
@@ -63,9 +73,10 @@ func projectSeams(in []relationship.Seam) []result.Seam {
 			VolatilityProvenance: s.VolatilityProvenance, Severity: string(s.Severity),
 			RawDistance: result.SeamDistance{
 				Level: string(s.RawDistance.Level), Basis: s.RawDistance.Basis,
-				FromOwner: s.RawDistance.FromOwner, ToOwner: s.RawDistance.ToOwner, SameOwner: s.RawDistance.SameOwner,
+				FromOwner: s.RawDistance.FromOwner, ToOwner: s.RawDistance.ToOwner,
+				SameOwner:      whenKnown(s.RawDistance.SameOwner, s.RawDistance.FromOwner, s.RawDistance.ToOwner),
 				FromDeployUnit: s.RawDistance.FromDeployUnit, ToDeployUnit: s.RawDistance.ToDeployUnit,
-				SameDeployUnit:    s.RawDistance.SameDeployUnit,
+				SameDeployUnit:    whenKnown(s.RawDistance.SameDeployUnit, s.RawDistance.FromDeployUnit, s.RawDistance.ToDeployUnit),
 				BoundaryCrossings: s.RawDistance.BoundaryCrossings, SharedAncestor: s.RawDistance.SharedAncestor,
 			},
 			Quadrant: string(s.Quadrant),

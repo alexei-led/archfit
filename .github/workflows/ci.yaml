@@ -273,6 +273,12 @@ jobs:
             echo "count=${#selected[@]}"
             echo "pattern=^($(IFS='|'; echo "${selected[*]}"))$"
           } >> "$GITHUB_OUTPUT"
+      - name: Build the Roslyn helper
+        if: matrix.label == 'CLI'
+        # cmd/archfit's .NET policy-agreement test needs the helper, and this job
+        # sets ARCHFIT_REQUIRE_TOOLS=1: a missing helper is a failure there, not a
+        # skip, so the job that runs the test builds it.
+        run: make dotnet-roslyn
       - name: Run tests
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
@@ -379,7 +385,14 @@ jobs:
       # no_scalar_decision, no_dead_archfit_rule (internal/erosion_test.go);
       # dimension_status_required, config_hash_required, label_evidence_required,
       # baseline_idempotent (cmd/archfit/erosion_test.go); policy_query_agreement
-      # (cmd/archfit/policy_test.go, policy_agreement_lang_test.go).
+      # (cmd/archfit/policy_test.go, policy_agreement_lang_test.go,
+      # policy_agreement_dotnet_test.go, which needs the Roslyn helper in .bin).
+      - name: Build the Roslyn helper
+        run: make dotnet-roslyn
+      - name: Test the Roslyn helper
+        # The helper is a shipped binary inside the image; its xUnit suite gates
+        # the per-project classification and reasons the Go side folds.
+        run: make dotnet-roslyn-test
       - name: CI gate — architecture-state erosion
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"

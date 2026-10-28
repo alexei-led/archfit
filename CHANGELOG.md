@@ -1,5 +1,26 @@
 # Release notes
 
+## v3.3.0
+
+### Summary
+
+Measure C# and .NET solutions: MSBuild evaluation per target framework, a Roslyn type graph through a pinned helper, and project-reference fallback when the helper cannot load a project. The results around it got honest: a rule that produced a finding is no longer also listed unevaluated, a cycle is one finding per component, and an intrusive extractor hint now fires `internal_api_access` in every language.
+
+### Changes
+
+- C# and .NET: `languages.dotnet` selects projects from a `.slnx`, a `.sln`, a configured `.slnf`, or every `.csproj`; `dotnet msbuild` supplies the per-framework references and the Roslyn helper (`archfit-roslyn`, shipped in the image) supplies file-to-file type edges. A project the helper did not load completely stays `partial` with its own cause, and a required rule that reads it stays unevaluated rather than passing silently.
+- Multi-target projects report each target framework on its own; the project's status is the fold, and a framework the host cannot load no longer stamps every other framework.
+- `module_cycle` reports one finding per strongly-connected component with the member list and the capped location list, instead of one finding per pair; agent tasks follow one per component.
+- `internal_api_access` fires on the extractor's `intrusive` hint — a C# internal member reached through `InternalsVisibleTo`, a Python underscore import, a Rust private symbol — when no `internal:` glob covers the target.
+- Selector liveness: a rule target spelled as a graph node ID (`external:Npgsql`, `file:x`) can never match, so `config lint` rejects it and `check` stops counting the rule as evaluated. Write the endpoint spelling.
+- Coverage rows carry a `details` list, one line per project (status, frameworks, distinct files, unresolved count), so the .NET table is readable when the reason is shortened; a disabled `supplied-coverage` row now appears beside the other producers.
+- `--base` discloses a base-side degraded analyzer with the `[base]` label and the full reason; restore outputs recorded at another root are reconciled by project path instead of reading as a package-input change.
+- CI builds the Roslyn helper and runs its xUnit suite in the gates job.
+
+### Upgrade
+
+The image carries the helper and a .NET SDK; keep engine version, Action commit and image digest pinned together. The measurement profile gains `dotnet-msbuild`, `roslyn` and `supplied-coverage` rows, so re-record a stored `.archfit-baseline.json` once (`archfit baseline`) — a reference recorded before this release reads "reference not comparable" and cannot ratchet. A repository whose rule target is spelled as a graph node ID now fails `config lint`; that selector never matched.
+
 ## v3.2.3
 
 ### Summary

@@ -65,6 +65,9 @@ const (
 	modAPI         = "api"
 	refBaseline    = "baseline"
 	stepFixBlocker = "Fix blocker b228b5d0 (layers-point-inward)."
+
+	goPackagesPartial = "go/packages evidence is partial"
+	toolDotNetMSBuild = "dotnet-msbuild"
 )
 
 func ref(f report.Finding) report.FindingRef {
@@ -161,7 +164,8 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	s := briefState()
 	s.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{
 		{RuleID: "dead", Reason: "selector matches nothing: from ghost/**"},
-		{RuleID: "partial", Reason: "go/packages evidence is partial"},
+		{RuleID: "partial", Reason: goPackagesPartial},
+		{RuleID: "vb", Reason: "selector names a file type no dependency producer analyses: to src/**/*.vb"},
 	}
 	s.Dimensions.Testability.Unknown = []report.UnknownFact{{Fact: state.FactSuppliedCoverageUnits}, {Fact: state.FactAssertionQuality}}
 	s.Dimensions.Operations.Unknown = []report.UnknownFact{{Fact: state.FactOwnerProvenance}}
@@ -169,9 +173,9 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	want := []string{
 		stepFixBlocker,
 		"Ask the owner to fix rule dead: its selector matches nothing (archfit config lint).",
+		"Ask the owner to fix rule vb: its target names a file type no analyzer reads.",
 		"Restore the evidence rule partial needs: archfit doctor --fix.",
 		"Install or fix the missing analyzers (dependency-cruiser): archfit doctor --fix.",
-		"Declare owner for each module or add CODEOWNERS.",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("next steps =\n%q\nwant\n%q", got, want)
@@ -188,6 +192,88 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("next steps =\n%q\nwant module decisions before evidence\n%q", got, want)
+	}
+}
+
+// TestNextStepsNameTheFixForAPartialAnalyzer pins the difference between an
+// analyzer that did not run and one whose inputs were incomplete: installing or
+// repairing an MSBuild SDK is not `archfit doctor --fix`, so that step must not
+// be repeated for every rule the incomplete analyzer withholds.
+func TestNextStepsNameTheFixForAPartialAnalyzer(t *testing.T) {
+	const msb = "dotnet-msbuild evidence is partial: AppHost/AppHost.csproj: MSB4236: SDK 'Aspire.AppHost.Sdk' not resolvable offline; run with NuGet access and a warm cache"
+	partialRow := report.StateToolCoverage{Tool: toolDotNetMSBuild, Status: report.StatusPartial, Reason: "MSB4236"}
+	for _, tc := range []struct {
+		name     string
+		rows     []report.StateToolCoverage
+		reason   string
+		wantStep string
+	}{
+		{
+			name:     "partial dotnet-msbuild row",
+			rows:     []report.StateToolCoverage{partialRow},
+			reason:   msb,
+			wantStep: "Restore the .NET build inputs the dotnet-msbuild row names: run archfit with NuGet access and a warm package cache, or install the MSBuild SDK or workload it names (archfit doctor --fix installs analyzers, not SDKs).",
+		},
+		{
+			name:     "timed-out dotnet-msbuild row",
+			rows:     []report.StateToolCoverage{{Tool: toolDotNetMSBuild, Status: report.StatusTimedOut}},
+			reason:   msb,
+			wantStep: "Restore the .NET build inputs the dotnet-msbuild row names: run archfit with NuGet access and a warm package cache, or install the MSBuild SDK or workload it names (archfit doctor --fix installs analyzers, not SDKs).",
+		},
+		{
+			name:   "no row for the analyzer",
+			reason: msb,
+		},
+		{
+			name:   "analyzer partial but installable",
+			rows:   []report.StateToolCoverage{{Tool: "go/packages", Status: report.StatusPartial}},
+			reason: goPackagesPartial,
+		},
+		{
+			name:   "row is absent, not partial",
+			rows:   []report.StateToolCoverage{{Tool: toolDotNetMSBuild, Status: report.StatusAbsent}},
+			reason: msb,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := briefState()
+			s.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{{RuleID: "layer-direction", Reason: tc.reason}}
+			s.Dimensions.Intent.Unknown = []report.UnknownFact{{Fact: state.FactActiveRuleConformance}}
+			s.Coverage.Tools = tc.rows
+			got := Build(Input{State: s}).NextSteps
+			if tc.wantStep != "" {
+				want := []string{stepFixBlocker, tc.wantStep}
+				if !slices.Equal(got, want) {
+					t.Fatalf("next steps =\n%q\nwant\n%q", got, want)
+				}
+				return
+			}
+			want := []string{
+				stepFixBlocker,
+				"Restore the evidence rule layer-direction needs: archfit doctor --fix.",
+				"Restore the analyzers the rules read: archfit doctor --fix.",
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("next steps =\n%q\nwant the install step\n%q", got, want)
+			}
+		})
+	}
+}
+
+// TestNextStepsCollapseRulesBehindOnePartialAnalyzer pins that rules sharing
+// one incomplete analyzer produce one step, not one per rule.
+func TestNextStepsCollapseRulesBehindOnePartialAnalyzer(t *testing.T) {
+	const msb = "dotnet-msbuild evidence is partial: src/Api/Api.csproj: MSB4236: SDK 'Bitwarden.Server.Sdk' not resolvable offline"
+	s := briefState()
+	s.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{
+		{RuleID: "layer-direction", Reason: msb},
+		{RuleID: "module-boundaries", Reason: msb},
+		{RuleID: "no-module-cycles", Reason: msb},
+	}
+	s.Coverage.Tools = []report.StateToolCoverage{{Tool: toolDotNetMSBuild, Status: report.StatusPartial}}
+	got := Build(Input{State: s}).NextSteps
+	if len(got) != 2 || !strings.Contains(got[1], "NuGet access") {
+		t.Fatalf("next steps = %q, want the blocker and one shared restore step", got)
 	}
 }
 
@@ -277,7 +363,7 @@ func TestNextStepsFollowTheAgentDecisionOrder(t *testing.T) {
 	s = briefState()
 	s.Findings, s.Dimensions.Structure.Findings, s.Verdict = nil, nil, report.StateNeedsAttention
 	s.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{
-		{RuleID: "partial", Reason: "go/packages evidence is partial"},
+		{RuleID: "partial", Reason: goPackagesPartial},
 		{RuleID: "dead", Reason: "selector matches nothing: from ghost/**"},
 	}
 	if got := Build(Input{State: s}).NextSteps; len(got) == 0 || !strings.HasPrefix(got[0], "Ask the owner to fix rule dead") {

@@ -284,7 +284,7 @@ func projectStateToolCoverage(in []evidence.Coverage) (map[string]string, []repo
 		if c.Version != "" {
 			versions[c.Tool] = c.Version
 		}
-		tools = append(tools, report.StateToolCoverage{Tool: c.Tool, Status: c.Status, Reason: c.Reason})
+		tools = append(tools, report.StateToolCoverage{Tool: c.Tool, Status: c.Status, Reason: c.Reason, Details: c.Details})
 	}
 	return versions, tools
 }
@@ -300,7 +300,7 @@ func projectScorecard(in score.Scorecard) report.Scorecard {
 func projectCoverage(in []evidence.Coverage) []report.Coverage {
 	out := make([]report.Coverage, len(in))
 	for i, v := range in {
-		out[i] = report.Coverage{Tool: v.Tool, Version: v.Version, FilesSeen: v.FilesSeen, FilesApplicable: v.FilesApplicable, Unresolved: v.Unresolved, SpecifiersSeen: v.SpecifiersSeen, UnresolvedInputsMissing: v.UnresolvedInputsMissing, UnresolvedPrecisionOnly: v.UnresolvedPrecisionOnly, Status: v.Status, Reason: v.Reason}
+		out[i] = report.Coverage{Tool: v.Tool, Version: v.Version, FilesSeen: v.FilesSeen, FilesApplicable: v.FilesApplicable, Unresolved: v.Unresolved, SpecifiersSeen: v.SpecifiersSeen, UnresolvedInputsMissing: v.UnresolvedInputsMissing, UnresolvedPrecisionOnly: v.UnresolvedPrecisionOnly, Status: v.Status, Reason: v.Reason, Details: v.Details}
 	}
 	return out
 }

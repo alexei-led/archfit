@@ -26,6 +26,11 @@ const ShortIDLen = 8
 // the same prefix, so the human step and the agent's next_action agree.
 const deadSelectorPrefix = "selector matches nothing:"
 
+// unsupportedTargetPrefix marks an unevaluated required rule whose to: path
+// names a file type no dependency producer analyses: the owner fixes the rule,
+// since no analyzer install makes it evaluable. agentout reads the same prefix.
+const unsupportedTargetPrefix = "selector names a file type no dependency producer analyses:"
+
 // unmeasuredRatchetPrefix starts the reason of an unevaluated ratchet entry: the stored
 // reference does not compare, which the reference step below already answers.
 const unmeasuredRatchetPrefix = "reference not comparable"
@@ -252,34 +257,78 @@ func nextSteps(in Input, blockers []Blocker, reference string) []string {
 	}
 	rules := in.State.Decision.UnevaluatedRequiredRules
 	for _, rule := range rules {
-		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
+		switch {
+		case strings.HasPrefix(rule.Reason, deadSelectorPrefix):
 			add("Ask the owner to fix rule " + rule.RuleID + ": its selector matches nothing (archfit config lint).")
+		case strings.HasPrefix(rule.Reason, unsupportedTargetPrefix):
+			add("Ask the owner to fix rule " + rule.RuleID + ": its target names a file type no analyzer reads.")
 		}
 	}
+	// A rule whose evidence an incomplete analyzer withholds needs that
+	// analyzer's inputs restored, not the analyzer installed; the install step
+	// cannot close it, so it must not be repeated for every such rule.
+	overrides := map[string]string{}
 	for _, rule := range rules {
-		if !strings.HasPrefix(rule.Reason, deadSelectorPrefix) && !strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
-			add("Restore the evidence rule " + rule.RuleID + " needs: archfit doctor --fix.")
+		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) || strings.HasPrefix(rule.Reason, unsupportedTargetPrefix) ||
+			strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
+			continue
 		}
+		if step, ok := partialAnalyzerStep(rule.Reason, in.State.Coverage.Tools); ok {
+			overrides[stepAnalyzersRulesRead] = step
+			add(capitalize(step) + ".")
+			continue
+		}
+		add("Restore the evidence rule " + rule.RuleID + " needs: archfit doctor --fix.")
 	}
 	if tools := gapTools(in.CoverageGaps); tools != "" {
 		add("Install or fix the missing analyzers (" + tools + "): archfit doctor --fix.")
 	}
-	addFactSteps(in.State.Dimensions, categoryTools, add)
+	addFactSteps(in.State.Dimensions, categoryTools, add, overrides)
 	if in.State.GateReference != nil && reference != "" && reference != stepBlockersFirst {
 		add(capitalize(reference) + ".")
 	}
-	addFactSteps(in.State.Dimensions, categoryModules, add)
-	addFactSteps(in.State.Dimensions, categoryEvidence, add)
+	addFactSteps(in.State.Dimensions, categoryModules, add, overrides)
+	addFactSteps(in.State.Dimensions, categoryEvidence, add, overrides)
 	return steps
 }
 
+// partialAnalyzerSteps name what restores an analyzer whose own coverage row is
+// partial or timed out: the tool ran and its inputs were incomplete, so
+// installing it again cannot help. Every other analyzer is closed by the
+// install step.
+var partialAnalyzerSteps = map[string]string{
+	"dotnet-msbuild": "restore the .NET build inputs the dotnet-msbuild row names: run archfit with NuGet access and a warm package cache, or install the MSBuild SDK or workload it names (archfit doctor --fix installs analyzers, not SDKs)",
+	"roslyn":         "restore the .NET build inputs the roslyn row names: run archfit with NuGet access and a warm package cache (archfit doctor --fix installs analyzers, not packages)",
+}
+
+// partialAnalyzerStep returns the step that restores the analyzer a reason
+// names, when that analyzer's row is partial or timed out. The reasons spell an
+// analyzer as "<tool> evidence is partial: …" or "<tool> evidence is incomplete
+// for the rule scope: …", so a tool's own name identifies it.
+func partialAnalyzerStep(reason string, rows []report.StateToolCoverage) (string, bool) {
+	for _, row := range rows {
+		step, tracked := partialAnalyzerSteps[row.Tool]
+		if !tracked || !strings.Contains(reason, row.Tool+" evidence is") {
+			continue
+		}
+		if row.Status == report.StatusPartial || row.Status == report.StatusTimedOut {
+			return step, true
+		}
+	}
+	return "", false
+}
+
 // addFactSteps adds the step of every unknown fact of one category, in
-// dimension order.
-func addFactSteps(dims report.Dimensions, cat category, add func(string)) {
+// dimension order, with overrides replacing a fact's default text.
+func addFactSteps(dims report.Dimensions, cat category, add func(string), overrides map[string]string) {
 	for _, dim := range dims.All() {
 		for _, u := range dim.Unknown {
 			if fs, ok := factSteps[u.Fact]; ok && fs.category == cat {
-				add(capitalize(fs.step) + ".")
+				step := fs.step
+				if override, replaced := overrides[step]; replaced {
+					step = override
+				}
+				add(capitalize(step) + ".")
 			}
 		}
 	}

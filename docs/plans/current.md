@@ -30,7 +30,7 @@ Current behavior lives in [Results](../results.md) and [Evidence](../evidence.md
 
 ## Proposals without a delivery commitment
 
-- JVM and .NET language adapters, and a generic SCIP primary extractor.
+- A JVM language adapter, and a generic SCIP primary extractor. .NET is planned separately in [the .NET support plan](20261027-dotnet-support.md).
 - An MCP interface for coding agents.
 - Stored-history queries through a possible `archfit history` command.
 - Coupling-strength constraints and additional context-map support.

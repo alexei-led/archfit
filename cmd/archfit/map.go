@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"sort"
 	"time"
@@ -45,7 +44,7 @@ Common runs:
 func (c *MapCmd) Run(deps *appDeps) error {
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(false, false), c.Progress, c.Quiet, time.Now())
 	rep.banner("Archfit mapping " + analyzeTarget(c.Config, c.Root))
-	resp, cfg, err := executeScan(context.Background(), deps, scanRequest{
+	resp, cfg, err := executeScan(deps.runContext(), deps, scanRequest{
 		configPath: c.Config, root: c.Root, refresh: c.Refresh, progress: c.Progress, quiet: c.Quiet, reportOnly: true,
 	}, rep.advance)
 	rep.finish()

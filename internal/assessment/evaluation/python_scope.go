@@ -21,7 +21,10 @@ func (inv selectorInventory) pythonTargetAddressable(rule policy.RuleDef, topolo
 	return python || len(languages) == 0
 }
 
-func (inv selectorInventory) pythonFileMatches(rule policy.RuleDef, side, file string) bool {
+// sideFileMatches reports whether one side of a selector rule (its from: or
+// to: glob, else its module selector) reaches file; an empty side reaches
+// every file.
+func (inv selectorInventory) sideFileMatches(rule policy.RuleDef, side, file string) bool {
 	pattern, moduleSelector := rule.From, rule.FromModule
 	if side == selectorTo {
 		pattern, moduleSelector = rule.To, rule.ToModule
@@ -45,7 +48,7 @@ func (inv selectorInventory) unscannedPythonSelector(rule policy.RuleDef) string
 		return ""
 	}
 	if !slices.ContainsFunc(inv.files, func(file string) bool {
-		return strings.HasSuffix(file, ".py") && inv.pythonFileMatches(rule, selectorFrom, file)
+		return strings.HasSuffix(file, ".py") && inv.sideFileMatches(rule, selectorFrom, file)
 	}) {
 		return ""
 	}
@@ -53,7 +56,7 @@ func (inv selectorInventory) unscannedPythonSelector(rule policy.RuleDef) string
 		if _, missing := inv.unanalysed[file]; !missing || !strings.HasSuffix(file, ".py") {
 			continue
 		}
-		if inv.pythonFileMatches(rule, selectorFrom, file) || inv.pythonFileMatches(rule, selectorTo, file) {
+		if inv.sideFileMatches(rule, selectorFrom, file) || inv.sideFileMatches(rule, selectorTo, file) {
 			return unscannedPythonReason(file)
 		}
 	}

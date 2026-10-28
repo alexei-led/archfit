@@ -3,6 +3,7 @@ package acquisition_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -31,6 +32,8 @@ const (
 	toolScip          = "scip"
 	toolAstGrepSyntax = "ast-grep/syntax"
 	toolSupplied      = "supplied-coverage"
+	toolDotNetMSBuild = "dotnet-msbuild"
+	toolRoslyn        = "roslyn"
 
 	gateOff  = "off"
 	gateWarn = "warn"
@@ -1284,6 +1287,14 @@ func TestSkippedPassCoverageRows_ReasonContent(t *testing.T) {
 // hasCoverageGap reports whether the gap list names tool. Restated locally so
 // the pipeline's coverage tests assert on the gap values themselves rather than
 // depending on an assessment decision helper.
+func gapTools(gaps []evidence.CoverageGap) []string {
+	tools := make([]string, 0, len(gaps))
+	for _, g := range gaps {
+		tools = append(tools, g.Tool)
+	}
+	return tools
+}
+
 func hasCoverageGap(gaps []evidence.CoverageGap, tool string) bool {
 	for _, g := range gaps {
 		if g.Tool == tool {
@@ -1291,4 +1302,101 @@ func hasCoverageGap(gaps []evidence.CoverageGap, tool string) bool {
 		}
 	}
 	return false
+}
+
+// TestRoslynOptOutRaisesNoInstallGap pins that switching .NET or Roslyn off is a
+// deliberate opt-out: the roslyn row reads disabled over a tree with .NET and
+// never becomes an install prompt (which --require-tools would turn into a
+// block), while a missing helper on an enabled .NET tree is still a gap.
+func TestRoslynOptOutRaisesNoInstallGap(t *testing.T) {
+	t.Parallel()
+	withDotNet := t.TempDir()
+	if err := os.WriteFile(filepath.Join(withDotNet, "App.csproj"), []byte("<Project Sdk=\"Microsoft.NET.Sdk\" />\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goOnly := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goOnly, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dotnetOff := config.Config{Languages: config.LanguagesConfig{DotNet: config.DotNetLanguage{Enabled: evidenceports.ModeOff}}}
+	roslynOff := config.Config{Analyzers: config.AnalyzersConfig{Roslyn: config.TimedAnalyzer{Enabled: evidenceports.ModeOff}}}
+	row := func(tool, status string) evidence.Coverage { return evidence.Coverage{Tool: tool, Status: status} }
+
+	tests := []struct {
+		name       string
+		cfg        config.Config
+		root       string
+		rows       []evidence.Coverage
+		wantRoslyn string
+		wantGaps   []string
+	}{
+		{
+			name:       "languages.dotnet off over a .NET tree",
+			cfg:        dotnetOff,
+			root:       withDotNet,
+			rows:       []evidence.Coverage{row(toolDotNetMSBuild, evidence.StatusAbsent), row(toolRoslyn, evidence.StatusAbsent)},
+			wantRoslyn: evidence.StatusDisabled,
+		},
+		{
+			name:       "analyzers.roslyn off, SDK missing",
+			cfg:        roslynOff,
+			root:       withDotNet,
+			rows:       []evidence.Coverage{row(toolDotNetMSBuild, evidence.StatusAbsent), row(toolRoslyn, evidence.StatusDisabled)},
+			wantRoslyn: evidence.StatusDisabled,
+			wantGaps:   []string{toolDotNetMSBuild},
+		},
+		{
+			name:       "analyzers.roslyn off, project selection error",
+			cfg:        roslynOff,
+			root:       withDotNet,
+			rows:       []evidence.Coverage{row(toolDotNetMSBuild, evidence.StatusPartial), row(toolRoslyn, evidence.StatusDisabled)},
+			wantRoslyn: evidence.StatusDisabled,
+		},
+		{
+			name:       "analyzers.roslyn off, row left absent",
+			cfg:        roslynOff,
+			root:       withDotNet,
+			rows:       []evidence.Coverage{row(toolDotNetMSBuild, evidence.StatusOK), row(toolRoslyn, evidence.StatusAbsent)},
+			wantRoslyn: evidence.StatusDisabled,
+		},
+		{
+			name:       "enabled, helper not set",
+			cfg:        config.Default(),
+			root:       withDotNet,
+			rows:       []evidence.Coverage{row(toolDotNetMSBuild, evidence.StatusOK), row(toolRoslyn, evidence.StatusAbsent)},
+			wantRoslyn: evidence.StatusAbsent,
+			wantGaps:   []string{toolRoslyn},
+		},
+		{
+			name:       "no .NET project",
+			cfg:        config.Default(),
+			root:       goOnly,
+			rows:       []evidence.Coverage{row(toolDotNetMSBuild, evidence.StatusAbsent), row(toolRoslyn, evidence.StatusAbsent)},
+			wantRoslyn: evidence.StatusAbsent,
+		},
+		{
+			name:       "languages.dotnet off, no .NET project",
+			cfg:        dotnetOff,
+			root:       goOnly,
+			rows:       []evidence.Coverage{row(toolDotNetMSBuild, evidence.StatusAbsent), row(toolRoslyn, evidence.StatusAbsent)},
+			wantRoslyn: evidence.StatusAbsent,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := tt.cfg.CoverageOptions()
+			// The gaps must come out the same from the rows as extracted and as
+			// marked: an unmarked slice must not prompt for an opted-out analyzer.
+			unmarked := gapTools(acquisition.BuildCoverageGaps(tt.rows, opts, tt.root))
+			cov := acquisition.MarkDisabledPrimaries(slices.Clone(tt.rows), opts, tt.root)
+			if cov[1].Status != tt.wantRoslyn {
+				t.Errorf("roslyn status = %q (reason %q), want %q", cov[1].Status, cov[1].Reason, tt.wantRoslyn)
+			}
+			marked := gapTools(acquisition.BuildCoverageGaps(cov, opts, tt.root))
+			if !slices.Equal(marked, tt.wantGaps) || !slices.Equal(unmarked, tt.wantGaps) {
+				t.Errorf("gaps = %v (unmarked rows %v), want %v", marked, unmarked, tt.wantGaps)
+			}
+		})
+	}
 }
