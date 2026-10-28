@@ -288,6 +288,10 @@ type StateToolCoverage struct {
 	Tool   string `json:"tool"`
 	Status string `json:"status"`
 	Reason string `json:"reason,omitempty"`
+	// Details is the per-unit table behind Reason: one line per project, target
+	// or package. The row keeps one shortened reason, so this is where a
+	// consumer reads each unit without re-running the producer.
+	Details []string `json:"details,omitempty"`
 }
 
 // StateCoverage summarises evidence coverage across the nine dimensions. The

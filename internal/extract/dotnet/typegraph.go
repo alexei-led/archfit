@@ -734,6 +734,12 @@ func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 		case TypeGraphFailed:
 			failed++
 		}
+		detail := fmt.Sprintf("%s %s frameworks=%s files=%d unresolved=%d",
+			p.Path, p.Status, strings.Join(p.TargetFrameworks, ","), distinctFiles(res.files[p.Path]), p.UnresolvedSymbols)
+		if p.Reason != "" {
+			detail += " reason: " + p.Reason
+		}
+		cov.Details = append(cov.Details, detail)
 		if p.Status != TypeGraphComplete {
 			problem := p.Path + " " + p.Status
 			if p.Reason != "" {
@@ -784,6 +790,16 @@ func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 	}
 	cov.Reason = strings.Join(parts, "; ")
 	return cov
+}
+
+// distinctFiles counts the file paths across a project's frameworks: the union
+// repeats a file that several frameworks compile.
+func distinctFiles(files []helperFile) int {
+	seen := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		seen[f.Path] = struct{}{}
+	}
+	return len(seen)
 }
 
 func plural(n int, singular, pluralForm string) string {
