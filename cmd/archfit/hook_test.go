@@ -104,59 +104,124 @@ func runHook(t *testing.T, stdin string, args ...string) (int, string, string) {
 	return code, stdout.String(), stderr.String()
 }
 
+// harnessEventStop and harnessEventSubagentStop are the event names Claude
+// Code puts in a Stop hook's stdin.
+const (
+	harnessEventSessionStart = "SessionStart"
+	harnessEventPostToolUse  = "PostToolUse"
+	harnessEventStop         = "Stop"
+	harnessEventSubagentStop = "SubagentStop"
+)
+
+// Hook test vocabulary: the stdin key of a repeated stop and the fail-open
+// message.
+const (
+	stopHookActive = "stop_hook_active"
+	failedOpen     = "failed open"
+)
+
 func stopEvent(event, cwd string, active bool) string {
-	raw, _ := json.Marshal(map[string]any{"hook_event_name": event, "cwd": cwd, "stop_hook_active": active, "session_id": "s"})
+	raw, _ := json.Marshal(map[string]any{"hook_event_name": event, "cwd": cwd, stopHookActive: active, "session_id": "s"})
 	return string(raw)
 }
 
-// TestHookClaude pins one stdin fixture per row of the Stop hook table: the
+// hookOutputCase is the exit code and the output channels one hook run must
+// produce.
+type hookOutputCase struct {
+	wantCode   int
+	wantStdout string // substring of the systemMessage; "" means empty stdout
+	wantStderr string // substring of stderr; "" means empty stderr
+}
+
+func (tc hookOutputCase) check(t *testing.T, code int, stdout, stderr string) {
+	t.Helper()
+	if code != tc.wantCode {
+		t.Fatalf("exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
+	}
+	if tc.wantStdout == "" && stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if tc.wantStdout != "" {
+		if msg := systemMessageOf(t, stdout); !strings.Contains(msg, tc.wantStdout) {
+			t.Errorf("stdout = %q, want a systemMessage containing %q", stdout, tc.wantStdout)
+		}
+	}
+	if tc.wantStderr == "" && stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+	if tc.wantStderr != "" && !strings.Contains(stderr, tc.wantStderr) {
+		t.Errorf("stderr = %q, want %q", stderr, tc.wantStderr)
+	}
+}
+
+// systemMessageOf decodes the hook's {"systemMessage": ...} stdout.
+func systemMessageOf(t *testing.T, stdout string) string {
+	t.Helper()
+	var msg struct {
+		SystemMessage string `json:"systemMessage"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &msg); err != nil {
+		t.Fatalf("stdout = %q is not a systemMessage: %v", stdout, err)
+	}
+	return msg.SystemMessage
+}
+
+// TestHookRunStop pins one stdin fixture per row of the stop hook table: the
 // exit code and the output channel. Every event cwd differs from the test
-// process's own cwd, so the hook resolves --config against the event.
-func TestHookClaude(t *testing.T) {
+// process's own cwd, so the hook resolves --config against the event. With no
+// session file the session base is HEAD.
+func TestHookRunStop(t *testing.T) {
 	t.Parallel()
 	introduced := func(t *testing.T) string { return hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA) }
 	for _, tc := range []struct {
-		name       string
-		repo       func(*testing.T) string
-		event      string
-		active     bool
-		rawStdin   string
-		wantCode   int
-		wantStdout string // substring of the systemMessage; "" means empty stdout
-		wantStderr string // substring of stderr; "" means empty stderr
+		name     string
+		repo     func(*testing.T) string
+		event    string
+		active   bool
+		rawStdin string
+		args     []string
+		hookOutputCase
 	}{
-		{name: "repair on the first stop blocks", repo: introduced, event: hookEventStop, wantCode: 2,
-			wantStderr: "change fail, next_action repair"},
-		{name: "repair with stop_hook_active blocks only once", repo: introduced, event: hookEventSubagentStop, active: true,
-			wantStdout: "still reports blockers"},
-		{name: "a blocker outside the change is repository attention, not a stop", event: hookEventStop,
+		{name: "repair on the first stop blocks", repo: introduced, event: harnessEventStop,
+			hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: "change fail, next_action repair"}},
+		{name: "repair with stop_hook_active blocks only once", repo: introduced, event: harnessEventSubagentStop, active: true,
+			hookOutputCase: hookOutputCase{wantStdout: "still reports blockers"}},
+		{name: "codex reads the same protocol", repo: introduced, event: harnessEventStop, args: []string{"--harness", harnessCodex},
+			hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: "change fail, next_action repair"}},
+		{name: "a blocker outside the change is repository attention, not a stop", event: harnessEventStop,
 			repo: func(t *testing.T) string {
 				return hookRepo(t, hookRuleCfg, hookViolatingA, hookViolatingA+"\n// unrelated edit\n")
 			}},
-		{name: "nothing to do is silent", event: hookEventStop,
+		{name: "nothing to do is silent", event: harnessEventStop,
 			repo: func(t *testing.T) string { return hookRepo(t, hookModules, hookCleanA, hookCleanA+"\n// edit\n") }},
-		{name: "a clean tree skips the run", event: hookEventStop,
+		{name: "a clean tree skips the run", event: harnessEventStop,
 			repo: func(t *testing.T) string { return hookRepo(t, hookRuleCfg, hookViolatingA, "") }},
-		{name: "an archfit error fails open", event: hookEventStop,
+		{name: "an archfit error fails open", event: harnessEventStop,
 			repo: func(t *testing.T) string {
 				dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
 				if err := os.Remove(filepath.Join(dir, defaultConfigPath)); err != nil {
 					t.Fatal(err)
 				}
 				return dir
-			}, wantStdout: "failed open"},
-		{name: "archfit's own cache is not a change", event: hookEventStop,
+			}, hookOutputCase: hookOutputCase{wantStdout: failedOpen}},
+		{name: "outside a git repository fails open", event: harnessEventStop,
+			repo: func(t *testing.T) string {
+				dir := t.TempDir()
+				writeFixtureFile(t, dir, defaultConfigPath, hookRuleCfg)
+				return dir
+			}, hookOutputCase: hookOutputCase{wantStdout: failedOpen}},
+		{name: "archfit's own cache is not a change", event: harnessEventStop,
 			repo: func(t *testing.T) string {
 				dir := hookRepo(t, hookRuleCfg, hookViolatingA, "")
 				writeFixtureFile(t, dir, ".archfit-cache/facts/x.json", "{}")
 				return dir
 			}},
-		{name: "a dead selector is repository attention, not a stop", event: hookEventStop,
+		{name: "a dead selector is repository attention, not a stop", event: harnessEventStop,
 			repo: func(t *testing.T) string {
 				return hookRepo(t, hookDeadSelectorCfg, hookCleanA, hookCleanA+"\n// edit\n")
 			}},
-		{name: "another event is ignored", repo: introduced, event: "PreToolUse"},
-		{name: "malformed stdin", repo: introduced, rawStdin: "{not json", wantCode: 1, wantStderr: "malformed hook event"},
+		{name: "malformed stdin", repo: introduced, rawStdin: "{not json",
+			hookOutputCase: hookOutputCase{wantCode: 1, wantStderr: "malformed hook event"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -165,37 +230,28 @@ func TestHookClaude(t *testing.T) {
 			if stdin == "" {
 				stdin = stopEvent(tc.event, dir, tc.active)
 			}
-			code, stdout, stderr := runHook(t, stdin, "claude")
-			if code != tc.wantCode {
-				t.Fatalf("exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
-			}
-			if tc.wantStdout == "" && stdout != "" {
-				t.Errorf("stdout = %q, want empty", stdout)
-			}
-			if tc.wantStdout != "" {
-				var msg struct {
-					SystemMessage string `json:"systemMessage"`
-				}
-				if err := json.Unmarshal([]byte(stdout), &msg); err != nil || !strings.Contains(msg.SystemMessage, tc.wantStdout) {
-					t.Errorf("stdout = %q (%v), want a systemMessage containing %q", stdout, err, tc.wantStdout)
-				}
-			}
-			if tc.wantStderr == "" && stderr != "" {
-				t.Errorf("stderr = %q, want empty", stderr)
-			}
-			if tc.wantStderr != "" && !strings.Contains(stderr, tc.wantStderr) {
-				t.Errorf("stderr = %q, want %q", stderr, tc.wantStderr)
-			}
+			code, stdout, stderr := runHook(t, stdin, append([]string{"run", hookEventStop}, tc.args...)...)
+			tc.check(t, code, stdout, stderr)
 		})
 	}
 }
 
-// TestHookClaudeStderrCarriesTheRepair pins what the agent reads on a block:
+// TestHookRunRejectsAnUnknownEvent: the event is part of the command line, so
+// a typo is a usage error, never a silent pass.
+func TestHookRunRejectsAnUnknownEvent(t *testing.T) {
+	t.Parallel()
+	code, stdout, stderr := runHook(t, "{}", "run", "pre-tool-use")
+	if code != 3 || stdout != "" || !strings.Contains(stderr, "pre-tool-use") {
+		t.Errorf("exit = %d, stdout = %q, stderr = %q; want 3 and the event named on stderr", code, stdout, stderr)
+	}
+}
+
+// TestHookRunStopStderrCarriesTheRepair pins what the agent reads on a block:
 // the finding ID, the file:line, the goal, and the validation command.
-func TestHookClaudeStderrCarriesTheRepair(t *testing.T) {
+func TestHookRunStopStderrCarriesTheRepair(t *testing.T) {
 	t.Parallel()
 	dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
-	code, _, stderr := runHook(t, stopEvent(hookEventStop, dir, false), "claude")
+	code, _, stderr := runHook(t, stopEvent(harnessEventStop, dir, false), "run", hookEventStop)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, stderr)
 	}
@@ -206,10 +262,10 @@ func TestHookClaudeStderrCarriesTheRepair(t *testing.T) {
 	}
 }
 
-// TestHookGit pins that the pre-commit hook judges the index — what the commit
-// will contain — and never the files on disk: an unstaged or untracked edit
-// neither blocks nor excuses a commit.
-func TestHookGit(t *testing.T) {
+// TestHookRunPreCommit pins that the pre-commit hook judges the index — what
+// the commit will contain — and never the files on disk: an unstaged or
+// untracked edit neither blocks nor excuses a commit.
+func TestHookRunPreCommit(t *testing.T) {
 	t.Parallel()
 	const (
 		untrackedFile = "pkg/a/extra.go"
@@ -306,7 +362,7 @@ func TestHookGit(t *testing.T) {
 			if config == "" {
 				config = defaultConfigPath
 			}
-			args := []string{"git", "-c", filepath.Join(dir, config)}
+			args := []string{"run", hookEventPreCommit, "-c", filepath.Join(dir, config)}
 			if tc.args != nil {
 				args = append(args, tc.args(t, dir)...)
 			}
@@ -328,10 +384,11 @@ func TestHookGit(t *testing.T) {
 	}
 }
 
-// TestHookGitValidateNamesTheRepository pins the repair's validate command on
-// a repository path that needs shell quoting: it names the config and root in
-// the repository, quoted as one argument each, never the removed snapshot.
-func TestHookGitValidateNamesTheRepository(t *testing.T) {
+// TestHookRunPreCommitValidateNamesTheRepository pins the repair's validate
+// command on a repository path that needs shell quoting: it names the config
+// and root in the repository, quoted as one argument each, never the removed
+// snapshot.
+func TestHookRunPreCommitValidateNamesTheRepository(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "team's repo")
 	for name, content := range map[string]string{
@@ -347,7 +404,7 @@ func TestHookGitValidateNamesTheRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr := runHook(t, "", "git", "-c", filepath.Join(dir, defaultConfigPath))
+	code, _, stderr := runHook(t, "", "run", hookEventPreCommit, "-c", filepath.Join(dir, defaultConfigPath))
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1\n%s", code, stderr)
 	}
