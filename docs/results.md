@@ -89,6 +89,8 @@ changes gate acceptance or the exit code.
 Read `comparison.origin_status` and `origin_reasons` for analyzer pairing.
 When a base analyzer timed out or left inputs out of its graph, its reason names
 the base row's own cause and fix after `base:`.
+A reason longer than the report's 400-rune bound is cut with `…`; the whole
+reason is written to stderr as a warning.
 Numeric `comparison.status` is separate: fingerprint differences can suppress
 numeric deltas while origin still compares observed IDs. Neither status proves
 that installed dependencies, generated files, or indexer resolution were identical.
