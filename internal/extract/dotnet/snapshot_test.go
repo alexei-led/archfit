@@ -13,9 +13,14 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
+
+// subtreeDir is the scan root's directory below the repository root in the
+// subtree cases.
+const subtreeDir = "src"
 
 // domainOnlyReport reports Domain complete with one file and no edges.
 const domainOnlyReport = `{"schema_version":2,"skipped_projects":[],"projects":[
@@ -146,6 +151,130 @@ func TestSnapshot_SymlinkThroughAnAliasStaysInTheSnapshot(t *testing.T) {
 	if _, err := os.Stat(snapshot); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("snapshot %s still exists (err %v)", snapshot, err)
 	}
+}
+
+// linksEscaping names every link under dir that resolves outside it: the
+// snapshot must never carry one, because the design-time build writes through
+// links.
+func linksEscaping(t *testing.T, dir string) []string {
+	t.Helper()
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	var out []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.Type()&fs.ModeSymlink == 0 {
+			return nil
+		}
+		link, err := os.Readlink(p)
+		if err != nil {
+			return err
+		}
+		if !filepath.IsAbs(link) {
+			link = filepath.Join(filepath.Dir(p), link)
+		}
+		link = filepath.Clean(link)
+		if resolved, err := filepath.EvalSymlinks(link); err == nil {
+			link = resolved
+		}
+		if rel, err := filepath.Rel(dir, link); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			out = append(out, p+" -> "+link)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestSnapshot_ExternalSymlinkIsDroppedAndDisclosed: a link whose target lies
+// outside the scan root must not be reproduced in the snapshot. MSBuild then
+// creates a real directory inside it, and the run names the dropped link, so
+// the project does not read as silently complete.
+func TestSnapshot_ExternalSymlinkIsDroppedAndDisclosed(t *testing.T) {
+	assertDropped := func(t *testing.T, e *dotnet.Extractor, link string) {
+		t.Helper()
+		cov := e.LastTypeGraphCoverage()
+		if cov.Status != evidence.StatusPartial || cov.UnresolvedInputsMissing == 0 {
+			t.Errorf("roslyn coverage = %+v, want partial with missing inputs", cov)
+		}
+		if !strings.Contains(cov.Reason, "not reproduced in the snapshot: "+link) {
+			t.Errorf("roslyn reason %q does not disclose the dropped link %q", cov.Reason, link)
+		}
+		if p := typeProject(t, e.LastTypeGraph(), domainProj); p.Status != dotnet.TypeGraphPartial {
+			t.Errorf("project = %+v, want partial: the snapshot does not have the link's target", p)
+		}
+	}
+
+	t.Run("project obj link to an absolute outside directory", func(t *testing.T) {
+		root := tree(t, domainProj)
+		outside := t.TempDir()
+		writeFile(t, outside, "existing.txt", "keep")
+		if err := os.Symlink(outside, filepath.Join(root, "Domain", "obj")); err != nil {
+			t.Fatal(err)
+		}
+		beforeRoot, beforeOutside := treeState(t, root), treeState(t, outside)
+		installHelper(t)
+		fake := newFake(t, root, map[string]reply{domainProj: ok(t, root, "domain.json")})
+		fake.helper = fakeHelper(func(_ context.Context, snap string) (toolrun.Output, error) {
+			if escaping := linksEscaping(t, snap); len(escaping) != 0 {
+				t.Errorf("snapshot links escape it: %v", escaping)
+			}
+			if _, err := os.Lstat(filepath.Join(snap, "Domain", "obj")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("snapshot still has the outside link (err %v)", err)
+			}
+			// MSBuild creates obj/ as a real directory and writes generated files there.
+			writeFile(t, filepath.Join(snap, "Domain"), "obj/Domain.GlobalUsings.g.cs", "// generated")
+			return toolrun.Output{Stdout: []byte(domainOnlyReport)}, nil
+		})
+		e := dotnet.New(fake, autoCfg(), nil)
+		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+			t.Fatal(err)
+		}
+		assertDropped(t, e, "Domain/obj")
+		if after := treeState(t, outside); !mapsEqual(after, beforeOutside) {
+			t.Errorf("a write through the link reached the outside directory:\nbefore %v\nafter  %v", beforeOutside, after)
+		}
+		if after := treeState(t, root); !mapsEqual(after, beforeRoot) {
+			t.Errorf("the original root changed:\nbefore %v\nafter  %v", beforeRoot, after)
+		}
+	})
+
+	t.Run("subtree relative link above the scan root", func(t *testing.T) {
+		repo := t.TempDir()
+		root := filepath.Join(repo, "src")
+		writeFile(t, root, domainProj, "")
+		writeFile(t, repo, "artifacts/obj/existing.txt", "keep")
+		if err := os.Symlink(filepath.Join("..", "..", "artifacts", "obj"), filepath.Join(root, "Domain", "obj")); err != nil {
+			t.Fatal(err)
+		}
+		before := treeState(t, repo)
+		installHelper(t)
+		fake := newFake(t, root, map[string]reply{domainProj: ok(t, root, "domain.json")})
+		fake.helper = fakeHelper(func(_ context.Context, snap string) (toolrun.Output, error) {
+			snapshotDir := filepath.Dir(snap)
+			if escaping := linksEscaping(t, snapshotDir); len(escaping) != 0 {
+				t.Errorf("snapshot links escape it: %v", escaping)
+			}
+			if _, err := os.Lstat(filepath.Join(snap, "Domain", "obj")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("snapshot still has the outside link (err %v)", err)
+			}
+			writeFile(t, filepath.Join(snap, "Domain"), "obj/Domain.GlobalUsings.g.cs", "// generated")
+			return toolrun.Output{Stdout: []byte(domainOnlyReport)}, nil
+		})
+		e := dotnet.New(fake, autoCfg(), nil)
+		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, GitRoot: repo, SubtreePrefix: subtreeDir}); err != nil {
+			t.Fatal(err)
+		}
+		assertDropped(t, e, "Domain/obj")
+		if after := treeState(t, repo); !mapsEqual(after, before) {
+			t.Errorf("the original tree changed:\nbefore %v\nafter  %v", before, after)
+		}
+	})
 }
 
 // restoreProject is one project of a fake restore graph.
@@ -371,4 +500,45 @@ func TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs(t *testing.T) {
 			}
 		})
 	}
+
+	// A checkout whose project directory is a link outside the scan root has no
+	// project the snapshot can load, so it must not borrow restore outputs for
+	// it either: the working tree's assets would describe a tree the helper
+	// never sees, and copying them must not write through the link.
+	t.Run("symlinked project directory outside the snapshot", func(t *testing.T) {
+		outside := t.TempDir()
+		writeFile(t, outside, "Proj/Domain.csproj", "")
+		work := tree(t, domainProj)
+		writeFile(t, work, "Domain/obj/project.assets.json", "work assets")
+		checkout := t.TempDir()
+		if err := os.Symlink(filepath.Join(outside, "Proj"), filepath.Join(checkout, "Domain")); err != nil {
+			t.Fatal(err)
+		}
+		beforeOutside, beforeCheckout := treeState(t, outside), treeState(t, checkout)
+		installHelper(t)
+		fake := newFake(t, checkout, map[string]reply{domainProj: {
+			stdout: `{"Properties":{"TargetFramework":"net10.0","MSBuildProjectExtensionsPath":"` +
+				filepath.ToSlash(filepath.Join(checkout, "Domain", "obj")) + `"},"Items":{}}`,
+		}})
+		fake.helper = fakeHelper(func(_ context.Context, snap string) (toolrun.Output, error) {
+			if _, err := os.Lstat(filepath.Join(snap, "Domain")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("the snapshot has a Domain entry (err %v): the project link was reproduced or written through", err)
+			}
+			return toolrun.Output{Stdout: []byte(domainOnlyReport)}, nil
+		})
+		e := dotnet.New(fake, autoCfg(), []string{domainProj})
+		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: checkout, DependencyRoot: work}); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+		cov := e.LastTypeGraphCoverage()
+		if !strings.Contains(cov.Reason, "no restore outputs for 1 project") || !strings.Contains(cov.Reason, domainProj) {
+			t.Errorf("roslyn reason %q does not name the project left without restore outputs", cov.Reason)
+		}
+		if after := treeState(t, outside); !mapsEqual(after, beforeOutside) {
+			t.Errorf("a write through the project link reached the outside directory:\nbefore %v\nafter  %v", beforeOutside, after)
+		}
+		if after := treeState(t, checkout); !mapsEqual(after, beforeCheckout) {
+			t.Errorf("the checkout changed:\nbefore %v\nafter  %v", beforeCheckout, after)
+		}
+	})
 }
