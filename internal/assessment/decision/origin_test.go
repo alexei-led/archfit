@@ -25,6 +25,61 @@ func TestOriginClassification(t *testing.T) {
 	t.Run("base_finding_ids", testOriginBaseFindingIDs)
 	t.Run("cross_path_agreement", testOriginCrossPathAgreement)
 	t.Run("unpaired_reason", testOriginUnpairedReason)
+	t.Run("roslyn_family", testOriginRoslynFamily)
+}
+
+// testOriginRoslynFamily pins how `--base` pairs the Roslyn type graph: its own
+// family when the config activates it, silent on a tree with no .NET project,
+// and never paired across unresolved symbols, which can hide an edge.
+func testOriginRoslynFamily(t *testing.T) {
+	t.Parallel()
+	names := func(fams []AnalyzerFamily) []string {
+		out := make([]string, 0, len(fams))
+		for _, f := range fams {
+			out = append(out, f.name)
+		}
+		return out
+	}
+	if got := names(AnalyzerFamilies(FamilyOptions{Roslyn: true})); !slices.Equal(got, []string{toolRoslyn}) {
+		t.Fatalf("families with Roslyn on = %v, want [%s]", got, toolRoslyn)
+	}
+	if got := names(AnalyzerFamilies(FamilyOptions{})); slices.Contains(got, toolRoslyn) {
+		t.Fatalf("families with Roslyn off = %v, want no %s", got, toolRoslyn)
+	}
+
+	fams := AnalyzerFamilies(FamilyOptions{Roslyn: true})
+	gap := []evidence.CoverageGap{{Tool: toolRoslyn}}
+	row := func(status string) []evidence.Coverage { return []evidence.Coverage{covRow(toolRoslyn, status)} }
+	unresolved := func() []evidence.Coverage {
+		c := covRow(toolRoslyn, evidence.StatusPartial)
+		c.Unresolved, c.UnresolvedInputsMissing = 3, 3
+		return []evidence.Coverage{c}
+	}
+	tests := []struct {
+		name             string
+		head, base       []evidence.Coverage
+		headGap, baseGap []evidence.CoverageGap
+		comparable       bool
+		reasons          int
+	}{
+		{name: "ok on both sides pairs", head: row(evidence.StatusOK), base: row(evidence.StatusOK), comparable: true},
+		{name: "no .NET project on either side pairs silently", head: row(evidence.StatusAbsent), base: row(evidence.StatusAbsent), comparable: true},
+		{name: "helper missing on both sides pairs disclosed", head: row(evidence.StatusAbsent), base: row(evidence.StatusAbsent), headGap: gap, baseGap: gap, comparable: true, reasons: 1},
+		{name: "unresolved symbols on both sides never pair", head: unresolved(), base: unresolved(), reasons: 1},
+		{name: "unresolved symbols never pair with ok", head: row(evidence.StatusOK), base: unresolved(), reasons: 1},
+		{name: "a missing row is unavailable", head: row(evidence.StatusOK), reasons: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ok, reasons := CompareAnalyzerEvidence(fams,
+				AnalyzerEvidence{Coverage: tc.head, Gaps: tc.headGap},
+				AnalyzerEvidence{Coverage: tc.base, Gaps: tc.baseGap})
+			if ok != tc.comparable || len(reasons) != tc.reasons {
+				t.Fatalf("comparable = %v reasons = %v, want %v with %d reason(s)", ok, reasons, tc.comparable, tc.reasons)
+			}
+		})
+	}
 }
 
 // testOriginUnpairedReason pins the wording of the one output that explains
@@ -73,6 +128,23 @@ func testOriginUnpairedReason(t *testing.T) {
 			name: "differing raw statuses stay terse",
 			head: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)}, base: absent, baseGap: goGap,
 			want: "go/packages: head ok, base absent",
+		},
+		{
+			// A partial row ran to the end; "did not finish" would send the reader
+			// to timeouts when the cause is inputs the analyzer could not resolve.
+			name: "equal partial statuses say inputs are missing, not unfinished",
+			head: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusPartial)},
+			base: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusPartial)},
+			want: "go/packages: head partial (inputs missing from the graph), base partial (inputs missing from the graph)",
+		},
+		{
+			// The base diagnostic is dropped after the comparison, so the base
+			// row's own cause and fix must travel in the reason. The head's stays
+			// on the head's coverage row.
+			name: "an unavailable base row names its own cause",
+			head: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusPartial, Reason: "head cause"}},
+			base: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusTimedOut, Reason: "raise the timeout"}},
+			want: "go/packages: head partial, base timed out — base: raise the timeout",
 		},
 	}
 

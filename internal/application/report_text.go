@@ -3,10 +3,12 @@ package application
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
@@ -170,5 +172,25 @@ func discloseRawCoverageReasons(w io.Writer, label string, rows []evidence.Cover
 		}
 		_, _ = fmt.Fprintf(w, "warning: %s%s is %s; full analyzer output (the report keeps one shortened line):\n%s\n",
 			label, row.Tool, row.Status, strings.TrimRight(row.Reason, "\n"))
+	}
+}
+
+// discloseRawComparisonReasons writes, on stderr, the full text of every base
+// comparison reason the report will shorten. origin_reasons names every
+// analyzer, and every project behind it, on a side whose evidence degraded;
+// that list runs far past the report's one-line bound, so stderr is where the
+// whole of it stays readable.
+func discloseRawComparisonReasons(w io.Writer, comparisons ...*result.StateComparison) {
+	for _, c := range comparisons {
+		if c == nil {
+			continue
+		}
+		for _, reason := range append(slices.Clone(c.Reasons), c.OriginReasons...) {
+			if reason == "" || reportText(reason, maxReportTextRunes) == reason {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "warning: comparison (%s) reason is shortened in the report; full text:\n%s\n",
+				c.Status, strings.TrimRight(reason, "\n"))
+		}
 	}
 }

@@ -51,8 +51,10 @@ type hookSession struct {
 	// Files maps each source file post-tool-use read to the sha256 of its
 	// content then: an unchanged file is not read again.
 	Files map[string]string `json:"files,omitempty"`
-	// Reported are the finding IDs of the denials post-tool-use reported.
-	Reported []string `json:"reported,omitempty"`
+	// Reported maps a source file to the finding IDs of the denials
+	// post-tool-use reported on it and that it still holds. A denial that
+	// leaves the file is dropped, so the import coming back is reported again.
+	Reported map[string][]string `json:"reported,omitempty"`
 	// BlockedDigest identifies the last result the stop hook blocked on.
 	BlockedDigest string `json:"blocked_digest,omitempty"`
 
@@ -152,9 +154,9 @@ func sessionStart(ctx context.Context, deps *appDeps, dir, id string) error {
 }
 
 // postToolUse reports the imports added since the session base that the
-// policy denies, once each. It reads the files from git, never from the tool
-// payload, so an edit made through a shell command counts too.
-func postToolUse(ctx context.Context, deps *appDeps, dir, configPath, id string) error {
+// policy denies, once while they stay. It reads the files from git, never from
+// the tool payload, so an edit made through a shell command counts too.
+func postToolUse(ctx context.Context, deps *appDeps, dir, config, id string) error {
 	sess, err := openSession(ctx, deps.Runner, dir, id)
 	if err != nil {
 		return systemMessage(deps, "archfit hook failed open: "+err.Error())
@@ -163,7 +165,7 @@ func postToolUse(ctx context.Context, deps *appDeps, dir, configPath, id string)
 	if err != nil {
 		return systemMessage(deps, "archfit hook failed open: "+err.Error())
 	}
-	denials, err := sess.newDenials(ctx, deps, configPath, edits)
+	denials, err := sess.newDenials(ctx, deps, configIn(sess.repo, config), edits)
 	if err != nil {
 		return systemMessage(deps, "archfit hook failed open: "+err.Error())
 	}
@@ -177,7 +179,8 @@ func postToolUse(ctx context.Context, deps *appDeps, dir, configPath, id string)
 	return &exitError{code: 2, msg: strings.Join(denials, "\n")}
 }
 
-// importEdit is one source file and the import targets its added lines name.
+// importEdit is one source file read again and the import targets its added
+// lines name; none means its earlier imports are gone.
 type importEdit struct {
 	file    string
 	targets []string
@@ -185,7 +188,10 @@ type importEdit struct {
 
 // importEdits lists the source files whose content changed since the last
 // post-tool-use run, among those that differ from the session base, with the
-// imports their added lines introduce. It records the new content hashes.
+// imports their added lines introduce. It records the new content hashes,
+// except for a file with a relative import of a file that does not exist yet:
+// that file is read again until the import resolves. It forgets the reported
+// denials of files that no longer differ from the base.
 func (s *hookSession) importEdits(ctx context.Context, runner toolrun.Runner) ([]importEdit, error) {
 	touched, err := touchedFiles(ctx, runner, s.repo, s.BaseSHA)
 	if err != nil {
@@ -212,8 +218,9 @@ func (s *hookSession) importEdits(ctx context.Context, runner toolrun.Runner) ([
 			continue // deleted since the base
 		}
 		sum := sha256.Sum256(content)
-		hashes[file] = hex.EncodeToString(sum[:])
-		if s.Files[file] == hashes[file] {
+		hash := hex.EncodeToString(sum[:])
+		if s.Files[file] == hash {
+			hashes[file] = hash
 			continue
 		}
 		var added map[int]bool
@@ -222,11 +229,18 @@ func (s *hookSession) importEdits(ctx context.Context, runner toolrun.Runner) ([
 				return nil, err
 			}
 		}
-		if targets := importTargets(lang, file, content, added, isFile); len(targets) > 0 {
-			edits = append(edits, importEdit{file: file, targets: targets})
+		targets, unresolved := importTargets(lang, file, content, added, isFile)
+		if !unresolved {
+			hashes[file] = hash
 		}
+		edits = append(edits, importEdit{file: file, targets: targets})
 	}
 	s.Files = hashes
+	for file := range s.Reported {
+		if _, ok := touched[file]; !ok {
+			delete(s.Reported, file)
+		}
+	}
 	return edits, nil
 }
 
@@ -329,9 +343,21 @@ func parseAddedLines(diff string) map[int]bool {
 }
 
 // newDenials judges each added import with the policy can-import service and
-// returns a message for every denial the session has not reported yet.
+// returns a message for every denial the session has not reported on its file
+// yet. Each file read again keeps only the denials it still holds.
 func (s *hookSession) newDenials(ctx context.Context, deps *appDeps, configPath string, edits []importEdit) ([]string, error) {
-	if len(edits) == 0 {
+	if s.Reported == nil {
+		s.Reported = map[string][]string{}
+	}
+	judged := make([]importEdit, 0, len(edits))
+	for _, edit := range edits {
+		if len(edit.targets) == 0 {
+			delete(s.Reported, edit.file)
+			continue
+		}
+		judged = append(judged, edit)
+	}
+	if len(judged) == 0 {
 		return nil, nil
 	}
 	cfg, err := loadAnalysisConfig(ctx, configPath)
@@ -344,22 +370,28 @@ func (s *hookSession) newDenials(ctx context.Context, deps *appDeps, configPath 
 	}
 	service := newPolicyQueryService(q)
 	var msgs []string
-	for _, edit := range edits {
+	for _, edit := range judged {
 		answers, err := service.CanImport(ctx, application.CanImportRequest{
 			Policy: cfg.PolicySnapshot(), BundleDir: bundleDirOf(configPath), From: edit.file, Targets: edit.targets, Now: time.Now(),
 		})
 		if err != nil {
 			return nil, err
 		}
+		var held []string
 		for _, answer := range answers {
 			for _, d := range answer.Denials {
-				if slices.Contains(s.Reported, d.FindingID) {
-					continue
+				held = append(held, d.FindingID)
+				if !slices.Contains(s.Reported[edit.file], d.FindingID) {
+					msgs = append(msgs, denialMessage(edit.file, answer.Target, d.RuleID, d.FindingID, d.Why, d.Constraints))
 				}
-				s.Reported = append(s.Reported, d.FindingID)
-				msgs = append(msgs, denialMessage(edit.file, answer.Target, d.RuleID, d.FindingID, d.Why, d.Constraints))
 			}
 		}
+		if len(held) == 0 {
+			delete(s.Reported, edit.file)
+			continue
+		}
+		slices.Sort(held)
+		s.Reported[edit.file] = slices.Compact(held)
 	}
 	return msgs, nil
 }

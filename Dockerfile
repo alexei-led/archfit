@@ -9,6 +9,14 @@ COPY tools/ tools/
 COPY scripts/provision_tools.py scripts/provision-analyzers.sh scripts/
 RUN python scripts/provision_tools.py sdks --arch "${TARGETARCH}" \
     && bash scripts/provision-analyzers.sh /opt/archfit /usr/local/bin/python
+# The helper restores in locked mode, which needs NuGet at build time only. The
+# package cache and CLI home are throwaway so only the published output reaches
+# /opt/archfit; the runtime never restores. The builder has no ICU, and the
+# publish does not depend on culture data.
+RUN export DOTNET_ROOT=/opt/archfit/dotnet DOTNET_CLI_HOME=/tmp/dotnet-home NUGET_PACKAGES=/tmp/dotnet-nuget \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 MSBUILDDISABLENODEREUSE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+    && /opt/archfit/dotnet/dotnet publish tools/dotnet/archfit-roslyn/src -c Release -o /opt/archfit/dotnet-roslyn \
+    && rm -rf /tmp/dotnet-home /tmp/dotnet-nuget
 ENV PATH="/opt/archfit/go/bin:/opt/archfit/node/bin:/opt/archfit/rust/bin:/opt/archfit/bin:${PATH}" \
     GOTOOLCHAIN=local GOWORK=off
 COPY go.mod go.sum ./
@@ -28,11 +36,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae
 # cc/linker is needed by Cargo/Go target analysis, not just by this image build.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git build-essential pkg-config libssl-dev \
+    ca-certificates git build-essential pkg-config libssl-dev libicu72 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=tools-builder /opt/archfit /opt/archfit
 COPY --from=tools-builder /out/archfit /usr/local/bin/archfit
-ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/archfit/go/bin:/opt/archfit/node/bin:/opt/archfit/rust/bin:${PATH}" \
+ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/archfit/dotnet:/opt/archfit/go/bin:/opt/archfit/node/bin:/opt/archfit/rust/bin:${PATH}" \
     ARCHFIT_TOOL_PYTHON=/opt/archfit/python/bin/python \
     HOME=/tmp \
     GOTOOLCHAIN=local \
@@ -47,10 +55,18 @@ ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/ar
     UV_OFFLINE=1 \
     npm_config_cache=/tmp/archfit-npm \
     npm_config_offline=true \
+    DOTNET_ROOT=/opt/archfit/dotnet \
+    DOTNET_CLI_HOME=/tmp/archfit-dotnet \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
+    MSBUILDDISABLENODEREUSE=1 \
+    NUGET_PACKAGES=/tmp/archfit-nuget \
+    ARCHFIT_DOTNET_ROSLYN=/opt/archfit/dotnet-roslyn \
     PYTHONNOUSERSITE=1
 USER 65532:65532
 LABEL org.opencontainers.image.title="archfit" \
-      org.opencontainers.image.description="Architecture fitness checker for Go, TypeScript, JavaScript, Python and Rust" \
+      org.opencontainers.image.description="Architecture fitness checker for Go, TypeScript, JavaScript, Python, Rust and C#" \
       org.opencontainers.image.source="https://github.com/alexei-led/archfit" \
       org.opencontainers.image.licenses="Apache-2.0"
 ENTRYPOINT ["/usr/local/bin/archfit"]

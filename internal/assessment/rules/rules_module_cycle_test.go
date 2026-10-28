@@ -18,15 +18,17 @@ const (
 	modBilling        = "billing"
 	modShipping       = "shipping"
 	modCatalog        = "catalog"
+	modAudit          = "audit"
 	kindModuleDep     = "module_dependency"
 
-	pairBillingShipping = "billing->shipping"
-	pairShippingBilling = "shipping->billing"
-	nodeShopBilling     = "package:shop::billing"
-	nodeBillingAGo      = "file:billing/a.go"
-	nodeShippingBGo     = "file:shipping/b.go"
-	nodePkgBilling      = "package:billing"
-	nodePkgShipping     = "package:shipping"
+	nodeShopBilling  = "package:shop::billing"
+	nodeBillingAGo   = "file:billing/a.go"
+	nodeShippingBGo  = "file:shipping/b.go"
+	nodePkgBilling   = "package:billing"
+	nodePkgShipping  = "package:shipping"
+	nodePkgCatalog   = "package:catalog"
+	nodeCatalogC     = "file:catalog/c.go"
+	membersBillingSH = "billing, shipping"
 )
 
 // moduleTestEdge is a dependency edge whose endpoints relationship analysis
@@ -147,7 +149,7 @@ func TestModuleCycle_CountsOnlyProductionSources(t *testing.T) {
 				FileClasses: classes, OutOfScopeFiles: map[string]struct{}{"shipping/legacy/old.go": {}},
 				UnwalkedSourceProduction: map[string]bool{"shipping/target/x.go": true, "shipping/.storybook/preview.tsx": false},
 			})
-			if got := len(findings) == 2; got != tc.cycle {
+			if got := len(findings) == 1; got != tc.cycle {
 				t.Fatalf("cycle reported = %v (%d findings), want %v", got, len(findings), tc.cycle)
 			}
 		})
@@ -155,15 +157,14 @@ func TestModuleCycle_CountsOnlyProductionSources(t *testing.T) {
 }
 
 // TestModuleCycle_FindsCyclesInEveryNodeVocabulary pins one finding per
-// ordered module pair inside a cycle, whatever node vocabulary the language's
+// strongly-connected component, whatever node vocabulary the language's
 // extractor uses: Go file -> package, TypeScript file -> file, Python dotted
 // modules, Rust crate::mod.
 func TestModuleCycle_FindsCyclesInEveryNodeVocabulary(t *testing.T) {
 	tests := []struct {
-		name      string
-		set       relationship.Set
-		wantLocs  map[string][]relationship.Location // "from->to" -> locations
-		wantTotal map[string]string
+		name     string
+		set      relationship.Set
+		wantLocs []relationship.Location
 	}{
 		{
 			name: "go file to package edges through different files",
@@ -173,10 +174,7 @@ func TestModuleCycle_FindsCyclesInEveryNodeVocabulary(t *testing.T) {
 				moduleTestEdge{"file:shipping/app/bill.go", "package:billing/app", modShipping, modBilling,
 					[]relationship.Location{loc("shipping/app/bill.go", 3)}},
 			),
-			wantLocs: map[string][]relationship.Location{
-				pairBillingShipping: {loc("billing/app/notify.go", 3)},
-				pairShippingBilling: {loc("shipping/app/bill.go", 3)},
-			},
+			wantLocs: []relationship.Location{loc("billing/app/notify.go", 3), loc("shipping/app/bill.go", 3)},
 		},
 		{
 			name: "typescript file edges without sites locate the importing file",
@@ -184,10 +182,7 @@ func TestModuleCycle_FindsCyclesInEveryNodeVocabulary(t *testing.T) {
 				moduleTestEdge{"file:billing/src/a.ts", "file:shipping/src/b.ts", modBilling, modShipping, nil},
 				moduleTestEdge{"file:shipping/src/c.ts", "file:billing/src/d.ts", modShipping, modBilling, nil},
 			),
-			wantLocs: map[string][]relationship.Location{
-				pairBillingShipping: {loc("billing/src/a.ts", 0)},
-				pairShippingBilling: {loc("shipping/src/c.ts", 0)},
-			},
+			wantLocs: []relationship.Location{loc("billing/src/a.ts", 0), loc("shipping/src/c.ts", 0)},
 		},
 		{
 			name: "python dotted module edges",
@@ -197,10 +192,7 @@ func TestModuleCycle_FindsCyclesInEveryNodeVocabulary(t *testing.T) {
 				moduleTestEdge{"module:shop.shipping.app", "module:shop.billing.app", modShipping, modBilling,
 					[]relationship.Location{loc("shop/shipping/app.py", 7)}},
 			),
-			wantLocs: map[string][]relationship.Location{
-				pairBillingShipping: {loc("shop/billing/app.py", 4)},
-				pairShippingBilling: {loc("shop/shipping/app.py", 7)},
-			},
+			wantLocs: []relationship.Location{loc("shop/billing/app.py", 4), loc("shop/shipping/app.py", 7)},
 		},
 		{
 			name: "rust crate::mod edges without sites carry no fabricated path",
@@ -208,40 +200,34 @@ func TestModuleCycle_FindsCyclesInEveryNodeVocabulary(t *testing.T) {
 				moduleTestEdge{nodeShopBilling, "package:shop::shipping", modBilling, modShipping, nil},
 				moduleTestEdge{"package:shop::shipping::rates", nodeShopBilling, modShipping, modBilling, nil},
 			),
-			wantLocs: map[string][]relationship.Location{
-				pairBillingShipping: {},
-				pairShippingBilling: {},
-			},
+			wantLocs: []relationship.Location{},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newModuleCycleRule(t, "", modBilling, modShipping)
 			findings := checkProduction(r, tc.set)
-			if len(findings) != 2 {
-				t.Fatalf("got %d findings, want one per direction: %+v", len(findings), findings)
+			if len(findings) != 1 {
+				t.Fatalf("got %d findings, want one for the component: %+v", len(findings), findings)
 			}
-			for i, want := range []string{pairBillingShipping, pairShippingBilling} {
-				f := findings[i]
-				from, to, _ := strings.Cut(want, "->")
-				if f.Edge.From != (finding.Endpoint{Module: from}) || f.Edge.To != (finding.Endpoint{Module: to}) || f.Edge.Kind != kindModuleDep {
-					t.Errorf("finding %d edge = %+v, want %s -> %s with empty paths", i, f.Edge, from, to)
-				}
-				if f.ID != finding.NewKeyed(ruleIDModuleCycle, kindModuleDep, from, to).ID {
-					t.Errorf("finding %d ID %q is not keyed on (rule, kind, %s, %s)", i, f.ID, from, to)
-				}
-				if f.Kind != kindGate || f.Severity != finding.SeverityHigh {
-					t.Errorf("finding %d kind/severity = %s/%s, want gate/high", i, f.Kind, f.Severity)
-				}
-				if f.MatchedBy["cycle_modules"] != "billing, shipping" || f.MatchedBy["cycle_size"] != "2" {
-					t.Errorf("finding %d matched_by = %v, want the cycle members", i, f.MatchedBy)
-				}
-				if got, wantLocs := fmt.Sprint(f.Locations), fmt.Sprint(tc.wantLocs[want]); got != wantLocs {
-					t.Errorf("finding %d locations = %s, want %s", i, got, wantLocs)
-				}
-				if f.Why == "" || f.Constraint == "" {
-					t.Errorf("finding %d has empty why/constraint", i)
-				}
+			f := findings[0]
+			if f.Edge.From != (finding.Endpoint{Module: modBilling}) || f.Edge.To != (finding.Endpoint{Module: modShipping}) || f.Edge.Kind != kindModuleDep {
+				t.Errorf("edge = %+v, want the first pair billing -> shipping with empty paths", f.Edge)
+			}
+			if f.ID != finding.NewKeyed(ruleIDModuleCycle, kindModuleDep, modBilling, modShipping).ID {
+				t.Errorf("ID %q is not keyed on (rule, kind, cycle members)", f.ID)
+			}
+			if f.Kind != kindGate || f.Severity != finding.SeverityHigh {
+				t.Errorf("kind/severity = %s/%s, want gate/high", f.Kind, f.Severity)
+			}
+			if f.MatchedBy["cycle_modules"] != membersBillingSH || f.MatchedBy["cycle_size"] != "2" || f.MatchedBy["cycle_pairs_total"] != "2" {
+				t.Errorf("matched_by = %v, want the two-member cycle and its two pairs", f.MatchedBy)
+			}
+			if got, wantLocs := fmt.Sprint(f.Locations), fmt.Sprint(tc.wantLocs); got != wantLocs {
+				t.Errorf("locations = %s, want %s", got, wantLocs)
+			}
+			if f.Why == "" || f.Constraint == "" {
+				t.Errorf("empty why/constraint")
 			}
 		})
 	}
@@ -253,13 +239,15 @@ func TestModuleCycle_FingerprintIsPinned(t *testing.T) {
 		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, nil},
 		moduleTestEdge{nodeShippingBGo, nodePkgBilling, modShipping, modBilling, nil},
 	))
-	if len(findings) != 2 {
-		t.Fatalf("got %d findings, want 2", len(findings))
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
 	}
 	// sha256("no_module_cycles\x00module_dependency\x00billing\x00shipping")[:16]:
-	// accepted baseline entries depend on this staying put.
+	// accepted baseline entries depend on this staying put. A two-module cycle
+	// keys on the same members, so its ID is the pair ID the rule used before
+	// it collapsed one component into one finding.
 	if findings[0].ID != "c569fa89305a0875e0c8e48596cd99d6" {
-		t.Errorf("billing -> shipping ID = %q, want the pinned c569fa89305a0875e0c8e48596cd99d6", findings[0].ID)
+		t.Errorf("billing <-> shipping ID = %q, want the pinned c569fa89305a0875e0c8e48596cd99d6", findings[0].ID)
 	}
 }
 
@@ -308,23 +296,27 @@ func TestModuleCycle_NoFindingWithoutADeclaredModuleCycle(t *testing.T) {
 }
 
 func TestModuleCycle_ThreeModuleCycleAndOutsiders(t *testing.T) {
-	r := newModuleCycleRule(t, "", modBilling, modShipping, modCatalog, "audit")
+	r := newModuleCycleRule(t, "", modBilling, modShipping, modCatalog, modAudit)
 	findings := checkProduction(r, moduleSet(
 		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, nil},
-		moduleTestEdge{nodeShippingBGo, "package:catalog", modShipping, modCatalog, nil},
-		moduleTestEdge{"file:catalog/c.go", nodePkgBilling, modCatalog, modBilling, nil},
+		moduleTestEdge{nodeShippingBGo, nodePkgCatalog, modShipping, modCatalog, nil},
+		moduleTestEdge{nodeCatalogC, nodePkgBilling, modCatalog, modBilling, nil},
 		// audit depends on the cycle but is not part of it.
-		moduleTestEdge{"file:audit/d.go", nodePkgBilling, "audit", modBilling, nil},
+		moduleTestEdge{"file:audit/d.go", nodePkgBilling, modAudit, modBilling, nil},
 	))
-	got := make([]string, 0, len(findings))
-	for _, f := range findings {
-		got = append(got, f.Edge.From.Module+"->"+f.Edge.To.Module)
-		if f.MatchedBy["cycle_size"] != "3" || f.MatchedBy["cycle_modules"] != "billing, catalog, shipping" {
-			t.Errorf("matched_by = %v, want the three-member cycle", f.MatchedBy)
-		}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want one for the component: %+v", len(findings), findings)
 	}
-	if want := "[billing->shipping catalog->billing shipping->catalog]"; fmt.Sprint(got) != want {
-		t.Errorf("findings = %v, want %s in deterministic order", got, want)
+	f := findings[0]
+	if f.MatchedBy["cycle_size"] != "3" || f.MatchedBy["cycle_modules"] != "billing, catalog, shipping" ||
+		f.MatchedBy["cycle_pairs_total"] != "3" {
+		t.Errorf("matched_by = %v, want the three-member cycle and its three pairs", f.MatchedBy)
+	}
+	if f.Edge.From.Module != modBilling || f.Edge.To.Module != modShipping {
+		t.Errorf("edge = %s -> %s, want the first pair billing -> shipping", f.Edge.From.Module, f.Edge.To.Module)
+	}
+	if strings.Contains(f.MatchedBy["cycle_modules"], modAudit) {
+		t.Errorf("cycle_modules = %q, want the outsider left out", f.MatchedBy["cycle_modules"])
 	}
 }
 
@@ -339,15 +331,20 @@ func TestModuleCycle_CapsLocationsAndReportsTheTotal(t *testing.T) {
 		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, sites},
 		moduleTestEdge{nodeShippingBGo, nodePkgBilling, modShipping, modBilling, nil},
 	))
-	if len(findings) != 2 {
-		t.Fatalf("got %d findings, want 2", len(findings))
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
 	}
 	f := findings[0]
-	if len(f.Locations) != 50 || f.MatchedBy["locations_total"] != "60" {
-		t.Fatalf("locations = %d, total = %s, want 50 kept of 60 distinct", len(f.Locations), f.MatchedBy["locations_total"])
+	// 60 distinct billing sites plus the shipping importer the back edge is
+	// located at.
+	if len(f.Locations) != 50 || f.MatchedBy["locations_total"] != "61" {
+		t.Fatalf("locations = %d, total = %s, want 50 kept of 61 distinct", len(f.Locations), f.MatchedBy["locations_total"])
 	}
 	if f.Locations[0].File != "billing/f01.go" || f.Locations[49].File != "billing/f50.go" {
 		t.Errorf("locations not sorted: first %v last %v", f.Locations[0], f.Locations[49])
+	}
+	if !strings.Contains(f.Why, "50 of 61 import sites") {
+		t.Errorf("why = %q, want the omitted-site count", f.Why)
 	}
 }
 
@@ -387,49 +384,4 @@ func meshEdges(modules []string) []moduleTestEdge {
 		}
 	}
 	return edges
-}
-
-// TestModuleCycle_CapsPairsPerCycleAndKeepsTheirIDs bounds a large cycle's
-// findings: a fully meshed 16-module component has 240 ordered pairs and
-// reports the first 200 in (from, to) order, each naming the full count. A
-// small cycle elsewhere is unaffected, and every kept pair keeps the ID it has
-// without the cap.
-func TestModuleCycle_CapsPairsPerCycleAndKeepsTheirIDs(t *testing.T) {
-	const reported = 200
-	mesh := make([]string, 0, 16)
-	for i := range 16 {
-		mesh = append(mesh, fmt.Sprintf("m%02d", i))
-	}
-	declared := append([]string{modBilling, modShipping}, mesh...)
-	edges := append(meshEdges(mesh),
-		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, nil},
-		moduleTestEdge{nodeShippingBGo, nodePkgBilling, modShipping, modBilling, nil},
-	)
-	findings := newModuleCycleRule(t, "", declared...).Check(moduleSet(edges...), rules.Evidence{})
-
-	var meshPairs []string
-	small := 0
-	for _, f := range findings {
-		pair := f.Edge.From.Module + "->" + f.Edge.To.Module
-		if f.MatchedBy["cycle_size"] == "2" {
-			small++
-			if f.MatchedBy["cycle_pairs_total"] != "2" || strings.Contains(f.Why, "reported") {
-				t.Errorf("%s: matched_by = %v, why = %q, want the uncapped two-pair cycle", pair, f.MatchedBy, f.Why)
-			}
-			continue
-		}
-		meshPairs = append(meshPairs, pair)
-		if f.MatchedBy["cycle_pairs_total"] != "240" || !strings.Contains(f.Why, "200 of the cycle's 240 module pairs are reported") {
-			t.Errorf("%s: matched_by = %v, why = %q, want the reported share of 240 pairs", pair, f.MatchedBy, f.Why)
-		}
-		if want := finding.NewKeyed(ruleIDModuleCycle, kindModuleDep, f.Edge.From.Module, f.Edge.To.Module).ID; f.ID != want {
-			t.Errorf("%s: ID = %s, want the pair key %s", pair, f.ID, want)
-		}
-	}
-	if small != 2 || len(meshPairs) != reported {
-		t.Fatalf("findings: %d in the small cycle, %d in the mesh; want 2 and %d", small, len(meshPairs), reported)
-	}
-	if meshPairs[0] != "m00->m01" || meshPairs[reported-1] != "m13->m04" {
-		t.Errorf("kept pairs run %s .. %s, want the first %d in (from, to) order: m00->m01 .. m13->m04", meshPairs[0], meshPairs[reported-1], reported)
-	}
 }

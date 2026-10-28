@@ -32,6 +32,9 @@ const fallbackStep = "report it as an archfit defect: no step is known for this 
 const (
 	stepRestoreDependencies = "restore the dependency evidence: archfit doctor --fix"
 	stepSupplyCoverage      = "supply a test coverage report for the current tree in the coverage: section"
+	// stepAnalyzersRulesRead is replaced, when an analyzer whose row is partial
+	// withholds a rule's evidence, with the step that restores its inputs.
+	stepAnalyzersRulesRead = "restore the analyzers the rules read: archfit doctor --fix"
 )
 
 type factStep struct {
@@ -46,7 +49,7 @@ type factStep struct {
 var factSteps = map[string]factStep{
 	// intent
 	"declared intent inventory": {"declare modules and rules: archfit config init", categoryModules},
-	"active rule conformance":   {"restore the analyzers the rules read: archfit doctor --fix", categoryTools},
+	"active rule conformance":   {stepAnalyzersRulesRead, categoryTools},
 	"disabled rule conformance": {"", categoryOutOfClaim},
 	// structure
 	"primary dependency inventory":  {"install or fix the language analyzers: archfit doctor --fix", categoryTools},

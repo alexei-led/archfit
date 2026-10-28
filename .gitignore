@@ -17,6 +17,8 @@ scratchpad/
 
 # Build, test, and coverage artifacts
 .bin/
+tools/dotnet/archfit-roslyn/*/bin/
+tools/dotnet/archfit-roslyn/*/obj/
 /archfit
 *.test
 coverage.out

@@ -186,14 +186,15 @@ const fileFactsTopN = 5
 
 // writeFileFacts prints the neutral structural-facts block: the top modules by
 // each axis (inbound module fan-in, outbound destinations, LOC). Numbers only —
-// no risk labels or ranking verdicts; the full per-module list is in the JSON
-// output. Omitted entirely when no facts were collected (SCIP off/absent).
+// no risk labels or ranking verdicts. The per-module list is not part of the
+// JSON state, so the header says what is shown. Omitted entirely when no facts
+// were collected (SCIP off/absent).
 func writeFileFacts(b *strings.Builder, facts []report.FileFact) {
 	if len(facts) == 0 {
 		return
 	}
 	b.WriteString("\n## Structural facts (neutral evidence)\n\n")
-	fmt.Fprintf(b, "%d modules; top %d per axis (full list in `--format json`):\n\n", len(facts), fileFactsTopN)
+	fmt.Fprintf(b, "%d modules; top %d per axis:\n\n", len(facts), fileFactsTopN)
 
 	axes := []struct {
 		label string
@@ -226,8 +227,9 @@ func writeFileFacts(b *strings.Builder, facts []report.FileFact) {
 	}
 }
 
-// syntaxSurfaceExportedTopN is the cap on exported declarations listed in the
-// Syntax surface section. Full list remains in `--format json`.
+// syntaxSurfaceExportedTopN is the cap on exported declarations and on routes
+// listed in the Syntax surface section. The JSON state carries no syntax facts,
+// so this section is the only place they are listed.
 const syntaxSurfaceExportedTopN = 20
 
 // writeSyntaxSurface prints the neutral syntax-surface block: declaration
@@ -250,7 +252,7 @@ func writeSyntaxSurface(b *strings.Builder, facts []report.SyntaxFact) {
 	}
 
 	b.WriteString("\n## Syntax surface (neutral evidence)\n\n")
-	fmt.Fprintf(b, "%d declaration(s) extracted by ast-grep (full list in `--format json`):\n\n", len(facts))
+	fmt.Fprintf(b, "%d declaration(s) extracted by ast-grep:\n\n", len(facts))
 
 	// Kind counts — deterministic order: sort keys.
 	kinds := make([]string, 0, len(kindCounts))
@@ -299,7 +301,7 @@ func writeSyntaxSurface(b *strings.Builder, facts []report.SyntaxFact) {
 		var curFile string
 		for _, f := range exported {
 			if printed >= syntaxSurfaceExportedTopN {
-				fmt.Fprintf(b, "- ... +%d more exported declarations (use `--format json`)\n", exportedCount-printed)
+				fmt.Fprintf(b, "- ... +%d more exported declarations not listed\n", exportedCount-printed)
 				break
 			}
 			if f.File != curFile {
@@ -319,16 +321,23 @@ func writeSyntaxSurface(b *strings.Builder, facts []report.SyntaxFact) {
 		}
 	}
 
-	// Routes summary.
-	routeCount := 0
+	// Routes: the count, then each registration site, capped.
+	var routes []report.SyntaxFact
 	for _, f := range facts {
 		if f.Kind == "route" {
-			routeCount++
+			routes = append(routes, f)
 		}
 	}
-	if routeCount > 0 {
+	if len(routes) > 0 {
 		b.WriteString("\n### Detected routes\n\n")
-		fmt.Fprintf(b, "- route: %d registration(s)\n", routeCount)
+		fmt.Fprintf(b, "- route: %d registration(s)\n", len(routes))
+		for i, f := range routes {
+			if i == syntaxSurfaceExportedTopN {
+				fmt.Fprintf(b, "- ... +%d more routes not listed\n", len(routes)-i)
+				break
+			}
+			fmt.Fprintf(b, "- `%s` %s:%d\n", f.Name, f.File, f.StartLine)
+		}
 	}
 }
 
@@ -404,7 +413,7 @@ func writeDynamicConnascenceSignals(b *strings.Builder, block *report.DynamicCon
 	})
 	for i, s := range ranked {
 		if i == runtimeAsyncTopN {
-			fmt.Fprintf(b, "- ... +%d more signals (use `--format json`)\n", len(ranked)-runtimeAsyncTopN)
+			fmt.Fprintf(b, "- ... +%d more signals not listed\n", len(ranked)-runtimeAsyncTopN)
 			break
 		}
 		target := ""
@@ -476,8 +485,8 @@ const dynamicImportSampleN = 3
 // writeDynamicImports prints the report-only dynamic/lazy-import risk block:
 // modules with non-top-level imports (Python) or require()/dynamic import() (TS),
 // which are invisible to the static dependency graph and can hide cycles or
-// undercount coupling. Counts + sample sites only — no risk verdict; the full
-// list is in `--format json`. Omitted when none were found.
+// undercount coupling. Counts + sample sites only — no risk verdict. Omitted
+// when none were found.
 func writeDynamicImports(b *strings.Builder, dyn []report.DynamicImport) {
 	if len(dyn) == 0 {
 		return
@@ -489,7 +498,7 @@ func writeDynamicImports(b *strings.Builder, dyn []report.DynamicImport) {
 	b.WriteString("\n## Dynamic / lazy imports (hidden-coupling risk)\n\n")
 	b.WriteString("Report-only. Dynamic/lazy imports are invisible to the static dependency\n")
 	b.WriteString("graph, so they can hide cycles and undercount coupling.\n\n")
-	fmt.Fprintf(b, "%d sites across %d modules (full list in `--format json`):\n\n", total, len(dyn))
+	fmt.Fprintf(b, "%d sites across %d modules:\n\n", total, len(dyn))
 
 	ranked := make([]report.DynamicImport, len(dyn))
 	copy(ranked, dyn)
@@ -501,7 +510,7 @@ func writeDynamicImports(b *strings.Builder, dyn []report.DynamicImport) {
 	})
 	for i, d := range ranked {
 		if i == dynamicImportTopN {
-			fmt.Fprintf(b, "- ... +%d more modules (use `--format json`)\n", len(ranked)-dynamicImportTopN)
+			fmt.Fprintf(b, "- ... +%d more modules not listed\n", len(ranked)-dynamicImportTopN)
 			break
 		}
 		fmt.Fprintf(b, "- **%s**: %d (e.g. %s)\n", d.Module, d.Count, sampleSites(d.Sites))
@@ -534,7 +543,7 @@ func writeRuntimeAsync(b *strings.Builder, modules []report.RuntimeAsyncModule, 
 	if len(edges) > 0 {
 		fmt.Fprintf(b, " and %d module→target relation(s)", len(edges))
 	}
-	b.WriteString(". Full list in `--format json`.\n\n")
+	b.WriteString(".\n\n")
 
 	ranked := make([]report.RuntimeAsyncEdge, len(edges))
 	copy(ranked, edges)
@@ -552,7 +561,7 @@ func writeRuntimeAsync(b *strings.Builder, modules []report.RuntimeAsyncModule, 
 	})
 	for i, e := range ranked {
 		if i == runtimeAsyncTopN {
-			fmt.Fprintf(b, "- ... +%d more relations (use `--format json`)\n", len(ranked)-runtimeAsyncTopN)
+			fmt.Fprintf(b, "- ... +%d more relations not listed\n", len(ranked)-runtimeAsyncTopN)
 			break
 		}
 		fmt.Fprintf(b, "- **%s** → `%s` [%s]: %d (e.g. %s)\n", e.FromModule, mdTableCell(e.Target), e.IntegrationKind, e.Count, runtimeAsyncSites(e.Sites))
@@ -601,7 +610,7 @@ func writeDistanceConfigCandidates(b *strings.Builder, candidates []report.Dista
 	})
 	for i, c := range ranked {
 		if i == runtimeAsyncTopN {
-			fmt.Fprintf(b, "- ... +%d more candidates (use `--format json`)\n", len(ranked)-runtimeAsyncTopN)
+			fmt.Fprintf(b, "- ... +%d more candidates not listed\n", len(ranked)-runtimeAsyncTopN)
 			break
 		}
 		fmt.Fprintf(b, "- **%s** → `%s` [%s from %s; action=%s]: %d", c.Module, mdTableCell(c.Target), c.IntegrationKind, c.SourceBlock, c.SuggestedReviewAction, c.Count)

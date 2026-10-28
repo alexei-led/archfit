@@ -19,11 +19,11 @@ func TestListInputs_OnlyCallerExclusionsRemoveSourceDirectories(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := ListInputs(root, MatchExts([]string{".go"}, nil), nil); !slices.Equal(got, paths) {
+	if got, _ := ListInputs(root, MatchExts([]string{".go"}, nil), nil); !slices.Equal(got, paths) {
 		t.Fatalf("source inputs=%v want=%v", got, paths)
 	}
 	excluded := []string{"**/target/**"}
-	files := ListInputs(root, MatchAll, excluded)
+	files, _ := ListInputs(root, MatchAll, excluded)
 	before, err := HashTree(root, files)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,8 @@ func TestListInputs_OnlyCallerExclusionsRemoveSourceDirectories(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "target", "input.go"), []byte("changed output"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	after, err := HashTree(root, ListInputs(root, MatchAll, excluded))
+	refiles, _ := ListInputs(root, MatchAll, excluded)
+	after, err := HashTree(root, refiles)
 	if err != nil {
 		t.Fatal(err)
 	}

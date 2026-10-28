@@ -3,6 +3,7 @@ package acquisition_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -137,7 +138,7 @@ func TestCollectWithNoExtractorsIsNotFatal(t *testing.T) {
 	if got.Graph == nil || len(got.Graph.Nodes()) != 0 {
 		t.Errorf("graph = %+v, want an empty graph", got.Graph)
 	}
-	if len(got.Coverages) != 1 || got.Coverages[0] != extra {
+	if len(got.Coverages) != 1 || !reflect.DeepEqual(got.Coverages[0], extra) {
 		t.Errorf("coverages = %+v, want only the caller-supplied extra row", got.Coverages)
 	}
 }

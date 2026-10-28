@@ -27,6 +27,8 @@ REQUIRED = (
     "skills/skills.go",
     "skills/archfit/SKILL.md",
     "tools/manifest.json",
+    "tools/dotnet/archfit-roslyn/src/archfit-roslyn.csproj",
+    "tools/dotnet/archfit-roslyn/src/packages.lock.json",
     "tools/node/package-lock.json",
     "tools/python/requirements.lock",
     "scripts/provision-analyzers.sh",
@@ -48,6 +50,9 @@ EXCLUDED = (
     "examples/.archfit.yaml",
     "skills/.DS_Store",
     "testdata/fixture.go",
+    "tools/dotnet/archfit-roslyn/src/obj/project.assets.json",
+    "tools/dotnet/archfit-roslyn/src/bin/Release/x.dll",
+    "tools/dotnet/archfit-roslyn/tests/CliTests.cs",
 )
 
 

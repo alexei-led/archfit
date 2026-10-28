@@ -10,7 +10,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -64,7 +63,7 @@ func (c *AgentsMDCmd) Run(deps *appDeps) error {
 	}
 	// The config is loaded to validate it: a block must not point an agent at
 	// a config that does not load.
-	if _, err := loadAnalysisConfig(context.Background(), c.Config); err != nil {
+	if _, err := loadAnalysisConfig(deps.runContext(), c.Config); err != nil {
 		return configLoadError(err)
 	}
 	block := renderAgentsBlock(configArg(c.Config, c.File))

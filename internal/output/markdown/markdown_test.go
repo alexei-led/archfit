@@ -28,6 +28,7 @@ const (
 	connascenceTimingMd       = "timing"
 	dynamicReportOnlyReasonMd = "runtime trace evidence is absent"
 	langPythonMarkdownTest    = "python"
+	kindRouteMarkdownTest     = "route"
 
 	// Kept tool names.
 	toolJscpd  = "jscpd"
@@ -1057,7 +1058,7 @@ func TestRenderer_Render_AdvisoryTasksCapsAtTop25(t *testing.T) {
 		"## Advisory tasks (27)",
 		"**rule-00**",
 		"**rule-24**",
-		"_…and 2 more advisory tasks (see --json for the full list)._",
+		"_…and 2 more advisory tasks; their findings are listed in `--format json`._",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("advisory task output missing %q\nfull output:\n%s", want, out)
@@ -1524,6 +1525,9 @@ func TestRenderer_Render_SyntaxSurface_Present(t *testing.T) {
 	if !strings.Contains(out, "- route: 1 registration(s)") {
 		t.Errorf("output missing route registration count\nfull output:\n%s", out)
 	}
+	if !strings.Contains(out, "- `GET /health` "+fileAPIHandler+":50") {
+		t.Errorf("output missing the route registration site\nfull output:\n%s", out)
+	}
 
 	// Non-exported declarations must NOT appear in the Public API list.
 	if strings.Contains(out, "`internalHelper`") {
@@ -1748,6 +1752,52 @@ func TestRenderer_Render_TruncatedWhyStaysValidUTF8(t *testing.T) {
 		}
 		if !utf8.Valid(buf.Bytes()) {
 			t.Fatalf("markdown render is not valid UTF-8 with a %d-byte ASCII prefix", shift)
+		}
+	}
+}
+
+// TestRenderer_Render_ReportOnlyListsNameTheirCap pins that capped report-only
+// lists say what was left out instead of pointing at --format json: the JSON
+// architecture state carries no syntax facts, structural facts, or dynamic imports.
+func TestRenderer_Render_ReportOnlyListsNameTheirCap(t *testing.T) {
+	r := markdown.New()
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.FileFacts = []reportmodel.FileFact{{Module: modAPI, InboundModuleFanIn: 1, OutboundDestinations: 1, LOC: 10}}
+	for i := range 25 {
+		d.SyntaxFacts = append(d.SyntaxFacts,
+			reportmodel.SyntaxFact{Language: "dotnet", File: "src/Web/Endpoints.cs", Kind: kindRouteMarkdownTest, Name: fmt.Sprintf("/r%02d", i), StartLine: i + 1},
+			reportmodel.SyntaxFact{Language: "go", File: "pkg/api/api.go", Kind: kindFunction, Name: fmt.Sprintf("F%02d", i), Exported: true, StartLine: i + 1},
+		)
+	}
+	for i := range 12 {
+		d.DynamicImports = append(d.DynamicImports, reportmodel.DynamicImport{Module: fmt.Sprintf("m%02d", i), Count: 1,
+			Sites: []reportmodel.DynamicImportSite{{File: "a.py", Line: 1, Kind: "lazy_import", Language: langPythonMarkdownTest}}})
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"- route: 25 registration(s)",
+		"- `/r00` src/Web/Endpoints.cs:1",
+		"- ... +5 more routes not listed",
+		"- ... +5 more exported declarations not listed",
+		"- ... +2 more modules not listed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "/r20`") {
+		t.Errorf("route list must stop at the cap\nfull output:\n%s", out)
+	}
+	for _, stale := range []string{"full list in", "use `--format json`"} {
+		if strings.Contains(out, stale) {
+			t.Errorf("output points at --format json for facts the JSON state does not carry (%q)\nfull output:\n%s", stale, out)
 		}
 	}
 }

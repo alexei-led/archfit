@@ -25,14 +25,16 @@ func TestSelectorLanguages(t *testing.T) {
 		pattern string
 		want    []string
 	}{
-		{"slash path excludes dotted and :: vocabularies", "internal/llm/**", []string{graph.LangGo, graph.LangTypeScript}},
-		{"slash path without a wildcard", "internal/config", []string{graph.LangGo, graph.LangTypeScript}},
-		{"dotted python module id", "prefect.**", []string{graph.LangPython}},
+		{"slash path excludes dotted and :: vocabularies", "internal/llm/**", []string{graph.LangDotNet, graph.LangGo, graph.LangTypeScript}},
+		{"slash path without a wildcard", "internal/config", []string{graph.LangDotNet, graph.LangGo, graph.LangTypeScript}},
+		{"dotted name addresses python modules and .NET assemblies", "prefect.**", []string{graph.LangDotNet, graph.LangPython}},
+		{".NET assembly glob", "Microsoft.EntityFrameworkCore*", []string{graph.LangDotNet, graph.LangPython}},
 		{"rust crate path", "mycrate::mod::**", []string{graph.LangRust}},
-		{"no separator at all addresses every language", "**", []string{graph.LangGo, graph.LangPython, graph.LangRust, graph.LangTypeScript}},
-		{"bare module name is ambiguous, so every language", "billing", []string{graph.LangGo, graph.LangPython, graph.LangRust, graph.LangTypeScript}},
+		{"no separator at all addresses every language", "**", []string{graph.LangDotNet, graph.LangGo, graph.LangPython, graph.LangRust, graph.LangTypeScript}},
+		{"bare module name is ambiguous, so every language", "billing", []string{graph.LangDotNet, graph.LangGo, graph.LangPython, graph.LangRust, graph.LangTypeScript}},
 		{"an explicit supported extension names one language", "src/**/*.go", []string{graph.LangGo}},
 		{"a python extension beats the slash in the path", "src/**/*.py", []string{graph.LangPython}},
+		{"a C# extension names .NET", "src/**/*.cs", []string{graph.LangDotNet}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

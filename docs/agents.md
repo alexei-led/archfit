@@ -35,7 +35,8 @@ module facts instead of reading the config. `can-import` returns `denied`,
 - `denied`: do not add the import. Use the reported repair goal and constraints.
 - `not_decided`: a whole-graph rule or missing evidence can still block it.
   Add the import only if needed, then run `check`.
-- `allowed`: the current allowlist or layer order permits the import.
+- `allowed`: the current allowlist or layer order permits the import, and no
+  configured whole-graph rule could still block it.
 - `unconstrained`: no rule decides the import. This is not permission.
 
 When a rule declares alternatives, a denial can also carry `instead` (the
@@ -106,7 +107,7 @@ archfit hook install --harness git      # the git pre-commit hook
 `install` merges into the settings file and keeps every other key and hook.
 Running it again changes nothing. It removes entries of the old
 `archfit hook claude` command. Pass `-c <config>` when the config is not
-`.archfit.yaml`, and `--dir <repo>` to install into another repository. A
+`.archfit.yaml`; the path is relative to the repository root. Pass `--dir <repo>` to install into another repository. A
 pre-commit hook that archfit did not write is left alone: `install` exits `3`
 and names it.
 
@@ -115,8 +116,8 @@ The installed hooks call `archfit hook run <event>`:
 | Event | Claude Code | Codex | What it does |
 | --- | --- | --- | --- |
 | `session-start` | `SessionStart` | `SessionStart` | Records `HEAD` as the session base in `.archfit-cache/session/<session_id>.json`. Prints three lines for the agent: run `policy can-import` before a cross-module import, run `check --format agent` before finishing, never edit the policy files. |
-| `post-tool-use` | `PostToolUse` after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` | `PostToolUse` after `apply_patch`, `Bash` | Finds the files that differ from the session base with git, reads the imports their added lines introduce (Go, relative TypeScript and JavaScript, Python), and asks `can-import` about each. A denial exits `2` with the file, the target, the rule, why, and what to use instead on stderr. Each denial is reported once per session. |
-| `stop` | `Stop`, `SubagentStop` | `Stop` | Runs `check --format agent --base <session base>` with the policy guard of `check`. A `fail` change blocks the stop once, with the blockers on stderr. The same blockers on the same tree do not block again. An `unknown` change shows a message and does not block. |
+| `post-tool-use` | `PostToolUse` after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` | `PostToolUse` after `apply_patch`, `Bash` | Finds the files that differ from the session base with git, reads the imports their added lines introduce (Go, relative TypeScript and JavaScript, Python), and asks `can-import` about each. A denial exits `2` with the file, the target, the rule, why, and what to use instead on stderr. Each denial is reported once while it stays; an import removed and added again is reported again. A relative import of a file that does not exist yet is judged once the file exists. |
+| `stop` | `Stop`, `SubagentStop` | `Stop` | Runs `check --format agent --base <session base>` with the policy guard of `check`. A `fail` change blocks the stop once, with the blockers on stderr. The same blockers on the same tree do not block again, until a stop passes. A `SubagentStop` is blocked once and never suppresses the main agent's stop. An `unknown` change shows a message and does not block. |
 | `pre-commit` | — | — | Checks the staged content against `HEAD`. Exit `1` blocks the commit. |
 
 The hooks read changes with git, never from the tool payload, so an edit made
@@ -131,8 +132,9 @@ Codex and approve the hooks, or run it once with
 `--dangerously-bypass-hook-trust`.
 
 Check the loop with `archfit doctor`. Its agent loop section lists the
-harnesses it finds and each hook as `active` or `inactive` (not installed, or,
-for Codex, not trusted yet). It also shows the target branch, the scope `check`
+harnesses it finds and each hook as `active` or `inactive` (not installed,
+switched off by `disableAllHooks` in the Claude Code project settings, or, for
+Codex, not trusted yet). It also shows the target branch, the scope `check`
 would use, and whether a policy file differs from the target.
 `archfit doctor --format json` reports the same under `agent_loop`.
 

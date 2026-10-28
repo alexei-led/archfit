@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // doctorJSON runs doctor --format json in the working directory and decodes it.
@@ -144,5 +146,52 @@ func TestDoctorJSONRejectsFix(t *testing.T) {
 	code, stdout, stderr := runArchfit(t, "doctor", "--format", formatJSON, "--fix")
 	if code != 3 || stdout != "" || !strings.Contains(stderr, "only reports") {
 		t.Errorf("exit %d, stdout %q, stderr %q; want 3", code, stdout, stderr)
+	}
+}
+
+// TestDoctorClaudeHooksDisabled: disableAllHooks makes Claude Code run no
+// hook, so doctor reports installed hooks inactive and names the file.
+// settings.local.json overrides settings.json.
+func TestDoctorClaudeHooksDisabled(t *testing.T) {
+	t.Parallel()
+	const (
+		local    = "settings.local.json"
+		disabled = "true"
+	)
+	for _, tc := range []struct {
+		name       string
+		project    string // the disableAllHooks value in settings.json, "" for absent
+		local      string // the disableAllHooks value in settings.local.json, "" for no file
+		wantReason string // "" means active
+	}{
+		{name: "nothing disables the hooks"},
+		{name: "settings.json disables them", project: disabled, wantReason: "disableAllHooks is set in " + filepath.Join(".claude", "settings.json")},
+		{name: "settings.local.json disables them", local: disabled, wantReason: "disableAllHooks is set in " + filepath.Join(".claude", local)},
+		{name: "settings.local.json enables them again", project: disabled, local: "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if tc.project != "" {
+				writeFixtureFile(t, dir, harnessConfigFile(harnessClaude), `{"disableAllHooks": `+tc.project+`}`)
+			}
+			if code, _, stderr := runHook(t, "", "install", "--harness", harnessClaude, "--dir", dir); code != 0 {
+				t.Fatalf("install: exit %d\n%s", code, stderr)
+			}
+			if tc.local != "" {
+				writeFixtureFile(t, dir, filepath.Join(".claude", local), `{"disableAllHooks": `+tc.local+`}`)
+			}
+			runner := &toolrun.RunnerMock{DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false }}
+			st := harnessStatusOf(context.Background(), &appDeps{Runner: runner}, dir, harnessClaude)
+			for _, hook := range st.Hooks {
+				want := hookStatus{Event: hook.Event, Status: hookActive}
+				if tc.wantReason != "" {
+					want.Status, want.Reason = hookInactive, tc.wantReason
+				}
+				if hook != want {
+					t.Errorf("%s = %+v, want %+v", hook.Event, hook, want)
+				}
+			}
+		})
 	}
 }

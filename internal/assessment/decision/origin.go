@@ -39,6 +39,7 @@ package decision
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -410,12 +411,20 @@ func compareAnalyzerEvidence(fams []AnalyzerFamily, head, base AnalyzerEvidence)
 // So whenever the raw statuses match, both sides carry their meaning, even when
 // the meanings match too. Differing raw statuses already carry the information
 // and stay terse.
+//
+// A base row that did not finish or left inputs out appends its own reason:
+// the base diagnostic is dropped, so this is the only place its cause and fix
+// can reach the reader. The head's reason is already on its coverage row.
 func unpairedReason(name string, head, base familySummary) string {
+	reason := fmt.Sprintf("%s: head %s, base %s", name, head.raw(), base.raw())
 	if head.raw() == base.raw() {
-		return fmt.Sprintf("%s: head %s (%s), base %s (%s)",
+		reason = fmt.Sprintf("%s: head %s (%s), base %s (%s)",
 			name, head.raw(), head.meaning(), base.raw(), base.meaning())
 	}
-	return fmt.Sprintf("%s: head %s, base %s", name, head.raw(), base.raw())
+	if base.unavailableReason != "" {
+		reason += " — base: " + base.unavailableReason
+	}
+	return reason
 }
 
 // familySummary is one family's normalised coverage on one side.
@@ -427,6 +436,9 @@ type familySummary struct {
 	// magnitude-blind, so without the numbers nothing in the output separates a
 	// handful of unresolved specifiers from a repo-wide resolution failure.
 	rawStatuses []string
+	// unavailableReason is the reason of the side's single row when that row is
+	// unavailable evidence (timed out, or partial with inputs missing).
+	unavailableReason string
 }
 
 func (s familySummary) rows() int { return len(s.statuses) }
@@ -467,8 +479,11 @@ func (s familySummary) meaning() string {
 	default: // evidenceUnavailable
 		// Covers timeouts and every partial that left inputs OUT of the graph.
 		// Both mean the analyzer could have reported findings over this tree and
-		// did not get through it.
-		return "run did not finish"
+		// did not; only a timeout means it did not get through it.
+		if s.rawStatuses[0] == evidence.StatusTimedOut {
+			return "run did not finish"
+		}
+		return "inputs missing from the graph"
 	}
 }
 
@@ -479,8 +494,15 @@ func summariseFamily(f AnalyzerFamily, side AnalyzerEvidence) familySummary {
 		if c.Tool != f.name {
 			continue
 		}
-		out.statuses = append(out.statuses, normalizeCoverage(f, c, side.Gaps))
+		status := normalizeCoverage(f, c, side.Gaps)
+		out.statuses = append(out.statuses, status)
 		out.rawStatuses = append(out.rawStatuses, rawCoverageStatus(c))
+		if status == evidenceUnavailable {
+			out.unavailableReason = c.Reason
+		}
+	}
+	if out.rows() != 1 {
+		out.unavailableReason = ""
 	}
 	sort.Strings(out.rawStatuses)
 	return out
@@ -650,21 +672,32 @@ const (
 	toolScipSymbols   = "scip-symbols"
 	toolJscpd         = "jscpd"
 	toolCargoModules  = "cargo-modules"
+	toolRoslyn        = "roslyn"
 )
+
+// pairsAsPrimary reports whether a gapless absent row of tool reads as "no
+// project here" and drops out of a comparison, as a language primary's does.
+// Both comparison paths ask it — analyze --base through AnalyzerFamilies,
+// config compare through gradeTool — so they cannot grade one row differently.
+// Roslyn is the one non-primary analyzer that qualifies: it is on by default,
+// so it runs on trees with no .NET project.
+func pairsAsPrimary(tool string, primaries []string) bool {
+	return tool == toolRoslyn || slices.Contains(primaries, tool)
+}
 
 // FamilyOptions names the analyzers a run activated. PrimaryTools are the
 // per-language dependency-graph analyzers the extractor registry supplies; the
 // remaining flags are the opt-in analyzers.
 type FamilyOptions struct {
-	PrimaryTools                                 []string
-	Patterns, Syntax, SCIP, Clones, CargoModules bool
+	PrimaryTools                                         []string
+	Patterns, Syntax, SCIP, Clones, CargoModules, Roslyn bool
 }
 
 // AnalyzerFamilies returns the finding-producing analyzer families to compare.
 func AnalyzerFamilies(o FamilyOptions) []AnalyzerFamily {
 	fams := make([]AnalyzerFamily, 0, len(o.PrimaryTools)+5)
 	for _, tool := range o.PrimaryTools {
-		fams = append(fams, AnalyzerFamily{name: tool, primary: true})
+		fams = append(fams, AnalyzerFamily{name: tool, primary: pairsAsPrimary(tool, o.PrimaryTools)})
 	}
 	// The pattern pass and the syntax pass are two analyzers with two coverage
 	// names and two independent activation switches, so they compare separately.
@@ -682,6 +715,11 @@ func AnalyzerFamilies(o FamilyOptions) []AnalyzerFamily {
 	}
 	if o.CargoModules {
 		fams = append(fams, AnalyzerFamily{name: toolCargoModules})
+	}
+	// Roslyn's gapless absent row means what a primary's does (pairsAsPrimary)
+	// and must pair silently, or every non-.NET --base gains a reason.
+	if o.Roslyn {
+		fams = append(fams, AnalyzerFamily{name: toolRoslyn, primary: pairsAsPrimary(toolRoslyn, o.PrimaryTools)})
 	}
 	return fams
 }

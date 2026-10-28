@@ -64,6 +64,8 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 	}
 	gates[ToolClones] = string(c.ToolGate(ToolClones))
 	gates[ToolCargoModules] = string(c.ToolGate(ToolCargoModules))
+	gates[ToolRoslyn] = string(c.ToolGate(ToolRoslyn))
+	modes[ToolRoslyn] = string(c.ToolMode(ToolRoslyn))
 	gates[suppliedcoverage.ToolName] = string(c.Coverage.Gate)
 	probes := make(map[string]func(string) bool)
 	for _, lang := range registry.All() {
@@ -72,6 +74,9 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 		probes[lang.PrimaryTool] = func(root string) bool { return probe(root, extractCfg) }
 		if lang.ID == LangRust {
 			probes[registry.ToolCargoModules] = func(root string) bool { return probe(root, extractCfg) }
+		}
+		if lang.ID == LangDotNet {
+			probes[registry.ToolRoslyn] = func(root string) bool { return probe(root, extractCfg) }
 		}
 	}
 	return acquisition.CoverageOptions{Gates: gates, Modes: modes, ProjectPresent: probes}
@@ -150,7 +155,7 @@ func (c Config) AcquisitionOptions() acquire.Options {
 		Exclusions: c.Exclude, FileClass: c.ForFileClass(), ModuleMap: c.ModuleMapView(),
 		ClonesEnabled: c.ClonesEnabled(), CloneTimeout: c.ToolTimeout(ToolClones),
 		SCIPEnabled: c.ScipEnabled(), SCIPTimeout: c.ToolTimeout(ToolScip),
-		Syntax: c.ForSyntax(), GoExtract: c.ForExtract(LangGo),
+		Syntax: c.ForSyntax(), GoExtract: c.ForExtract(LangGo), Languages: c.analysedLanguages(),
 	}
 }
 
@@ -163,6 +168,7 @@ func (c Config) AnalyzerFamilies() application.AnalyzerFamilies {
 		SCIP:         c.ScipEnabled(),
 		Clones:       c.ClonesEnabled(),
 		CargoModules: c.CargoModulesEnabled(),
+		Roslyn:       c.RoslynEnabled(),
 	}
 }
 

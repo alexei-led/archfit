@@ -10,11 +10,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
@@ -41,6 +47,9 @@ var pyRules string
 //go:embed rules/rust.yml
 var rustRules string
 
+//go:embed rules/csharp.yml
+var csharpRules string
+
 // SyntaxFact Kind constants for Go and TypeScript declarations and routes.
 const (
 	kindFunction   = "function"
@@ -62,6 +71,9 @@ const (
 	langTypeScript = "typescript"
 	langPython     = "python"
 	langRust       = "rust"
+	// langDotNet keys the C# rules by archfit's language id, as every other
+	// language is keyed; csharp.yml names the ast-grep language itself.
+	langDotNet = graph.LangDotNet
 )
 
 // Rule ID constants for rules referenced more than once in this file.
@@ -81,6 +93,9 @@ type kindInfo struct {
 	Kind      string
 	Framework string
 	IsSignal  bool // true = import-signal rule; never emitted as a SyntaxFact
+	// IsParseError marks a rule that matches syntax-tree ERROR nodes. Such a match
+	// makes its file partial instead of producing a SyntaxFact.
+	IsParseError bool
 }
 
 // Framework group constants: each route rule belongs to one group; the matching
@@ -202,12 +217,23 @@ var rustRuleKinds = map[string]kindInfo{
 	"rs-import-axum":  {Framework: fwGroupAxum, IsSignal: true},
 }
 
+// csharpRuleKinds maps each csharp.yml ruleId to its Kind. Route facts carry no
+// Framework: attribute and Map* shapes are not import-gated.
+var csharpRuleKinds = map[string]kindInfo{
+	"cs-method":            {Kind: kindMethod},
+	"cs-local-function":    {Kind: kindFunction},
+	"cs-route-attribute":   {Kind: kindRoute},
+	"cs-route-minimal-api": {Kind: kindRoute},
+	"cs-parse-error":       {IsParseError: true},
+}
+
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
 var langRuleKinds = map[string]map[string]kindInfo{
 	langGo:         goRuleKinds,
 	langTypeScript: tsRuleKinds,
 	langPython:     pyRuleKinds,
 	langRust:       rustRuleKinds,
+	langDotNet:     csharpRuleKinds,
 }
 
 // embeddedRules maps language identifiers (as passed in langs) to their embedded YAML.
@@ -216,6 +242,7 @@ var embeddedRules = map[string]string{
 	langTypeScript: tsRules + "\n---\n" + jsRules,
 	langPython:     pyRules,
 	langRust:       rustRules,
+	langDotNet:     csharpRules,
 }
 
 // sgSyntaxMatch is the JSON shape ast-grep emits for --json=compact scan output.
@@ -254,6 +281,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	}
 
 	var facts []evidence.SyntaxFact
+	parseErrors := make(map[string]int) // file → first ERROR line (1-based)
 
 	runner := a.cachedRunner(ctx, s.Root, langs)
 	for _, lang := range langs {
@@ -294,6 +322,16 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 		ruleKinds := langRuleKinds[lang]
 
+		for _, m := range raw {
+			if !ruleKinds[m.RuleID].IsParseError || a.excluded(m.File) {
+				continue
+			}
+			line := m.Range.Start.Line + 1
+			if prev, seen := parseErrors[m.File]; !seen || line < prev {
+				parseErrors[m.File] = line
+			}
+		}
+
 		// Pass 1: collect import-signal matches to build the confirmed map.
 		// confirmed[file][frameworkGroup] = true when that file imports the group's framework.
 		confirmed := make(map[string]map[string]bool)
@@ -312,8 +350,8 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		// when the file's framework import was confirmed in pass 1.
 		for _, m := range raw {
 			ki, known := ruleKinds[m.RuleID]
-			if !known || ki.IsSignal {
-				// Signal rules are never emitted as facts; unknown ruleIds are skipped.
+			if !known || ki.IsSignal || ki.IsParseError {
+				// Signal and parse-error rules are never emitted as facts; unknown ruleIds are skipped.
 				continue
 			}
 
@@ -356,7 +394,39 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		seen[facts[i].File] = struct{}{}
 	}
 	cov := evidence.Coverage{Tool: syntaxToolName, Version: a.sgVersion(ctx), Status: evidence.StatusOK, FilesSeen: len(seen)}
+	if len(parseErrors) > 0 {
+		cov.Status = evidence.StatusPartial
+		cov.Reason = parseErrorReason(parseErrors)
+	}
 	return facts, cov, nil
+}
+
+func (a *Adapter) excluded(file string) bool {
+	for _, pattern := range a.Exclusions {
+		if ok, _ := doublestar.Match(pattern, filepath.ToSlash(file)); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// maxParseErrorFilesListed caps the per-file list in the coverage reason.
+const maxParseErrorFilesListed = 5
+
+// parseErrorReason names each file whose syntax tree has ERROR nodes with its
+// first error line, so a reader can find the construct the grammar rejected.
+func parseErrorReason(byFile map[string]int) string {
+	files := slices.Sorted(maps.Keys(byFile))
+	listed := files[:min(len(files), maxParseErrorFilesListed)]
+	parts := make([]string, len(listed))
+	for i, f := range listed {
+		parts[i] = fmt.Sprintf("%s:%d", f, byFile[f])
+	}
+	reason := fmt.Sprintf("syntax errors in %d file(s), routes there may be missing: %s", len(files), strings.Join(parts, ", "))
+	if extra := len(files) - len(listed); extra > 0 {
+		reason += fmt.Sprintf(" and %d more", extra)
+	}
+	return reason
 }
 
 // decodeSyntaxStream decodes a sg --json=compact array from r element-by-element.
@@ -421,6 +491,9 @@ func nameFromMatch(m sgSyntaxMatch) string {
 	if nv, ok := m.MetaVariables.Single["NAME"]; ok && nv.Text != "" {
 		return nv.Text
 	}
+	if strings.HasPrefix(m.RuleID, "cs-route-") {
+		return csharpRouteName(m)
+	}
 	// Route rules: use $PATH as the name (the URL pattern string).
 	if pv, ok := m.MetaVariables.Single["PATH"]; ok && pv.Text != "" {
 		path := pv.Text
@@ -432,6 +505,27 @@ func nameFromMatch(m sgSyntaxMatch) string {
 	}
 	// Fallback for go-type-alias: extract from declaration text.
 	if sub := goTypeAliasNameRe.FindStringSubmatch(m.Text); len(sub) == 2 {
+		return sub[1]
+	}
+	return ""
+}
+
+// csharpRouteRe reads a route template from an attribute or Map* call text: the
+// plain string literal that is the first argument of the verb itself, positional
+// or "template:". Anchoring on the verb skips a MapGroup prefix in a chained call,
+// and a "Name = ..." argument is the link name, not a template. Verbatim,
+// interpolated, and non-literal arguments are not matched, and the registration
+// then reports no route.
+var csharpRouteRe = regexp.MustCompile(`\b(?:Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete|Patch|Methods|Fallback))\s*\(\s*(?:template\s*:\s*)?"((?:[^"\\]|\\.)*)"`)
+
+// csharpRouteName returns the route template, or "" when the registration has no
+// literal template: bare [HttpGet], [HttpGet("")], [HttpGet(Name = ...)],
+// [Route] without an argument, MapFallback() without a pattern, and
+// MapIdentityApi<T>(). An empty template adds no path segment of its own — under
+// attribute routing the class [Route] is the route, and that attribute is
+// reported as its own fact — so the verb name is never a route name.
+func csharpRouteName(m sgSyntaxMatch) string {
+	if sub := csharpRouteRe.FindStringSubmatch(m.Text); len(sub) == 2 {
 		return sub[1]
 	}
 	return ""
@@ -491,6 +585,11 @@ func isExported(lang, ruleID, name string) bool {
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
+	case langDotNet:
+		// Routes are not API declarations, and a method's effective visibility
+		// depends on its enclosing types and InternalsVisibleTo, which a syntax
+		// match cannot see. C# function facts carry extent only.
+		return false
 	default: // go and future languages: uppercase-first convention
 		if isNonExportedGoRule(ruleID) {
 			return false

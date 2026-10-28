@@ -14,11 +14,12 @@ import (
 func TestImportTargets(t *testing.T) {
 	t.Parallel()
 	const (
-		tsApp   = "web/src/app.ts"
-		tsIndex = "web/src/ui/index.tsx"
+		tsApp    = "web/src/app.ts"
+		tsIndex  = "web/src/ui/index.tsx"
+		tsClient = "web/src/db/client.ts"
 	)
 	files := map[string]bool{
-		"web/src/db/client.ts":    true,
+		tsClient:                  true,
 		tsIndex:                   true,
 		"web/src/legacy.js":       true,
 		"web/src/util/fmt.ts":     true,
@@ -34,6 +35,8 @@ func TestImportTargets(t *testing.T) {
 		content string
 		added   []int // nil: every line is new
 		want    []string
+		// wantUnresolved: a relative import names a file that does not exist yet.
+		wantUnresolved bool
 	}{
 		{name: "go single import with an alias", lang: config.LangGo, file: filePkgAA,
 			content: "package a\n\nimport impl \"example.com/m/pkg/b/impl\"\n",
@@ -48,9 +51,12 @@ func TestImportTargets(t *testing.T) {
 			content: "package a\n\nimport (\"os\")\n\nvar x = \"y\"\n", want: []string{"os"}},
 		{name: "ts relative specifiers resolve to files", lang: config.LangTypeScript, file: tsApp,
 			content: "import { db } from './db/client';\nimport './ui';\nconst l = require(\"./legacy\");\nconst f = await import('./util/fmt.ts');\nexport * from './shared';\n",
-			want:    []string{"web/src/db/client.ts", "web/src/legacy.js", "web/src/shared/index.js", tsIndex, "web/src/util/fmt.ts"}},
-		{name: "ts bare, unresolved, and escaping specifiers are skipped", lang: config.LangTypeScript, file: tsApp,
-			content: "import React from 'react';\nimport { x } from './missing';\nimport y from '../../../outside';\n", want: nil},
+			want:    []string{tsClient, "web/src/legacy.js", "web/src/shared/index.js", tsIndex, "web/src/util/fmt.ts"}},
+		{name: "ts bare and escaping specifiers are skipped", lang: config.LangTypeScript, file: tsApp,
+			content: "import React from 'react';\nimport y from '../../../outside';\n", want: nil},
+		{name: "ts a relative import of a file not there yet is unresolved", lang: config.LangTypeScript, file: tsApp,
+			content: "import { db } from './db/client';\nimport { x } from './missing';\n",
+			want:    []string{tsClient}, wantUnresolved: true},
 		{name: "ts only added lines", lang: config.LangTypeScript, file: tsApp,
 			content: "import { db } from './db/client';\nimport './ui';\n", added: []int{2},
 			want: []string{tsIndex}},
@@ -72,9 +78,9 @@ func TestImportTargets(t *testing.T) {
 					added[n] = true
 				}
 			}
-			got := importTargets(tc.lang, tc.file, []byte(tc.content), added, isFile)
-			if !slices.Equal(got, tc.want) {
-				t.Errorf("importTargets = %q, want %q", got, tc.want)
+			got, unresolved := importTargets(tc.lang, tc.file, []byte(tc.content), added, isFile)
+			if !slices.Equal(got, tc.want) || unresolved != tc.wantUnresolved {
+				t.Errorf("importTargets = %q, unresolved %v; want %q, %v", got, unresolved, tc.want, tc.wantUnresolved)
 			}
 		})
 	}

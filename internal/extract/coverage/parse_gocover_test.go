@@ -50,7 +50,7 @@ func TestGoCoverProfileParserRejectsMalformedWithoutFacts(t *testing.T) {
 }
 
 func FuzzGoCoverProfileParser(f *testing.F) {
-	f.Add([]byte("mode: set\nfile.go:1.1,1.2 1 1\n"))
+	f.Add([]byte(goCoverSample))
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		_, _ = (goCoverProfileParser{}).Parse(data)
 	})

@@ -4,7 +4,7 @@
 The sweep is the product-level acceptance gate for the v1 cutover: unit
 fixtures and self-dogfooding cannot prove that extraction,
 state projection, format rendering, and exit semantics work on real Go,
-TypeScript, Python, and Rust repositories.
+TypeScript, Python, Rust, and .NET repositories.
 
 Contract this harness enforces per repo (see
 docs/plans/architecture-state-reporting.md, Task 6):
@@ -119,6 +119,7 @@ CORPUS: dict[str, RepoSpec] = {
     "herdr": RepoSpec("herdr", WORKSPACE_ROOT / "herdr", "rust"),
     "ruff": RepoSpec("ruff", WORKSPACE_ROOT / "ruff", "rust"),
     "tokio": RepoSpec("tokio", WORKSPACE_ROOT / "tokio", "rust"),
+    "bitwarden": RepoSpec("bitwarden", WORKSPACE_ROOT / "bitwarden-server", "dotnet"),
 }
 
 

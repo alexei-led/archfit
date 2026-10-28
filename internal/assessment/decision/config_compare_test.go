@@ -31,6 +31,7 @@ const (
 	toolGoPackagesName = primaryTool
 	toolDepCruiserName = "dependency-cruiser"
 	toolGrimpName      = "grimp"
+	toolRoslynName     = "roslyn"
 )
 
 // Finding IDs and the duplicate-row rendering reused across table cases.
@@ -780,6 +781,51 @@ func TestCompareCoverage_Aggregate(t *testing.T) {
 	}
 	if got.Details[1].Status != decision.CoverageComparableWithGaps {
 		t.Errorf("zeta status = %q, want %q", got.Details[1].Status, decision.CoverageComparableWithGaps)
+	}
+}
+
+// TestCompareCoverage_RoslynPairsLikeAPrimary pins that config compare reads the
+// roslyn row as analyze --base does: on by default, it is absent on every tree
+// without .NET, and that gapless absence is "no project here", not a gap.
+func TestCompareCoverage_RoslynPairsLikeAPrimary(t *testing.T) {
+	tests := []struct {
+		name               string
+		current, candidate evidence.Coverage
+		curGaps            []evidence.CoverageGap
+		want               decision.CoverageComparability
+		wantDetail         bool
+	}{
+		{
+			name:    "absent without a gap on a tree with no .NET",
+			current: cov(toolRoslynName, evidence.StatusAbsent), candidate: cov(toolRoslynName, evidence.StatusAbsent),
+			want: decision.CoverageComparable,
+		},
+		{
+			name:    "absent, only one configuration expected it",
+			current: cov(toolRoslynName, evidence.StatusAbsent), candidate: cov(toolRoslynName, evidence.StatusAbsent),
+			curGaps: []evidence.CoverageGap{gap(toolRoslynName)},
+			want:    decision.CoverageNotComparable, wantDetail: true,
+		},
+		{
+			name:    "partial under one configuration, complete under the other",
+			current: cov(toolRoslynName, evidence.StatusPartial), candidate: cov(toolRoslynName, evidence.StatusOK),
+			want: decision.CoverageNotComparable, wantDetail: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := decision.CompareConfigs(decision.ConfigCompareInput{
+				Current:   side([]evidence.Coverage{cov(primaryTool, evidence.StatusOK), tt.current}, tt.curGaps),
+				Candidate: side([]evidence.Coverage{cov(primaryTool, evidence.StatusOK), tt.candidate}, nil),
+			}).Coverage
+			if got.Status != tt.want {
+				t.Errorf("status = %q, want %q (details %+v)", got.Status, tt.want, got.Details)
+			}
+			hasDetail := slices.ContainsFunc(got.Details, func(d decision.CoverageDetail) bool { return d.Tool == toolRoslynName })
+			if hasDetail != tt.wantDetail {
+				t.Errorf("roslyn detail present = %v, want %v (details %+v)", hasDetail, tt.wantDetail, got.Details)
+			}
+		})
 	}
 }
 

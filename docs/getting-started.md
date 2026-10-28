@@ -84,8 +84,9 @@ docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.2.0 \
   check --config /repo/.archfit.yaml
 ```
 
-The complete image includes the locked Go, TypeScript/JavaScript, Python, and Rust toolchains,
-syntax and clone tools, and language-specific SCIP indexers. Python import analysis and the SCIP
+The complete image includes the locked Go, TypeScript/JavaScript, Python, Rust, and .NET toolchains,
+syntax and clone tools, language-specific SCIP indexers, and the Roslyn helper (`archfit-roslyn`).
+Python import analysis and the SCIP
 reader use an installed isolated environment; no analyzer package installation is needed at run time.
 See [Languages and tools](languages.md) for exact versions, optional execution, and limits.
 

@@ -43,12 +43,14 @@ type doctorReport struct {
 	AgentLoop     agentLoop `json:"agent_loop"`
 }
 
-// toolRow is one analyzer or helper tool and whether it is on PATH.
+// toolRow is one analyzer or helper tool: ok (found), missing, or invalid (a
+// configured value it cannot use, which fails doctor as it fails analysis).
 type toolRow struct {
 	Name        string `json:"name"`
 	Status      string `json:"status"`
 	Path        string `json:"path,omitempty"`
 	InstallHint string `json:"install_hint,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // agentLoop is whether the agent feedback loop runs in this repository: the
@@ -116,8 +118,12 @@ func harnessStatusOf(ctx context.Context, deps *appDeps, repo, harness string) h
 	st.Detected, st.DetectedBy = detectHarness(ctx, deps, repo, harness)
 	positions, readErr := installedHooks(st.Config)
 	var trusted map[string]bool
-	if harness == harnessCodex {
+	disabledBy := ""
+	switch harness {
+	case harnessCodex:
 		trusted = codexTrustedHooks(filepath.Join(codexHome(), "config.toml"))
+	case harnessClaude:
+		disabledBy = claudeHooksDisabledBy(repo)
 	}
 	for _, h := range harnessHooks(harness) {
 		hs := hookStatus{Event: h.event, Status: hookInactive}
@@ -127,6 +133,8 @@ func harnessStatusOf(ctx context.Context, deps *appDeps, repo, harness string) h
 			hs.Reason = "unreadable config: " + readErr.Error()
 		case !installed:
 			hs.Reason = reasonNotInstalled
+		case disabledBy != "":
+			hs.Reason = "disableAllHooks is set in " + disabledBy
 		case harness != harnessCodex:
 			hs.Status = hookActive
 		case codexTrusts(trusted, st.Config, h.event, pos):
@@ -137,6 +145,30 @@ func harnessStatusOf(ctx context.Context, deps *appDeps, repo, harness string) h
 		st.Hooks = append(st.Hooks, hs)
 	}
 	return st
+}
+
+// claudeHooksDisabledBy names the project settings file whose disableAllHooks
+// makes Claude Code run no hook, or "" when none does. settings.local.json
+// overrides settings.json, as it does in Claude Code.
+func claudeHooksDisabledBy(repo string) string {
+	for _, name := range []string{"settings.local.json", "settings.json"} {
+		rel := filepath.Join(".claude", name)
+		raw, err := os.ReadFile(filepath.Join(repo, rel)) //nolint:gosec // the Claude Code settings of this repository
+		if err != nil {
+			continue
+		}
+		var settings struct {
+			DisableAllHooks *bool `json:"disableAllHooks"`
+		}
+		if json.Unmarshal(raw, &settings) != nil || settings.DisableAllHooks == nil {
+			continue
+		}
+		if *settings.DisableAllHooks {
+			return rel
+		}
+		return ""
+	}
+	return ""
 }
 
 // detectHarness reports whether a harness is in use here, and how doctor knows.
