@@ -102,6 +102,12 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	if err != nil {
 		return BaseEvidence{}, err
 	}
+	// The head path discloses each analyzer's full reason from Execute; the base
+	// sub-run calls Acquire directly, so it needs the same call here or a base-side
+	// partial/failed row is only ever visible as the comparison's bounded reason.
+	// withoutBaseRoot keeps the temporary checkout path out of the disclosure, as
+	// it does for the evidence that crosses into head output.
+	discloseRawCoverageReasons(s.stderr(), baseWarnLabel, withoutBaseRoot(acquired.Context.MarkedCoverage, baseRoot))
 	out, err := sub.assess(ctx, baseReq, acquired, Baseline{})
 	if err != nil {
 		return BaseEvidence{}, err

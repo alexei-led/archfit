@@ -111,6 +111,38 @@ func TestBaseComparison_LongOriginReasonIsDisclosedInFull(t *testing.T) {
 	}
 }
 
+// TestBaseComparison_BaseDegradationIsDisclosedOnStderr: the head run prints
+// each analyzer's full reason from Execute; the base sub-run bypasses Execute,
+// so a base-side partial row was only visible as the comparison's bounded reason.
+// It now gets the same disclosure, labelled with the base prefix.
+func TestBaseComparison_BaseDegradationIsDisclosedOnStderr(t *testing.T) {
+	long := "13 complete, 54 partial, 18 failed: " +
+		strings.Repeat("src/Some/Project.csproj partial: no reference pack; ", 20) + baseScanRoot + "/src/Last/Project.csproj"
+	head := &coverageStage{root: headScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusOK}}
+	base := &coverageStage{root: baseScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusPartial, Reason: long}}
+	var stderr strings.Builder
+	stages := StageExecutor{
+		Preparer: noPreparation{}, Evidence: head, Stderr: &stderr, Worktree: fixedWorktree{},
+		NewBaseEvidence: func(string) EvidenceStage { return base },
+	}
+	if _, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef}); err != nil {
+		t.Fatal(err)
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "warning: [base] "+toolPrimary+" is partial") {
+		t.Errorf("stderr does not carry a base-labelled coverage warning:\n%s", got)
+	}
+	if !strings.Contains(got, "13 complete, 54 partial, 18 failed:") || !strings.Contains(got, "src/Last/Project.csproj") {
+		t.Errorf("stderr does not carry the base analyzer's full reason:\n%s", got)
+	}
+	if strings.Contains(got, baseScanRoot) {
+		t.Errorf("the base checkout path reached stderr:\n%s", got)
+	}
+	if strings.Contains(got, "warning: "+toolPrimary) {
+		t.Errorf("the ok head row was disclosed as degraded:\n%s", got)
+	}
+}
+
 // TestBaseComparison_ShortOriginReasonAddsNoStderr keeps stderr quiet for the
 // ordinary case: a reason within the bound is published as is.
 func TestBaseComparison_ShortOriginReasonAddsNoStderr(t *testing.T) {
