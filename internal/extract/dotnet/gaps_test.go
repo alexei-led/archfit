@@ -2,7 +2,6 @@ package dotnet_test
 
 import (
 	"context"
-	"maps"
 	"os"
 	"strings"
 	"testing"
@@ -30,26 +29,29 @@ var gapFiles = []string{
 // TestLastDependencyGaps pins which files lack complete Roslyn file evidence,
 // the project gap each carries and the fix of each gap: a partial project's
 // files, a project on ProjectReference fallback, and a project whose
-// evaluation failed. Complete projects, test projects and files no project
-// compiles carry no gap.
+// evaluation failed. A partial project's gap carries the reason the roslyn row
+// states, so the rule reason names the real cause. Complete projects, test
+// projects and files no project compiles carry no gap.
 func TestLastDependencyGaps(t *testing.T) {
 	const (
-		sdkFix     = "MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable offline; run with NuGet access and a warm cache"
-		restoreFix = "restore the projects with NuGet access (`dotnet restore`); the roslyn row names each project's cause"
+		sdkFix    = "MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable offline; run with NuGet access and a warm cache"
+		legacyFix = "net8.0: 31 unresolved symbols (CS0246 x18, CS0400 x1, CS0518 x12); reference pack Microsoft.NETCore.App.Ref 8.0 is not installed"
+		useFix    = "3 unresolved symbols (CS0246 x3); restore the project with NuGet access"
+		appFix    = "2 unresolved symbols"
 	)
 	brokenGap := brokenProj + " failed MSBuild evaluation"
-	appGap, legacyGap, useGap := appProj+" partial", legacyProj+" partial", unresolvedProj+" partial"
+	appGap, legacyGap, useGap := appProj+" partial: ", legacyProj+" partial: ", unresolvedProj+" partial: "
 	tests := []struct {
 		name      string
 		setup     func(t *testing.T, fake *fakeDotnet)
-		wantFiles map[string]string
-		wantFixes map[string]string // gap -> fix prefix
+		wantFiles map[string]string // file -> gap prefix
+		wantFixes map[string]string // gap prefix -> fix prefix
 	}{
 		{
 			name:      "recorded report",
 			setup:     func(*testing.T, *fakeDotnet) {},
-			wantFiles: map[string]string{brokenCS: brokenGap, legacyCS: legacyGap, useCS: useGap},
-			wantFixes: map[string]string{brokenGap: sdkFix, legacyGap: restoreFix, useGap: restoreFix},
+			wantFiles: map[string]string{brokenCS: brokenGap, legacyCS: legacyGap + legacyFix, useCS: useGap + useFix},
+			wantFixes: map[string]string{brokenGap: sdkFix},
 		},
 		{
 			name: "a linked file belongs to the project that compiles it",
@@ -64,10 +66,9 @@ func TestLastDependencyGaps(t *testing.T) {
 				})))
 			},
 			wantFiles: map[string]string{
-				contractsCS: appGap, mapperCS: appGap, globalUsingsCS: appGap, markerCS: appGap,
-				brokenCS: brokenGap, legacyCS: legacyGap, useCS: useGap,
+				contractsCS: appGap + appFix, mapperCS: appGap + appFix, globalUsingsCS: appGap + appFix,
+				markerCS: appGap + appFix, brokenCS: brokenGap, legacyCS: legacyGap + legacyFix, useCS: useGap + useFix,
 			},
-			wantFixes: map[string]string{appGap: restoreFix},
 		},
 		{
 			name: "helper run without a report",
@@ -105,12 +106,24 @@ func TestLastDependencyGaps(t *testing.T) {
 			if !attributed {
 				t.Fatal("gaps not attributed to projects")
 			}
-			if !maps.Equal(gaps.Files, tt.wantFiles) {
+			if len(gaps.Files) != len(tt.wantFiles) {
 				t.Errorf("gap files = %v, want %v", gaps.Files, tt.wantFiles)
 			}
+			for file, prefix := range tt.wantFiles {
+				if !strings.HasPrefix(gaps.Files[file], prefix) {
+					t.Errorf("gap of %q = %q, want prefix %q", file, gaps.Files[file], prefix)
+				}
+			}
 			for gap, prefix := range tt.wantFixes {
-				if !strings.HasPrefix(gaps.Fixes[gap], prefix) {
-					t.Errorf("fix of %q = %q, want prefix %q", gap, gaps.Fixes[gap], prefix)
+				var matched bool
+				for got, fix := range gaps.Fixes {
+					if strings.HasPrefix(got, gap) {
+						matched = strings.HasPrefix(fix, prefix)
+						break
+					}
+				}
+				if !matched {
+					t.Errorf("fix of %q = %v, want prefix %q", gap, gaps.Fixes, prefix)
 				}
 			}
 		})
