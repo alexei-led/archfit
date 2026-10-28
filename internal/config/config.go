@@ -265,6 +265,11 @@ func validate(cfg Config) error {
 	if err := validateGate("module_review", cfg.ModuleReview.Gate); err != nil {
 		return err
 	}
+	if g := cfg.ModuleReview.ChangeGate; g != "" {
+		if _, ok := gateValues[g]; !ok {
+			return fmt.Errorf("module_review.change_gate %q is not one of: off, warn, fail", g)
+		}
+	}
 	return validateFileClass(cfg.FileClass)
 }
 

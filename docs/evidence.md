@@ -14,6 +14,10 @@ Each dimension has a fixed set of required fact kinds. A producer can prove a fa
 
 A producer reports zero only after it completes the relevant denominator. A missing row, unavailable tool, or failed producer is not zero. Every `partial` or `unmeasured` dimension names its missing in-claim facts. Unknown facts outside the claim do not block promotion.
 
+## Code the change adds that no analysis reads
+
+Missing evidence is not zero, and that holds for code a change adds. Production source that no module owns, that an `exclude:` glob matches, that is in a language the config turns off, or that no analyzer reads, is invisible to every rule: a forbidden import moved into it passes. With `--base`, `check` reports each such added file as `map/uncovered_change`, with the reason and the exclusion or switch behind it, so an owner-approved exclusion stays distinguishable from a hole. `module_review.change_gate: fail` turns the finding into an unevaluated entry: the change is `unknown`, never `pass`. A waiver or a baseline entry does not lift it, because neither is evidence that the code was read. See [configuration](configuration.md#module-review).
+
 ## Dimension contracts
 
 Required fact names below match `internal/assessment/state.RequiredFacts`. This source contract also lists out-of-claim facts. They can appear as unknown facts without blocking promotion.

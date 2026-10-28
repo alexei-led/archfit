@@ -13,6 +13,9 @@ const (
 	RuleIDCouplingGate = "bc/coupling_gate"
 	// RuleIDMapUncoveredPath identifies an uncovered-path map advisory.
 	RuleIDMapUncoveredPath = "map/uncovered_path"
+	// RuleIDMapUncoveredChange identifies a file the change adds that no
+	// analysis covers: unowned, excluded, in a disabled language, or unanalysed.
+	RuleIDMapUncoveredChange = "map/uncovered_change"
 	// RuleIDMapDeadRule identifies a dead-rule map advisory.
 	RuleIDMapDeadRule = "map/dead_rule"
 	// RuleIDMapStaleReview identifies a stale-review map advisory.
@@ -49,7 +52,7 @@ func SyntheticWaiverScope(ruleID string) WaiverScope {
 	switch ruleID {
 	case RuleIDMapUncoveredPath, RuleIDMapDeadRule, RuleIDMapStaleReview:
 		return WaiverScopeEdgeless
-	case RuleIDCouplingGate:
+	case RuleIDCouplingGate, RuleIDMapUncoveredChange:
 		return WaiverScopeForbidden
 	case RuleIDBCImbalancedCoupling, RuleIDDuplicatedKnowledge, RuleIDLabelsStale:
 		return WaiverScopeEdge

@@ -37,6 +37,12 @@ type Observations struct {
 	// cannot hold a rule unevaluated for an analyzer the config turned off.
 	// Metrics and file classes still count them; nil excludes nothing.
 	OutOfScopeFiles map[string]struct{}
+	// AddedFiles are the files the change adds (Scope.Added): added, renamed
+	// to, or untracked since the base. Nil without a base.
+	AddedFiles map[string]struct{}
+	// UncoveredCauses names, for the added production source files declared out
+	// of scope, the `exclude:` glob or language switch that did it.
+	UncoveredCauses map[string]string
 	// UnanalysedFiles are in-scope walked source files no dependency producer
 	// analyses: their language's extractor applicability probe finds no
 	// project under the root (TypeScript below a directory with no root

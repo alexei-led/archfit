@@ -114,6 +114,10 @@ type Scope struct {
 	// Changed is the sorted list of repo-relative files changed since Base.
 	// Empty when no base was given or git could not diff.
 	Changed []string
+	// Added is the sorted list of repo-relative files the working tree holds
+	// that Base does not: added files, the new names of renamed files, and
+	// untracked files. Empty when no base was given or git could not diff.
+	Added []string
 	// Root is the absolute path of the analysis boundary (ScanRoot). All
 	// extractors walk this directory. Equal to GitRoot when --root is absent.
 	Root string
@@ -140,6 +144,12 @@ type Resolver interface {
 	Changed(ctx context.Context, base, head string) ([]string, error)
 }
 
+// AddedResolver is the optional Resolver capability that lists the files
+// added since a base. A resolver without it leaves Scope.Added empty.
+type AddedResolver interface {
+	Added(ctx context.Context, base string) ([]string, error)
+}
+
 // Resolve determines the Scope for a run. The whole tree is always scanned.
 //
 // It resolves the git root via the Resolver. A failing resolver (e.g. a
@@ -161,12 +171,18 @@ func Resolve(ctx context.Context, cfg Config, r Resolver) (Scope, error) {
 	// for per-change metrics, while still scanning the full tree.
 	// Best-effort: a git failure here leaves Changed empty rather than aborting
 	// the scan.
-	var changed []string
+	var changed, added []string
 	if cfg.Base != "" && gitRoot != "" {
 		if head, herr := r.HeadRef(ctx); herr == nil {
 			if c, cerr := r.Changed(ctx, cfg.Base, head); cerr == nil {
 				changed = rebaseChangedFiles(prefix, c)
 				sort.Strings(changed)
+			}
+		}
+		if ar, ok := r.(AddedResolver); ok {
+			if a, aerr := ar.Added(ctx, cfg.Base); aerr == nil {
+				added = rebaseChangedFiles(prefix, a)
+				sort.Strings(added)
 			}
 		}
 	}
@@ -176,6 +192,7 @@ func Resolve(ctx context.Context, cfg Config, r Resolver) (Scope, error) {
 		SubtreePrefix: prefix,
 		Base:          cfg.Base,
 		Changed:       changed,
+		Added:         added,
 	}, nil
 }
 

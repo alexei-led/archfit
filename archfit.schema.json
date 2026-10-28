@@ -461,6 +461,10 @@
             "fail"
           ],
           "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+        },
+        "change_gate": {
+          "type": "string",
+          "description": "ChangeGate is the posture for production source a change adds that no\nanalysis covers (map/uncovered_change): off, warn (default), or fail.\nfail makes the change unknown, never a pass."
         }
       },
       "additionalProperties": false,

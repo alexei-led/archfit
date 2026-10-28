@@ -301,6 +301,7 @@ package internal/model/rule
   const internal/model/rule.RuleIDLabelsStale untyped string
   const internal/model/rule.RuleIDMapDeadRule untyped string
   const internal/model/rule.RuleIDMapStaleReview untyped string
+  const internal/model/rule.RuleIDMapUncoveredChange untyped string
   const internal/model/rule.RuleIDMapUncoveredPath untyped string
   const internal/model/rule.RuleIDMetricPrefix untyped string
   func internal/model/rule.SyntheticWaiverScope(ruleID string) internal/model/rule.WaiverScope

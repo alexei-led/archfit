@@ -169,6 +169,6 @@ waivers:
 | `approved_by` | Required reviewer or owner metadata. Archfit does not authenticate this value. |
 | `expires` | Required `YYYY-MM-DD` date. The waiver expires at midnight UTC after that date. |
 
-The edge-less diagnostics `map/uncovered_path`, `map/dead_rule`, and `map/stale_review` require exact rule IDs and no endpoint selectors. `bc/imbalanced_coupling`, `bc/duplicated_knowledge`, and `labels/stale` require endpoint scope. `bc/coupling_gate` cannot be waived.
+The edge-less diagnostics `map/uncovered_path`, `map/dead_rule`, and `map/stale_review` require exact rule IDs and no endpoint selectors. `bc/imbalanced_coupling`, `bc/duplicated_knowledge`, and `labels/stale` require endpoint scope. `bc/coupling_gate` and `map/uncovered_change` cannot be waived: unread code is unknown, not accepted.
 
 An active matching waiver takes precedence over an expired match, regardless of YAML order. Active waivers mark findings `waived`. Expired waivers report `expired_waiver`. Invalid selectors or missing metadata reject the configuration before analysis. Baseline capture omits findings covered by active or expired waivers.

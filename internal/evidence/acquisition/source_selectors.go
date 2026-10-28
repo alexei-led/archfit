@@ -423,6 +423,42 @@ func disabledLanguages(cov CoverageOptions) map[string]struct{} {
 	return disabled
 }
 
+// uncoveredCauses names why each added production source file the
+// configuration declared out of scope is not read: the `exclude:` glob that
+// matches it, or the language switch that is off. Only added files are named,
+// so the map stays the size of the change.
+func uncoveredCauses(added []string, f evidencecontract.Facts, exclusions []string, cov CoverageOptions) map[string]string {
+	disabled := disabledLanguages(cov)
+	var out map[string]string
+	for _, file := range added {
+		if f.FileClassIndex[file] != fileclass.Production {
+			continue
+		}
+		cause := ""
+		if language, _, ok := (policy.ModuleMap{}).RuleSelectorForFile(file); ok {
+			if _, off := disabled[language]; off {
+				cause = "languages." + language + ".enabled: false"
+			}
+		}
+		if cause == "" {
+			for _, glob := range exclusions {
+				if matched, _ := doublestar.Match(glob, file); matched {
+					cause = "exclude: " + glob
+					break
+				}
+			}
+		}
+		if cause == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string)
+		}
+		out[file] = cause
+	}
+	return out
+}
+
 // outOfDeclaredScope reports whether one repo-relative source file is outside
 // the declared analysis scope. Exclusion globs match the slash path the same
 // way the Go extractor's own exclusion check does.

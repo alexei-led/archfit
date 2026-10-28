@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
@@ -11,6 +12,9 @@ import (
 // Exit code git rev-parse, merge-base and cat-file use for "no such object" or
 // "no common ancestor", as opposed to a failure to run.
 const gitNotFound = 1
+
+// nameOnly asks git diff for paths and nothing else.
+const nameOnly = "--name-only"
 
 // run executes git in dir and returns its output. A failure to start is an
 // error; a non-zero exit code is returned for the caller to judge.
@@ -88,6 +92,39 @@ func IsAncestor(ctx context.Context, dir, a, b string, runner toolrun.Runner) (b
 	default:
 		return false, fmt.Errorf("git merge-base --is-ancestor exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
+}
+
+// Added returns the sorted repository-relative files the working tree holds
+// that base does not: files added since base (committed, staged, or edited in
+// place) and the new names of renamed files, plus untracked files git does not
+// ignore. A file only modified is not listed.
+// It runs: git diff --name-only --diff-filter=AR -M <base>, then
+// git ls-files --others --exclude-standard
+func Added(ctx context.Context, dir, base string, runner toolrun.Runner) ([]string, error) {
+	seen := map[string]struct{}{}
+	for _, args := range [][]string{
+		{"diff", nameOnly, "--diff-filter=AR", "-M", base},
+		{"ls-files", "--others", "--exclude-standard"},
+	} {
+		out, err := run(ctx, dir, runner, args...)
+		if err != nil {
+			return nil, err
+		}
+		if out.ExitCode != 0 {
+			return nil, fmt.Errorf("git %s exited %d: %s", strings.Join(args, " "), out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out.Stdout)), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				seen[line] = struct{}{}
+			}
+		}
+	}
+	files := make([]string, 0, len(seen))
+	for f := range seen {
+		files = append(files, f)
+	}
+	slices.Sort(files)
+	return files, nil
 }
 
 // FileAt returns the bytes of path at rev, read as a git object. exists is

@@ -62,6 +62,7 @@ var leafClasses = map[string]leafClass{
 	"metrics.*.max_new":              classGovernance,
 	"metrics.*.enabled":              classClassification,
 	"module_review":                  classGovernance,
+	"module_review.change_gate":      classGovernance,
 	"file_class":                     classProfile,
 	"outputs":                        classGovernance,
 }
