@@ -73,6 +73,8 @@ type EdgeFinding struct {
 	RepairKind  string
 	Goal        string
 	Constraints []string
+	// Alternatives are what the rule's owner declared to do instead.
+	Alternatives []string
 }
 
 // JudgeEdge runs the rule pass check runs, over one edge, and assigns
@@ -104,6 +106,7 @@ func JudgeEdge(in JudgeInput) (EdgeJudgment, error) {
 	for _, f := range tagged {
 		ef := tasks[f.ID]
 		ef.FindingID, ef.RuleID, ef.Status, ef.Why = f.ID, f.RuleID, string(f.Status), f.Why
+		ef.Alternatives = slices.Clone(f.Alternatives)
 		switch {
 		case f.Kind == finding.KindAdvisory:
 			out.Advisories = append(out.Advisories, ef)

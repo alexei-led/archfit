@@ -127,7 +127,7 @@ Reports the module, layer, owner, public surface, allowlists, and selected rules
 
 ### `policy can-import <file> <target>...`
 
-Reports whether a source file can import each target. A denied target exits `1`. A target without a decision exits `2`.
+Reports whether a source file can import each target. A denied target exits `1`. A target without a decision exits `2`. A denial also carries `instead` (the alternatives the rule's owners declared) and `candidates`: each alternative that names a package a module owns, judged again from the same file.
 
 The answer runs no analyzer. It spells the edge the language's extractor would emit and runs the rule pass on that edge. Write the target in the language's graph vocabulary:
 
