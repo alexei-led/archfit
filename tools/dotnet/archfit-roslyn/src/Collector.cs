@@ -174,11 +174,9 @@ internal sealed class Collector(Solution solution, string root)
 
         foreach (var node in syntaxRoot.DescendantNodes())
         {
-            if (!IsReferenceNode(node))
-            {
-                continue;
-            }
-            var symbol = Resolve(model.GetSymbolInfo(node, ct), compilation);
+            var symbol = IsReferenceNode(node)
+                ? Resolve(model.GetSymbolInfo(node, ct), compilation)
+                : IsOperatorNode(node) ? OperatorMethod(node, model, ct) : null;
             if (symbol is null || UseOf(node, symbol, compilation) is not { } use)
             {
                 continue;
@@ -222,6 +220,30 @@ internal sealed class Collector(Solution solution, string root)
         or PrimaryConstructorBaseTypeSyntax
         or ElementAccessExpressionSyntax;
 
+    // IsOperatorNode is an expression that invokes an operator, which for a
+    // built-in operand names no symbol to attribute. A user-defined one binds
+    // to its operator method, whose declaring file is the target of the call.
+    // A simple assignment and ??= bind no operator.
+    private static bool IsOperatorNode(SyntaxNode node) => node switch
+    {
+        BinaryExpressionSyntax or PrefixUnaryExpressionSyntax or PostfixUnaryExpressionSyntax => true,
+        AssignmentExpressionSyntax assignment => !assignment.IsKind(SyntaxKind.SimpleAssignmentExpression)
+            && !assignment.IsKind(SyntaxKind.CoalesceAssignmentExpression),
+        _ => false,
+    };
+
+    // OperatorMethod is the user-defined operator an operator expression
+    // invokes, or null for a built-in operator (int + int), which has no
+    // declaring syntax to name.
+    private static IMethodSymbol? OperatorMethod(SyntaxNode node, SemanticModel model, CancellationToken ct) =>
+        model.GetSymbolInfo(node, ct).Symbol is IMethodSymbol
+        {
+            MethodKind: MethodKind.UserDefinedOperator or MethodKind.Conversion,
+            ContainingAssembly: not null,
+        } method
+            ? method.OriginalDefinition
+            : null;
+
     // Resolve returns the bound symbol, or an inaccessible candidate when it is
     // internal (or private protected) and declared in source of another
     // workspace project: that use is real but lacks the IVT attribute in this
@@ -263,8 +285,7 @@ internal sealed class Collector(Solution solution, string root)
 
     private static Use? UseOf(SyntaxNode node, ISymbol symbol, Compilation compilation)
     {
-        var internalElsewhere = IsEffectivelyInternal(symbol)
-            && !SymbolEqualityComparer.Default.Equals(symbol.ContainingAssembly, compilation.Assembly);
+        var internalElsewhere = InternalElsewhere(node, symbol, compilation);
         switch (symbol)
         {
             case INamedTypeSymbol type:
@@ -279,6 +300,60 @@ internal sealed class Collector(Solution solution, string root)
                 return new Use(UseKind.DataUse, MemberTarget(field), internalElsewhere);
             default:
                 return null;
+        }
+    }
+
+    // InternalElsewhere reports whether this use reaches an internal
+    // declaration of another assembly. A property can be public while the
+    // accessor the expression invokes is internal (public int Value { get;
+    // internal set; }): a friend assembly may take that path through IVT, and
+    // the use is the access of that accessor, not of the property name.
+    private static bool InternalElsewhere(SyntaxNode node, ISymbol symbol, Compilation compilation)
+    {
+        if (SymbolEqualityComparer.Default.Equals(symbol.ContainingAssembly, compilation.Assembly))
+        {
+            return false;
+        }
+        if (IsEffectivelyInternal(symbol))
+        {
+            return true;
+        }
+        if (symbol is not IPropertySymbol property)
+        {
+            return false;
+        }
+        var (get, set) = AccessorsUsed(node);
+        return (get && IsInternal(property.GetMethod)) || (set && IsInternal(property.SetMethod));
+
+        static bool IsInternal(IMethodSymbol? accessor) => accessor is not null && IsEffectivelyInternal(accessor);
+    }
+
+    // AccessorsUsed reports whether the expression invokes a property's getter,
+    // setter, or both. A simple assignment invokes the setter alone; a compound
+    // assignment, an increment or decrement, and a by-ref use read and write.
+    private static (bool Get, bool Set) AccessorsUsed(SyntaxNode node)
+    {
+        // The named node is the name of the access that qualifies it: c.Value.
+        var expression = node;
+        while (expression.Parent is MemberAccessExpressionSyntax member && member.Name == expression)
+        {
+            expression = member;
+        }
+        switch (expression.Parent)
+        {
+            case AssignmentExpressionSyntax assignment when assignment.Left == expression:
+                return assignment.IsKind(SyntaxKind.SimpleAssignmentExpression) ? (false, true) : (true, true);
+            case PrefixUnaryExpressionSyntax prefix
+                when prefix.IsKind(SyntaxKind.PreIncrementExpression) || prefix.IsKind(SyntaxKind.PreDecrementExpression):
+            case PostfixUnaryExpressionSyntax postfix
+                when postfix.IsKind(SyntaxKind.PostIncrementExpression) || postfix.IsKind(SyntaxKind.PostDecrementExpression):
+            case RefExpressionSyntax:
+                return (true, true);
+            case ArgumentSyntax argument
+                when argument.RefKindKeyword.IsKind(SyntaxKind.RefKeyword) || argument.RefKindKeyword.IsKind(SyntaxKind.OutKeyword):
+                return (true, true);
+            default:
+                return (true, false);
         }
     }
 
