@@ -10,6 +10,7 @@ import (
 const (
 	gateFail   = "fail"
 	gateWarn   = "warn"
+	gateOff    = "off"
 	ruleNoImpl = "no_impl"
 	typeForbid = "forbidden_dependency"
 	modApp     = "app"
@@ -26,10 +27,11 @@ func basePolicy() decision.PolicyInput {
 			modApp:  {Paths: []string{"app/**"}, DependsOn: []string{"store"}},
 			"store": {Paths: []string{"store/**"}},
 		},
-		MetricGates: map[string]string{"cycle": gateFail},
-		Exclude:     []string{"gen/**"},
-		Languages:   map[string]string{"go": "auto"},
-		Analyzers:   map[string]string{"scip": "on"},
+		Metrics:      map[string]decision.MetricDecl{"cycle": {Gate: gateFail}},
+		Exclude:      []string{"gen/**"},
+		Languages:    map[string]string{"go": "auto"},
+		Analyzers:    map[string]string{"scip": "on"},
+		Declarations: map[string]string{"layers": `["domain","app"]`, "modules.app.public": `["app/api/**"]`},
 	}
 }
 
@@ -65,7 +67,21 @@ func TestComparePolicies(t *testing.T) {
 		{name: "a lowered API ceiling", want: decision.PolicyTightening,
 			edit: func(p *decision.PolicyInput) { less := 5; p.Rules[1].Max = &less }},
 		{name: "a metric gate switched off", want: decision.PolicyLoosening,
-			edit: func(p *decision.PolicyInput) { p.MetricGates["cycle"] = "" }},
+			edit: func(p *decision.PolicyInput) { p.Metrics["cycle"] = decision.MetricDecl{Gate: gateOff} }},
+		{name: "a metric with no entry gaining gate warn is loosened, not tightened", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) { p.Metrics["blast_radius"] = decision.MetricDecl{Gate: gateWarn} }},
+		{name: "a metric gate cleared to the default is no change", want: decision.PolicyNoChange,
+			edit: func(p *decision.PolicyInput) { p.Metrics["cycle"] = decision.MetricDecl{} }},
+		{name: "a raised max_new tolerance", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) {
+				ten := 10
+				p.Metrics["cycle"] = decision.MetricDecl{Gate: gateFail, MaxNew: &ten}
+			}},
+		{name: "a raised min_delta tolerance", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) {
+				half := 0.5
+				p.Metrics["cycle"] = decision.MetricDecl{Gate: gateFail, MinDelta: &half}
+			}},
 		{name: "a waiver added", want: decision.PolicyLoosening,
 			edit: func(p *decision.PolicyInput) {
 				p.Waivers = []policy.WaiverDef{{Rule: ruleNoImpl, Reason: "r", ApprovedBy: "o", Expires: "2027-01-01"}}
@@ -88,13 +104,36 @@ func TestComparePolicies(t *testing.T) {
 		{name: "an exclude added", want: decision.PolicyLoosening,
 			edit: func(p *decision.PolicyInput) { p.Exclude = append(p.Exclude, "app/**") }},
 		{name: "a language switched off", want: decision.PolicyLoosening,
-			edit: func(p *decision.PolicyInput) { p.Languages["go"] = "off" }},
-		{name: "auto to on is not a change", want: decision.PolicyNoChange,
+			edit: func(p *decision.PolicyInput) { p.Languages["go"] = gateOff }},
+		{name: "a language from auto to on is raised", want: decision.PolicyTightening,
 			edit: func(p *decision.PolicyInput) { p.Languages["go"] = "on" }},
+		{name: "an analyzer from on to off", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) { p.Analyzers["scip"] = gateOff }},
+		{name: "a new module, which may take code from another", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) {
+				p.Modules["escape"] = policy.ModuleDef{Paths: []string{"app/billing/**"}}
+			}},
+		{name: "a path added to a module", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) {
+				m := p.Modules[modApp]
+				m.Paths = append(m.Paths, "store/private/**")
+				p.Modules[modApp] = m
+			}},
+		{name: "a module's public surface broadened", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) { p.Declarations["modules.app.public"] = `["app/**"]` }},
+		{name: "the layer order changed", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) { p.Declarations["layers"] = `["app","domain"]` }},
+		{name: "a removed module's own declarations are not reported twice", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) { delete(p.Modules, modApp); delete(p.Declarations, "modules.app.public") },
+			assert: func(t *testing.T, c decision.PolicyChange) {
+				if len(c.DeclarationsChanged) != 0 {
+					t.Errorf("declarations changed = %+v, want the removal reported once, as coverage lost", c.DeclarationsChanged)
+				}
+			}},
 		{name: "a module removed", want: decision.PolicyLoosening,
 			edit: func(p *decision.PolicyInput) { delete(p.Modules, "store") }},
 		{name: "module review lowered", want: decision.PolicyLoosening,
-			edit: func(p *decision.PolicyInput) { p.ModuleReviewGate = "off" }},
+			edit: func(p *decision.PolicyInput) { p.ModuleReviewGate = gateOff }},
 		{name: "a rule added", want: decision.PolicyTightening,
 			edit: func(p *decision.PolicyInput) {
 				p.Rules = append(p.Rules, policy.RuleDef{ID: "new", Type: typeForbid, From: "a/**", To: "b/**"})
@@ -117,5 +156,17 @@ func TestComparePolicies(t *testing.T) {
 				tc.assert(t, got)
 			}
 		})
+	}
+}
+
+// TestComparePoliciesLanguageOnToAuto: on fails when the extractor is missing,
+// auto skips the language, so on to auto loses coverage.
+func TestComparePoliciesLanguageOnToAuto(t *testing.T) {
+	t.Parallel()
+	cur, cand := basePolicy(), basePolicy()
+	cur.Languages["go"] = "on"
+	got := decision.ComparePolicies(cur, cand)
+	if got.Direction != decision.PolicyLoosening || len(got.CoverageLost) != 1 || got.CoverageLost[0].Kind != decision.CoverageLanguageLowered {
+		t.Errorf("on -> auto = %+v, want a language_mode_lowered loosening", got)
 	}
 }

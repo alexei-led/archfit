@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
@@ -31,16 +32,22 @@ const (
 	CoverageLanguageEnabled     = "language_enabled"
 	CoverageAnalyzerDisabled    = "analyzer_disabled"
 	CoverageAnalyzerEnabled     = "analyzer_enabled"
+	CoverageLanguageLowered     = "language_mode_lowered"
+	CoverageLanguageRaised      = "language_mode_raised"
 	CoverageModuleRemoved       = "module_removed"
-	CoverageModuleAdded         = "module_added"
 	CoverageModulePathsRemoved  = "module_paths_removed"
-	CoverageModulePathsAdded    = "module_paths_added"
 	CoverageModuleReviewLowered = "module_review_gate_lowered"
 	CoverageModuleReviewRaised  = "module_review_gate_raised"
 )
 
 // fieldGate names a rule's gate in a RuleChange.
 const fieldGate = "gate"
+
+// Enabled modes, as the configuration spells them.
+const (
+	modeOn   = "on"
+	modeAuto = "auto"
+)
 
 // Gate switch values, as the configuration spells them.
 const (
@@ -55,15 +62,34 @@ const (
 type PolicyInput struct {
 	Rules   []policy.RuleDef
 	Waivers []policy.WaiverDef
+	// Modules: paths, depends_on and visible_to are ordered here; every other
+	// module field belongs in Declarations.
 	Modules map[string]policy.ModuleDef
-	// MetricGates maps a metric name to its gate (off, warn, fail; "" is off).
-	MetricGates map[string]string
-	Exclude     []string
-	// Languages and Analyzers map an id to its enabled switch: auto, on, off.
+	// Metrics maps a configured metric name to its ratchet. A metric without an
+	// entry ratchets at the default (fail, no tolerance).
+	Metrics map[string]MetricDecl
+	// Exclude are the effective exclusion globs: defaults merged with the
+	// configured ones, re-includes applied.
+	Exclude []string
+	// Languages map an id to its enabled mode: off, auto, on (on fails when the
+	// tool is missing; auto skips).
 	Languages map[string]string
+	// Analyzers map an optional analyzer id to whether it runs (on, off).
 	Analyzers map[string]string
 	// ModuleReviewGate is module_review.gate (off, warn, fail; "" is warn).
 	ModuleReviewGate string
+	// Declarations are every other declaration that can change a verdict,
+	// keyed by config path, in a canonical encoding. They cannot be ordered, so
+	// any difference counts as loosening.
+	Declarations map[string]string
+}
+
+// MetricDecl is one metric ratchet: its gate (off, warn, fail; "" is the
+// default, fail) and its tolerances (nil is 0).
+type MetricDecl struct {
+	Gate     string
+	MaxNew   *int
+	MinDelta *float64
 }
 
 // RuleRef names a rule and its effective gate.
@@ -99,6 +125,15 @@ type CoverageChange struct {
 	Detail string
 }
 
+// DeclarationChange is a declaration that differs and cannot be ordered: a
+// module's layer or public surface, a gate outside rules and metrics, a new
+// module that may take code from another. It counts as loosening.
+type DeclarationChange struct {
+	Key  string
+	From string
+	To   string
+}
+
 // PolicyChange is the classified difference between two policies.
 type PolicyChange struct {
 	Direction PolicyChangeDirection
@@ -108,6 +143,8 @@ type PolicyChange struct {
 	WaiversAdded      []policy.WaiverDef
 	AllowlistsWidened []AllowlistChange
 	CoverageLost      []CoverageChange
+	// DeclarationsChanged are differences that cannot be ordered.
+	DeclarationsChanged []DeclarationChange
 	// Tightening: each can fail a change that passes today.
 	RulesAdded         []RuleRef
 	RulesTightened     []RuleChange
@@ -116,22 +153,24 @@ type PolicyChange struct {
 	CoverageGained     []CoverageChange
 }
 
-// ComparePolicies classifies the change from current to candidate. A
-// declaration whose effect cannot be ordered (a rule's selector or patterns
-// changed) counts as loosened: the safe reading for an approver, since a
-// moved selector stops checking what it used to check.
+// ComparePolicies classifies the change from current to candidate. Only a
+// difference this function can order is a tightening; every other difference
+// counts as loosening (a moved selector, an unordered declaration, a new module
+// that may take code from another). The result decides who may approve, so a
+// missed loosening is the failure to avoid.
 func ComparePolicies(current, candidate PolicyInput) PolicyChange {
 	var out PolicyChange
 	compareRules(current, candidate, &out)
 	compareWaivers(current.Waivers, candidate.Waivers, &out)
 	compareAllowlists(current.Modules, candidate.Modules, &out)
 	comparePolicyCoverage(current, candidate, &out)
+	compareDeclarations(current, candidate, &out)
 	out.Direction = direction(out)
 	return out
 }
 
 func direction(c PolicyChange) PolicyChangeDirection {
-	loosens := len(c.RulesRemoved)+len(c.RulesLoosened)+len(c.WaiversAdded)+len(c.AllowlistsWidened)+len(c.CoverageLost) > 0
+	loosens := len(c.RulesRemoved)+len(c.RulesLoosened)+len(c.WaiversAdded)+len(c.AllowlistsWidened)+len(c.CoverageLost)+len(c.DeclarationsChanged) > 0
 	tightens := len(c.RulesAdded)+len(c.RulesTightened)+len(c.WaiversRemoved)+len(c.AllowlistsNarrowed)+len(c.CoverageGained) > 0
 	switch {
 	case loosens && tightens:
@@ -185,16 +224,35 @@ func compareRules(current, candidate PolicyInput, out *PolicyChange) {
 			out.RulesAdded = append(out.RulesAdded, RuleRef{ID: id, Type: cand[id].Type, Gate: effectiveGate(cand[id])})
 		}
 	}
-	// Metric gates are ratchets: a lowered gate stops a regression blocking.
-	for _, name := range unionKeys(current.MetricGates, candidate.MetricGates) {
-		from, to := current.MetricGates[name], candidate.MetricGates[name]
-		change := RuleChange{ID: "metric/" + name, Field: fieldGate, From: orOff(from), To: orOff(to)}
-		switch {
-		case gateRank(to) < gateRank(from):
-			out.RulesLoosened = append(out.RulesLoosened, change)
-		case gateRank(to) > gateRank(from):
-			out.RulesTightened = append(out.RulesTightened, change)
+	// Metric ratchets: a lowered gate or a larger tolerance lets a regression
+	// through. A metric with no entry ratchets at the default, fail.
+	for _, name := range unionKeys(current.Metrics, candidate.Metrics) {
+		cur, cand := current.Metrics[name], candidate.Metrics[name]
+		id := "metric/" + name
+		from, to := orFail(cur.Gate), orFail(cand.Gate)
+		order(gateRank(from), gateRank(to), RuleChange{ID: id, Field: fieldGate, From: from, To: to}, out)
+		order(-intOrZero(cur.MaxNew), -intOrZero(cand.MaxNew),
+			RuleChange{ID: id, Field: "max_new", From: strconv.Itoa(intOrZero(cur.MaxNew)), To: strconv.Itoa(intOrZero(cand.MaxNew))}, out)
+		curMin, candMin := floatOrZero(cur.MinDelta), floatOrZero(cand.MinDelta)
+		if curMin != candMin {
+			change := RuleChange{ID: id, Field: "min_delta", From: strconv.FormatFloat(curMin, 'g', -1, 64), To: strconv.FormatFloat(candMin, 'g', -1, 64)}
+			if candMin > curMin {
+				out.RulesLoosened = append(out.RulesLoosened, change)
+			} else {
+				out.RulesTightened = append(out.RulesTightened, change)
+			}
 		}
+	}
+}
+
+// order files a change by rank: lower in the candidate loosens, higher
+// tightens, equal is no change.
+func order(from, to int, change RuleChange, out *PolicyChange) {
+	switch {
+	case to < from:
+		out.RulesLoosened = append(out.RulesLoosened, change)
+	case to > from:
+		out.RulesTightened = append(out.RulesTightened, change)
 	}
 }
 
@@ -298,7 +356,7 @@ func comparePolicyCoverage(current, candidate PolicyInput, out *PolicyChange) {
 			out.CoverageGained = append(out.CoverageGained, CoverageChange{Kind: CoverageExcludeRemoved, Detail: glob})
 		}
 	}
-	switches(current.Languages, candidate.Languages, "languages.", CoverageLanguageDisabled, CoverageLanguageEnabled, out)
+	languageModes(current.Languages, candidate.Languages, out)
 	switches(current.Analyzers, candidate.Analyzers, "analyzers.", CoverageAnalyzerDisabled, CoverageAnalyzerEnabled, out)
 	for _, name := range sortedKeys(current.Modules) {
 		cand, ok := candidate.Modules[name]
@@ -311,15 +369,17 @@ func comparePolicyCoverage(current, candidate PolicyInput, out *PolicyChange) {
 				out.CoverageLost = append(out.CoverageLost, CoverageChange{Kind: CoverageModulePathsRemoved, Detail: name + ": " + p})
 			}
 		}
+		// A path a module gains may be taken from another module, whose
+		// allowlists then stop applying to it: not orderable.
 		for _, p := range cand.Paths {
 			if !slices.Contains(current.Modules[name].Paths, p) {
-				out.CoverageGained = append(out.CoverageGained, CoverageChange{Kind: CoverageModulePathsAdded, Detail: name + ": " + p})
+				out.DeclarationsChanged = append(out.DeclarationsChanged, DeclarationChange{Key: "modules." + name + ".paths", To: p})
 			}
 		}
 	}
 	for _, name := range sortedKeys(candidate.Modules) {
 		if _, ok := current.Modules[name]; !ok {
-			out.CoverageGained = append(out.CoverageGained, CoverageChange{Kind: CoverageModuleAdded, Detail: name})
+			out.DeclarationsChanged = append(out.DeclarationsChanged, DeclarationChange{Key: "modules." + name, To: "added: " + strings.Join(candidate.Modules[name].Paths, ", ")})
 		}
 	}
 	from, to := orWarn(current.ModuleReviewGate), orWarn(candidate.ModuleReviewGate)
@@ -332,19 +392,55 @@ func comparePolicyCoverage(current, candidate PolicyInput, out *PolicyChange) {
 	}
 }
 
-// switches compares enabled switches: turning one off loses coverage; turning
-// one on (or to auto from off) gains it. auto and on read the same code when
-// the tool is present, so a change between them is not reported.
+// switches compares on/off switches of optional analyzers: only on runs one.
 func switches(current, candidate map[string]string, prefix, lost, gained string, out *PolicyChange) {
 	for _, id := range unionKeys(current, candidate) {
-		from, to := current[id], candidate[id]
-		wasOff, isOff := from == gateOffValue, to == gateOffValue
-		detail := prefix + id + ".enabled: " + orAuto(from) + " -> " + orAuto(to)
+		wasOn, isOn := current[id] == modeOn, candidate[id] == modeOn
+		detail := prefix + id + ".enabled: " + onOff(wasOn) + " -> " + onOff(isOn)
 		switch {
-		case !wasOff && isOff:
+		case wasOn && !isOn:
 			out.CoverageLost = append(out.CoverageLost, CoverageChange{Kind: lost, Detail: detail})
-		case wasOff && !isOff:
+		case !wasOn && isOn:
 			out.CoverageGained = append(out.CoverageGained, CoverageChange{Kind: gained, Detail: detail})
+		}
+	}
+}
+
+// languageModes ranks language modes off < auto < on: on fails when the
+// extractor is missing, auto skips the language quietly.
+func languageModes(current, candidate map[string]string, out *PolicyChange) {
+	rank := map[string]int{gateOffValue: 0, modeAuto: 1, "": 1, modeOn: 2}
+	for _, id := range unionKeys(current, candidate) {
+		from, to := current[id], candidate[id]
+		detail := "languages." + id + ".enabled: " + orAuto(from) + " -> " + orAuto(to)
+		switch {
+		case rank[to] < rank[from] && to == gateOffValue:
+			out.CoverageLost = append(out.CoverageLost, CoverageChange{Kind: CoverageLanguageDisabled, Detail: detail})
+		case rank[to] < rank[from]:
+			out.CoverageLost = append(out.CoverageLost, CoverageChange{Kind: CoverageLanguageLowered, Detail: detail})
+		case rank[to] > rank[from] && from == gateOffValue:
+			out.CoverageGained = append(out.CoverageGained, CoverageChange{Kind: CoverageLanguageEnabled, Detail: detail})
+		case rank[to] > rank[from]:
+			out.CoverageGained = append(out.CoverageGained, CoverageChange{Kind: CoverageLanguageRaised, Detail: detail})
+		}
+	}
+}
+
+// compareDeclarations reports every unordered declaration that differs. A
+// module's own declarations are skipped when the module exists on one side
+// only: adding or removing it is reported once, above.
+func compareDeclarations(current PolicyInput, candidate PolicyInput, out *PolicyChange) {
+	for _, key := range unionKeys(current.Declarations, candidate.Declarations) {
+		if parts := strings.SplitN(key, ".", 3); len(parts) == 3 && parts[0] == "modules" {
+			_, inCurrent := current.Modules[parts[1]]
+			_, inCandidate := candidate.Modules[parts[1]]
+			if !inCurrent || !inCandidate {
+				continue
+			}
+		}
+		current, candidate := current.Declarations, candidate.Declarations
+		if current[key] != candidate[key] {
+			out.DeclarationsChanged = append(out.DeclarationsChanged, DeclarationChange{Key: key, From: current[key], To: candidate[key]})
 		}
 	}
 }
@@ -366,7 +462,7 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-func unionKeys(a, b map[string]string) []string {
+func unionKeys[V any](a, b map[string]V) []string {
 	set := map[string]struct{}{}
 	for k := range a {
 		set[k] = struct{}{}
@@ -401,11 +497,32 @@ func maxString(v *int) string {
 	return strconv.Itoa(*v)
 }
 
-func orOff(gate string) string {
+func orFail(gate string) string {
 	if gate == "" {
-		return gateOffValue
+		return gateFailValue
 	}
 	return gate
+}
+
+func intOrZero(v *int) int {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func floatOrZero(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func onOff(on bool) string {
+	if on {
+		return modeOn
+	}
+	return gateOffValue
 }
 
 func orWarn(gate string) string {

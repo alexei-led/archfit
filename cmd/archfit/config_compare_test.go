@@ -11,7 +11,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // TestConfigCompare covers `archfit config compare`: the identity result, a
@@ -34,6 +37,31 @@ func TestConfigCompare(t *testing.T) {
 	t.Run("id_preview", testCompareIDPreview)
 	t.Run("classification_mix", testCompareClassificationMix)
 	t.Run("policy_change", testComparePolicyChange)
+	t.Run("policy_declarations_effective", testPolicyDeclarationsEffective)
+}
+
+// testPolicyDeclarationsEffective pins that the classifier sees declarations
+// as they take effect: a re-include removes a default exclusion, auto does not
+// run an optional analyzer, a disabled metric is off.
+func testPolicyDeclarationsEffective(t *testing.T) {
+	t.Parallel()
+	off := false
+	plain := config.Config{}
+	tuned := config.Config{Exclude: []string{"!reports"}}
+	tuned.Analyzers.Syntax.Enabled = evidenceports.ModeAuto
+	tuned.Metrics.Entries = map[string]policy.MetricEntry{"cycle": {Enabled: &off}}
+	plain.Analyzers.Syntax.Enabled = evidenceports.ModeOn
+
+	p, q := policyDeclarations(plain), policyDeclarations(tuned)
+	if !slices.Contains(p.Exclude, "**/reports/**") || slices.Contains(q.Exclude, "**/reports/**") {
+		t.Errorf("effective exclusions: plain %v, re-included %v", p.Exclude, q.Exclude)
+	}
+	if p.Analyzers["syntax"] != "on" || q.Analyzers["syntax"] != "off" {
+		t.Errorf("syntax analyzer: on %q, auto %q, want on and off", p.Analyzers["syntax"], q.Analyzers["syntax"])
+	}
+	if q.Metrics["cycle"].Gate != "off" {
+		t.Errorf("disabled metric gate = %q, want off", q.Metrics["cycle"].Gate)
+	}
 }
 
 // testComparePolicyChange pins the policy_change section end to end: a

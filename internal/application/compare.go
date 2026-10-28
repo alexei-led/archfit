@@ -26,15 +26,29 @@ type CompareRequest struct {
 // PolicyDeclarations are the declarations that decide what blocks and what the
 // analysis reads; the composition root reads them from a configuration.
 type PolicyDeclarations struct {
-	Rules       []policy.RuleDef
-	Waivers     []policy.WaiverDef
-	Modules     map[string]policy.ModuleDef
-	MetricGates map[string]string
-	Exclude     []string
-	Languages   map[string]string
-	Analyzers   map[string]string
+	Rules   []policy.RuleDef
+	Waivers []policy.WaiverDef
+	Modules map[string]policy.ModuleDef
+	// Metrics maps a configured metric to its ratchet: gate ("" is fail, off
+	// when the metric is disabled) and tolerances.
+	Metrics map[string]PolicyMetric
+	// Exclude are the effective exclusions: defaults merged, re-includes applied.
+	Exclude   []string
+	Languages map[string]string
+	// Analyzers map an optional analyzer to on or off.
+	Analyzers map[string]string
 	// ModuleReviewGate is module_review.gate.
 	ModuleReviewGate string
+	// Declarations are every other verdict-relevant declaration, keyed by
+	// config path, canonically encoded.
+	Declarations map[string]string
+}
+
+// PolicyMetric is one metric ratchet's declaration.
+type PolicyMetric struct {
+	Gate     string
+	MaxNew   *int
+	MinDelta *float64
 }
 
 // PolicyChange is the classified difference between two policies
@@ -46,7 +60,11 @@ type PolicyChange struct {
 	WaiversAdded, WaiversRemoved          []policy.WaiverDef
 	AllowlistsWidened, AllowlistsNarrowed []PolicyAllowlist
 	CoverageLost, CoverageGained          []PolicyCoverage
+	DeclarationsChanged                   []PolicyDeclarationChange
 }
+
+// PolicyDeclarationChange is one unordered declaration that differs.
+type PolicyDeclarationChange struct{ Key, From, To string }
 
 // PolicyRule names a rule and its effective gate.
 type PolicyRule struct{ ID, Type, Gate string }
@@ -149,9 +167,14 @@ func compareWarnings(in []decision.ConfigCompareWarning) []CompareWarning {
 }
 
 func policyInput(d PolicyDeclarations) decision.PolicyInput {
+	metrics := make(map[string]decision.MetricDecl, len(d.Metrics))
+	for name, m := range d.Metrics {
+		metrics[name] = decision.MetricDecl{Gate: m.Gate, MaxNew: m.MaxNew, MinDelta: m.MinDelta}
+	}
 	return decision.PolicyInput{
-		Rules: d.Rules, Waivers: d.Waivers, Modules: d.Modules, MetricGates: d.MetricGates,
+		Rules: d.Rules, Waivers: d.Waivers, Modules: d.Modules, Metrics: metrics,
 		Exclude: d.Exclude, Languages: d.Languages, Analyzers: d.Analyzers, ModuleReviewGate: d.ModuleReviewGate,
+		Declarations: d.Declarations,
 	}
 }
 
@@ -184,6 +207,13 @@ func projectPolicyChange(c decision.PolicyChange) PolicyChange {
 		}
 		return out
 	}
+	declarations := func(in []decision.DeclarationChange) []PolicyDeclarationChange {
+		out := make([]PolicyDeclarationChange, 0, len(in))
+		for _, d := range in {
+			out = append(out, PolicyDeclarationChange{Key: d.Key, From: d.From, To: d.To})
+		}
+		return out
+	}
 	return PolicyChange{
 		Direction:    string(c.Direction),
 		RulesRemoved: rules(c.RulesRemoved), RulesAdded: rules(c.RulesAdded),
@@ -191,5 +221,6 @@ func projectPolicyChange(c decision.PolicyChange) PolicyChange {
 		WaiversAdded: append([]policy.WaiverDef{}, c.WaiversAdded...), WaiversRemoved: append([]policy.WaiverDef{}, c.WaiversRemoved...),
 		AllowlistsWidened: allow(c.AllowlistsWidened), AllowlistsNarrowed: allow(c.AllowlistsNarrowed),
 		CoverageLost: coverage(c.CoverageLost), CoverageGained: coverage(c.CoverageGained),
+		DeclarationsChanged: declarations(c.DeclarationsChanged),
 	}
 }

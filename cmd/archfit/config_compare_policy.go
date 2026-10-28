@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
 	"github.com/alexei-led/archfit/v3/internal/config"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 // policyChangeDoc is the policy_change section of archfit.config-compare.v1:
@@ -24,6 +27,15 @@ type policyChangeDoc struct {
 	WaiversRemoved     []policyWaiverDoc    `json:"waivers_removed"`
 	AllowlistsNarrowed []policyAllowDoc     `json:"allowlists_narrowed"`
 	CoverageGained     []policyCoverageDoc  `json:"coverage_gained"`
+	// DeclarationsChanged are differences that cannot be ordered; they count
+	// as loosening.
+	DeclarationsChanged []policyDeclarationDoc `json:"declarations_changed"`
+}
+
+type policyDeclarationDoc struct {
+	Key  string `json:"key"`
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 type policyRuleDoc struct {
@@ -59,29 +71,81 @@ type policyCoverageDoc struct {
 	Detail string `json:"detail"`
 }
 
-// policyDeclarations reads the declarations a policy change is classified from.
+// policyDeclarations reads the declarations a policy change is classified
+// from, as they take effect: metric gates with their default (fail), disabled
+// metrics as off, exclusions merged with the defaults and re-includes applied,
+// optional analyzers as on or off (auto does not run one). Every other
+// declaration that can change a verdict goes into Declarations, which the
+// classifier cannot order and so counts as loosening.
 func policyDeclarations(cfg config.Config) application.PolicyDeclarations {
-	metricGates := map[string]string{}
+	metrics := map[string]application.PolicyMetric{}
 	for name, entry := range cfg.Metrics.MetricEntries() {
-		gate := entry.Gate
+		m := application.PolicyMetric{Gate: entry.Gate, MaxNew: entry.MaxNew, MinDelta: entry.MinDelta}
 		if entry.Enabled != nil && !*entry.Enabled {
-			gate = ""
+			m.Gate = string(config.GateOff)
 		}
-		metricGates[name] = gate
+		metrics[name] = m
+	}
+	runs := func(mode evidenceports.ToolMode) string {
+		if mode == evidenceports.ModeOn {
+			return string(evidenceports.ModeOn)
+		}
+		return string(evidenceports.ModeOff)
+	}
+	declarations := map[string]string{
+		"layers":                       canonical(cfg.Layers),
+		"target_branch":                cfg.TargetBranch,
+		"coverage":                     canonical(cfg.Coverage),
+		"coupling":                     canonical(cfg.Coupling),
+		"file_class":                   canonical(cfg.FileClass),
+		"external_systems":             canonical(cfg.ExternalSystems),
+		"languages.go.gate":            string(cfg.Languages.Go.Gate),
+		"languages.go.modules":         canonical(cfg.Languages.Go.Modules),
+		"languages.typescript.gate":    string(cfg.Languages.TypeScript.Gate),
+		"languages.python.gate":        string(cfg.Languages.Python.Gate),
+		"languages.rust.gate":          string(cfg.Languages.Rust.Gate),
+		"analyzers.syntax.gate":        string(cfg.Analyzers.Syntax.Gate),
+		"analyzers.scip.gate":          string(cfg.Analyzers.Scip.Gate),
+		"analyzers.scip.timeout":       cfg.Analyzers.Scip.Timeout,
+		"analyzers.clones.gate":        string(cfg.Analyzers.Clones.Gate),
+		"analyzers.clones.timeout":     cfg.Analyzers.Clones.Timeout,
+		"analyzers.cargo_modules.gate": string(cfg.Analyzers.CargoModules.Gate),
+	}
+	review := cfg.ModuleReview
+	review.Gate = ""
+	declarations["module_review"] = canonical(review)
+	for name, m := range cfg.Modules {
+		for field, value := range map[string]any{
+			"layer": m.Layer, "role": m.Role, "public": m.Public, "internal": m.Internal,
+			"owner": m.Owner, "subdomain": m.Subdomain, "volatility": m.Volatility, "deploy_unit": m.DeployUnit,
+		} {
+			declarations["modules."+name+"."+field] = canonical(value)
+		}
 	}
 	return application.PolicyDeclarations{
-		Rules: cfg.Rules, Waivers: cfg.Waivers, Modules: cfg.Modules,
-		MetricGates: metricGates, Exclude: cfg.Exclude,
+		Rules: cfg.Rules, Waivers: cfg.Waivers, Modules: cfg.Modules, Metrics: metrics,
+		Exclude: scope.MergeExclusions(cfg.Exclude),
 		Languages: map[string]string{
 			"go": string(cfg.Languages.Go.Enabled), "typescript": string(cfg.Languages.TypeScript.Enabled),
 			"python": string(cfg.Languages.Python.Enabled), "rust": string(cfg.Languages.Rust.Enabled),
 		},
 		Analyzers: map[string]string{
-			"syntax": string(cfg.Analyzers.Syntax.Enabled), "scip": string(cfg.Analyzers.Scip.Enabled),
-			"clones": string(cfg.Analyzers.Clones.Enabled), "cargo_modules": string(cfg.Analyzers.CargoModules.Enabled),
+			"syntax": runs(cfg.Analyzers.Syntax.Enabled), "scip": runs(cfg.Analyzers.Scip.Enabled),
+			"clones": runs(cfg.Analyzers.Clones.Enabled), "cargo_modules": runs(cfg.Analyzers.CargoModules.Enabled),
 		},
 		ModuleReviewGate: cfg.ModuleReview.Gate,
+		Declarations:     declarations,
 	}
+}
+
+// canonical encodes a declaration for comparison: Go structs marshal in field
+// order and maps in key order, so equal declarations encode equally.
+func canonical(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return string(raw)
 }
 
 func policyChangeDocOf(c application.PolicyChange) policyChangeDoc {
@@ -116,6 +180,10 @@ func policyChangeDocOf(c application.PolicyChange) policyChangeDoc {
 	for _, cc := range c.CoverageGained {
 		out.CoverageGained = append(out.CoverageGained, policyCoverageDoc{Kind: cc.Kind, Detail: cc.Detail})
 	}
+	for _, d := range c.DeclarationsChanged {
+		out.DeclarationsChanged = append(out.DeclarationsChanged, policyDeclarationDoc{Key: d.Key, From: d.From, To: d.To})
+	}
+	out.DeclarationsChanged = nonNilSlice(out.DeclarationsChanged)
 	out.RulesRemoved, out.RulesAdded = nonNilSlice(out.RulesRemoved), nonNilSlice(out.RulesAdded)
 	out.RulesLoosened, out.RulesTightened = nonNilSlice(out.RulesLoosened), nonNilSlice(out.RulesTightened)
 	out.WaiversAdded, out.WaiversRemoved = nonNilSlice(out.WaiversAdded), nonNilSlice(out.WaiversRemoved)
@@ -148,6 +216,9 @@ func renderPolicyChangeText(w io.Writer, c policyChangeDoc) {
 	}
 	for _, cc := range c.CoverageLost {
 		_, _ = fmt.Fprintf(w, "  - coverage lost: %s: %s\n", cc.Kind, cc.Detail)
+	}
+	for _, d := range c.DeclarationsChanged {
+		_, _ = fmt.Fprintf(w, "  - changed (counts as loosening): %s: %s -> %s\n", d.Key, d.From, d.To)
 	}
 	for _, r := range c.RulesAdded {
 		_, _ = fmt.Fprintf(w, "  + rule added: %s (%s, gate %s)\n", r.ID, r.Type, r.Gate)
