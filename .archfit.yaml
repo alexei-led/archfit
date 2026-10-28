@@ -710,6 +710,10 @@ languages:
     enabled: false
   python:
     enabled: false
+  # tools/dotnet/archfit-roslyn is the Roslyn helper archfit ships, not part of
+  # archfit's Go architecture; the image contract and language contracts test it.
+  dotnet:
+    enabled: false
 analyzers:
   # Syntax-facts provider (ast-grep). Enabled for dogfooding — produces
   # syntax_facts (declarations, exported surface, roles, routes) visible in
