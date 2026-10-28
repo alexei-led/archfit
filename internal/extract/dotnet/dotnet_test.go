@@ -749,7 +749,10 @@ func TestApplicable(t *testing.T) {
 		{"csproj under obj", []string{"obj/A.csproj"}, nil, nil, false},
 		{"excluded csproj", []string{"src/A/A.csproj"}, []string{"src/**"}, nil, false},
 		{"configured target exists", []string{targetB}, nil, []string{targetB}, true},
-		{"configured target missing", []string{"A.csproj"}, nil, []string{targetB}, false},
+		// A configured target is the operator saying this tree carries .NET
+		// analysis: a stale path must surface as a partial row, not as an absent
+		// language that suppresses its coverage gap.
+		{"configured target missing", []string{"A.csproj"}, nil, []string{targetB}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -768,5 +771,24 @@ func TestNameAndCoverageTool(t *testing.T) {
 	}
 	if ev := e.LastEvaluation(); len(ev.Projects) != 0 {
 		t.Errorf("LastEvaluation before Extract = %+v", ev)
+	}
+}
+
+// TestExtract_StaleConfiguredTargetIsReported pins the auto-mode contract: a
+// configured target that no longer exists is a stale selection, reported as a
+// partial row that names the path, not an absent language.
+func TestExtract_StaleConfiguredTargetIsReported(t *testing.T) {
+	root := tree(t, "src/A/A.csproj", "src/A/A.cs")
+	e := dotnet.New(newFake(t, root, nil), autoCfg(), []string{"Gone/Gone.csproj"})
+
+	_, cov, err := e.Extract(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if cov.Status != evidence.StatusPartial {
+		t.Errorf("coverage status = %q, want partial: a stale target is not an absent language", cov.Status)
+	}
+	if !strings.Contains(cov.Reason, "Gone/Gone.csproj") || !strings.Contains(cov.Reason, "configured target not found") {
+		t.Errorf("coverage reason = %q, want the missing path named", cov.Reason)
 	}
 }

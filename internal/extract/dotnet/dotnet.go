@@ -192,6 +192,12 @@ func (e *Extractor) LastTypeGraphCoverage() evidence.Coverage {
 // obj/, bin/ and exclusions. Extract and the registry probe both call it so the
 // two cannot disagree about what "present" means.
 func Applicable(root string, exclusions, targets []string) bool {
+	if len(targets) > 0 {
+		// A configured target is the operator's statement that this tree carries
+		// .NET analysis, present on disk or not: Extract reports a missing path as a
+		// partial row instead of the language reading as absent from the tree.
+		return true
+	}
 	sel, _ := discover(root, exclusions, targets)
 	return sel.solution != "" || len(sel.projects) > 0
 }
@@ -227,8 +233,15 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 
 	sel, derr := discover(s.Root, e.cfg.Exclusions, e.targets)
 	if sel.solution == "" && len(sel.projects) == 0 && derr == nil {
-		if e.cfg.Mode == evidenceports.ModeOn && len(e.targets) > 0 {
-			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/dotnet: configured target not found: %s", strings.Join(sel.missing, ", "))
+		if len(e.targets) > 0 {
+			if e.cfg.Mode == evidenceports.ModeOn {
+				return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/dotnet: configured target not found: %s", strings.Join(sel.missing, ", "))
+			}
+			// A configured target is the operator saying this tree carries .NET
+			// analysis. In auto mode a path that no longer exists is a stale
+			// selection, not "no .NET in this tree": report it, so the row stays
+			// visible and the coverage gap is not suppressed as an absent language.
+			return graph.Facts{}, missingTargetsCoverage(sel.missing), nil
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -566,6 +579,17 @@ func coverageFor(ev Evaluation, version string, timedOut bool) evidence.Coverage
 // absentCoverage returns a Coverage record indicating no .NET project or no dotnet.
 func absentCoverage(version string) evidence.Coverage {
 	return evidence.Coverage{Tool: toolMSBuild, Version: version, Status: evidence.StatusAbsent}
+}
+
+// missingTargetsCoverage reports a configured .NET selection with nothing on
+// disk: partial, naming each path, so a stale target shows up as a defect
+// instead of the language reading as absent from the tree.
+func missingTargetsCoverage(missing []string) evidence.Coverage {
+	return evidence.Coverage{
+		Tool:   toolMSBuild,
+		Status: evidence.StatusPartial,
+		Reason: "configured target not found: " + strings.Join(missing, ", "),
+	}
 }
 
 // typeGraphAbsent is the roslyn row when the helper never ran.
