@@ -78,26 +78,66 @@ Read repair advice within its evidence and role limits:
 
 ## Install hooks
 
-Add the Claude Code stop hooks to `.claude/settings.json`:
+Install the hooks of your harness:
 
-```json
-{
-  "hooks": {
-    "Stop": [
-      { "hooks": [{ "type": "command", "command": "archfit hook claude" }] }
-    ],
-    "SubagentStop": [
-      { "hooks": [{ "type": "command", "command": "archfit hook claude" }] }
-    ]
-  }
-}
+```sh
+archfit hook install --harness claude   # .claude/settings.json
+archfit hook install --harness codex    # .codex/hooks.json
+archfit hook install --harness git      # the git pre-commit hook
 ```
 
-The hook checks changes against `HEAD`. It blocks one stop when an in-scope
-repair needs a code change or an owner decision. It fails open when archfit
-returns an error.
+`install` merges into the settings file and keeps every other key and hook.
+Running it again changes nothing. It removes entries of the old
+`archfit hook claude` command. Pass `-c <config>` when the config is not
+`.archfit.yaml` at the repository root; the path is relative to the root, so a subproject's config is `-c service/.archfit.yaml` even when you run `install` from `service/`. `install` warns when the hooks would load another config, or none. Pass `--dir <repo>` to install into another repository. A
+pre-commit hook that archfit did not write is left alone: `install` exits `3`
+and names it.
 
-For a pre-commit hook, add archfit to `.pre-commit-config.yaml`:
+The installed hooks call `archfit hook run <event>`:
+
+| Event | Claude Code | Codex | What it does |
+| --- | --- | --- | --- |
+| `session-start` | `SessionStart` | `SessionStart` | Records `HEAD` as the session base in `.archfit-cache/session/<session_id>.json`. Prints three lines for the agent: run `policy can-import` before a cross-module import, run `check --format agent` before finishing, never edit the policy files. |
+| `post-tool-use` | `PostToolUse` after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` | `PostToolUse` after `apply_patch`, `Bash` | Finds the files that differ from the session base with git, reads the imports their added lines introduce (Go, relative TypeScript and JavaScript, Python), and asks `can-import` about each. A denial exits `2` with the file, the target, the rule, why, and what to use instead on stderr. Each denial is reported once while it stays; an import removed and added again is reported again. A relative import of a file that does not exist yet is judged once the file exists. |
+| `stop` | `Stop`, `SubagentStop` | `Stop` | Runs `check --format agent --base <session base>` with the policy guard of `check`. A `fail` change blocks the stop once, with the blockers on stderr. The same blockers on the same tree do not block again, until a stop passes. A `SubagentStop` is blocked once and never suppresses the main agent's stop. An `unknown` change shows a message and does not block. |
+| `pre-commit` | — | — | Checks the staged content against `HEAD`. Exit `1` blocks the commit. |
+
+The hooks read changes with git, never from the tool payload, so an edit made
+through a shell command counts. A commit made during the session does not hide
+a violation: the stop compares with the session base, not with `HEAD`. The
+hooks ignore their own writes under `.archfit-cache/`. An archfit error in
+`post-tool-use` or `stop` fails open with a message and never blocks the
+agent.
+
+Codex runs a project hook only after you trust it. After `install`, start
+Codex and approve the hooks, or run it once with
+`--dangerously-bypass-hook-trust`.
+
+Check the loop with `archfit doctor`. Its agent loop section lists the
+harnesses it finds and each hook as `active` or `inactive` (not installed,
+switched off by `disableAllHooks` in the Claude Code project settings, or, for
+Codex, not trusted yet). It also shows the target branch, the scope `check`
+would use, and whether a policy file differs from the target.
+`archfit doctor --format json` reports the same under `agent_loop`.
+
+Generate or check the `AGENTS.md` block with `archfit agents-md --write` and
+`archfit agents-md --check`. The generated block includes current project
+modules and architecture rules.
+
+### Other harnesses
+
+For pi, Cursor, Aider, or a custom runner, call these commands from the
+harness's own hook system or from the agent's instructions:
+
+| When | Command |
+| --- | --- |
+| At session start | `archfit doctor` |
+| After an edit | `archfit policy can-import <file> <target>` |
+| Before finishing | `archfit check --base <sha> --format agent`, where `<sha>` is the commit the session started from |
+
+The git pre-commit hook works with every harness. Install it with
+`archfit hook install --harness git`, or through the pre-commit framework in
+`.pre-commit-config.yaml`:
 
 ```yaml
 repos:
@@ -107,17 +147,11 @@ repos:
       - id: archfit
 ```
 
-Install the archfit binary first. The hook checks staged files.
-
-Activate the Git hook after adding the configuration:
+Install the archfit binary first, then activate the framework hook:
 
 ```sh
 pre-commit install
 ```
-
-Generate or check the `AGENTS.md` block with `archfit agents-md --write` and
-`archfit agents-md --check`. The generated block includes current project
-modules and architecture rules.
 
 ## Install the portable skill
 

@@ -122,18 +122,29 @@ func resolveCheckScope(ctx context.Context, deps *appDeps, req *scanRequest, tar
 	if dir == "" {
 		dir = filepath.Dir(req.configPath)
 	}
-	git := scopeGit{runner: deps.Runner, dir: dir}
-	files, err := policyFiles(ctx, deps.Runner, dir, req.configPath)
+	res, err := resolveScope(ctx, deps.Runner, dir, req.configPath, application.ScopeRequest{
+		Target: req.target, ConfigTarget: targetBranch, Base: req.baseRef,
+	})
+	if err != nil {
+		return res, err
+	}
+	req.baseRef = res.Base
+	return res, nil
+}
+
+// resolveScope resolves the scope of a change in the repository at dir, with
+// the policy files of configPath. req carries the target and the base;
+// resolveScope fills in the policy files.
+func resolveScope(ctx context.Context, runner toolrun.Runner, dir, configPath string, req application.ScopeRequest) (application.ScopeResolution, error) {
+	files, err := policyFiles(ctx, runner, dir, configPath)
 	if err != nil {
 		return application.ScopeResolution{}, fmt.Errorf("read the policy files: %w", err)
 	}
-	res, err := application.ResolveScope(ctx, git, application.ScopeRequest{
-		Target: req.target, ConfigTarget: targetBranch, Base: req.baseRef, Policy: files,
-	})
+	req.Policy = files
+	res, err := application.ResolveScope(ctx, scopeGit{runner: runner, dir: dir}, req)
 	if err != nil {
 		return res, fmt.Errorf("resolve the scope: %w", err)
 	}
-	req.baseRef = res.Base
 	return res, nil
 }
 

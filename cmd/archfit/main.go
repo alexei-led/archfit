@@ -79,7 +79,7 @@ type cli struct {
 	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits 1 when blocked, 2 when it needs attention, 3 on a config or tool error. Use in CI."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
-	Hook     HookCmd     `cmd:"" group:"analysis" help:"Agent and git hooks: block a stop or a commit on an architecture repair."`
+	Hook     HookCmd     `cmd:"" group:"analysis" help:"Agent and git hooks: install them for Claude Code, Codex, or git; they report a denied import and block a stop or a commit on an architecture repair."`
 	Policy   PolicyCmd   `cmd:"" group:"analysis" help:"Pre-edit queries: which module owns a path, and whether a file may import a target."`
 	Map      MapCmd      `cmd:"" group:"analysis" help:"Draw the modules and seams with their policy status (Mermaid or text)."`
 
@@ -120,6 +120,7 @@ Config work:
 CI / agent loop:
   archfit policy can-import internal/a/a.go internal/b   # before an edit: denied, allowed, ...
   archfit check --config .archfit.yaml --format agent    # after an edit: one next_action
+  archfit hook install --harness claude                  # run both for the agent (or codex, git)
   archfit check --config .archfit.yaml --base origin/main --format json
   # on exit 1, read agent_tasks[] and rerun the validation command
   archfit analyze --markdown --config .archfit.yaml > archfit-report.md
