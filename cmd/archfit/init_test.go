@@ -414,3 +414,30 @@ func TestInitCmd_CacheGitignoreHint(t *testing.T) {
 		})
 	}
 }
+
+// TestConfigInitPassesStrictLint: a blocking rule must say which consequence it
+// prevents, and config init writes blocking starter rules. A config it just
+// wrote has to pass config lint --strict, or the first migration step fails the
+// second.
+func TestConfigInitPassesStrictLint(t *testing.T) {
+	t.Parallel()
+	root := minimalRoot(t)
+	for _, pkg := range []string{"pkg/a", "pkg/b"} {
+		writeGoPackage(t, root, pkg)
+	}
+	gitInitFixtureRepo(t, root)
+	out := filepath.Join(t.TempDir(), defaultConfigPath)
+	if code, stdout, stderr := runArchfit(t, cmdConfig, "init", "--root", root, "--output", out); code != 0 {
+		t.Fatalf("config init: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if code, stdout, stderr := runArchfit(t, cmdConfig, "lint", "-c", out, "--root", root, "--strict"); code != 0 {
+		t.Errorf("config lint --strict on the config init wrote: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	written, err := os.ReadFile(out) //nolint:gosec // test fixture path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(written), "rationale:") {
+		t.Errorf("the starter rule carries no rationale:\n%s", written)
+	}
+}

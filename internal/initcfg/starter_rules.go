@@ -12,6 +12,13 @@ const (
 	ruleIDLayerBackEdge = "no-layer-back-edges"
 )
 
+// Starter rationales. A rule that can block must say which consequence it
+// prevents, or config lint --strict rejects the config init just wrote.
+const (
+	rationaleModuleCycles  = "A module cycle ties its members together: none can change, test or ship alone."
+	rationaleLayerBackEdge = "Inner code importing outer code reverses the dependency direction."
+)
+
 // Starter gate values.
 const (
 	gateFail = "fail"
@@ -49,12 +56,12 @@ func writeStarterRules(b *strings.Builder, cfg DiscoveredConfig) {
 	b.WriteString("  # Catches: a dependency cycle between declared modules (A imports B and B\n")
 	b.WriteString("  # imports A, through any files).\n")
 	gate := writeGateNote(b, moduleCycleCount(cfg.Edges), cfg, "module cycle(s)")
-	fmt.Fprintf(b, "  - id: %s\n    type: module_cycle\n    gate: %s\n", ruleIDModuleCycles, gate)
+	fmt.Fprintf(b, "  - id: %s\n    type: module_cycle\n    gate: %s\n    rationale: %q\n", ruleIDModuleCycles, gate, rationaleModuleCycles)
 
 	if len(cfg.Layers) >= 2 {
 		b.WriteString("  # Catches: a module importing a module in a later (outer) layer.\n")
 		gate = writeGateNote(b, layerBackEdgeCount(cfg), cfg, "layer back-edge(s)")
-		fmt.Fprintf(b, "  - id: %s\n    type: forbidden_layer_direction\n    gate: %s\n", ruleIDLayerBackEdge, gate)
+		fmt.Fprintf(b, "  - id: %s\n    type: forbidden_layer_direction\n    gate: %s\n    rationale: %q\n", ruleIDLayerBackEdge, gate, rationaleLayerBackEdge)
 		return
 	}
 	b.WriteString("  # Uncomment after declaring layers: (see above). Catches: a module importing a\n")
@@ -62,6 +69,7 @@ func writeStarterRules(b *strings.Builder, cfg DiscoveredConfig) {
 	fmt.Fprintf(b, "  # - id: %s\n", ruleIDLayerBackEdge)
 	b.WriteString("  #   type: forbidden_layer_direction\n")
 	b.WriteString("  #   gate: fail\n")
+	fmt.Fprintf(b, "  #   rationale: %q\n", rationaleLayerBackEdge)
 }
 
 // writeGateNote writes the comment explaining a starter rule's gate and
