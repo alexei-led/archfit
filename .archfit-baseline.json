@@ -184,7 +184,7 @@
     "rubric_version": "bc_score.v7",
     "measurement_profile": {
       "version": "archfit.measurement.v2",
-      "settings_hash": "b34e8995e96d3e4a4d381023b96e124a0b9c389e84f1f24408bd5fd26268e181",
+      "settings_hash": "0ab6fe77f2b22fe89c6dee4a38f5997083027f9a5ced0ce1e3f0e614294d06b8",
       "producers": [
         {
           "tool": "ast-grep",
@@ -215,7 +215,7 @@
         {
           "tool": "git-history",
           "semantics_version": "git-history.recent500-full-fallback.v2",
-          "tool_version": "git version 2.56.0",
+          "tool_version": "git version 2.39.5",
           "status": "ok"
         },
         {
@@ -248,12 +248,14 @@
         {
           "tool": "scip",
           "semantics_version": "scip.v3",
-          "status": "absent"
+          "tool_version": "scip-go 0.2.9",
+          "status": "ok"
         },
         {
           "tool": "scip-symbols",
           "semantics_version": "scip-symbols.v2",
-          "status": "absent"
+          "tool_version": "scip-go 0.2.9",
+          "status": "ok"
         },
         {
           "tool": "supplied-coverage",
