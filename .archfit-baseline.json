@@ -140,13 +140,13 @@
       "severity": "high"
     },
     {
-      "fingerprint": "5e6d12522dd3bf1ddae5d288da7c29f7",
-      "rule_id": "module_cycles",
+      "fingerprint": "90578a16f4ad116c1009426c4ae12ffb",
+      "rule_id": "syntax_api_size_ceiling",
       "kind": "advisory",
-      "severity": "high"
+      "severity": "medium"
     },
     {
-      "fingerprint": "90578a16f4ad116c1009426c4ae12ffb",
+      "fingerprint": "a597753d9e9da57a7549ec037f4e4396",
       "rule_id": "syntax_api_size_ceiling",
       "kind": "advisory",
       "severity": "medium"
@@ -177,14 +177,14 @@
     }
   },
   "state": {
-    "config_hash": "67ddf7abbec519cf73a7a6fe924e39d660d31e5af22cd8c552d829e20fff06a3",
+    "config_hash": "efb27b718e57802cc968a40f8cb2ab31d52ced10e6fc7252015988b077a408c0",
     "classification_hash": "b960cc2884924420cb8e8e09969a77c4d93f686acb4564e4c268bb8d072f3882",
-    "model_hash": "74bef56623fe4e1240964f521caa00b09c0f8f14b4a2fb95e7e53d06afc5493c",
+    "model_hash": "9d94d4b33b88e29959736c961262269a4e6ef3e43d90c2d8c9bc3f88d7c60428",
     "labels_hash": "",
     "rubric_version": "bc_score.v7",
     "measurement_profile": {
       "version": "archfit.measurement.v2",
-      "settings_hash": "65d017ec94129de96385052b8f355779dceedd3af41d9e6e18fc1798e7084ef6",
+      "settings_hash": "0ab6fe77f2b22fe89c6dee4a38f5997083027f9a5ced0ce1e3f0e614294d06b8",
       "producers": [
         {
           "tool": "ast-grep",
@@ -206,6 +206,11 @@
           "tool": "deploy-unit",
           "semantics_version": "deploy-unit.v2",
           "status": "ok"
+        },
+        {
+          "tool": "dotnet-msbuild",
+          "semantics_version": "dotnet-msbuild.v1",
+          "status": "absent"
         },
         {
           "tool": "git-history",
@@ -236,6 +241,11 @@
           "status": "ok"
         },
         {
+          "tool": "roslyn",
+          "semantics_version": "roslyn.v1",
+          "status": "absent"
+        },
+        {
           "tool": "scip",
           "semantics_version": "scip.v3",
           "tool_version": "scip-go 0.2.9",
@@ -246,6 +256,11 @@
           "semantics_version": "scip-symbols.v2",
           "tool_version": "scip-go 0.2.9",
           "status": "ok"
+        },
+        {
+          "tool": "supplied-coverage",
+          "semantics_version": "supplied-coverage.v1",
+          "status": "disabled"
         }
       ],
       "unknowns": []
