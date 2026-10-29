@@ -410,7 +410,7 @@ var (
 // the layers, set layer: on each module, and uncomment the direction rule.
 func declareLayers(t *testing.T, rendered string, layers []string, moduleLayer map[string]string) string {
 	t.Helper()
-	const commented = "  # - id: no-layer-back-edges\n  #   type: forbidden_layer_direction\n  #   gate: fail\n"
+	const commented = "  # - id: no-layer-back-edges\n  #   type: forbidden_layer_direction\n  #   gate: fail\n  #   rationale: \"Inner code importing outer code reverses the dependency direction.\"\n"
 	if !strings.Contains(rendered, commented) {
 		t.Fatalf("generated config has no commented layer rule to uncomment:\n%s", rendered)
 	}
