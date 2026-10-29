@@ -1,5 +1,19 @@
 # Release notes
 
+## v3.4.1
+
+### Summary
+
+`config init` writes a config that passes `config lint --strict`.
+
+### Changes
+
+- The starter `no-module-cycles` rule, and the commented `no-layer-back-edges` rule, carry a `rationale`. Since v3.3.0 a blocking rule without one is a `config lint --strict` error, so a config that `config init` had just written failed the lint.
+
+### Upgrade
+
+No action. A config written by an earlier `config init` needs a `rationale:` line on each blocking rule to pass `config lint --strict`.
+
 ## v3.4.0
 
 ### Summary
