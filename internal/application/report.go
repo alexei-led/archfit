@@ -90,6 +90,7 @@ func AttachScope(doc report.Document, res ScopeResolution, underTargetPolicy *re
 // did.
 func projectArchitectureState(r result.Result, doc report.Document) report.ArchitectureState {
 	out := report.NewArchitectureState()
+	out.MetricRatchets = projectMetricRatchets(r.State.MetricRatchets)
 	out.Verdict = report.StateVerdict(r.State.Verdict)
 	out.Decision = report.StateDecision{
 		HardGates:           report.HardGateState(r.State.Decision.HardGates),
@@ -539,4 +540,18 @@ func projectAdvisoryTasks(in []result.AdvisoryTask) []report.AdvisoryTask {
 		out = append(out, report.AdvisoryTask{FindingID: t.FindingID, RuleID: t.RuleID, Status: string(t.Status), Severity: string(t.Severity), GroupCount: t.GroupCount, GroupMembers: t.GroupMembers, Goal: t.Goal, Hypothesis: t.Hypothesis, ScoreValue: t.ScoreValue, TopFiles: t.TopFiles, Constraints: t.Constraints, Validation: t.Validation})
 	}
 	return out
+}
+func projectMetricRatchets(in []state.MetricRatchetCheck) *[]report.MetricRatchetCheck {
+	if in == nil {
+		return nil
+	}
+	out := make([]report.MetricRatchetCheck, 0, len(in))
+	for _, check := range in {
+		out = append(out, report.MetricRatchetCheck{
+			Metric: check.Metric, Status: report.MetricRatchetStatus(check.Status),
+			Threshold: check.Threshold, Before: check.Before, After: check.After,
+			Delta: check.Delta, Reason: check.Reason,
+		})
+	}
+	return &out
 }

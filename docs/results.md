@@ -168,3 +168,21 @@ The configuration schema helps editors validate config shape. Runtime validation
 The config review and config comparison documents have version fields, but they do not have published JSON Schema files. Pin consumers to those version fields and test them against sample output from the supported binary.
 
 See [agents](agents.md) for agent-loop behavior and [CI](ci.md) for gate usage.
+
+## Implicit metric ratchet inventory
+
+The optional `metric_ratchets` array lists blocking comparisons against accepted metric values.
+It is separate from the declared-rule inventory.
+Older reports omit this field. An empty array means no implicit checks apply.
+
+Each record names its metric and comparison status.
+`evaluated` records include `before`, `after`, `delta`, and `threshold`.
+`unmeasured` records include a `reason` and omit numerical comparisons.
+A threshold is included when the current metric reports its direction.
+
+The inventory follows the existing applicability rules.
+Disabled, warn-only, informational, and unaccepted metrics do not enter this blocking inventory.
+Metric version changes and missing deltas remain unmeasured.
+
+Evaluation is not acceptance. Findings retain waiver and accepted-debt status.
+The inventory does not change verdicts, thresholds, or gate decisions.

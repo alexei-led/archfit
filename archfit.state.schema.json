@@ -466,6 +466,41 @@
         "total"
       ]
     },
+    "MetricRatchetCheck": {
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "evaluated",
+            "unmeasured"
+          ]
+        },
+        "threshold": {
+          "type": "string"
+        },
+        "before": {
+          "type": "number"
+        },
+        "after": {
+          "type": "number"
+        },
+        "delta": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "metric",
+        "status"
+      ]
+    },
     "MetricValue": {
       "properties": {
         "name": {
@@ -1045,6 +1080,12 @@
     }
   },
   "properties": {
+    "metric_ratchets": {
+      "items": {
+        "$ref": "#/$defs/MetricRatchetCheck"
+      },
+      "type": "array"
+    },
     "schema_version": {
       "type": "string",
       "enum": [

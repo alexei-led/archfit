@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	metricRatchetsJSONKey              = "metric_ratchets"
 	reachabilityFixturePath            = "../../testdata/fixtures/reachability"
 	reachabilityCoveragePlaceholder    = "{{REACHABILITY_COVERAGE_BLOCK}}"
 	reachabilityTrackedCoveredSource   = "services/api/api.go"
@@ -648,7 +649,7 @@ func assertReachabilityEnvelope(t *testing.T, data []byte) {
 	}
 	want := []string{
 		"agent_tasks", "comparison", "coverage", "decision", "dimensions", "findings", "gate_reference", "identity",
-		"measurement", "schema_version", "seams", "verdict",
+		"measurement", metricRatchetsJSONKey, "schema_version", "seams", "verdict",
 	}
 	got := make([]string, 0, len(raw))
 	for key := range raw {
