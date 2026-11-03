@@ -458,9 +458,11 @@ type UnevaluatedRule struct {
 // Both hold references into the diagnostic's own findings slice, which stays
 // the single owner of finding identity, status, and order.
 type Architecture struct {
-	Verdict    Verdict
-	Decision   Decision
-	Dimensions Dimensions
+	// MetricRatchets is nil before assessment supplies an inventory; empty means none apply.
+	MetricRatchets []MetricRatchetCheck
+	Verdict        Verdict
+	Decision       Decision
+	Dimensions     Dimensions
 	// Blockers are active hard-gate findings: kind gate, status new or
 	// expired_waiver. A baseline-accepted or waived gate finding is not one.
 	Blockers []FindingRef

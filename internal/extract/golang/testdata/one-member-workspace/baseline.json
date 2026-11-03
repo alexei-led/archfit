@@ -954,6 +954,7 @@
     "source_ref": "worktree",
     "tool_versions": {}
   },
+  "metric_ratchets": [],
   "schema_version": "archfit.architecture-state.v1",
   "seams": [
     {

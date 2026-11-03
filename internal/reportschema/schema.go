@@ -91,6 +91,8 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			continue
 		}
 		switch name {
+		case "MetricRatchetCheck":
+			patchRatchetStatus(def)
 		case "ResultIdentity":
 			pinIdentityVersion(def)
 		case "MeasurementProducer":
@@ -173,5 +175,11 @@ func patchDefinitions(schema *jsonschema.Schema) {
 func pinIdentityVersion(def *jsonschema.Schema) {
 	if version, ok := def.Properties.Get("schema_version"); ok {
 		version.Enum = []any{report.IdentitySchemaVersion}
+	}
+}
+
+func patchRatchetStatus(def *jsonschema.Schema) {
+	if status, ok := def.Properties.Get("status"); ok {
+		status.Enum = []any{string(report.MetricRatchetEvaluated), string(report.MetricRatchetUnmeasured)}
 	}
 }

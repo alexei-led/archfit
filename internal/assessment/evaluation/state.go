@@ -95,6 +95,7 @@ func classifyFindings(findings []finding.Finding, ruleTypes map[string]string) c
 // classifications.
 func buildState(diag *result.Result, in stateInput) state.Architecture {
 	st := state.New()
+	st.MetricRatchets = in.Ratchets.checks(diag.Metrics, in.Policy.Gates.Metrics)
 	split := classifyFindings(diag.Findings, in.RuleTypes)
 	st.Blockers, st.Diagnostics = split.blockers, split.diagnostics
 	st.RequiredToolFailure = in.RequiredToolFailure
