@@ -65,7 +65,7 @@ repos:
       - id: make-test
         name: make test
         language: system
-        entry: make test
+        entry: bash scripts/test-in-clean-git-env.sh
         stages:
           - pre-push
         pass_filenames: false
