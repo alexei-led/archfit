@@ -46,7 +46,9 @@ Their versions come from the [tool manifest](tools/manifest.json):
 | `ARCHFIT_TOOL_PYTHON` | Python 3.14 or later with `grimp` 3.17, `grpcio-tools` 1.84.1, and `protobuf` 7.36.2 | Environment variable with an absolute interpreter path outside the checkout | Go tests provision through `uv`, or skip without it. |
 
 When `ARCHFIT_TOOL_PYTHON` is set, the Go and SCIP reader tests use that interpreter and do not fall back.
-[Install analyzers](docs/languages.md#install-analyzers) shows how to install the locked Node and Python environments.
+`make host-tools` uses `npm` and `uv` to install the locked Node and Python environments.
+It installs under `~/.local/share/archfit-tools`. Set `HOST_TOOLS_DIR` to choose another directory.
+It prints the `depcruise` path and the `ARCHFIT_TOOL_PYTHON` value. It does not edit `PATH` or shell profiles.
 
 Use focused checks during development:
 

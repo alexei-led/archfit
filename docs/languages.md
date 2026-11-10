@@ -289,15 +289,12 @@ namespace. SCIP Python has an older semantic core: a nonempty index does not gua
 Python 3.14 type/grammar support. Import-rule evidence comes from Grimp, not SCIP.
 
 For a host CLI, use a separate owned tool directory outside every target checkout. From this
-release's source checkout, install the Node and Python locks without target project hooks:
+release's source checkout, `make host-tools` installs the Node and Python locks without target
+project hooks. It uses `~/.local/share/archfit-tools` unless you set `HOST_TOOLS_DIR`:
 
 ```sh
+make host-tools
 prefix="$HOME/.local/share/archfit-tools"
-mkdir -p "$prefix/node"
-cp tools/node/package.json tools/node/package-lock.json "$prefix/node/"
-npm ci --prefix "$prefix/node" --no-audit --no-fund
-uv venv --python 3.14.9 "$prefix/python"
-uv pip sync --python "$prefix/python/bin/python" --require-hashes --only-binary :all: tools/python/requirements.lock
 export PATH="$prefix/node/node_modules/.bin:$PATH"
 export ARCHFIT_TOOL_PYTHON="$prefix/python/bin/python"
 ```
