@@ -184,6 +184,9 @@ class TimelineTest(unittest.TestCase):
             [(r["from"], r["to"]) for r in six["requests_new_module"]],
             [("B", "C"), ("C", "B")],
         )
+        self.assertEqual(
+            (six["new_modules"], six["units_with_new_module_pairs"]), (["C"], 2)
+        )
         twelve = rl.pairs_report(self.repo.root, "t", self.policy)["freeze"]["12m"]
         self.assertEqual(twelve["policy_at"], shas[0])
         self.assertEqual(
@@ -239,7 +242,8 @@ modules:
 rules: []
 """
         self.assertEqual(
-            rl.declared_volatility(policy), {"core_mod": "high", "steady": "low", "helper": "low", "plain": "high"}
+            rl.declared_volatility(policy),
+            {"core_mod": "high", "steady": "low", "helper": "low", "plain": "high"},
         )
 
     def test_coupling_4_table(self):
@@ -257,13 +261,30 @@ rules: []
     def test_use_past_the_public_part_is_recorded(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = Repo(Path(tmp))
-            r.commit("init", {"go.mod": "module example.com/m\n", "a/a.go": go("a"), "b/b.go": go("b"), "b/inner/i.go": go("inner")})
+            r.commit(
+                "init",
+                {
+                    "go.mod": "module example.com/m\n",
+                    "a/a.go": go("a"),
+                    "b/b.go": go("b"),
+                    "b/inner/i.go": go("inner"),
+                },
+            )
             r.commit("public use", {"a/a.go": go("a", "b")})
             r.commit("past public", {"c/c.go": go("c", "b/inner")})
-            policy = prefix_policy({"a/": "A", "b/": "B", "c/": "C"}, public={"B": ("b",)})
-            report = rl.pairs_report(r.root, "t", policy, {"A": "high", "B": "high", "C": "low"})
-        rows = {(p["from"], p["to"]): (p["past_public_first"], p["coupling_4_first"]) for p in report["pairs"]}
-        self.assertEqual(rows, {("A", "B"): (False, "pass"), ("C", "B"): (True, "fail")})
+            policy = prefix_policy(
+                {"a/": "A", "b/": "B", "c/": "C"}, public={"B": ("b",)}
+            )
+            report = rl.pairs_report(
+                r.root, "t", policy, {"A": "high", "B": "high", "C": "low"}
+            )
+        rows = {
+            (p["from"], p["to"]): (p["past_public_first"], p["coupling_4_first"])
+            for p in report["pairs"]
+        }
+        self.assertEqual(
+            rows, {("A", "B"): (False, "pass"), ("C", "B"): (True, "fail")}
+        )
 
 
 class DistributionTest(unittest.TestCase):

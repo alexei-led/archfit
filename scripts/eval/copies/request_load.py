@@ -504,6 +504,9 @@ def freeze(tl: Timeline, units: list[cg.Unit], at: int, volatility: dict[str, st
         "requests_existing_modules": existing,
         "requests_new_module": new_module,
         "per_month_existing": round(len(existing) / months, 2) if months else None,
+        "units_with_requests_existing": len({r["unit"] for r in existing}),
+        "new_modules": sorted(m for m, first in tl.module_first.items() if first > at),
+        "units_with_new_module_pairs": len({r["unit"] for r in new_module}),
         "coupling_4_existing": dict(Counter(r["coupling_4"] for r in existing)),
     }
 
