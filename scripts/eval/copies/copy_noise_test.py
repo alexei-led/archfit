@@ -184,6 +184,13 @@ class ScanTest(unittest.TestCase):
         )
         self.assertEqual(regex.other_sites, ["pkg/util/util.go:8"])
 
+    def test_window_starts_from_the_tree_before_it(self):
+        self.repo.commit("old", {"pkg/chaos/x.go": "package chaos\n"}, date="2025-01-01T00:00:00Z")
+        self.repo.commit("seed", {"pkg/tc/iface.go": SEEDED_TC_GO}, date="2026-02-01T00:00:00Z")
+        events, stats = cn.scan(self.repo.root, "t", self.policy, since="2026-01-15")
+        self.assertEqual(stats.units, 1)
+        self.assertEqual({e.literal for e in events}, {REGEX, ERROR})
+
     def test_rewritten_copy_is_not_flagged(self):
         self.repo.commit(
             "rewrite the run-id rule in pkg/tc", {"pkg/tc/recovery.go": TC_RUNID}

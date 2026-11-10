@@ -43,7 +43,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import corpus_git as cg
 
 READ_LANGUAGES = ("go", "python", "js")
-MAX_BLOB = 1_000_000
 FREEZE_MONTHS = (3, 6, 12)
 SECONDS_PER_MONTH = 30.44 * 86400
 MIN_BALANCE = 7
@@ -226,72 +225,8 @@ def is_bare_js(spec: Spec) -> bool:
 # --- history --------------------------------------------------------------------------------
 
 
-class BlobReader:
-    """One `git cat-file --batch` process for the whole run."""
-
-    def __init__(self, repo: Path) -> None:
-        self._proc = subprocess.Popen(
-            ["git", "-C", str(repo), "cat-file", "--batch"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-        )
-
-    def read(self, rev: str, path: str) -> str | None:
-        assert self._proc.stdin and self._proc.stdout
-        self._proc.stdin.write(f"{rev}:{path}\n".encode())
-        self._proc.stdin.flush()
-        header = self._proc.stdout.readline().decode().split()
-        if len(header) < 3 or header[1] != "blob":
-            return None
-        size = int(header[2])
-        data = self._proc.stdout.read(size + 1)[:size]
-        return None if size > MAX_BLOB else data.decode("utf-8", errors="replace")
-
-    def close(self) -> None:
-        if self._proc.stdin:
-            self._proc.stdin.close()
-        if self._proc.stdout:
-            self._proc.stdout.close()
-        self._proc.wait()
-
-
 def tracked(path: str) -> bool:
     return cg.language(path) is not None or PurePosixPath(path).name == "go.mod"
-
-
-def changes(repo: Path, unit: cg.Unit) -> list[tuple[str, str, str | None]]:
-    """(status, path, old path) for tracked files; the root commit adds its whole tree."""
-    if unit.parent is None:
-        out = cg.git(repo, "ls-tree", "-r", "-z", "--name-only", unit.sha)
-        return [("A", p, None) for p in out.split("\0") if p and tracked(p)]
-    out = cg.git(
-        repo,
-        "diff",
-        "--name-status",
-        "-z",
-        "-M",
-        "--no-ext-diff",
-        unit.parent,
-        unit.sha,
-    )
-    tokens = out.split("\0")
-    result = []
-    i = 0
-    while i < len(tokens) and tokens[i]:
-        status = tokens[i][0]
-        if status in "RC":
-            old, new = tokens[i + 1], tokens[i + 2]
-            i += 3
-            if status == "C":
-                result.append(("A", new, None))
-            elif tracked(old) or tracked(new):
-                result.append(("R", new, old))
-            continue
-        path = tokens[i + 1]
-        i += 2
-        if tracked(path):
-            result.append((status, path, None))
-    return result
 
 
 GO_MODULE = re.compile(r"^\s*module\s+(\S+)", re.MULTILINE)
@@ -346,8 +281,8 @@ class Timeline:
                     found[pair] = (example, past or not owner.is_public(target))
         return found
 
-    def apply(self, idx: int, unit: cg.Unit, blobs: BlobReader) -> None:
-        rows = changes(self.repo, unit)
+    def apply(self, idx: int, unit: cg.Unit, blobs: cg.BlobReader) -> None:
+        rows = cg.changes(self.repo, unit, tracked)
         owners = self.policy.owners(p for _, p, _ in rows)
         structure = False
         for status, path, old in rows:
@@ -519,7 +454,7 @@ def pairs_report(repo: Path, label: str, policy: cg.PolicyMap, volatility: dict[
     volatility = volatility or {}
     units = cg.first_parent_units(repo)
     tl = Timeline(repo, policy)
-    blobs = BlobReader(repo)
+    blobs = cg.BlobReader(repo)
     try:
         for idx, unit in enumerate(units):
             tl.apply(idx, unit, blobs)

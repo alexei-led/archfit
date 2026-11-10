@@ -30,7 +30,6 @@ import math
 import random
 import re
 import sys
-import tempfile
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
@@ -220,50 +219,53 @@ class Site:
     module: str
 
 
-def holders(
-    repo: Path, rev: str, wanted: set[str], policy: cg.PolicyMap
-) -> dict[str, list[Site]]:
-    """Production sites in tree rev that hold each wanted literal exactly."""
-    if not wanted:
-        return {}
-    with tempfile.NamedTemporaryFile("w", suffix=".pat", delete=False) as fh:
-        fh.write("\n".join(sorted(wanted)) + "\n")
-        patterns = fh.name
-    try:
-        out = cg.git(
-            repo,
-            "grep",
-            "-n",
-            "-z",
-            "-F",
-            "--full-name",
-            "-f",
-            patterns,
-            rev,
-            "--",
-            *cg.CODE_PATHSPECS,
-            ok=(0, 1),
-        )
-    finally:
-        Path(patterns).unlink()
-    hits: list[tuple[str, int, str]] = []
-    for row in out.split("\n"):
-        parts = row.split("\0", 2)
-        if len(parts) != 3:
-            continue
-        path = parts[0].split(":", 1)[1]
-        hits.append((path, int(parts[1]), parts[2]))
-    owners = policy.owners(path for path, _, _ in hits)
-    found: dict[str, list[Site]] = defaultdict(list)
-    for path, line, text in hits:
-        owner = owners[path]
-        lang = cg.language(path)
-        if not owner.production or lang is None:
-            continue
-        for lit in code_literals(text, lang):
-            if lit in wanted:
-                found[lit].append(Site(path, line, owner.module))
-    return dict(found)
+def code_file(path: str) -> bool:
+    return cg.language(path) is not None
+
+
+class LiteralIndex:
+    """Literals of the production code in the current tree: literal -> {path: first line}.
+
+    Kept up to date from each unit's changed files, so a lookup needs no search of the tree."""
+
+    def __init__(self, policy: cg.PolicyMap, blobs: cg.BlobReader) -> None:
+        self.policy = policy
+        self.blobs = blobs
+        self.by_literal: dict[str, dict[str, int]] = defaultdict(dict)
+        self.by_file: dict[str, list[str]] = {}
+
+    def _drop(self, path: str) -> None:
+        for lit in self.by_file.pop(path, ()):
+            sites = self.by_literal[lit]
+            sites.pop(path, None)
+            if not sites:
+                del self.by_literal[lit]
+
+    def apply(self, rev: str, rows: list[tuple[str, str, str | None]]) -> None:
+        owners = self.policy.owners(path for _, path, _ in rows)
+        for status, path, old in rows:
+            if old is not None:
+                self._drop(old)
+            self._drop(path)
+            lang = cg.language(path)
+            if status == "D" or lang is None or not owners[path].production:
+                continue
+            first: dict[str, int] = {}
+            for n, line in enumerate((self.blobs.read(rev, path) or "").split("\n"), 1):
+                for lit in code_literals(line, lang):
+                    if len(lit) >= FLOOR:
+                        first.setdefault(lit, n)
+            self.by_file[path] = list(first)
+            for lit, n in first.items():
+                self.by_literal[lit][path] = n
+
+    def sites(self, literals: Iterable[str]) -> dict[str, list[Site]]:
+        found = {lit: self.by_literal[lit] for lit in literals if lit in self.by_literal}
+        owners = self.policy.owners(path for paths in found.values() for path in paths)
+        return {
+            lit: [Site(path, line, owners[path].module) for path, line in sorted(paths.items())]
+            for lit, paths in found.items()
+        }
 
 
 # --- scan ----------------------------------------------------------------------------------
@@ -322,9 +324,12 @@ class UnitStats:
 
 
 def scan_unit(
-    repo: Path, label: str, unit: cg.Unit, policy: cg.PolicyMap, stats: UnitStats
+    repo: Path, label: str, unit: cg.Unit, policy: cg.PolicyMap, stats: UnitStats, index: LiteralIndex
 ) -> list[Event]:
+    """Events of one unit. The index holds the parent tree on entry and this unit's tree on exit."""
+    changed = cg.changes(repo, unit, code_file)
     if unit.parent is None:
+        index.apply(unit.sha, changed)
         return []
     diff = cg.git(
         repo,
@@ -353,10 +358,11 @@ def scan_unit(
                 if len(lit) >= FLOOR:
                     sites[lit].append(Site(path, line_no, owner.module))
     stats.candidates += len(sites)
-    before = holders(repo, unit.parent, set(sites), policy)
+    before = index.sites(sites)
+    index.apply(unit.sha, changed)
     if not before:
         return []
-    after = holders(repo, unit.sha, set(before), policy)
+    after = index.sites(before)
     date = datetime.fromtimestamp(unit.timestamp, UTC).date().isoformat()
     events: list[Event] = []
     for lit, added_sites in sites.items():
@@ -426,10 +432,19 @@ def scan(
 ) -> tuple[list[Event], UnitStats]:
     stats = UnitStats()
     events: list[Event] = []
-    for unit in cg.first_parent_units(repo, since=since):
-        stats.units += 1
-        stats.merges += unit.is_merge
-        events.extend(scan_unit(repo, label, unit, policy, stats))
+    units = cg.first_parent_units(repo, since=since)
+    blobs = cg.BlobReader(repo)
+    try:
+        index = LiteralIndex(policy, blobs)
+        if units and units[0].parent:
+            start = units[0].parent
+            index.apply(start, [("A", path, None) for path in cg.tree_files(repo, start, code_file)])
+        for unit in units:
+            stats.units += 1
+            stats.merges += unit.is_merge
+            events.extend(scan_unit(repo, label, unit, policy, stats, index))
+    finally:
+        blobs.close()
     mark_heuristics(repo, events)
     return events, stats
 

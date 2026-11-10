@@ -60,6 +60,7 @@ GENERATED_HEADER = re.compile(
     r"^\s*(//|#)\s*Code generated .*DO NOT EDIT|@generated", re.MULTILINE
 )
 HEADER_LINES = 30
+MAX_BLOB = 1_000_000  # larger files are bundles or data, not code
 
 
 class GitError(RuntimeError):
@@ -114,6 +115,74 @@ def first_parent_units(
             )
         )
     return units
+
+
+def tree_files(repo: Path | str, rev: str, keep: Callable[[str], bool]) -> list[str]:
+    out = git(repo, "ls-tree", "-r", "-z", "--name-only", rev)
+    return [p for p in out.split("\0") if p and keep(p)]
+
+
+def changes(repo: Path, unit: Unit, tracked: Callable[[str], bool]) -> list[tuple[str, str, str | None]]:
+    """(status, path, old path) for tracked files; the root commit adds its whole tree."""
+    if unit.parent is None:
+        return [("A", p, None) for p in tree_files(repo, unit.sha, tracked)]
+    out = git(
+        repo,
+        "diff",
+        "--name-status",
+        "-z",
+        "-M",
+        "--no-ext-diff",
+        unit.parent,
+        unit.sha,
+    )
+    tokens = out.split("\0")
+    result = []
+    i = 0
+    while i < len(tokens) and tokens[i]:
+        status = tokens[i][0]
+        if status in "RC":
+            old, new = tokens[i + 1], tokens[i + 2]
+            i += 3
+            if status == "C":
+                result.append(("A", new, None))
+            elif tracked(old) or tracked(new):
+                result.append(("R", new, old))
+            continue
+        path = tokens[i + 1]
+        i += 2
+        if tracked(path):
+            result.append((status, path, None))
+    return result
+
+
+class BlobReader:
+    """One `git cat-file --batch` process for the whole run."""
+
+    def __init__(self, repo: Path) -> None:
+        self._proc = subprocess.Popen(
+            ["git", "-C", str(repo), "cat-file", "--batch"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+
+    def read(self, rev: str, path: str) -> str | None:
+        assert self._proc.stdin and self._proc.stdout
+        self._proc.stdin.write(f"{rev}:{path}\n".encode())
+        self._proc.stdin.flush()
+        header = self._proc.stdout.readline().decode().split()
+        if len(header) < 3 or header[1] != "blob":
+            return None
+        size = int(header[2])
+        data = self._proc.stdout.read(size + 1)[:size]
+        return None if size > MAX_BLOB else data.decode("utf-8", errors="replace")
+
+    def close(self) -> None:
+        if self._proc.stdin:
+            self._proc.stdin.close()
+        if self._proc.stdout:
+            self._proc.stdout.close()
+        self._proc.wait()
 
 
 def language(path: str) -> str | None:
