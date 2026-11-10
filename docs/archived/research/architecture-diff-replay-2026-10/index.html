@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
+<title>Archfit · Change review prototype</title>
+<style>
+/* Tokens and compact components follow archfit-app/web/src/app.css. */
+:root{--bg:#fff;--bg-subtle:#f6f8fa;--bg-inset:#eff2f5;--border:#d1d9e0;--border-muted:#dde3e9;--fg:#1f2328;--fg-muted:#59636e;--accent:#0969da;--accent-subtle:#ddf4ff;--success:#1a7f37;--success-subtle:#dafbe1;--danger:#d1242f;--danger-subtle:#ffebe9;--attention:#9a6700;--attention-subtle:#fff8c5;--done:#8250df;--neutral:#eff2f5;--radius:6px;--font:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;color-scheme:light}
+:root[data-theme=dark]{--bg:#0d1117;--bg-subtle:#151b23;--bg-inset:#010409;--border:#3d444d;--border-muted:#2f353d;--fg:#f0f6fc;--fg-muted:#9198a1;--accent:#4493f8;--accent-subtle:#388bfd1a;--success:#3fb950;--success-subtle:#2ea04326;--danger:#f85149;--danger-subtle:#f851491a;--attention:#d29922;--attention-subtle:#bb800926;--done:#ab7df8;--neutral:#656c7633;color-scheme:dark}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]):not([data-theme=dark]){--bg:#0d1117;--bg-subtle:#151b23;--bg-inset:#010409;--border:#3d444d;--border-muted:#2f353d;--fg:#f0f6fc;--fg-muted:#9198a1;--accent:#4493f8;--accent-subtle:#388bfd1a;--success:#3fb950;--success-subtle:#2ea04326;--danger:#f85149;--danger-subtle:#f851491a;--attention:#d29922;--attention-subtle:#bb800926;--done:#ab7df8;--neutral:#656c7633;color-scheme:dark}}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--font)}button,select,textarea{font:inherit}button{cursor:pointer}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}button,a,select,summary{touch-action:manipulation}:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}h1,h2,h3,p{margin:0}h1{font-size:24px;line-height:1.3;font-weight:600}h2{font-size:20px;line-height:1.35;font-weight:600}h3{font-size:14px;font-weight:600}code,.mono{font:12px var(--mono)}code{padding:2px 5px;background:var(--neutral);border-radius:4px;overflow-wrap:anywhere}pre{margin:0;padding:12px 15px;background:var(--bg-subtle);border:1px solid var(--border-muted);border-radius:6px;font:12px/1.6 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}.muted{color:var(--fg-muted)}.small{font-size:12px}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.between{justify-content:space-between}.stack{display:grid;gap:16px}.stack-sm{display:grid;gap:8px}.grow{flex:1}.label{display:inline-flex;align-items:center;padding:0 7px;border:1px solid var(--border);border-radius:999px;font-size:12px;line-height:20px;white-space:nowrap;color:var(--fg-muted)}.label.success{color:var(--success);border-color:var(--success)}.label.attention{color:var(--attention);border-color:var(--attention)}.label.done{color:var(--done);border-color:var(--done)}.label.accent{color:var(--accent);border-color:var(--accent)}.counter{background:var(--neutral);padding:0 6px;border-radius:999px;font-size:12px;font-weight:500}.state{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;color:#fff;background:#59636e}.state.merged{background:#8250df}.state.attention{background:#9a6700}
+.demo-bar{padding:9px 24px;background:var(--bg-inset);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:12px}.demo-label{font-weight:650;color:var(--fg-muted)}.seg{display:inline-flex;padding:2px;border:1px solid var(--border);border-radius:6px;background:var(--neutral);gap:2px}.seg button{border:1px solid transparent;background:transparent;color:var(--fg);border-radius:4px;padding:3px 10px;font-size:12px}.seg button[aria-pressed=true]{background:var(--bg);border-color:var(--border);font-weight:600}.demo-bar select{background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 26px 5px 8px;font-size:12px;max-width:100%}.demo-options{position:relative}.demo-options>summary{cursor:pointer;list-style:none;color:var(--accent)}.demo-options>summary:after{content:" ▾"}.demo-options .options{position:absolute;z-index:2;right:0;top:27px;width:280px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:14px;box-shadow:0 6px 20px #0002}.demo-options label{display:grid;gap:6px}.demo-options select{width:100%}.demo-options p{margin-top:8px;color:var(--fg-muted);font-size:11px}.preview-note{font-size:11px;color:var(--fg-muted);padding:7px 24px;border-bottom:1px solid var(--border-muted)}
+.product-header{padding:12px 24px;background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap}.brand{display:inline-flex;align-items:center;gap:7px;font-weight:600}.brand svg{width:24px;height:24px}.crumb{font-size:15px}.sep{color:var(--fg-muted);padding:0 4px}.theme{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}.theme button{border:0;background:var(--bg);color:var(--fg-muted);font-size:12px;padding:3px 8px}.theme button+button{border-left:1px solid var(--border)}.theme button[aria-pressed=true]{font-weight:600;background:var(--bg-subtle);color:var(--fg)}.page{max-width:1152px;margin:auto;padding:24px}.page-head{padding-bottom:17px;border-bottom:1px solid var(--border-muted);margin-bottom:18px}.page-head h1{margin-bottom:8px}.page-head .row{font-size:12px}.unav{display:flex;gap:8px;border-bottom:1px solid var(--border);margin-bottom:18px}.unav button{position:relative;background:none;color:var(--fg);border:0;padding:8px 10px 10px;font-size:14px}.unav button[aria-pressed=true]{font-weight:600}.unav button[aria-pressed=true]:after{content:"";position:absolute;bottom:-1px;left:9px;right:9px;height:2px;background:#fd8c73}.gh-nav{display:flex;gap:25px;padding:2px 0 12px;border-bottom:1px solid var(--border);font-size:13px;margin-bottom:22px}.gh-nav strong{position:relative}.gh-nav strong:after{content:"";position:absolute;bottom:-13px;left:0;right:0;height:2px;background:#fd8c73}.gh-avatar{height:32px;width:32px;border-radius:6px;display:grid;place-items:center;background:var(--bg-subtle);border:1px solid var(--border);font-weight:700}.conversation{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;max-width:990px}.box{background:var(--bg);border:1px solid var(--border);border-radius:6px;overflow:hidden}.box-head{padding:11px 16px;background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px}.box-body{padding:18px}.box-foot{padding:9px 16px;background:var(--bg-subtle);border-top:1px solid var(--border-muted);font-size:12px;color:var(--fg-muted)}.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-subtle);color:var(--fg);padding:6px 13px;min-height:33px;font-size:12px;font-weight:600;text-decoration:none}.btn:hover{background:var(--neutral);text-decoration:none}.btn.primary{background:#1f883d;color:white;border-color:#1f232826}.btn.primary:hover{background:#1c8139}.text-button{border:0;background:none;color:var(--accent);padding:0;font:inherit;text-align:left;cursor:pointer}.text-button:hover{text-decoration:underline}.merge-line{font-size:13px;display:flex;gap:8px;align-items:center}.merge-line:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--fg-muted);flex:none}.merge-line.warning:before{background:var(--attention)}.callout{border-left:3px solid var(--accent);padding:8px 12px;background:var(--accent-subtle);font-size:12px;border-radius:0 4px 4px 0}.callout.warn{background:var(--attention-subtle);border-color:var(--attention)}
+.change-title{font-size:18px;margin:5px 0 14px}.change-meta{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:6px}.meaning{font-size:13px;color:var(--fg-muted);margin:10px 0}.interpretation-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-right:5px}.pair{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border-muted);border-radius:6px;overflow:hidden}.diagram-side{padding:12px 14px}.diagram-side+.diagram-side{border-left:1px solid var(--border-muted)}.diagram-title{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-muted);font-weight:600;margin-bottom:12px}.diagram-title .after{color:var(--success)}.flow{display:flex;gap:25px;align-items:stretch;padding:2px 0}.node{position:relative;flex:1;min-width:0;border:1px solid var(--border);border-radius:5px;background:var(--bg-subtle);padding:11px 6px;text-align:center;display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:70px}.node strong{font-size:12px;font-weight:600;line-height:1.3}.node small{font-size:10px;line-height:1.4;color:var(--fg-muted);overflow-wrap:anywhere}.node:not(:last-child):after{content:"→";position:absolute;left:calc(100% + 7px);top:50%;transform:translateY(-50%);font-size:18px;color:var(--fg-muted)}.flow.before .node:last-child{border-style:dashed}.flow.after .node{border-color:var(--success)}.flow.after .node:not(:last-child):after{color:var(--success)}.diagram-caption{font-size:11px;color:var(--fg-muted);margin-top:10px}.next{padding:12px 0 0;font-size:13px}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}.limit{font-size:11px;color:var(--fg-muted);margin-top:10px}.limit.warning{color:var(--attention)}.map-strip{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--bg-subtle);border:1px solid var(--border-muted);border-radius:6px;padding:14px;font-size:13px}.map-strip strong{font-size:18px}.map-strip .arrow{color:var(--fg-muted)}.quiet{padding:24px 20px;text-align:center}.quiet h2{font-size:18px;margin:8px 0}.quiet .symbol{color:var(--fg-muted);font-size:23px}.result-strip{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:16px;border:1px solid var(--border);border-radius:6px;background:var(--bg-subtle)}.folds{margin-top:16px}.disclosure{border:1px solid var(--border);border-radius:6px;background:var(--bg);margin-top:10px}.disclosure>summary{cursor:pointer;padding:10px 14px;font-size:12px;font-weight:600;display:list-item;list-style-position:inside}.disclosure>.details-body{padding:2px 14px 14px;display:grid;gap:10px;font-size:12px}.agents-json{max-height:310px;overflow:auto}.copy-status{font-size:12px;color:var(--success)}.copy-status:empty{display:none}.provenance{font-size:11px;color:var(--fg-muted);padding-top:13px}.graph-panel{max-width:1056px}.graph-panel .diagram-side{padding:22px}.graph-panel .flow{min-height:100px}.graph-panel .node{min-height:90px}.footer{border-top:1px solid var(--border-muted);padding-top:14px;margin-top:26px;font-size:11px;color:var(--fg-muted);display:flex;gap:15px;flex-wrap:wrap}.check-only{max-width:990px;padding:16px;border:1px solid var(--border);border-radius:6px;background:var(--bg-subtle)}.check-only h2{font-size:16px}.check-only p{margin-top:5px}.app-summary{max-width:1056px}.pill-row{display:flex;gap:8px;flex-wrap:wrap}.info-icon{font-size:13px;color:var(--fg-muted)}
+dialog{position:fixed;inset:0 0 0 auto;margin:0;height:100dvh;max-height:100dvh;width:min(520px,100%);max-width:100%;padding:0;border:0;border-left:1px solid var(--border);background:var(--bg);color:var(--fg);box-shadow:-12px 0 40px #0002}dialog::backdrop{background:#0004}.drawer-head{position:sticky;top:0;background:var(--bg-subtle);border-bottom:1px solid var(--border);padding:17px 20px;display:flex;justify-content:space-between;gap:15px;align-items:center;z-index:1}.drawer-head h2{font-size:18px}.drawer-body{padding:20px;display:grid;gap:18px}.close{background:transparent;border:0;color:var(--fg);font-size:24px;padding:0 5px;line-height:1;min-height:30px}.evidence-item{padding-bottom:15px;border-bottom:1px solid var(--border-muted)}.evidence-item h3{margin-bottom:7px}.evidence-item p{font-size:12px;color:var(--fg-muted);margin:6px 0}.evidence-item a{font-size:12px}dl.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:7px 14px;margin:0;font-size:12px}dt{color:var(--fg-muted)}dd{margin:0;overflow-wrap:anywhere}textarea{width:100%;min-height:200px;padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-subtle);color:var(--fg);font:12px/1.6 var(--mono);resize:vertical}
+@media(max-width:850px){.demo-bar{gap:10px}.pair{grid-template-columns:1fr}.diagram-side+.diagram-side{border-left:0;border-top:1px solid var(--border-muted)}.flow{gap:24px}.conversation{max-width:none}.result-strip{align-items:flex-start}}
+@media(max-width:540px){.demo-bar,.product-header{padding:10px 16px}.demo-bar .demo-case{width:100%}.demo-bar select{width:100%}.demo-bar .grow{display:none}.demo-options .options{left:0;right:auto}.page{padding:16px}.conversation{grid-template-columns:1fr}.gh-avatar{display:none}.page-head h1{font-size:21px}.box-body{padding:15px}.change-title{font-size:17px}.theme{margin-left:auto}.product-header .grow{display:none}.crumb{font-size:13px}.gh-nav{gap:18px;font-size:12px}.flow{gap:18px}.node:not(:last-child):after{left:calc(100% + 4px);font-size:16px}.node{padding:10px 5px}.diagram-side{padding:12px 10px}.graph-panel .diagram-side{padding:16px 10px}.drawer-body{padding:16px}}
+</style>
+</head>
+<body>
+<header class="demo-bar" aria-label="Prototype controls">
+<span class="demo-label">Prototype</span>
+<div class="seg" role="group" aria-label="Preview surface"><button type="button" data-view="pr" aria-pressed="true">GitHub PR</button><button type="button" data-view="app" aria-pressed="false">Archfit App</button></div>
+<label class="demo-case"><span class="muted">Case </span><select id="scenario" aria-label="Replay case"><option value="restart">#341 · restart boundary</option><option value="monitor">#350 · neutral monitor</option><option value="mapping">#342 · policy map</option><option value="quiet">#363 · release notes</option><option value="unknown">Missing evidence · synthetic</option></select></label>
+<span class="grow"></span>
+<details class="demo-options"><summary>Test options</summary><div class="options"><label for="classifier">Interpretation<select id="classifier"><option value="proposed">Simulated Jev/Clef label</option><option value="off">Facts only</option><option value="abstain">Classifier abstains</option></select></label><p id="routing-note"></p></div></details>
+<a href="design.html">Design notes ↗</a>
+</header>
+<div class="preview-note">Real PR evidence · proposed screens · simulated interpretation · no GitHub writes</div>
+
+<section id="view-pr" data-panel="pr">
+<div class="product-header"><span class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M7 9 5 12l2 3m10-6 2 3-2 3m-6-7-2 10" fill="none" stroke="var(--bg)" stroke-width="1.7"/></svg></span><span class="crumb">alexei-led <span class="sep">/</span> <strong>ccgram</strong></span><span class="grow"></span><div class="theme" role="group" aria-label="Theme"><button type="button" data-theme="auto" aria-pressed="false">Auto</button><button type="button" data-theme="light" aria-pressed="true">Light</button><button type="button" data-theme="dark" aria-pressed="false">Dark</button></div></div>
+<main class="page">
+<div class="page-head"><h1><span data-bind="prTitle"></span> <span class="muted" data-bind="prNumber"></span></h1><div class="row"><span class="state merged" data-lifecycle>Merged</span><span class="muted" data-bind="date"></span><a data-original target="_blank" rel="noopener noreferrer">Original PR ↗</a></div></div>
+<div class="gh-nav" aria-label="GitHub context"><strong>Conversation</strong><span class="muted">Commits</span><span class="muted">Checks</span><span class="muted">Files changed</span></div>
+<div class="conversation" id="pr-conversation"><div class="gh-avatar" aria-hidden="true">A</div><article class="box"><div class="box-head"><span><strong>archfit-review</strong> <span class="label">bot</span></span><span class="muted">Proposed feedback</span></div><div class="box-body"><div class="merge-line" data-merge-line></div><div class="divider" style="height:12px"></div><div id="pr-card"></div><div class="actions"><button class="text-button" type="button" data-open-app>View change in Archfit →</button></div><div class="folds" data-folds="pr"></div></div></article></div>
+<div id="pr-quiet" class="check-only" hidden><div class="row between"><h2>Archfit · advisory</h2><button type="button" class="text-button" data-open-app>View details →</button></div><p>No source architecture change. No additional comment.</p><details class="disclosure"><summary>Repository attention <span class="counter">95</span></summary><div class="details-body">Existing advisories and evidence gaps remain in the check. They are not new source changes in this release-note PR.</div></details></div>
+<footer class="footer"><span>Proposed comment uses GitHub-compatible content: text, a Mermaid-style diagram, links and folds.</span><a href="replay/index.html">Replay evidence ↗</a></footer>
+</main>
+</section>
+
+<section id="view-app" data-panel="app" hidden>
+<div class="product-header"><span class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" opacity=".12"/><path d="M6 17 12 6l6 11M8.5 13h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Archfit</span><span class="crumb"><span class="sep">/</span> alexei-led <span class="sep">/</span> <strong>ccgram</strong> <span class="sep">/</span> <span data-bind="prNumber"></span></span><span class="grow"></span><div class="theme" role="group" aria-label="Theme"><button type="button" data-theme="auto" aria-pressed="false">Auto</button><button type="button" data-theme="light" aria-pressed="true">Light</button><button type="button" data-theme="dark" aria-pressed="false">Dark</button></div></div>
+<main class="page">
+<div class="page-head"><h1><span data-bind="prTitle"></span> <span class="muted" data-bind="prNumber"></span></h1><div class="row"><span class="state merged" data-lifecycle>Merged</span><code data-bind="head"></code><span class="muted" data-bind="date"></span><a data-original target="_blank" rel="noopener noreferrer">View on GitHub ↗</a></div></div>
+<nav class="unav" aria-label="Pull request"><button type="button" data-tab="findings" aria-pressed="true">Findings</button><button type="button" data-tab="graph" aria-pressed="false">Graph</button></nav>
+<div class="app-summary">
+<div class="result-strip"><div class="merge-line" data-merge-line></div><button type="button" class="text-button small" data-evidence>Run &amp; evidence</button></div>
+<div id="app-findings"><article class="box"><div class="box-head"><h3>This change</h3><span class="label" id="app-event-tag"></span></div><div class="box-body" id="app-card"></div></article><div data-folds="app" class="folds"></div></div>
+<div id="app-graph" class="graph-panel" hidden><article class="box"><div class="box-head"><h3 data-presentation="title"></h3><span class="label">Focused view</span></div><div class="box-body"><div id="expanded-diagram"></div><p class="limit" data-presentation="limit"></p><div class="actions"><button type="button" class="btn primary" data-evidence>View evidence</button></div></div></article></div>
+<p class="provenance">Historical replay · customer-attested reports · interpretation never changes the gate.</p>
+</div>
+<footer class="footer"><a href="design.html">How it works</a><a href="replay/index.html">40-PR replay</a><span>Focused PR prototype; production code is unchanged.</span></footer>
+</main>
+</section>
+
+<template id="card-template">
+<h2 class="change-title" data-card-title></h2>
+<div data-diagram></div>
+<p class="meaning" data-meaning></p>
+<p class="next"><strong>Next:</strong> <span data-next></span></p>
+<p class="limit" data-limit></p>
+<div class="actions" data-app-actions><button type="button" class="btn primary" data-primary>View evidence</button><a class="btn primary" data-external-action target="_blank" rel="noopener noreferrer" hidden></a><button type="button" class="btn" data-copy>Copy review task</button><span class="copy-status" role="status" data-copy-status></span></div>
+</template>
+
+<dialog id="evidence-drawer" aria-labelledby="evidence-title"><header class="drawer-head"><h2 id="evidence-title">Change evidence</h2><button type="button" class="close" data-close aria-label="Close evidence">×</button></header><div class="drawer-body"><div id="recovery" class="callout warn" hidden></div><div id="evidence-items"></div><details class="disclosure"><summary>Comparison &amp; run</summary><div class="details-body"><dl class="kv"><dt>Code</dt><dd data-bind="codeScope"></dd><dt>Report</dt><dd data-bind="reportScope"></dd><dt>Result</dt><dd data-bind="check"></dd></dl><p data-bind="comparisonLimit"></p><p>Customer-attested. Authentication is not independent proof of execution.</p></div></details><details class="disclosure"><summary>Source excerpt</summary><div class="details-body"><pre data-bind="source"></pre></div></details><details class="disclosure"><summary>Interpretation · simulated</summary><div class="details-body"><p id="model-explanation"></p><pre id="model-output"></pre><a href="design.html">Jev/Clef design and limits ↗</a></div></details></div></dialog>
+<dialog id="copy-dialog" aria-labelledby="copy-title"><header class="drawer-head"><h2 id="copy-title">Copy review task</h2><button type="button" class="close" data-close aria-label="Close copy task">×</button></header><div class="drawer-body"><p class="small">Clipboard access is unavailable here. Select and copy the task below. Nothing runs automatically.</p><textarea id="copy-fallback" readonly aria-label="Review task to copy"></textarea></div></dialog>
+<noscript><p style="padding:20px">Enable JavaScript to populate the local replay cases. No network requests are made.</p></noscript>
+<script>
+(() => {
+"use strict";
+const cases = {
+  "monitor": {
+    "prNumber": "#350",
+    "prTitle": "Isolate monitor and lifecycle callbacks",
+    "date": "Merged 25 October 2026",
+    "prURL": "https://github.com/alexei-led/ccgram/pull/350",
+    "feedbackURL": "https://github.com/alexei-led/ccgram/pull/350#issuecomment-6396991611",
+    "oldFeedback": "Architecture needs attention · advisory · no baseline. 95 advisories.",
+    "check": "Historical archfit/state: neutral · advisory",
+    "debt": "95 advisory findings in the archived head report; not all introduced by this PR.",
+    "base": "bfe7bb7",
+    "head": "6cfe0eb",
+    "codeScope": "Final integrated diff: bfe7bb7 → 6cfe0eb",
+    "reportScope": "Archived report compared against 2a19f3f, an earlier base.",
+    "comparisonLimit": "Different bases: the source diagram uses the final integrated diff. The archived report used an earlier base. Do not combine their counts into a single improvement delta.",
+    "intent": "The historical source assigns recipient routing and destructive topic policy to an adapter, not to the stream consumer.",
+    "facts": [
+      [
+        "The old monitor imports TelegramClient and a private death policy.",
+        "Both references are visible in the historical monitor source. Their removal is established by the code diff.",
+        "Source observation",
+        "https://github.com/alexei-led/ccgram/blob/bfe7bb77995870124d1a5a1a595f4ae8132ffcfe/src/ccgram/event_stream_monitor.py#L135-L153"
+      ],
+      [
+        "The head accepts and awaits on_window_died.",
+        "Bootstrap supplies the callback; the adapter uses iter_bound_topics before invoking the existing policy.",
+        "Source observation",
+        "https://github.com/alexei-led/ccgram/blob/6cfe0ebd37933d640239e3eb00afbd31b4259693/src/ccgram/event_stream_monitor.py#L43-L50"
+      ],
+      [
+        "An introduced report group has 51 members.",
+        "Its representative path does not identify the exact newly added member. It must not be presented as a new defect at that representative location.",
+        "Report limitation",
+        "https://github.com/alexei-led/ccgram/pull/350#issuecomment-6396991611"
+      ]
+    ],
+    "source": "BEFORE · event_stream_monitor.py\nfrom .telegram_client import TelegramClient, unwrap_bot\n# In _notify_dead:\nfrom .handlers.polling.window_tick.apply import (\n    _handle_dead_window_notification,\n)\n\nAFTER · event_stream_monitor.py\non_window_died: Callable[[str], Awaitable[None]]\n# In _dispatch:\nawait self._on_window_died(event.window_id)\n\nAFTER · bootstrap.py\nasync def on_window_died(window_id: str) -> None:\n    await handle_window_death(application.bot, window_id)\n\nAFTER · handlers/polling/window_death.py\nfor user_id, _chat_id, thread_id, bound_wid in iter_bound_topics():\n    if bound_wid == window_id:\n        await _handle_dead_window_notification(bot, user_id, thread_id, window_id)",
+    "route": "classify",
+    "transformation": "responsibility_move",
+    "focus": "preserve_callback_and_snapshot_contract",
+    "nextStep": "Review the callback wiring, awaiting and recipient snapshot. Do not turn a generic move-functionality hypothesis into a request to merge these modules.",
+    "constraint": "Do not change policy or merge modules just to improve a coupling score. The existing tests and full source review—not this label—must establish behavioral correctness."
+  },
+  "restart": {
+    "prNumber": "#341",
+    "prTitle": "Make restart state runtime-owned",
+    "date": "Merged 25 October 2026",
+    "prURL": "https://github.com/alexei-led/ccgram/pull/341",
+    "feedbackURL": "https://github.com/alexei-led/ccgram/pull/341#issuecomment-6368107632",
+    "oldFeedback": "Architecture needs attention · advisory · no baseline. 87 advisories.",
+    "check": "Historical archfit/state: neutral · advisory",
+    "debt": "87 advisory findings remain in the archived head report.",
+    "base": "8828da1",
+    "head": "64bfc0c",
+    "codeScope": "Final integrated diff: 8828da1 → 64bfc0c",
+    "reportScope": "Archived comparison uses 8828da1; one resolved ID, no introduced IDs.",
+    "comparisonLimit": "Comparable historical observation: the previous artifact identifies the resolved upgrade → main finding. This does not establish that all static cycles disappeared.",
+    "intent": "The historical refactoring explicitly moves restart ownership to the host and preserves the watchdog-before-stop sequence.",
+    "facts": [
+      [
+        "The upgrade → main finding is resolved.",
+        "The earlier artifact names finding f52900402d1eaf48f57d9f4e7711160d; the head report lists it as resolved.",
+        "Historical artifact",
+        "https://github.com/alexei-led/ccgram/pull/341"
+      ],
+      [
+        "The handler retrieves REQUEST_RESTART_KEY and calls it.",
+        "The head source includes a manual-restart fallback and calls request_restart before the watchdog and stop.",
+        "Source observation",
+        "https://github.com/alexei-led/ccgram/blob/64bfc0cbb8719e729638474a113c289f2f5bbf87/src/ccgram/handlers/upgrade.py#L94-L115"
+      ],
+      [
+        "The runtime supplies the callback and owns restart_requested.",
+        "The flag is local to run_bot; the callback closes over it.",
+        "Source observation",
+        "https://github.com/alexei-led/ccgram/blob/64bfc0cbb8719e729638474a113c289f2f5bbf87/src/ccgram/main.py#L325-L340"
+      ]
+    ],
+    "source": "BEFORE · handlers/upgrade.py\nfrom .. import main as main_module\nmain_module._restart_requested = True\n\nAFTER · main.py\nrestart_requested = False\ndef request_restart() -> None:\n    nonlocal restart_requested\n    restart_requested = True\napplication.bot_data[REQUEST_RESTART_KEY] = request_restart\n\nAFTER · handlers/upgrade.py\nrequest_restart = context.bot_data.get(REQUEST_RESTART_KEY)\n# Manual-restart fallback when callback is absent.\nrequest_restart()\narm_shutdown_watchdog()\ncontext.application.stop_running()",
+    "route": "classify",
+    "transformation": "private_state_to_callback",
+    "focus": "preserve_restart_sequence",
+    "nextStep": "Preserve callback wiring, request → watchdog → stop ordering and the manual-restart fallback. Keep unrelated repository debt out of this repair.",
+    "constraint": "Do not claim every cycle is fixed. Check behavior separately; do not infer that a removed import proves runtime correctness."
+  },
+  "mapping": {
+    "prNumber": "#342",
+    "prTitle": "Map shared core and adapter contracts",
+    "date": "Merged 25 October 2026",
+    "prURL": "https://github.com/alexei-led/ccgram/pull/342",
+    "feedbackURL": "https://github.com/alexei-led/ccgram/pull/342",
+    "oldFeedback": "Architecture needs attention. 98 advisories after the previous report’s 87.",
+    "check": "Historical archfit/state: neutral · advisory",
+    "debt": "98 advisories in the archived report; a new map changes what is classified.",
+    "base": "64bfc0c",
+    "head": "2a19f3f",
+    "codeScope": "Only .archfit.yaml changed",
+    "reportScope": "Adjacent reports have different model/profile inputs.",
+    "comparisonLimit": "Do not subtract 87 from 98 and call the difference new architectural debt. Separate source change from policy and measurement change.",
+    "intent": "The PR maps previously unowned components and names selected contracts. Domain labels remain design hypotheses.",
+    "facts": [
+      [
+        "The diff changes .archfit.yaml only.",
+        "No production implementation file changes in this PR.",
+        "Git diff",
+        "https://github.com/alexei-led/ccgram/pull/342/files"
+      ],
+      [
+        "The archived report contains 98 findings.",
+        "The preceding report contained 87 under different model/profile inputs.",
+        "Measurement identity",
+        "https://github.com/alexei-led/ccgram/pull/342"
+      ],
+      [
+        "New ownership and public surfaces are explicit policy declarations.",
+        "They need owner review, not an LLM judgment of code quality.",
+        "Policy evidence",
+        "https://github.com/alexei-led/ccgram/blob/2a19f3f21750a5f233941fdffdf32f7b6c4e8df1/.archfit.yaml"
+      ]
+    ],
+    "source": "GIT CHANGE INVENTORY\n  .archfit.yaml only\n\nADJACENT REPORTS\n  previous: 87 advisories\n  expanded map: 98 advisories\n  model/profile identity: different\n\nCONCLUSION\n  Count delta is not a code-quality delta.",
+    "route": "skip_policy",
+    "nextStep": "Confirm the added ownership and public declarations. Evaluate any policy loosening through the existing owner-approval workflow.",
+    "constraint": "Do not create source-repair tasks from a count increase caused by changed measurement inputs."
+  },
+  "quiet": {
+    "prNumber": "#363",
+    "prTitle": "Prepare v4.21.0 release notes",
+    "date": "Merged 29 October 2026",
+    "prURL": "https://github.com/alexei-led/ccgram/pull/363",
+    "feedbackURL": "https://github.com/alexei-led/ccgram/pull/363#issuecomment-6489707536",
+    "oldFeedback": "0 introduced findings, 95 pre-existing. The comment lists old api → session_protocol and bootstrap dependencies.",
+    "check": "Historical archfit/state: neutral · advisory",
+    "debt": "95 pre-existing advisories remain accessible separately.",
+    "base": "25de090",
+    "head": "b375cd7",
+    "codeScope": "CHANGELOG.md only",
+    "reportScope": "Historical comment: 0 introduced, 95 pre-existing.",
+    "comparisonLimit": "Quiet refers to irrelevant commentary, not to suppressing required checks or evidence failures. No model is called for this no-event case.",
+    "intent": "This change documents a release. It does not modify module responsibilities or integration contracts.",
+    "facts": [
+      [
+        "Only CHANGELOG.md changes.",
+        "The final integrated diff has 28 additions in one documentation file.",
+        "Git diff",
+        "https://github.com/alexei-led/ccgram/pull/363/files"
+      ],
+      [
+        "The historical comment reports zero introduced findings.",
+        "Its 95 pre-existing advisories are not new tasks for the release-note author.",
+        "Existing feedback",
+        "https://github.com/alexei-led/ccgram/pull/363#issuecomment-6489707536"
+      ]
+    ],
+    "source": "DIFF SCOPE\n  CHANGELOG.md\n  28 additions\n\nARCHIVED FINDING ORIGIN\n  introduced: 0\n  pre-existing: 95\n\nPROPOSED ACTION\n  Keep check result. Do not add architectural advice.",
+    "route": "skip_no_event",
+    "nextStep": "Do not launch an architectural investigation or manufacture a refactoring recommendation.",
+    "constraint": "Keep required checks and repository evidence visible; omit the irrelevant architecture comment."
+  },
+  "unknown": {
+    "prNumber": "Failure fixture",
+    "prTitle": "Base inventory did not complete",
+    "date": "Synthetic stress case · not a historical ccgram PR",
+    "prURL": "https://github.com/alexei-led/ccgram",
+    "feedbackURL": "https://github.com/alexei-led/ccgram",
+    "oldFeedback": "Synthetic condition: required base evidence is missing. No historical report is being quoted.",
+    "check": "Synthetic result: required evidence missing",
+    "debt": "Not established by this fixture.",
+    "base": "incomplete",
+    "head": "available",
+    "codeScope": "Cannot compare complete two-sided source inventories",
+    "reportScope": "Synthetic failure; not an actual archived result.",
+    "comparisonLimit": "Model call bypassed. Restore the exact base environment and rerun with compatible measurement settings.",
+    "intent": "A required measurement cannot be replaced by a plausible narrative.",
+    "facts": [
+      [
+        "The base inventory is incomplete.",
+        "Synthetic scenario used only to test the design’s abstention behavior.",
+        "Fixture",
+        null
+      ],
+      [
+        "Required evidence still needs action with the model off.",
+        "Advisory routing cannot override the evidence result.",
+        "Design constraint",
+        null
+      ]
+    ],
+    "source": "SYNTHETIC INPUT\n  base.inventory: partial\n  head.inventory: complete\n\nDELTA\n  status: not established\n\nCLASSIFIER\n  not called",
+    "route": "skip_incomplete",
+    "nextStep": "Repair the missing analyzer inputs and rerun. Do not change architecture or policy to make the comparison appear complete.",
+    "constraint": "Never baseline missing evidence or let a classifier infer absent dependencies."
+  }
+};
+const presentation = {
+  "restart": {
+    "title": "Private restart-state access removed",
+    "tag": "1 resolved finding",
+    "meaning": "Restart state now belongs to the runtime.",
+    "next": "Check the restart order: request → watchdog → stop.",
+    "before": [
+      [
+        "Upgrade handler",
+        "feature code"
+      ],
+      [
+        "Private flag",
+        "main._restart_requested"
+      ]
+    ],
+    "after": [
+      [
+        "Upgrade handler",
+        "requests restart"
+      ],
+      [
+        "Callback",
+        "request_restart()"
+      ],
+      [
+        "Runtime",
+        "owns state"
+      ]
+    ],
+    "beforeLabel": "Removed private access",
+    "afterLabel": "Runtime-supplied callback",
+    "limit": "One access removed. Other cycles are not proven resolved.",
+    "count": "87",
+    "primary": "View evidence"
+  },
+  "monitor": {
+    "title": "UI routing moved out of the monitor",
+    "tag": "Refactoring",
+    "meaning": "Keep UI policy in the adapter, not the monitor.",
+    "next": "Check callback awaiting and the recipient snapshot.",
+    "before": [
+      [
+        "Monitor",
+        "event stream"
+      ],
+      [
+        "Telegram internals",
+        "client + private policy"
+      ]
+    ],
+    "after": [
+      [
+        "Monitor",
+        "emits event"
+      ],
+      [
+        "Callback",
+        "awaited"
+      ],
+      [
+        "UI adapter",
+        "routes recipients"
+      ]
+    ],
+    "beforeLabel": "Direct UI dependencies",
+    "afterLabel": "Callback + narrow adapter",
+    "limit": "Source and archived report use different bases. No numeric improvement claimed.",
+    "count": "95",
+    "primary": "View evidence"
+  },
+  "mapping": {
+    "title": "Policy map expanded. Code unchanged.",
+    "tag": "Policy change",
+    "meaning": "More findings do not mean the code became worse.",
+    "next": "Review the new ownership and public-surface declarations.",
+    "before": [],
+    "after": [],
+    "beforeLabel": "",
+    "afterLabel": "",
+    "limit": "87 → 98 advisories use different measurement inputs; they are not a quality trend.",
+    "count": "98",
+    "primary": "View policy diff ↗"
+  },
+  "quiet": {
+    "title": "No source architecture change",
+    "tag": "Docs only",
+    "meaning": "",
+    "next": "Review the release notes as usual.",
+    "before": [],
+    "after": [],
+    "beforeLabel": "",
+    "afterLabel": "",
+    "limit": "Required checks and repository attention remain available.",
+    "count": "95",
+    "primary": "View release notes ↗"
+  },
+  "unknown": {
+    "title": "Cannot compare this change",
+    "tag": "Evidence needed",
+    "meaning": "",
+    "next": "Restore the base analyzer inputs, then rerun the comparison.",
+    "before": [],
+    "after": [],
+    "beforeLabel": "",
+    "afterLabel": "",
+    "limit": "Missing evidence is not a pass.",
+    "count": "",
+    "primary": "Show recovery steps"
+  }
+};
+const state={scenario:"restart",view:"pr",tab:"findings",classifier:"proposed",theme:"light"};
+const byId=id=>document.getElementById(id);
+
+function showView(view){
+ state.view=view;
+ document.querySelectorAll("[data-panel]").forEach(panel=>{panel.hidden=panel.dataset.panel!==view;});
+ document.querySelectorAll("[data-view]").forEach(button=>button.setAttribute("aria-pressed",String(button.dataset.view===view)));
+ window.scrollTo({top:0,behavior:"auto"});
+}
+function selectTab(tab){
+ state.tab=tab;
+ byId("app-findings").hidden=tab!=="findings";
+ byId("app-graph").hidden=tab!=="graph";
+ document.querySelectorAll("[data-tab]").forEach(button=>button.setAttribute("aria-pressed",String(button.dataset.tab===tab)));
+}
+function theme(value){
+ state.theme=value;
+ if(value==="auto")delete document.documentElement.dataset.theme;
+ else document.documentElement.dataset.theme=value;
+ document.querySelectorAll("[data-theme]").forEach(button=>{
+  if(button.tagName==="BUTTON")button.setAttribute("aria-pressed",String(button.dataset.theme===value));
+ });
+}
+function drawGraph(target,p){
+ target.replaceChildren();
+ if(!p.before.length){
+  const box=document.createElement("div");box.className="map-strip";
+  if(state.scenario==="mapping"){
+   const strong=document.createElement("strong");strong.textContent=".archfit.yaml";
+   const label=document.createElement("span");label.textContent="changed";
+   const source=document.createElement("span");source.className="label";source.textContent="Production code unchanged";
+   box.append(strong,label,source);
+  }else{
+   const text=document.createElement("span");text.textContent=state.scenario==="quiet"?"CHANGELOG.md only · 28 added lines":"Base inventory incomplete";
+   box.append(text);
+  }
+  target.append(box);return;
+ }
+ const pair=document.createElement("div");pair.className="pair";
+ for(const [side,nodes,label] of [["before",p.before,p.beforeLabel],["after",p.after,p.afterLabel]]){
+  const pane=document.createElement("div");pane.className="diagram-side";
+  const heading=document.createElement("div");heading.className="diagram-title";heading.textContent=side==="before"?"Before":"After";
+  const flow=document.createElement("div");flow.className="flow "+side;
+  for(const [title,detail] of nodes){
+   const node=document.createElement("div");node.className="node";
+   const name=document.createElement("strong");name.textContent=title;
+   const sub=document.createElement("small");sub.textContent=detail;node.append(name,sub);flow.append(node);
+  }
+  const caption=document.createElement("p");caption.className="diagram-caption";caption.textContent=label;
+  pane.append(heading,flow,caption);pair.append(pane);
+ }
+ target.append(pair);
+}
+function interpretationFor(c,p){
+ if(c.route!=="classify")return{visible:false,text:"Deterministic routing; classifier not called.",output:{call:"skipped",reason:c.route}};
+ if(state.classifier==="off")return{visible:false,text:"Facts only. No model interpretation was added.",output:{call:"not_requested"}};
+ if(state.classifier==="abstain")return{visible:false,text:"Insufficient context. Facts remain; interpretation is withheld.",output:{transformation:"insufficient_context",fallback:"facts_only"}};
+ return{visible:true,text:p.meaning,output:{transformation:c.transformation,review_focus:c.focus,authority:"advisory_only",simulation:true}};
+}
+function taskFor(c,p){
+ return {
+  schema_version:"prototype.archfit-review-task.v1",
+  kind:state.scenario==="unknown"?"restore_evidence":"review_change",
+  prototype:true,
+  case:c.prNumber,
+  source_pr:state.scenario==="unknown"?null:c.prURL,
+  comparison:{code:c.codeScope,report:c.reportScope},
+  observations:c.facts.map(([fact,,kind,url])=>({kind,fact,source:url})),
+  goal:p.next,
+  constraints:[c.constraint,"No policy edits, waivers or automatic redesign.","Do not claim behavioral equivalence from reference changes."],
+  validation:state.scenario==="unknown"?["Restore the base inputs and rerun with compatible producer settings."]:["Inspect the cited historical source.","Verify relevant behavior tests before claiming equivalence.","Run the applicable architecture checks for the current checkout."],
+  existing_result:c.check,
+  interpretation:interpretationFor(c,p).output,
+  authority:"advisory only; no permission to merge or change policy"
+ };
+}
+function renderEvidence(c,p){
+ const fragment=document.createDocumentFragment();
+ for(const [title,description,type,url] of c.facts){
+  const row=document.createElement("section");row.className="evidence-item";
+  const tag=document.createElement("span");tag.className="label";tag.textContent=type;
+  const heading=document.createElement("h3");heading.style.marginTop="9px";heading.textContent=title;
+  const text=document.createElement("p");text.textContent=description;
+  row.append(tag,heading,text);
+  if(url){const link=document.createElement("a");link.href=url;link.target="_blank";link.rel="noopener noreferrer";link.textContent="Open source ↗";row.append(link);}
+  fragment.append(row);
+ }
+ byId("evidence-items").replaceChildren(fragment);
+ byId("recovery").hidden=state.scenario!=="unknown";
+ byId("recovery").textContent=c.nextStep;
+ byId("evidence-title").textContent=state.scenario==="unknown"?"Recovery steps":"Change evidence";
+ const interpretation=interpretationFor(c,p);
+ byId("model-explanation").textContent=interpretation.text;
+ byId("model-output").textContent=JSON.stringify(interpretation.output,null,2);
+}
+function renderCard(id,c,p,isPR){
+ const card=byId("card-template").content.cloneNode(true);
+ card.querySelector("[data-card-title]").textContent=p.title;
+ drawGraph(card.querySelector("[data-diagram]"),p);
+ const interpretation=interpretationFor(c,p);
+ const meaning=card.querySelector("[data-meaning]");
+ meaning.hidden=!interpretation.visible;
+ if(interpretation.visible){
+  const label=document.createElement("span");label.className="interpretation-label";label.textContent="Interpretation";
+  meaning.append(label,document.createTextNode(interpretation.text));
+ }
+ card.querySelector("[data-next]").textContent=p.next;
+ const limit=card.querySelector("[data-limit]");
+ limit.textContent=p.limit;
+ limit.classList.toggle("warning",state.scenario==="monitor"||state.scenario==="unknown");
+ limit.hidden=state.scenario==="restart"||state.scenario==="quiet";
+ const primary=card.querySelector("[data-primary]");
+ const external=card.querySelector("[data-external-action]");
+ const externalCase=state.scenario==="mapping"||state.scenario==="quiet";
+ primary.hidden=externalCase;
+ primary.textContent=p.primary;
+ primary.addEventListener("click",()=>byId("evidence-drawer").showModal());
+ external.hidden=!externalCase;external.textContent=p.primary;external.href=c.prURL+"/files";
+ const copy=card.querySelector("[data-copy]");
+ copy.hidden=state.scenario==="quiet";
+ copy.addEventListener("click",()=>copyTask(cardStatus(id),c,p));
+ card.querySelector("[data-app-actions]").hidden=isPR;
+ if(isPR)meaning.hidden=true;
+ byId(id).replaceChildren(card);
+}
+function cardStatus(id){return byId(id).querySelector("[data-copy-status]");}
+async function copyTask(status,c,p){
+ const value=JSON.stringify(taskFor(c,p),null,2);
+ try{await navigator.clipboard.writeText(value);status.textContent="Task copied. Paste into your agent; nothing runs automatically.";}
+ catch{byId("copy-fallback").value=value;byId("copy-dialog").showModal();byId("copy-fallback").focus();byId("copy-fallback").select();}
+}
+function renderFolds(c,p){
+ document.querySelectorAll("[data-folds]").forEach(container=>{
+  const fragment=document.createDocumentFragment();
+  if(p.count){
+   const debt=document.createElement("details");debt.className="disclosure";
+   const summary=document.createElement("summary");summary.textContent="Repository attention ";
+   const count=document.createElement("span");count.className="counter";count.textContent=p.count;summary.append(count);
+   const body=document.createElement("div");body.className="details-body";
+   const text=document.createElement("p");text.textContent=c.debt;
+   const link=document.createElement("a");link.href=c.feedbackURL;link.target="_blank";link.rel="noopener noreferrer";link.textContent="Open historical check context ↗";
+   body.append(text,link);debt.append(summary,body);fragment.append(debt);
+  }
+  if(state.scenario!=="quiet"){
+   const details=document.createElement("details");details.className="disclosure";
+   const summary=document.createElement("summary");summary.textContent="For coding agents";
+   const body=document.createElement("div");body.className="details-body";
+   const line=document.createElement("div");line.className="row between";
+   const text=document.createElement("span");text.textContent="Proposed review task. Copying does not run it.";
+   const status=document.createElement("span");status.className="copy-status";status.setAttribute("role","status");
+   const button=document.createElement("button");button.type="button";button.className="btn";button.textContent="Copy task JSON";button.addEventListener("click",()=>copyTask(status,c,p));
+   line.append(text);
+   if(container.dataset.folds==="app")line.append(button);
+   const pre=document.createElement("pre");pre.className="agents-json";pre.textContent=JSON.stringify(taskFor(c,p),null,2);
+   body.append(line,status,pre);details.append(summary,body);fragment.append(details);
+  }
+  const evidence=document.createElement("details");evidence.className="disclosure";
+  const summary=document.createElement("summary");summary.textContent="Evidence & comparison";
+  const body=document.createElement("div");body.className="details-body";
+  for(const value of [c.codeScope,c.reportScope,c.check,"Customer-attested report; not independent execution proof."]){const p=document.createElement("p");p.textContent=value;body.append(p);}
+  const button=document.createElement("button");button.type="button";button.className="text-button";button.textContent="Inspect source evidence →";button.addEventListener("click",()=>{if(container.dataset.folds==="pr")showView("app");byId("evidence-drawer").showModal();});
+  body.append(button);evidence.append(summary,body);fragment.append(evidence);
+  container.replaceChildren(fragment);
+ });
+}
+function render(){
+ const c=cases[state.scenario],p=presentation[state.scenario];
+ document.querySelectorAll("[data-bind]").forEach(element=>{element.textContent=c[element.dataset.bind]??"";});
+ document.querySelectorAll("[data-presentation]").forEach(element=>{element.textContent=p[element.dataset.presentation]??"";});
+ document.querySelectorAll("[data-original]").forEach(a=>{a.href=c.prURL;a.hidden=state.scenario==="unknown";});
+ document.querySelectorAll("[data-lifecycle]").forEach(el=>{el.textContent=state.scenario==="unknown"?"Synthetic case":"Merged";el.className="state "+(state.scenario==="unknown"?"attention":"merged");});
+ document.querySelectorAll("[data-merge-line]").forEach(el=>{
+  el.textContent=state.scenario==="unknown"?"Action required · comparison unavailable":"Advisory · does not block merging";
+  el.classList.toggle("warning",state.scenario==="unknown");
+ });
+ byId("classifier").disabled=c.route!=="classify";
+ byId("routing-note").textContent=c.route==="classify"?"Simulation only. Changing this never changes the facts or check result.":"No model call: "+(state.scenario==="quiet"?"docs-only change":state.scenario==="mapping"?"policy-only change":"required evidence is missing")+".";
+ byId("app-event-tag").textContent=p.tag;
+ byId("pr-conversation").hidden=state.scenario==="quiet";
+ byId("pr-quiet").hidden=state.scenario!=="quiet";
+ renderCard("pr-card",c,p,true);renderCard("app-card",c,p,false);
+ drawGraph(byId("expanded-diagram"),p);
+ renderEvidence(c,p);renderFolds(c,p);
+}
+document.querySelectorAll("[data-view]").forEach(button=>button.addEventListener("click",()=>showView(button.dataset.view)));
+document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener("click",()=>selectTab(button.dataset.tab)));
+document.querySelectorAll("[data-theme]").forEach(button=>{if(button.tagName==="BUTTON")button.addEventListener("click",()=>theme(button.dataset.theme));});
+document.querySelectorAll("[data-open-app]").forEach(button=>button.addEventListener("click",()=>{showView("app");selectTab("findings");}));
+document.querySelectorAll("[data-evidence]").forEach(button=>button.addEventListener("click",()=>byId("evidence-drawer").showModal()));
+document.querySelectorAll("[data-close]").forEach(button=>button.addEventListener("click",()=>button.closest("dialog").close()));
+byId("scenario").addEventListener("change",event=>{state.scenario=event.target.value;render();});
+byId("classifier").addEventListener("change",event=>{state.classifier=event.target.value;render();});
+render();
+})();
+</script>
+</body></html>

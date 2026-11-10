@@ -58,7 +58,7 @@ Measured on the host (macOS arm64, Homebrew SDK 10.0.402, Roslyn `Microsoft.Code
 | Helper build | Referencing `Microsoft.Build`/`Microsoft.Build.Framework` needs `ExcludeAssets="runtime" PrivateAssets="all"` (`MSBL001`). An apphost run against a non-default SDK location needs `DOTNET_ROOT` |
 
 Related code:
-- Language touchpoints: [`docs/archived/plans/erosion-prevention/language-extensibility.md`](../archived/plans/erosion-prevention/language-extensibility.md) lists 14 steps. This plan follows them, in Task 7.
+- Language touchpoints: [`docs/archived/plans/erosion-prevention/language-extensibility.md`](erosion-prevention/language-extensibility.md) lists 14 steps. This plan follows them, in Task 7.
 - Rust adapter as the template: `internal/extract/rust/` (crate-level first, optional module graph second).
 - Python helper pattern: `internal/extract/py/embed.go` and `grimp_helper.py`. The Roslyn helper is a process, not an embedded script, because it needs NuGet packages.
 - Tool pins: `tools/manifest.json`, `scripts/provision_tools.py`, `Dockerfile`.
@@ -76,7 +76,7 @@ Reviewed with Codex in three rounds on 2026-10-27 (go for handoff). Task 1 spike
 - Project nodes stay in the graph for topology and coverage. A `ProjectReference` with no type use is not a dependency edge when file edges exist for that project; the helper reports it as an unused reference count in coverage detail.
 - The Roslyn type graph is on by default when the helper is installed (the image ships it). `analyzers.roslyn.enabled: false` forces the project-only graph.
 - Fallback edges from test projects (`IsTestProject=true`, or a test-classified project path) are dropped by the extractor, as the Rust extractor drops dev-dependencies. `productionSource` (`internal/assessment/rules/rules_dependency.go`) counts unattributed edges as production, so a test-project edge would otherwise enter production cycle checks.
-- Fallback limits, disclosed in [languages](../languages.md): file-specific selectors do not match fallback edges, edge counts become project pairs for failed projects, and the coverage row stays `partial` (missing inputs, not reduced precision).
+- Fallback limits, disclosed in [languages](../../languages.md): file-specific selectors do not match fallback edges, edge counts become project pairs for failed projects, and the coverage row stays `partial` (missing inputs, not reduced precision).
 - No new edge kind and no relationship-layer change. Rust has the same latent double-scoring shape (crate and cargo-modules edges); that is out of scope and recorded in Post-Completion.
 
 **D2. File and path vocabulary, not namespaces.**
@@ -86,7 +86,7 @@ Reviewed with Codex in three rounds on 2026-10-27 (go for handoff). Task 1 spike
 - A file compiled into more than one project (linked `Compile Include`) is one node. Its edges are the union across projects. The helper reports linked files outside their project directory as a coverage detail, not as partial.
 - Namespaces are not graph nodes. A namespace is a compile-time name, and graph nodes must be places.
 
-**D3. Strength hints from compiler symbols.** The extractor emits a `StrengthHint` per edge, as Python and TypeScript do. It does not classify. `internal/relationship` decides strength, and the [coupling](../coupling.md) precedence is unchanged: an `internal:` policy match is authoritative `intrusive`, a `public:` match is at least `contract`, approved labels pin, and hints fill the rest. Strongest hint wins per file pair.
+**D3. Strength hints from compiler symbols.** The extractor emits a `StrengthHint` per edge, as Python and TypeScript do. It does not classify. `internal/relationship` decides strength, and the [coupling](../../coupling.md) precedence is unchanged: an `internal:` policy match is authoritative `intrusive`, a `public:` match is at least `contract`, approved labels pin, and hints fill the rest. Strongest hint wins per file pair.
 
 | Reference from file A to a symbol in file B | Hint |
 | --- | --- |
@@ -105,7 +105,7 @@ The `intrusive` hint comes from the referenced symbol's accessibility, not from 
 
 The `intrusive` hint is the C# analogue of Python's private-import hint (`internal/extract/py/py.go`): a structural, config-independent signal that the compiler enforces. It feeds the existing `encapsulation` metric; no new metric.
 
-Importing `internal/relationship/coupling` for the hint constants joins the accepted boundary already granted to `ts` and `py` in [architecture](../architecture.md#accepted-boundaries). Task 7 adds `internal/extract/dotnet` to that list and to the adapter `public:` list in `.archfit.yaml`.
+Importing `internal/relationship/coupling` for the hint constants joins the accepted boundary already granted to `ts` and `py` in [architecture](../../architecture.md#accepted-boundaries). Task 7 adds `internal/extract/dotnet` to that list and to the adapter `public:` list in `.archfit.yaml`.
 
 **D4. Roslyn helper.**
 - Source in `tools/dotnet/archfit-roslyn/`, a C# console app on `net10.0`, framework-dependent.
@@ -145,7 +145,7 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 - The snapshot keeps every build input: `obj/` (supplied `project.assets.json`, NuGet imports), `bin/` (`HintPath` references), and files matched by `exclude`. Removing an excluded file could change the compiled program (an excluded generated file or project that included code binds to). `exclude` applies to emitted evidence, after analysis, as for other languages.
 - "Evaluation left bitwarden clean" is a measured fact for that repo, not a guarantee. Evaluation runs on the original because it is read-only in intent and was measured clean; the read-only image case (Task 10) is the guard.
 - Rejected: redirecting `BaseIntermediateOutputPath`. It also moves `MSBuildProjectExtensionsPath`, which hides supplied `project.assets.json`, and one global value collides across projects.
-- The trust statement goes into [evidence](../evidence.md) and [languages](../languages.md): this is the same trust class as `go/packages` and cgo.
+- The trust statement goes into [evidence](../../evidence.md) and [languages](../../languages.md): this is the same trust class as `go/packages` and cgo.
 
 **D7. SDK in the image, one version.**
 - Official Linux SDK archive `10.0.402`, pinned in `tools/manifest.json` for `amd64` and `arm64`, with `sha256`, provisioned in the builder stage like Go and Node. Upstream publishes sha512 only; the manifest sha256 was computed from the verified download (Task 1). The archive unpacks flat, so provisioning moves the unpack directory itself.
