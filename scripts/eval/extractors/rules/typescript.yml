@@ -1,0 +1,76 @@
+# TypeScript and JavaScript import specifiers for the parser-based extractor
+# prototype (ts_imports.py): import and export declarations (type-only too),
+# `import x = require()`, `import()` and `require()` with a string literal, and
+# triple-slash `/// <reference path="…" />` directives.
+id: ts-source
+language: TypeScript
+rule:
+  kind: string
+  any:
+    - inside:
+        kind: import_statement
+        field: source
+    - inside:
+        kind: export_statement
+        field: source
+    - inside:
+        kind: import_require_clause
+    - inside:
+        kind: arguments
+        inside:
+          kind: call_expression
+          has:
+            field: function
+            regex: ^(require|import)$
+---
+id: tsx-source
+language: Tsx
+rule:
+  kind: string
+  any:
+    - inside:
+        kind: import_statement
+        field: source
+    - inside:
+        kind: export_statement
+        field: source
+    - inside:
+        kind: import_require_clause
+    - inside:
+        kind: arguments
+        inside:
+          kind: call_expression
+          has:
+            field: function
+            regex: ^(require|import)$
+---
+id: js-source
+language: JavaScript
+rule:
+  kind: string
+  any:
+    - inside:
+        kind: import_statement
+        field: source
+    - inside:
+        kind: export_statement
+        field: source
+    - inside:
+        kind: arguments
+        inside:
+          kind: call_expression
+          has:
+            field: function
+            regex: ^(require|import)$
+---
+id: ts-reference
+language: TypeScript
+rule: {kind: comment, regex: '^///\s*<reference\s+path='}
+---
+id: tsx-reference
+language: Tsx
+rule: {kind: comment, regex: '^///\s*<reference\s+path='}
+---
+id: js-reference
+language: JavaScript
+rule: {kind: comment, regex: '^///\s*<reference\s+path='}
