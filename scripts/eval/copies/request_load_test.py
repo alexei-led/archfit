@@ -82,6 +82,7 @@ class ResolveTest(unittest.TestCase):
             ("python", web, rl.PyImport(0, "app.core", ("rules",)), [rules]),
             ("python", web, rl.PyImport(0, "app.core", ("rules", "store")), [rules, "src/app/core/store.py"]),
             ("python", web, rl.PyImport(0, "app.core", ("Rule",)), ["src/app/core/__init__.py"]),
+            ("python", web, rl.PyImport(0, "app.core", ("Rule", "rules")), [rules, "src/app/core/__init__.py"]),
             ("python", rules, rl.PyImport(2, "web", ()), [web]),
             ("python", rules, rl.PyImport(1, "", ("rules",)), [rules]),
             ("python", web, rl.PyImport(0, "os.path", ()), []),

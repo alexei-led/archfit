@@ -195,17 +195,19 @@ class Tree:
         else:
             roots = self.py_roots()
         for root in roots:
-            # `from a import b, c` where b and c are submodules: each one is a dependency.
+            # In `from a import b, c` each submodule is a dependency; a name that is not a
+            # submodule is an attribute of the package, so the package is one too.
             subs = [self._py_file(posixpath.join(root, *parts, name)) for name in spec.names]
             found = [hit for hit in subs if hit]
-            if found:
+            if found and len(found) == len(subs):
                 return found
+            package = None
             if parts:
-                hit = self._py_dotted(root, parts)
-                if hit:
-                    return [hit]
+                package = self._py_dotted(root, parts)
             elif posixpath.join(root, "__init__.py") in self.files:
-                return [posixpath.join(root, "__init__.py")]
+                package = posixpath.join(root, "__init__.py")
+            if found or package:
+                return found + ([package] if package else [])
         return []
 
     def _js(self, path: str, spec: str) -> str | None:
