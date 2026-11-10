@@ -299,6 +299,10 @@ export PATH="$prefix/node/node_modules/.bin:$PATH"
 export ARCHFIT_TOOL_PYTHON="$prefix/python/bin/python"
 ```
 
+That `PATH` line also puts the locked `tsc`, `sg`, and `jscpd` ahead of your own. To keep another
+TypeScript compiler first, link only the tools you need, for example
+`ln -s "$prefix/node/node_modules/.bin/depcruise" ~/.local/bin/depcruise`.
+
 Provide a compatible owned Node interpreter on `PATH`; do not launch analysis through a target
 package-manager script. For host Rust/Go semantic tools, install the manifest versions using the
 official platform toolchains (`rust-src` is required). `scripts/ci-provision-tools.sh` is Linux
