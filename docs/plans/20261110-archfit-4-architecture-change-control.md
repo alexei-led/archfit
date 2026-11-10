@@ -1114,7 +1114,8 @@ milestone in the same pull request; read the diff before accepting a regenerated
 
 ## 17. Documentation plan
 
-Do this in milestone 0, after the owner accepts this design. Check each file before moving it.
+The archiving was done on 2026-11-10, after the owner accepted this design. The rewrites happen in
+the milestones.
 
 | Repository | Document | Action |
 | --- | --- | --- |
@@ -1122,10 +1123,10 @@ Do this in milestone 0, after the owner accepts this design. Check each file bef
 | `archfit` | `docs/plans/20261027-dotnet-support.md` | Shipped in 3.3.0; moved to `docs/archived/plans/`. Done on 2026-11-10. |
 | `archfit` | `README.md`, `docs/getting-started.md`, `commands.md`, `configuration.md`, `rules.md`, `results.md`, `agents.md`, `ci.md`, `migration.md`, the shipped skill | Rewrite in the milestone that changes the behaviour, in the words of section 5 |
 | `archfit` | `docs/coupling.md`, `metrics.md`, `evidence.md`, `languages.md`, `architecture.md`, `development.md` | Keep; update the parts on checks, baselines, and comparisons |
-| `archfit-app` | `docs/design/product.md`, `decisions.md`, `trust-and-reporting.md`, `ui-redesign.md`, `ui-review.md`, `docs/design/prototypes/` | Archive with a pointer here. What survives is restated in sections 4, 9, and 11.6. |
-| `archfit-app` | `docs/design/cloud/**`, `docs/tech-stack.md` | Keep |
+| `archfit-app` | `docs/design/product.md`, `decisions.md`, `trust-and-reporting.md`, `ui-redesign.md`, `ui-review.md`, `docs/design/prototypes/` | Moved to `docs/archive/design/` with a README that points here. `internal/module.md` names them as the requirements of the behaviour shipped today. What survives is restated in sections 4, 9, and 11.6. Done on 2026-11-10. |
+| `archfit-app` | `docs/design/cloud/**`, `docs/design/merge-queue.md`, `docs/tech-stack.md` | Keep |
 | `archfit-app` | `docs/architecture.md`, `docs/user-guide.md` | Rewrite in milestones 2 and 3 |
-| `archfit-action` | `README.md`, `schema/`, `CHANGELOG.md` | Rewrite in milestone 2 |
+| `archfit-action` | `README.md`, `schema/`, `CHANGELOG.md` | Rewrite in milestone 2. Nothing to archive. |
 | all | `AGENTS.md` and `CLAUDE.md` pointers | Point "start here" to this document until the new guides exist |
 
 After milestone 3 the user guides describe the behaviour, and this document moves to
