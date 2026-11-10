@@ -56,8 +56,9 @@ GO_BLOCK = re.compile(r"^\s*import\s*\(([^)]*)\)", re.MULTILINE)
 GO_SINGLE = re.compile(r'^\s*import\s+(?:[\w.]+\s+)?"([^"]+)"', re.MULTILINE)
 GO_SPEC = re.compile(r'"([^"]+)"')
 PY_IMPORT = re.compile(r"^[ \t]*import[ \t]+([\w. \t,]+)", re.MULTILINE)
+# Names run to the end of the line, or to ")" for a parenthesised list.
 PY_FROM = re.compile(
-    r"^[ \t]*from[ \t]+(\.*)([\w.]*)[ \t]+import[ \t]+\(?([\w \t,\n*]*)", re.MULTILINE
+    r"^[ \t]*from[ \t]+(\.*)([\w.]*)[ \t]+import[ \t]*(?:\(([^)]*)\)|([^\n#;]*))", re.MULTILINE
 )
 JS_SPEC = re.compile(
     r"""(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]([^'"\n]+)['"]"""
@@ -98,7 +99,7 @@ def read_imports(lang: str, text: str) -> list[Spec]:
         for m in PY_FROM.finditer(text):
             names = tuple(
                 w.split()[0]
-                for w in m.group(3).replace("\n", ",").split(",")
+                for w in (m.group(3) or m.group(4) or "").replace("\n", ",").split(",")
                 if w.split() and w.split()[0] != "*"
             )
             out.append(PyImport(len(m.group(1)), m.group(2), names))
@@ -302,6 +303,7 @@ class PairState:
     example: str
     starts: list[int]
     ends: list[int | None]  # None: still present
+    past_public: list[bool]  # per start: some import reaches past the target's public part
 
 
 class Timeline:
@@ -329,8 +331,9 @@ class Timeline:
             self.resolved[path] = frozenset(t for t in targets if t)
         return self.resolved[path]
 
-    def current(self) -> dict[Pair, str]:
-        found: dict[Pair, str] = {}
+    def current(self) -> dict[Pair, tuple[str, bool]]:
+        """Each pair present now: an example importing file, and whether any use is past public."""
+        found: dict[Pair, tuple[str, bool]] = {}
         target_files = {t for p in self.specs for t in self._targets(p)}
         owners = self.policy.owners(sorted(target_files))
         for path in sorted(self.specs):
@@ -338,7 +341,9 @@ class Timeline:
             for target in self._targets(path):
                 owner = owners[target]
                 if owner.production and owner.module != module:
-                    found.setdefault((module, owner.module), path)
+                    pair = (module, owner.module)
+                    example, past = found.get(pair, (path, False))
+                    found[pair] = (example, past or not owner.is_public(target))
         return found
 
     def apply(self, idx: int, unit: cg.Unit, blobs: BlobReader) -> None:
@@ -380,9 +385,10 @@ class Timeline:
         self.modules_at.append(frozenset(self._module_files()))
         previous = self.present_at[-1] if self.present_at else frozenset()
         for pair in now.keys() - previous:
-            state = self.pairs.setdefault(pair, PairState(idx, now[pair], [], []))
+            state = self.pairs.setdefault(pair, PairState(idx, now[pair][0], [], [], []))
             state.starts.append(idx)
             state.ends.append(None)
+            state.past_public.append(now[pair][1])
         for pair in previous - now.keys():
             self.pairs[pair].ends[-1] = idx
         self.present_at.append(frozenset(now))
@@ -426,7 +432,46 @@ def month_index(units: list[cg.Unit], months: int) -> int | None:
     return max(i for i, u in enumerate(units) if u.timestamp <= cutoff)
 
 
-def freeze(tl: Timeline, units: list[cg.Unit], at: int) -> dict:
+VOLATILITY_ORDER = ("low", "medium", "high")
+SUBDOMAIN_VOLATILITY = {"core": "high", "supporting": "low", "generic": "low"}
+MODULE_HEADER = re.compile(r"^  ([\w.-]+):\s*(#.*)?$")
+MODULE_FIELD = re.compile(r"^    (volatility|subdomain):\s*([\w-]+)")
+
+
+def declared_volatility(policy_text: str) -> dict[str, str]:
+    """Volatility of each module in a policy's `modules:` block, with the 4.0 defaults (design 6.1)."""
+    fields: dict[str, dict[str, str]] = {}
+    module, in_modules = None, False
+    for line in policy_text.split("\n"):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            in_modules, module = line.startswith("modules:"), None
+            continue
+        if not in_modules:
+            continue
+        header = MODULE_HEADER.match(line)
+        if header:
+            module = header.group(1)
+            fields[module] = {}
+            continue
+        field = MODULE_FIELD.match(line)
+        if field and module:
+            fields[module][field.group(1)] = field.group(2)
+    return {
+        m: f.get("volatility") or SUBDOMAIN_VOLATILITY.get(f.get("subdomain", ""), "high") for m, f in fields.items()
+    }
+
+
+def coupling_4(past_public: bool, from_volatility: str, to_volatility: str) -> tuple[str, str]:
+    """The 4.0 `coupling` rule for a new dependency (design 6.2): verdict and the balance it implies."""
+    if not past_public:
+        return "pass", "9 or 8" if to_volatility == "low" else "9 or 7"
+    worst = max(from_volatility, to_volatility, key=VOLATILITY_ORDER.index)
+    return {"low": ("pass", "8"), "medium": ("fail", "5"), "high": ("fail", "2")}[worst]
+
+
+def freeze(tl: Timeline, units: list[cg.Unit], at: int, volatility: dict[str, str]) -> dict:
     """Requests after a policy written at unit `at` with depends_on = the pairs present then."""
     allowed, modules = tl.present_at[at], tl.modules_at[at]
     existing, new_module = [], []
@@ -436,11 +481,16 @@ def freeze(tl: Timeline, units: list[cg.Unit], at: int) -> dict:
         starts = [s for s in state.starts if s > at]
         if not starts:
             continue
+        past = state.past_public[state.starts.index(starts[0])]
+        verdict, balance = coupling_4(past, volatility.get(pair[0], "high"), volatility.get(pair[1], "high"))
         row = {
             "from": pair[0],
             "to": pair[1],
             "unit": starts[0],
             "sha": units[starts[0]].sha,
+            "past_public": past,
+            "coupling_4": verdict,
+            "balance_4": balance,
         }
         (existing if pair[0] in modules and pair[1] in modules else new_module).append(
             row
@@ -454,6 +504,7 @@ def freeze(tl: Timeline, units: list[cg.Unit], at: int) -> dict:
         "requests_existing_modules": existing,
         "requests_new_module": new_module,
         "per_month_existing": round(len(existing) / months, 2) if months else None,
+        "coupling_4_existing": dict(Counter(r["coupling_4"] for r in existing)),
     }
 
 
@@ -461,7 +512,8 @@ def iso(ts: int) -> str:
     return datetime.fromtimestamp(ts, UTC).date().isoformat()
 
 
-def pairs_report(repo: Path, label: str, policy: cg.PolicyMap) -> dict:
+def pairs_report(repo: Path, label: str, policy: cg.PolicyMap, volatility: dict[str, str] | None = None) -> dict:
+    volatility = volatility or {}
     units = cg.first_parent_units(repo)
     tl = Timeline(repo, policy)
     blobs = BlobReader(repo)
@@ -491,6 +543,10 @@ def pairs_report(repo: Path, label: str, policy: cg.PolicyMap) -> dict:
                 "in_depends_on": allowed,
                 "with_new_module": state.first
                 in (tl.module_first.get(pair[0]), tl.module_first.get(pair[1])),
+                "past_public_first": state.past_public[0],
+                "coupling_4_first": coupling_4(
+                    state.past_public[0], volatility.get(pair[0], "high"), volatility.get(pair[1], "high")
+                )[0],
             }
         )
     later = [r for r in pair_rows if r["first_unit"] > 0]
@@ -499,7 +555,7 @@ def pairs_report(repo: Path, label: str, policy: cg.PolicyMap) -> dict:
     for months in FREEZE_MONTHS:
         at = month_index(units, months)
         if at is not None:
-            scenarios[f"{months}m"] = freeze(tl, units, at)
+            scenarios[f"{months}m"] = freeze(tl, units, at, volatility)
     missing = [r for r in pair_rows if not r["in_depends_on"]]
     return {
         "repo": label,
@@ -509,6 +565,7 @@ def pairs_report(repo: Path, label: str, policy: cg.PolicyMap) -> dict:
         "first_date": iso(units[0].timestamp),
         "last_date": iso(units[-1].timestamp),
         "modules": sorted(tl.module_first),
+        "volatility": {m: volatility.get(m, "high") for m in sorted(tl.module_first)},
         # `policy where` omits an empty list; empty and absent both allow nothing in 4.0.
         "nonempty_depends_on": sorted(m for m, d in depends.items() if d),
         "pairs_ever": len(pair_rows),
@@ -664,7 +721,7 @@ def main(argv: list[str] | None = None) -> int:
     label, repo = args.repo
     if args.cmd == "pairs":
         policy = cg.PolicyMap(cg.archfit_resolver(args.archfit, args.config, repo))
-        report = pairs_report(repo, label, policy)
+        report = pairs_report(repo, label, policy, declared_volatility(args.config.read_text()))
         args.out.write_text(json.dumps(report, indent=1))
         print(
             json.dumps(

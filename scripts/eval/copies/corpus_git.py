@@ -8,6 +8,7 @@ policy mapping decides it. Standard library only.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import subprocess
@@ -143,6 +144,13 @@ class Owner:
     module: str | None
     excluded: bool
     depends_on: tuple[str, ...] | None = None  # None: the policy declares no list
+    selector: str | None = None  # the name `public` patterns match: package, dotted module, or path
+    public: tuple[str, ...] | None = None  # None: the whole module is public
+
+    def is_public(self, path: str) -> bool:
+        if self.public is None:
+            return True
+        return any(fnmatch.fnmatchcase(self.selector or path, pattern) for pattern in self.public)
 
     @property
     def production(self) -> bool:
@@ -205,9 +213,13 @@ def archfit_resolver(
                     f"archfit policy where: {len(answers)} answers for {len(batch)} paths"
                 )
             for path, answer in zip(batch, answers):
-                deps = answer.get("depends_on")
+                deps, public = answer.get("depends_on"), answer.get("public")
                 out[path] = Owner(
-                    answer.get("module"), bool(answer.get("excluded")), None if deps is None else tuple(deps)
+                    answer.get("module"),
+                    bool(answer.get("excluded")),
+                    None if deps is None else tuple(deps),
+                    answer.get("selector"),
+                    None if public is None else tuple(public),
                 )
         return out
 

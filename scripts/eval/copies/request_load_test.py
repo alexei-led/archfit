@@ -30,12 +30,14 @@ class ReadImportsTest(unittest.TestCase):
             ),
             (
                 "python",
-                "import a.b as c, d\nfrom ..x.y import (z,\n    w)\nfrom . import q\n",
+                "import a.b as c, d\nfrom ..x.y import (z,\n    w)\nfrom . import q\nfrom .. import v  # c\nfrom ..m import n\n",
                 [
                     rl.PyImport(0, "a.b", ()),
                     rl.PyImport(0, "d", ()),
                     rl.PyImport(2, "x.y", ("z", "w")),
                     rl.PyImport(1, "", ("q",)),
+                    rl.PyImport(2, "", ("v",)),
+                    rl.PyImport(2, "m", ("n",)),
                 ],
             ),
             (
@@ -217,6 +219,51 @@ class TimelineTest(unittest.TestCase):
         report = rl.pairs_report(r.root, "t", self.policy)
         self.assertEqual((report["units"], report["merges"]), (2, 1))
         self.assertEqual(report["pairs"][0]["first_sha"], merge)
+
+
+class CouplingTest(unittest.TestCase):
+    def test_declared_volatility_with_defaults(self):
+        policy = """version: 2
+# a comment at column 0
+modules:
+  core_mod:
+    paths: [a/**]
+    subdomain: core
+  steady:  # stable
+    volatility: low
+  helper:
+    subdomain: generic
+  plain:
+    paths:
+      - p/**
+rules: []
+"""
+        self.assertEqual(
+            rl.declared_volatility(policy), {"core_mod": "high", "steady": "low", "helper": "low", "plain": "high"}
+        )
+
+    def test_coupling_4_table(self):
+        cases = [
+            (False, "high", "high", ("pass", "9 or 7")),
+            (False, "high", "low", ("pass", "9 or 8")),
+            (True, "low", "low", ("pass", "8")),
+            (True, "low", "medium", ("fail", "5")),
+            (True, "medium", "high", ("fail", "2")),
+        ]
+        for past, vf, vt, want in cases:
+            with self.subTest(past=past, vf=vf, vt=vt):
+                self.assertEqual(rl.coupling_4(past, vf, vt), want)
+
+    def test_use_past_the_public_part_is_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = Repo(Path(tmp))
+            r.commit("init", {"go.mod": "module example.com/m\n", "a/a.go": go("a"), "b/b.go": go("b"), "b/inner/i.go": go("inner")})
+            r.commit("public use", {"a/a.go": go("a", "b")})
+            r.commit("past public", {"c/c.go": go("c", "b/inner")})
+            policy = prefix_policy({"a/": "A", "b/": "B", "c/": "C"}, public={"B": ("b",)})
+            report = rl.pairs_report(r.root, "t", policy, {"A": "high", "B": "high", "C": "low"})
+        rows = {(p["from"], p["to"]): (p["past_public_first"], p["coupling_4_first"]) for p in report["pairs"]}
+        self.assertEqual(rows, {("A", "B"): (False, "pass"), ("C", "B"): (True, "fail")})
 
 
 class DistributionTest(unittest.TestCase):

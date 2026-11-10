@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import subprocess
 from pathlib import Path
 
@@ -78,21 +79,24 @@ def prefix_policy(
     modules: dict[str, str],
     depends_on: dict[str, list[str]] | None = None,
     excluded: tuple[str, ...] = (),
+    public: dict[str, tuple[str, ...]] | None = None,
 ) -> cg.PolicyMap:
-    """A stand-in for `archfit policy where`: the module is the one whose path prefix matches."""
-    depends_on = depends_on or {}
+    """A stand-in for `archfit policy where`: the module is the one whose path prefix matches.
+
+    The selector is the file's directory, as for a Go package."""
+    depends_on, public = depends_on or {}, public or {}
 
     def resolve(paths: list[str]) -> dict[str, cg.Owner]:
         out = {}
         for path in paths:
-            module = next(
-                (m for prefix, m in modules.items() if path.startswith(prefix)), None
-            )
+            module = next((m for prefix, m in modules.items() if path.startswith(prefix)), None)
             deps = depends_on.get(module) if module else None
             out[path] = cg.Owner(
                 module,
                 path.startswith(excluded) if excluded else False,
                 None if deps is None else tuple(deps),
+                posixpath.dirname(path),
+                public.get(module) if module else None,
             )
         return out
 
