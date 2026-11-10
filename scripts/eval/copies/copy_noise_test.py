@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+from collections import Counter
 import tempfile
 import unittest
 from pathlib import Path
@@ -276,9 +277,11 @@ def event(
     literal="x",
     module="a",
     other="b",
+    repo="t",
 ):
     return {
         "id": id_,
+        "repo": repo,
         "length": length,
         "shape": shape,
         "holder_modules": holders,
@@ -322,17 +325,24 @@ class ScoreTest(unittest.TestCase):
         inside = [event(f"i{n}", length=30) for n in range(2)]
         outside = [event(f"o{n}", length=7, shape="word") for n in range(100)]
         labels = {"i0": "copy", "i1": "copy", "o0": "noise-convention", "o1": "noise-coincidence"}
-        stratum = cn.rule_named(cn.STRATUM_RULE)
-        scores = {s.rule: s for s in cn.score(inside + outside, labels, [], [], stratum)}
+        levels = [cn.rule_named(cn.LEVELS[1])]
+        scores = {s.rule: s for s in cn.score(inside + outside, labels, [], [], levels)}
         self.assertAlmostEqual(scores["floor: length >= 6"].precision, 2 / 102)
-        self.assertEqual(scores[cn.STRATUM_RULE].precision, 1.0)
+        self.assertEqual(scores[cn.LEVELS[1]].precision, 1.0)
         self.assertEqual(scores["floor: length >= 6"].labelled, 4)
 
-    def test_sample_draws_from_both_strata(self):
-        events = [event(f"i{n}", length=30) for n in range(10)] + [event(f"o{n}", length=7) for n in range(10)]
-        chosen = cn.sample(events, (3, 2), seed=1, stratum=cn.rule_named(cn.STRATUM_RULE))
-        self.assertEqual(sorted(name for _, name in chosen), ["in", "in", "in", "out", "out"])
-        self.assertEqual(chosen, cn.sample(events, (3, 2), seed=1, stratum=cn.rule_named(cn.STRATUM_RULE)))
+    def test_sample_draws_from_each_repository_and_level(self):
+        events = (
+            [event(f"a{n}", length=30, repo="r1") for n in range(10)]
+            + [event(f"b{n}", length=30, holders=5, repo="r1") for n in range(10)]
+            + [event(f"c{n}", length=7, repo="r1") for n in range(10)]
+            + [event(f"d{n}", length=30, repo="r2") for n in range(2)]
+        )
+        levels = [cn.rule_named(name) for name in cn.LEVELS]
+        chosen = cn.sample(events, levels, [3, 2, 1], seed=1)
+        counts = Counter(name for _, name in chosen)
+        self.assertEqual(counts, {"r1:0": 3, "r1:1": 2, "r1:2": 1, "r2:0": 2})
+        self.assertEqual(chosen, cn.sample(events, levels, [3, 2, 1], seed=1))
 
     def test_seeded_recall_matches_literal_and_modules(self):
         seeds = [
@@ -364,6 +374,22 @@ class ScoreTest(unittest.TestCase):
             (scores["length >= 24"].seeded_found, scores["length >= 24"].seeded), (1, 2)
         )
         self.assertEqual(scores["length >= 32"].seeded_found, 0)
+
+    def test_strict_reading_counts_keys_and_external_copies_as_noise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "labels.tsv"
+            path.write_text("id\tstratum\tlabel\tnote\na\tt:0\tcopy\tkey: rule id\nb\tt:0\tcopy\tmessage: same error\n")
+            self.assertEqual(cn.read_labels(path), {"a": "copy", "b": "copy"})
+            self.assertEqual(cn.read_labels(path, strict=True), {"a": "noise-convention", "b": "copy"})
+
+    def test_declared_generated_matches_either_site(self):
+        events = [
+            {**event("a"), "path": "gen/v.ts", "other_sites": ["src/x.ts:1"]},
+            {**event("b"), "path": "src/y.ts", "other_sites": ["gen/v.ts:3"]},
+            {**event("c"), "path": "src/y.ts", "other_sites": ["src/x.ts:1"]},
+        ]
+        cn.declare_generated(events, ["gen/*"])
+        self.assertEqual([ev["declared_generated"] for ev in events], [True, True, False])
 
     def test_unknown_label_is_rejected(self):
         with self.assertRaises(ValueError):

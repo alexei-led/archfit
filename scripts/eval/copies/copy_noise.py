@@ -24,13 +24,14 @@ Run scan on disposable clones. Standard library only.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import math
 import random
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -475,13 +476,23 @@ def context(repo: Path, rev: str, path: str, line: int, radius: int = 2) -> str:
     )
 
 
-def sample(events: list[dict], sizes: tuple[int, int], seed: int, stratum: Rule) -> list[tuple[dict, str]]:
-    """Uniform samples from the events the stratum rule keeps ("in") and from the rest ("out")."""
+def stratum_of(ev: dict, levels: list[Rule]) -> str:
+    """Repository and level: the index of the first level rule that keeps the event, else len(levels)."""
+    level = next((n for n, r in enumerate(levels) if r.keep(ev)), len(levels))
+    return f"{ev['repo']}:{level}"
+
+
+def sample(events: list[dict], levels: list[Rule], sizes: list[int], seed: int) -> list[tuple[dict, str]]:
+    """A uniform sample of each stratum (repository x level); sizes[n] events from level n."""
+    if len(sizes) != len(levels) + 1:
+        raise ValueError(f"{len(levels)} level rules need {len(levels) + 1} sizes")
     rng = random.Random(seed)
-    ordered = sorted(events, key=lambda e: e["id"])
+    pools: dict[str, list[dict]] = defaultdict(list)
+    for ev in sorted(events, key=lambda e: e["id"]):
+        pools[stratum_of(ev, levels)].append(ev)
     chosen: list[tuple[dict, str]] = []
-    for name, size in zip(("in", "out"), sizes):
-        pool = [ev for ev in ordered if stratum.keep(ev) == (name == "in")]
+    for name in sorted(pools):
+        pool, size = pools[name], sizes[int(name.rsplit(":", 1)[1])]
         picked = pool if len(pool) <= size else rng.sample(pool, size)
         chosen += [(ev, name) for ev in picked]
     return sorted(chosen, key=lambda pair: pair[0]["id"])
@@ -546,6 +557,8 @@ def rules() -> list[Rule]:
             common = drop.get("common")
             if common and ev["holder_modules"] >= common:
                 return False
+            if drop.get("declared") and ev.get("declared_generated"):
+                return False
             return True
 
         return Rule(name, keep)
@@ -579,10 +592,32 @@ def rules() -> list[Rule]:
                 common=3,
             )
         )
+    out.append(rule("drop declared generated", declared=True))
+    out.append(
+        rule(
+            "length >= 8 + tests + generated + words + held < 3 + declared",
+            8,
+            tests=True,
+            generated=True,
+            words=True,
+            common=3,
+            declared=True,
+        )
+    )
     return out
 
 
-STRATUM_RULE = "length >= 8 + tests + generated + words"
+def declare_generated(events: list[dict], globs: list[str]) -> None:
+    """Mark events either of whose sites is in a declared `generated` path (design 6.1)."""
+    for ev in events:
+        paths = [ev["path"], *(site.rsplit(":", 1)[0] for site in ev["other_sites"])]
+        ev["declared_generated"] = any(fnmatch.fnmatchcase(p, g) for p in paths for g in globs)
+
+
+LEVELS = (
+    "length >= 8 + tests + generated + words + held < 3",
+    "length >= 8 + tests + generated + words",
+)
 
 
 def rule_named(name: str) -> Rule:
@@ -601,12 +636,20 @@ def wilson(successes: float, n: float, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def read_labels(path: Path) -> dict[str, str]:
+STRICT_NOISE = ("key", "external")
+
+
+def read_labels(path: Path, strict: bool = False) -> dict[str, str]:
+    """Labels by event id. Strict: a copy whose note starts with a subkind in STRICT_NOISE counts as noise."""
     out = {}
     for row in path.read_text().splitlines()[1:]:
         parts = row.split("\t")
-        if len(parts) >= 3 and parts[2].strip():
-            out[parts[0].strip()] = parts[2].strip()
+        if len(parts) < 3 or not parts[2].strip():
+            continue
+        label, note = parts[2].strip(), parts[3].strip() if len(parts) > 3 else ""
+        if strict and label == COPY and note.split(":", 1)[0] in STRICT_NOISE:
+            label = NOISE[0]
+        out[parts[0].strip()] = label
     return out
 
 
@@ -641,19 +684,15 @@ def seeds_found(
     )
 
 
-def weights(events: list[dict], labels: dict[str, str], stratum: Rule | None) -> dict[str, float]:
+def weights(events: list[dict], labels: dict[str, str], levels: list[Rule]) -> dict[str, float]:
     """Inverse sampling fraction of each labelled event: stratum size / labelled in the stratum."""
-    if stratum is None:
-        return {ev["id"]: 1.0 for ev in events if ev["id"] in labels}
-    size = {True: 0, False: 0}
-    judged = {True: 0, False: 0}
+    size: Counter = Counter()
+    judged: Counter = Counter()
     for ev in events:
-        side = stratum.keep(ev)
-        size[side] += 1
-        judged[side] += ev["id"] in labels
-    return {
-        ev["id"]: size[stratum.keep(ev)] / judged[stratum.keep(ev)] for ev in events if ev["id"] in labels
-    }
+        name = stratum_of(ev, levels)
+        size[name] += 1
+        judged[name] += ev["id"] in labels
+    return {ev["id"]: size[stratum_of(ev, levels)] / judged[stratum_of(ev, levels)] for ev in events if ev["id"] in labels}
 
 
 def score(
@@ -661,7 +700,7 @@ def score(
     labels: dict[str, str],
     seeds: list[dict],
     seeded_events: list[dict],
-    stratum: Rule | None = None,
+    levels: list[Rule] | None = None,
     repos: set[str] | None = None,
 ) -> list[Score]:
     """Precision per rule, weighted by stratum; the interval uses the effective sample size."""
@@ -669,7 +708,7 @@ def score(
     bad = {label for label in labels.values() if label not in (COPY, UNCLEAR, *NOISE)}
     if bad:
         raise ValueError(f"unknown labels: {sorted(bad)}")
-    weight = weights(events, labels, stratum)
+    weight = weights(events, labels, levels or [])
     if repos:
         events = [ev for ev in events if ev["repo"] in repos]
     out = []
@@ -743,17 +782,18 @@ def main(argv: list[str] | None = None) -> int:
     sm = sub.add_parser("sample")
     sm.add_argument("--events", type=Path, nargs="+", required=True)
     sm.add_argument("--repo", type=repo_arg, action="append", required=True)
-    sm.add_argument("--size-in", type=int, default=80, help="events the stratum rule keeps")
-    sm.add_argument("--size-out", type=int, default=40, help="events the stratum rule drops")
-    sm.add_argument("--stratum-rule", default=STRATUM_RULE)
+    sm.add_argument("--level", action="append", help="level rule, strictest first (default: LEVELS)")
+    sm.add_argument("--sizes", type=int, nargs="+", default=[15, 6, 5], help="per repository, per level, then the rest")
     sm.add_argument("--seed", type=int, default=20261110)
     sm.add_argument("--out", type=Path, required=True)
     sm.add_argument("--labels", type=Path, required=True)
     so = sub.add_parser("score")
     so.add_argument("--events", type=Path, nargs="+", required=True)
     so.add_argument("--labels", type=Path, required=True)
-    so.add_argument("--stratum-rule", default=STRATUM_RULE, help="the rule the sample was drawn with; '' for none")
+    so.add_argument("--level", action="append", help="the level rules the sample was drawn with (default: LEVELS)")
     so.add_argument("--repos", nargs="*", help="score only these repositories")
+    so.add_argument("--strict", action="store_true", help="count key and external copies as noise")
+    so.add_argument("--generated", nargs="*", default=[], help="globs an owner would declare as generated")
     so.add_argument(
         "--seeds",
         type=Path,
@@ -775,19 +815,19 @@ def main(argv: list[str] | None = None) -> int:
         write_events(args.out, events)
         print(json.dumps({"repo": label, **asdict(stats)}))
     elif args.cmd == "sample":
-        chosen = sample(
-            read_events(args.events), (args.size_in, args.size_out), args.seed, rule_named(args.stratum_rule)
-        )
+        levels = [rule_named(name) for name in (args.level or LEVELS)]
+        chosen = sample(read_events(args.events), levels, args.sizes, args.seed)
         write_sample(chosen, dict(args.repo), args.out, args.labels)
         print(f"{len(chosen)} events -> {args.out}, label in {args.labels}")
     else:
         events = read_events(args.events)
         seeds = read_events([args.seeds]) if args.seeds else []
         seeded_events = read_events(args.seeded_events)
-        stratum = rule_named(args.stratum_rule) if args.stratum_rule else None
-        labels = read_labels(args.labels)
+        levels = [rule_named(name) for name in (args.level or LEVELS)]
+        labels = read_labels(args.labels, args.strict)
+        declare_generated(events, args.generated)
         repos = set(args.repos) if args.repos else None
-        print(render(score(events, labels, seeds, seeded_events, stratum, repos)))
+        print(render(score(events, labels, seeds, seeded_events, levels, repos)))
         rewritten = [seed for seed in seeds if seed["kind"] == "rewritten"]
         if rewritten:
             found = seeds_found(lambda ev: True, rewritten, seeded_events)
