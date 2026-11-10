@@ -1129,7 +1129,7 @@ the milestones.
 | `archfit-app` | `docs/design/cloud/**`, `docs/design/merge-queue.md`, `docs/tech-stack.md` | Keep |
 | `archfit-app` | `docs/architecture.md`, `docs/user-guide.md` | Rewrite in milestones 2 and 3 |
 | `archfit-action` | `README.md`, `schema/`, `CHANGELOG.md` | Rewrite in milestone 2. Nothing to archive. |
-| all | `AGENTS.md` and `CLAUDE.md` pointers | Point "start here" to this document until the new guides exist |
+| all | `AGENTS.md` and `CLAUDE.md` pointers | "Start here" points to this document until the new guides exist. One pull request per repository: `archfit`, `archfit-app`, `archfit-action` (`CLAUDE.md` only). Done on 2026-11-10. |
 
 After milestone 3 the user guides describe the behaviour, and this document moves to
 `docs/archived/plans/`.
