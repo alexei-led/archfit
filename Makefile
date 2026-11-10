@@ -47,10 +47,16 @@ build: ## compile the archfit binary
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
 
 ## test: run tests with race detector and coverage
+# The SCIP reader test uses ARCHFIT_TOOL_PYTHON when set, as CI does. Otherwise it
+# runs where the extractor falls back (internal/extract/scip/scip_strength.go): an
+# isolated uv Python 3.14 with the reader pins from tools/python/requirements.in.
+SCIP_READER_DEPS   = $(shell grep -E '^(protobuf|grpcio-tools)==' tools/python/requirements.in)
+SCIP_READER_PYTHON = $(if $(ARCHFIT_TOOL_PYTHON),"$$ARCHFIT_TOOL_PYTHON",uv run --no-config --config-file /dev/null --no-env-file --no-project --isolated --python 3.14 $(addprefix --with ,$(SCIP_READER_DEPS)) python)
+
 .PHONY: test
 test: ## run tests with race detector and coverage
 	go test -race -coverprofile=coverage.out $(if $(TEST_PKGS),$(TEST_PKGS),./...)
-	"$${ARCHFIT_TOOL_PYTHON:-python3}" -I internal/extract/scip/scip_reader_test.py
+	$(SCIP_READER_PYTHON) -I internal/extract/scip/scip_reader_test.py
 	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python -m unittest discover -s scripts/eval -p '*_test.py'
 	bash scripts/tests/cli_exit_contract_test.sh
 
