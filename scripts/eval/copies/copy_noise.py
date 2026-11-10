@@ -460,20 +460,23 @@ def context(repo: Path, rev: str, path: str, line: int, radius: int = 2) -> str:
     )
 
 
-def sample(events: list[dict], size: int, seed: int) -> list[dict]:
-    if len(events) <= size:
-        return sorted(events, key=lambda e: e["id"])
-    return sorted(
-        random.Random(seed).sample(sorted(events, key=lambda e: e["id"]), size),
-        key=lambda e: e["id"],
-    )
+def sample(events: list[dict], sizes: tuple[int, int], seed: int, stratum: Rule) -> list[tuple[dict, str]]:
+    """Uniform samples from the events the stratum rule keeps ("in") and from the rest ("out")."""
+    rng = random.Random(seed)
+    ordered = sorted(events, key=lambda e: e["id"])
+    chosen: list[tuple[dict, str]] = []
+    for name, size in zip(("in", "out"), sizes):
+        pool = [ev for ev in ordered if stratum.keep(ev) == (name == "in")]
+        picked = pool if len(pool) <= size else rng.sample(pool, size)
+        chosen += [(ev, name) for ev in picked]
+    return sorted(chosen, key=lambda pair: pair[0]["id"])
 
 
 def write_sample(
-    chosen: list[dict], repos: dict[str, Path], out: Path, labels: Path
+    chosen: list[tuple[dict, str]], repos: dict[str, Path], out: Path, labels: Path
 ) -> None:
     lines = ["# Copy-noise sample", ""]
-    for ev in chosen:
+    for ev, _ in chosen:
         repo = repos[ev["repo"]]
         parent = cg.git(repo, "rev-parse", f"{ev['unit']}^1").strip()
         other_path, other_line = ev["other_sites"][0].rsplit(":", 1)
@@ -494,9 +497,9 @@ def write_sample(
         ]
     out.write_text("\n".join(lines))
     with labels.open("w") as fh:
-        fh.write("id\tlabel\tnote\n")
-        for ev in chosen:
-            fh.write(f"{ev['id']}\t\t\n")
+        fh.write("id\tstratum\tlabel\tnote\n")
+        for ev, name in chosen:
+            fh.write(f"{ev['id']}\t{name}\t\t\n")
 
 
 # --- score ----------------------------------------------------------------------------------
@@ -564,7 +567,17 @@ def rules() -> list[Rule]:
     return out
 
 
-def wilson(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+STRATUM_RULE = "length >= 8 + tests + generated + words"
+
+
+def rule_named(name: str) -> Rule:
+    found = [r for r in rules() if r.name == name]
+    if not found:
+        raise ValueError(f"no rule named {name!r}")
+    return found[0]
+
+
+def wilson(successes: float, n: float, z: float = 1.96) -> tuple[float, float]:
     if n == 0:
         return (0.0, 0.0)
     p = successes / n
@@ -577,8 +590,8 @@ def read_labels(path: Path) -> dict[str, str]:
     out = {}
     for row in path.read_text().splitlines()[1:]:
         parts = row.split("\t")
-        if len(parts) >= 2 and parts[1].strip():
-            out[parts[0].strip()] = parts[1].strip()
+        if len(parts) >= 3 and parts[2].strip():
+            out[parts[0].strip()] = parts[2].strip()
     return out
 
 
@@ -613,33 +626,56 @@ def seeds_found(
     )
 
 
+def weights(events: list[dict], labels: dict[str, str], stratum: Rule | None) -> dict[str, float]:
+    """Inverse sampling fraction of each labelled event: stratum size / labelled in the stratum."""
+    if stratum is None:
+        return {ev["id"]: 1.0 for ev in events if ev["id"] in labels}
+    size = {True: 0, False: 0}
+    judged = {True: 0, False: 0}
+    for ev in events:
+        side = stratum.keep(ev)
+        size[side] += 1
+        judged[side] += ev["id"] in labels
+    return {
+        ev["id"]: size[stratum.keep(ev)] / judged[stratum.keep(ev)] for ev in events if ev["id"] in labels
+    }
+
+
 def score(
     events: list[dict],
     labels: dict[str, str],
     seeds: list[dict],
     seeded_events: list[dict],
+    stratum: Rule | None = None,
+    repos: set[str] | None = None,
 ) -> list[Score]:
+    """Precision per rule, weighted by stratum; the interval uses the effective sample size."""
     identical = [seed for seed in seeds if seed["kind"] == "identical"]
     bad = {label for label in labels.values() if label not in (COPY, UNCLEAR, *NOISE)}
     if bad:
         raise ValueError(f"unknown labels: {sorted(bad)}")
+    weight = weights(events, labels, stratum)
+    if repos:
+        events = [ev for ev in events if ev["repo"] in repos]
     out = []
     for r in rules():
         kept = [ev for ev in events if r.keep(ev)]
-        judged = [labels[ev["id"]] for ev in kept if ev["id"] in labels]
-        copies = judged.count(COPY)
-        noise = sum(judged.count(n) for n in NOISE)
-        decided = copies + noise
-        low, high = wilson(copies, decided) if decided else (None, None)
+        judged = [(labels[ev["id"]], weight[ev["id"]]) for ev in kept if ev["id"] in labels]
+        decided = [(label, w) for label, w in judged if label != UNCLEAR]
+        total = sum(w for _, w in decided)
+        copies_w = sum(w for label, w in decided if label == COPY)
+        precision = copies_w / total if total else None
+        n_eff = total * total / sum(w * w for _, w in decided) if decided else 0.0
+        low, high = wilson(precision * n_eff, n_eff) if decided and precision is not None else (None, None)
         out.append(
             Score(
                 rule=r.name,
                 flagged=len(kept),
                 labelled=len(judged),
-                copies=copies,
-                noise=noise,
-                unclear=judged.count(UNCLEAR),
-                precision=copies / decided if decided else None,
+                copies=sum(label == COPY for label, _ in judged),
+                noise=sum(label in NOISE for label, _ in judged),
+                unclear=sum(label == UNCLEAR for label, _ in judged),
+                precision=precision,
                 low=low,
                 high=high,
                 seeded=len(identical),
@@ -692,13 +728,17 @@ def main(argv: list[str] | None = None) -> int:
     sm = sub.add_parser("sample")
     sm.add_argument("--events", type=Path, nargs="+", required=True)
     sm.add_argument("--repo", type=repo_arg, action="append", required=True)
-    sm.add_argument("--size", type=int, default=120)
+    sm.add_argument("--size-in", type=int, default=80, help="events the stratum rule keeps")
+    sm.add_argument("--size-out", type=int, default=40, help="events the stratum rule drops")
+    sm.add_argument("--stratum-rule", default=STRATUM_RULE)
     sm.add_argument("--seed", type=int, default=20261110)
     sm.add_argument("--out", type=Path, required=True)
     sm.add_argument("--labels", type=Path, required=True)
     so = sub.add_parser("score")
     so.add_argument("--events", type=Path, nargs="+", required=True)
     so.add_argument("--labels", type=Path, required=True)
+    so.add_argument("--stratum-rule", default=STRATUM_RULE, help="the rule the sample was drawn with; '' for none")
+    so.add_argument("--repos", nargs="*", help="score only these repositories")
     so.add_argument(
         "--seeds",
         type=Path,
@@ -720,14 +760,19 @@ def main(argv: list[str] | None = None) -> int:
         write_events(args.out, events)
         print(json.dumps({"repo": label, **asdict(stats)}))
     elif args.cmd == "sample":
-        chosen = sample(read_events(args.events), args.size, args.seed)
+        chosen = sample(
+            read_events(args.events), (args.size_in, args.size_out), args.seed, rule_named(args.stratum_rule)
+        )
         write_sample(chosen, dict(args.repo), args.out, args.labels)
         print(f"{len(chosen)} events -> {args.out}, label in {args.labels}")
     else:
         events = read_events(args.events)
         seeds = read_events([args.seeds]) if args.seeds else []
         seeded_events = read_events(args.seeded_events)
-        print(render(score(events, read_labels(args.labels), seeds, seeded_events)))
+        stratum = rule_named(args.stratum_rule) if args.stratum_rule else None
+        labels = read_labels(args.labels)
+        repos = set(args.repos) if args.repos else None
+        print(render(score(events, labels, seeds, seeded_events, stratum, repos)))
         rewritten = [seed for seed in seeds if seed["kind"] == "rewritten"]
         if rewritten:
             found = seeds_found(lambda ev: True, rewritten, seeded_events)

@@ -311,6 +311,22 @@ class ScoreTest(unittest.TestCase):
             (2, 1, 0, 1.0),
         )
 
+    def test_stratified_precision_weights_each_stratum_by_its_size(self):
+        inside = [event(f"i{n}", length=30) for n in range(2)]
+        outside = [event(f"o{n}", length=7, shape="word") for n in range(100)]
+        labels = {"i0": "copy", "i1": "copy", "o0": "noise-convention", "o1": "noise-coincidence"}
+        stratum = cn.rule_named(cn.STRATUM_RULE)
+        scores = {s.rule: s for s in cn.score(inside + outside, labels, [], [], stratum)}
+        self.assertAlmostEqual(scores["floor: length >= 6"].precision, 2 / 102)
+        self.assertEqual(scores[cn.STRATUM_RULE].precision, 1.0)
+        self.assertEqual(scores["floor: length >= 6"].labelled, 4)
+
+    def test_sample_draws_from_both_strata(self):
+        events = [event(f"i{n}", length=30) for n in range(10)] + [event(f"o{n}", length=7) for n in range(10)]
+        chosen = cn.sample(events, (3, 2), seed=1, stratum=cn.rule_named(cn.STRATUM_RULE))
+        self.assertEqual(sorted(name for _, name in chosen), ["in", "in", "in", "out", "out"])
+        self.assertEqual(chosen, cn.sample(events, (3, 2), seed=1, stratum=cn.rule_named(cn.STRATUM_RULE)))
+
     def test_seeded_recall_matches_literal_and_modules(self):
         seeds = [
             {
