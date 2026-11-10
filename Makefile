@@ -47,10 +47,16 @@ build: ## compile the archfit binary
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
 
 ## test: run tests with race detector and coverage
+# The SCIP reader test uses ARCHFIT_TOOL_PYTHON when set, as CI does. Otherwise it
+# runs where the extractor falls back (internal/extract/scip/scip_strength.go): an
+# isolated uv Python 3.14 with the reader pins from tools/python/requirements.in.
+SCIP_READER_DEPS   = $(shell grep -E '^(protobuf|grpcio-tools)==' tools/python/requirements.in)
+SCIP_READER_PYTHON = $(if $(ARCHFIT_TOOL_PYTHON),"$$ARCHFIT_TOOL_PYTHON",uv run --no-config --config-file /dev/null --no-env-file --no-project --isolated --python 3.14 $(addprefix --with ,$(SCIP_READER_DEPS)) python)
+
 .PHONY: test
 test: ## run tests with race detector and coverage
 	go test -race -coverprofile=coverage.out $(if $(TEST_PKGS),$(TEST_PKGS),./...)
-	"$${ARCHFIT_TOOL_PYTHON:-python3}" -I internal/extract/scip/scip_reader_test.py
+	$(SCIP_READER_PYTHON) -I internal/extract/scip/scip_reader_test.py
 	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python -m unittest discover -s scripts/eval -p '*_test.py'
 	bash scripts/tests/cli_exit_contract_test.sh
 
@@ -157,6 +163,23 @@ setup-tools: ## install pinned development tools
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION)
 	go install github.com/matryer/moq@$(MOQ_VERSION)
+
+## host-tools: install the locked Node and Python analyzer environments for host runs
+# Host counterpart of scripts/provision-analyzers.sh for the Node and Python locks
+# only: that script also compiles scip-go and cargo-modules into an image prefix.
+# PATH and shell profiles stay with the user: the target only prints what to set.
+HOST_TOOLS_DIR      := $(HOME)/.local/share/archfit-tools
+TOOL_PYTHON_VERSION  = $(shell python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["versions"]["python"])' tools/manifest.json)
+
+.PHONY: host-tools
+host-tools: ## install locked depcruise and ARCHFIT_TOOL_PYTHON under HOST_TOOLS_DIR (default ~/.local/share/archfit-tools)
+	mkdir -p "$(HOST_TOOLS_DIR)/node"
+	cp tools/node/package.json tools/node/package-lock.json "$(HOST_TOOLS_DIR)/node/"
+	npm ci --prefix "$(HOST_TOOLS_DIR)/node" --no-audit --no-fund
+	uv venv --clear --python $(TOOL_PYTHON_VERSION) "$(HOST_TOOLS_DIR)/python"
+	uv pip sync --python "$(HOST_TOOLS_DIR)/python/bin/python" --require-hashes --only-binary :all: tools/python/requirements.lock
+	@echo "depcruise: $(HOST_TOOLS_DIR)/node/node_modules/.bin/depcruise"
+	@echo "ARCHFIT_TOOL_PYTHON=$(HOST_TOOLS_DIR)/python/bin/python"
 
 ## release: cross-compile for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 into dist/
 .PHONY: release

@@ -1,5 +1,9 @@
 @CLAUDE.md
 
+New work on Archfit 4 follows `docs/plans/20261110-archfit-4-architecture-change-control.md`.
+That design wins when it disagrees with an older document.
+The user guides under `docs/` describe the behavior shipped today.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

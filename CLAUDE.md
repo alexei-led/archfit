@@ -4,6 +4,8 @@ Archfit is a Go command-line tool for checking architecture policy against depen
 
 ## Start here
 
+- New work on Archfit 4: `docs/plans/20261110-archfit-4-architecture-change-control.md`. Follow this design. It wins when it disagrees with an older document.
+- Behavior shipped today: the user guides under `docs/`, listed below.
 - User behavior and configuration: `docs/` topic pages. Start with `docs/getting-started.md`.
 - System boundaries and change ownership: `docs/architecture.md`.
 - Evidence completeness and trust limits: `docs/evidence.md`.
