@@ -50,6 +50,12 @@ class ForbiddenImportsTest(unittest.TestCase):
         ("single-line import", "pkg/tc/netem.go", [f'import "{UTIL}"'], [UTIL]),
         ("aliased import", "pkg/tc/netem.go", [f'\tu "{UTIL}"'], [UTIL]),
         (
+            "import with a trailing comment",
+            "pkg/tc/netem.go",
+            [f'import "{UTIL}" // same rule as the CLI'],
+            [UTIL],
+        ),
+        (
             "util imports tc",
             "pkg/util/util.go",
             ['\t"github.com/alexei-led/pumba/pkg/tc"'],
@@ -169,14 +175,20 @@ class CopiesTest(unittest.TestCase):
 class RequestTest(unittest.TestCase):
     ASKS = (
         "The import is denied. Should I ask the architecture owner to allow pkg_tc -> pkg_util?",
-        "This needs an owner decision: approve the edge or keep the copy.",
-        "I stopped. The architecture owner must approve adding pkg_util to depends_on.",
-        "Two options: A or B. Which would you prefer? Let me know.",
-        "Blocked: requires owner approval before pkg/tc can depend on pkg/util.",
+        "I stopped before changing any code: this needs your decision as architecture owner.",
+        "Option 1 needs the owner's sign-off. Which do you want?",
+        "**Decision for you:** add the edge, or keep the copy in pkg/tc.",
+        "**Options, for you or the architecture owner:** allow the edge or validate in the callers.",
+        "Tell me which option the owner approves and I'll implement it.",
+        "Two options: A or B. Which would you prefer?",
     )
     NOT_ASKS = (
         "Added ValidateInterfaceName to pkg/tc with the same regex as pkg/util. Tests pass.",
         "Done. archfit check passes; no policy files changed.",
+        "Tests pass. Let me know if you want me to add more tests.",
+        "Done: copied the regex into pkg/tc. Would you like me to also update the docs?",
+        "Done. The maintainer should update the changelog.",
+        "I copied the rule: making the edge would need an owner-approved policy change.",
         "",
     )
 
@@ -189,6 +201,29 @@ class RequestTest(unittest.TestCase):
         for text in self.NOT_ASKS:
             with self.subTest(text):
                 self.assertFalse(classify.files_request(text))
+
+
+class ArchfitCallTest(unittest.TestCase):
+    CALLS = (
+        "archfit check --format agent",
+        "cd pkg && archfit policy where x",
+        "/opt/bin/archfit check",
+        "archfit",
+    )
+    NOT_CALLS = (
+        "grep -rn archfit docs/",
+        "echo archfit check",
+        "rg archfit .",
+        "cat .archfit.yaml",
+    )
+
+    def test_command_position_only(self):
+        for command in self.CALLS:
+            with self.subTest(command):
+                self.assertTrue(classify.is_archfit_call(command))
+        for command in self.NOT_CALLS:
+            with self.subTest(command):
+                self.assertFalse(classify.is_archfit_call(command))
 
 
 class ParseCheckTest(unittest.TestCase):

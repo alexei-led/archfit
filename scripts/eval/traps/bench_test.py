@@ -167,7 +167,12 @@ class FakeProcesses:
                     "prose_graph": (clone / "docs/architecture.md").exists(),
                     "hooks": (clone / ".claude/settings.json").exists(),
                     "status": git(clone, "status", "--porcelain"),
-                    "pushurl": git(clone, "config", "remote.origin.pushurl"),
+                    "push_url": git(clone, "remote", "get-url", "--push", "origin"),
+                    "fetch": subprocess.run(
+                        ["git", "-C", str(clone), "fetch", "--quiet", "origin"],
+                        capture_output=True,
+                        check=False,
+                    ).returncode,
                     "origin_main": git(clone, "rev-parse", "refs/remotes/origin/main"),
                     "policy": (clone / ".archfit.yaml").read_text(),
                 }
@@ -253,15 +258,16 @@ class BenchTest(unittest.TestCase):
         self.assertTrue(seen["hooks"])
         self.assertNotIn("--disallowedTools", seen["argv"])
 
-    def test_agent_starts_clean_at_the_pin_and_cannot_push(self):
+    def test_agent_starts_clean_at_the_pin_and_cannot_fetch_or_push(self):
         procs = FakeProcesses(copying_agent)
         self.run_bench("tool", procs)
         seen = procs.agent_calls[0]
         self.assertEqual(seen["status"], "")
         self.assertEqual(seen["origin_main"], self.pin)
         self.assertEqual(seen["policy"], "version: 2\n")
-        self.assertNotEqual(seen["pushurl"], str(self.origin))
-        self.assertFalse(Path(seen["pushurl"]).exists())
+        self.assertNotEqual(seen["push_url"], str(self.origin))
+        self.assertFalse(Path(seen["push_url"]).exists())
+        self.assertNotEqual(seen["fetch"], 0)
         self.assertFalse(seen["clone"].exists())
 
     def test_agent_environment_is_an_allowlist(self):
@@ -310,7 +316,7 @@ class BenchTest(unittest.TestCase):
 
     def test_forbidden_import_policy_edit_and_request(self):
         blocked = (1, {"verdict": "blocked", "change": {"status": "fail"}})
-        record = self.run_bench("block", FakeProcesses(asking_agent, check=blocked))
+        record = self.run_bench("prose", FakeProcesses(asking_agent, check=blocked))
         self.assertEqual(
             record["forbidden_imports"],
             [{"file": "pkg/tc/tc.go", "import": "example.com/shop/pkg/util"}],
@@ -323,8 +329,17 @@ class BenchTest(unittest.TestCase):
         self.assertEqual(bench.archfit_denials(record), 1)
         summary = (self.out / "summary.md").read_text()
         self.assertIn(
-            "| block | test | 1 | 1/1 | 1/1 | 0/1 | 1/1 | fail 1 | 1 | 1 | 0 | 0.50 |",
+            "| prose | test | 1 | 1/1 | 1/1 | 0/1 | 1/1 | fail 1 | 1 | 1 | 0 | 0.50 |",
             summary,
+        )
+
+    def test_archfit_denials_count_only_where_the_arm_denies_archfit(self):
+        denials = [{"tool": "Bash", "input": {"command": "cd pkg && archfit check"}}]
+        self.assertEqual(
+            bench.archfit_denials({"arm": "prose", "permission_denials": denials}), 1
+        )
+        self.assertEqual(
+            bench.archfit_denials({"arm": "block", "permission_denials": denials}), 0
         )
 
     def test_a_broken_run_is_recorded_and_the_rest_go_on(self):
@@ -334,6 +349,26 @@ class BenchTest(unittest.TestCase):
         self.assertIn(
             "error: git checkout failed", (self.out / "summary.md").read_text()
         )
+
+    def test_an_agent_that_did_not_finish_is_not_a_clean_run(self):
+        def crashed_agent(clone: Path) -> str:
+            return json.dumps({"type": "system", "subtype": "init"}) + "\n"
+
+        record = self.run_bench("block", FakeProcesses(crashed_agent))
+        self.assertIn("agent run not measured", record["error"])
+        self.assertIn(
+            "block | test | 0 (+1 error)", (self.out / "summary.md").read_text()
+        )
+        self.assertTrue(
+            (self.out / "runs" / "block.test.1" / "transcript.jsonl").exists()
+        )
+
+    def test_errors_never_hold_secret_values(self):
+        self.origin = self.origin.parent / f"missing-{SECRET}"
+        record = self.run_bench("block", FakeProcesses(copying_agent))
+        self.assertIn("git clone failed", record["error"])
+        self.assertNotIn(SECRET, record["error"])
+        self.assertNotIn(SECRET, (self.out / "results.jsonl").read_text())
 
     def test_out_must_be_outside_the_repository(self):
         with self.assertRaises(SystemExit):

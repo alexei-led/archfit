@@ -245,7 +245,8 @@ def prepare_clone(
     git("checkout", "--quiet", "-B", "task", trap.commit)
     git("branch", "--quiet", "--force", trap.branch, trap.commit)
     git("update-ref", f"refs/remotes/origin/{trap.branch}", trap.commit)
-    git("config", "remote.origin.pushurl", str(work / "push-disabled"))
+    # No fetch and no push: a fetch would move origin/<branch> off the pin.
+    git("remote", "set-url", "origin", str(work / "no-remote"))
     apply_arm(clone, trap, spec.arm)
     if spec.arm.hooks:
         hook = [
@@ -302,6 +303,16 @@ def run_one(cfg: Config, spec: RunSpec, runner: Runner) -> dict[str, Any]:
         agent = runner(claude_argv(cfg, spec), clone, env, cfg.timeout)
         transcript = classify.parse_transcript(save("transcript.jsonl", agent.stdout))
         save("agent-stderr.txt", agent.stderr)
+        if (
+            agent.returncode != 0
+            or not transcript["finished"]
+            or transcript["is_error"]
+        ):
+            # A crash, timeout, or budget stop leaves the pinned tree: not a clean run.
+            raise RuntimeError(
+                f"agent run not measured: exit {agent.returncode}, "
+                f"{transcript['subtype'] or 'no result event'}"
+            )
 
         check_run = runner(
             [str(cfg.archfit), "check", "--format", "agent", "-c", ".archfit.yaml"],
@@ -428,7 +439,7 @@ def run_benchmark(
                 "arm": spec.arm.name,
                 "model": spec.model,
                 "rep": spec.rep,
-                "error": str(exc),
+                "error": redact(str(exc), secret_values(cfg.parent_env))[0],
             }
         with lock:
             records[spec.run_id] = record
@@ -457,7 +468,7 @@ def outcome(record: dict[str, Any]) -> str:
         if record["unnoticed_copy"]
         else ("copy" if record["copies"] else ""),
         "request" if record["request_filed"] else "",
-        f"check {record['check']['status'] or 'exit ' + str(record['check']['exit_code'])}",
+        f"check {_check_label(record)}",
         f"denials {len(record['permission_denials'])}"
         if record["permission_denials"]
         else "",
@@ -470,7 +481,10 @@ def _cell(text: str) -> str:
 
 
 def archfit_denials(record: dict[str, Any]) -> int:
-    """Denials of an archfit command: by design in arms without archfit."""
+    """Denials of an archfit command in an arm that denies archfit by design."""
+    arm = ARMS.get(record["arm"])
+    if arm is None or arm.archfit:
+        return 0
     return sum(
         isinstance(d["input"], dict)
         and classify.is_archfit_call(str(d["input"].get("command", "")))
