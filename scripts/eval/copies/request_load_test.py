@@ -58,55 +58,36 @@ class ResolveTest(unittest.TestCase):
             "go.mod",
             "pkg/a/a.go",
             "pkg/a/a_test.go",
+            "libs/foo/go.mod",
+            "libs/foo/foo.go",
             "src/app/__init__.py",
             "src/app/core/__init__.py",
             "src/app/core/rules.py",
+            "src/app/core/store.py",
             "src/app/web.py",
             "web/util/index.ts",
             "web/util/date.ts",
             "web/main.ts",
         }
-        self.tree.go_mods = {"example.com/m": ""}
+        self.tree.go_mods = {"example.com/m": "", "example.com/foo": "libs/foo"}
 
     def test_resolve(self):
+        web, rules = "src/app/web.py", "src/app/core/rules.py"
         cases = [
-            ("go", "cmd/x.go", "example.com/m/pkg/a", "pkg/a/a.go"),
-            ("go", "cmd/x.go", "example.com/other/pkg", None),
-            ("go", "cmd/x.go", "fmt", None),
-            (
-                "python",
-                "src/app/web.py",
-                rl.PyImport(0, "app.core.rules", ()),
-                "src/app/core/rules.py",
-            ),
-            (
-                "python",
-                "src/app/web.py",
-                rl.PyImport(0, "app.core", ("rules",)),
-                "src/app/core/rules.py",
-            ),
-            (
-                "python",
-                "src/app/web.py",
-                rl.PyImport(0, "app.core", ("Rule",)),
-                "src/app/core/__init__.py",
-            ),
-            (
-                "python",
-                "src/app/core/rules.py",
-                rl.PyImport(2, "web", ()),
-                "src/app/web.py",
-            ),
-            (
-                "python",
-                "src/app/core/rules.py",
-                rl.PyImport(1, "", ("rules",)),
-                "src/app/core/rules.py",
-            ),
-            ("python", "src/app/web.py", rl.PyImport(0, "os.path", ()), None),
-            ("js", "web/main.ts", "./util", "web/util/index.ts"),
-            ("js", "web/main.ts", "./util/date.js", "web/util/date.ts"),
-            ("js", "web/main.ts", "@/util/date", None),
+            ("go", "cmd/x.go", "example.com/m/pkg/a", ["pkg/a/a.go"]),
+            ("go", "cmd/x.go", "example.com/foo", ["libs/foo/foo.go"]),
+            ("go", "cmd/x.go", "example.com/other/pkg", []),
+            ("go", "cmd/x.go", "fmt", []),
+            ("python", web, rl.PyImport(0, "app.core.rules", ()), [rules]),
+            ("python", web, rl.PyImport(0, "app.core", ("rules",)), [rules]),
+            ("python", web, rl.PyImport(0, "app.core", ("rules", "store")), [rules, "src/app/core/store.py"]),
+            ("python", web, rl.PyImport(0, "app.core", ("Rule",)), ["src/app/core/__init__.py"]),
+            ("python", rules, rl.PyImport(2, "web", ()), [web]),
+            ("python", rules, rl.PyImport(1, "", ("rules",)), [rules]),
+            ("python", web, rl.PyImport(0, "os.path", ()), []),
+            ("js", "web/main.ts", "./util", ["web/util/index.ts"]),
+            ("js", "web/main.ts", "./util/date.js", ["web/util/date.ts"]),
+            ("js", "web/main.ts", "@/util/date", []),
         ]
         for lang, path, spec, want in cases:
             with self.subTest(spec=spec):
@@ -171,6 +152,7 @@ class TimelineTest(unittest.TestCase):
         self.assertTrue(pairs[("C", "B")]["with_new_module"])
         self.assertFalse(pairs[("B", "C")]["with_new_module"])
         self.assertEqual(report["missing_from_depends_on"], {"pairs": 2, "commits": 2})
+        self.assertEqual(report["test_only_pairs_at_head"], ["A->C"])
         self.assertEqual(report["first_appearances_after_root"]["existing_modules"], 2)
 
     def test_freeze_counts_pairs_that_appear_after_the_policy(self):

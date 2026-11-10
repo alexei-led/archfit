@@ -7,6 +7,9 @@ Python absolute and relative imports, TS/JS relative imports. TS/JS aliases and 
 Rust, and C# are not read. Imports of a file are re-read only when the file changes; targets are
 resolved again whenever code files are added, removed or renamed.
 
+An importer whose path looks like a test (corpus_git.is_test_path) is skipped: the counts assume
+the 4.0 policy declares its tests. `test_only_pairs_at_head` lists the pairs that leaves out.
+
 In 4.0 `archfit init` writes `depends_on` as the dependencies that exist, so the load is a pair
 that first appears after a policy is set. `pairs` reports that for policies set 3, 6 and 12 months
 before the last commit, splits pairs that involve a module new since then (itself a policy change),
@@ -143,15 +146,16 @@ class Tree:
             self._py_roots = sorted(roots)
         return self._py_roots
 
-    def resolve(self, path: str, lang: str, spec: Spec) -> str | None:
-        """The file an import names, or None when it is outside the tree or not read."""
-        if lang == "go" and isinstance(spec, str):
-            return self._go(spec)
+    def resolve(self, path: str, lang: str, spec: Spec) -> list[str]:
+        """The files an import names; empty when they are outside the tree or not read."""
         if lang == "python" and isinstance(spec, PyImport):
             return self._python(path, spec)
-        if lang == "js" and isinstance(spec, str):
-            return self._js(path, spec)
-        return None
+        hit = None
+        if lang == "go" and isinstance(spec, str):
+            hit = self._go(spec)
+        elif lang == "js" and isinstance(spec, str):
+            hit = self._js(path, spec)
+        return [hit] if hit else []
 
     def _go(self, spec: str) -> str | None:
         best = max(
@@ -162,7 +166,8 @@ class Tree:
         if best is None:
             return None
         rel = spec[len(best) :].lstrip("/")
-        target = posixpath.join(self.go_mods[best], rel) if self.go_mods[best] else rel
+        base = self.go_mods[best]
+        target = posixpath.join(base, rel) if base and rel else base or rel
         files = self.go_dirs().get(target)
         return files[0] if files else None
 
@@ -180,7 +185,7 @@ class Tree:
                 return hit
         return None
 
-    def _python(self, path: str, spec: PyImport) -> str | None:
+    def _python(self, path: str, spec: PyImport) -> list[str]:
         parts = [p for p in spec.name.split(".") if p]
         if spec.level:
             pkg = posixpath.dirname(path)
@@ -190,17 +195,18 @@ class Tree:
         else:
             roots = self.py_roots()
         for root in roots:
-            for name in spec.names:  # `from a import b` where b is a submodule
-                hit = self._py_file(posixpath.join(root, *parts, name))
-                if hit:
-                    return hit
+            # `from a import b, c` where b and c are submodules: each one is a dependency.
+            subs = [self._py_file(posixpath.join(root, *parts, name)) for name in spec.names]
+            found = [hit for hit in subs if hit]
+            if found:
+                return found
             if parts:
                 hit = self._py_dotted(root, parts)
                 if hit:
-                    return hit
+                    return [hit]
             elif posixpath.join(root, "__init__.py") in self.files:
-                return posixpath.join(root, "__init__.py")
-        return None
+                return [posixpath.join(root, "__init__.py")]
+        return []
 
     def _js(self, path: str, spec: str) -> str | None:
         if not spec.startswith("."):
@@ -262,8 +268,7 @@ class Timeline:
     def _targets(self, path: str) -> frozenset[str]:
         if path not in self.resolved:
             _, lang, imports = self.specs[path]
-            targets = {self.tree.resolve(path, lang, imp) for imp in imports}
-            self.resolved[path] = frozenset(t for t in targets if t)
+            self.resolved[path] = frozenset(t for imp in imports for t in self.tree.resolve(path, lang, imp))
         return self.resolved[path]
 
     def current(self) -> dict[Pair, tuple[str, bool]]:
@@ -348,11 +353,27 @@ class Timeline:
         if m:
             self.tree.go_mods[m.group(1)] = directory
 
+    def test_only_pairs(self, rev: str, blobs: cg.BlobReader) -> list[str]:
+        """Pairs that only importers skipped as tests would add to the tree at rev."""
+        tests = [f for f in sorted(self.tree.files) if cg.language(f) in READ_LANGUAGES and cg.is_test_path(f)]
+        owners = self.policy.owners(tests)
+        reads = {f: read_imports(cg.language(f) or "", blobs.read(rev, f) or "") for f in tests if owners[f].production}
+        targets = {f: [t for imp in imports for t in self.tree.resolve(f, cg.language(f) or "", imp)] for f, imports in reads.items()}
+        target_owners = self.policy.owners(t for ts in targets.values() for t in ts)
+        present = self.present_at[-1] if self.present_at else frozenset()
+        pairs = {
+            (owners[f].module, target_owners[t].module)
+            for f, ts in targets.items()
+            for t in ts
+            if target_owners[t].production and target_owners[t].module != owners[f].module
+        }
+        return sorted(f"{a}->{b}" for a, b in pairs - present)
+
     def unresolved_at_head(self) -> dict[str, int]:
         counts: Counter = Counter()
         for path, (_, lang, imports) in self.specs.items():
             for imp in imports:
-                if self.tree.resolve(path, lang, imp) is None:
+                if not self.tree.resolve(path, lang, imp):
                     counts[
                         f"{lang}_bare" if lang == "js" and is_bare_js(imp) else f"{lang}_outside"
                     ] += 1
@@ -458,6 +479,7 @@ def pairs_report(repo: Path, label: str, policy: cg.PolicyMap, volatility: dict[
     try:
         for idx, unit in enumerate(units):
             tl.apply(idx, unit, blobs)
+        test_only = tl.test_only_pairs(units[-1].sha, blobs)
     finally:
         blobs.close()
     last = len(units) - 1
@@ -526,6 +548,7 @@ def pairs_report(repo: Path, label: str, policy: cg.PolicyMap, volatility: dict[
             "commits": len({r["first_sha"] for r in missing}),
         },
         "unresolved_at_head": tl.unresolved_at_head(),
+        "test_only_pairs_at_head": test_only,
         "pairs": pair_rows,
     }
 

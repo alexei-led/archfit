@@ -87,18 +87,22 @@ class LiteralsTest(unittest.TestCase):
             with self.subTest(lang=lang, line=line):
                 self.assertEqual(cn.literals(line, lang), want)
 
+    def test_go_import_lines(self):
+        text = 'package x\n\nimport "fmt"\nimport (\n\t"os"\n\td "github.com/d/d" // docker\n)\nimport ( "a" )\n\nfunc f() string {\n\treturn "running"\n}\n'
+        self.assertEqual(cn.go_import_lines(text), {3, 4, 5, 6, 7, 8})
+
     def test_import_paths_are_not_literals(self):
         cases = [
-            ("go", '\t"regexp"', []),
-            ("go", '\tdocker "github.com/docker/docker/client"', []),
-            ("go", 'import "fmt"', []),
-            ("go", '\t"a long element of a slice",', ["a long element of a slice"]),
-            ("js", "import { a } from './util/a'; const b = './util/b'", ["./util/b"]),
-            ("js", "const m = require('node:path')", []),
+            ("go", '\t"regexp"', True, []),
+            ("go", '\treturn "container not running"', False, ["container not running"]),
+            ("go", '\t\t"tail text")', False, ["tail text"]),
+            ("go", '\t"a long element of a slice",', False, ["a long element of a slice"]),
+            ("js", "import { a } from './util/a'; const b = './util/b'", False, ["./util/b"]),
+            ("js", "const m = require('node:path')", False, []),
         ]
-        for lang, line, want in cases:
+        for lang, line, in_import, want in cases:
             with self.subTest(lang=lang, line=line):
-                self.assertEqual(cn.code_literals(line, lang), want)
+                self.assertEqual(cn.code_literals(line, lang, in_import), want)
 
     def test_shape(self):
         cases = [
@@ -139,6 +143,18 @@ class AddedLinesTest(unittest.TestCase):
             cn.added_lines(diff),
             {"x.go": [(4, '\ta := "one"'), (5, '\tb := "two"'), (12, '\tc := "new"')]},
         )
+
+    def test_header_paths_with_spaces_and_quotes(self):
+        cases = [
+            ("+++ b/dir with space/x.go\t", "dir with space/x.go"),
+            ('+++ "b/q\\"uote.go"', 'q"uote.go'),
+            ('+++ "b/\\303\\251t\\303\\251.go"', "été.go"),
+            ("+++ /dev/null", None),
+        ]
+        for header, want in cases:
+            with self.subTest(header=header):
+                diff = f"{header}\n@@ -0,0 +1 @@\n+x = 'value'\n"
+                self.assertEqual(list(cn.added_lines(diff)), [want] if want else [])
 
     def test_form_feed_does_not_split_a_line(self):
         diff = "+++ b/x.py\n@@ -0,0 +1,2 @@\n+a = 'x\x0cy'\n+b = 'z'\n"
@@ -191,6 +207,21 @@ class ScanTest(unittest.TestCase):
         events, stats = cn.scan(self.repo.root, "t", self.policy, since="2026-01-15")
         self.assertEqual(stats.units, 1)
         self.assertEqual({e.literal for e in events}, {REGEX, ERROR})
+
+    def test_go_return_line_is_a_literal(self):
+        self.repo.commit("seed", {"pkg/tc/msg.go": f'package tc\n\nfunc msg() string {{\n\treturn "{ERROR}"\n}}\n'})
+        events, _ = self.scan()
+        self.assertEqual([(e.literal, e.line) for e in events], [(ERROR, 4)])
+
+    def test_holder_flags_use_every_holder_file(self):
+        tests = {f"pkg/util/{n}_test.go": f'package util\n\nvar w = "{ERROR}"\n' for n in ("a", "b", "c")}
+        self.repo.commit("holder tests", tests)
+        self.repo.commit("seed", {"pkg/tc/iface.go": SEEDED_TC_GO})
+        events, _ = self.scan()
+        error = next(e for e in events if e.literal == ERROR)
+        self.assertEqual(len(error.other_sites), cn.MAX_OTHER_SITES)
+        self.assertIn("pkg/util/util.go", error.other_files)
+        self.assertFalse(error.test_other)
 
     def test_rewritten_copy_is_not_flagged(self):
         self.repo.commit(
@@ -382,14 +413,16 @@ class ScoreTest(unittest.TestCase):
             self.assertEqual(cn.read_labels(path), {"a": "copy", "b": "copy"})
             self.assertEqual(cn.read_labels(path, strict=True), {"a": "noise-convention", "b": "copy"})
 
-    def test_declared_generated_matches_either_site(self):
+    def test_declared_generated_needs_the_added_file_or_every_holder(self):
         events = [
-            {**event("a"), "path": "gen/v.ts", "other_sites": ["src/x.ts:1"]},
-            {**event("b"), "path": "src/y.ts", "other_sites": ["gen/v.ts:3"]},
-            {**event("c"), "path": "src/y.ts", "other_sites": ["src/x.ts:1"]},
+            {**event("a"), "path": "gen/v.ts", "other_files": ["src/x.ts"]},
+            {**event("b"), "path": "src/y.ts", "other_files": ["gen/v.ts", "gen/w.ts"]},
+            {**event("c"), "path": "src/y.ts", "other_files": ["gen/v.ts", "src/x.ts"]},
         ]
         cn.declare_generated(events, ["gen/*"])
         self.assertEqual([ev["declared_generated"] for ev in events], [True, True, False])
+        cn.declare_generated(events, [])
+        self.assertEqual([ev["declared_generated"] for ev in events], [False, False, False])
 
     def test_unknown_label_is_rejected(self):
         with self.assertRaises(ValueError):

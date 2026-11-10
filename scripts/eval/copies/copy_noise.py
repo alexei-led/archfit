@@ -5,7 +5,9 @@ A flagged copy: a unit of change adds a string literal to production code of mod
 production code of another module O already holds the identical literal in the parent tree and
 still holds it after the change (a move is not a copy). Literals come from single lines only: Go
 "…" and `…`, Python '…' and "…" (not f- or b-strings), TS/JS '…', "…" and `…` without ${, Rust
-"…" and r"…". Tables and multi-line literals are not detected.
+"…" and r"…". Import paths are not literals. Tables and multi-line literals are not detected, and
+each line is read on its own: quoted words on a line inside a multi-line string, docstring or block
+comment are read as literals.
 
     scan    one repository: write flagged events as JSON lines
     sample  pick events for labelling and write the context of each one
@@ -13,10 +15,10 @@ still holds it after the change (a move is not a copy). Literals come from singl
 
     uv run python scripts/eval/copies/copy_noise.py scan --repo pumba=/tmp/c/pumba \\
         --config /tmp/policy/pumba/.archfit.yaml --out pumba.jsonl
-    uv run python scripts/eval/copies/copy_noise.py sample --events all.jsonl --size 120 \\
+    uv run python scripts/eval/copies/copy_noise.py sample --events *.jsonl --sizes 15 6 5 \\
         --repo pumba=/tmp/c/pumba --out sample.md --labels labels.tsv
-    uv run python scripts/eval/copies/copy_noise.py score --events all.jsonl --labels labels.tsv \\
-        --seeded seeded.jsonl
+    uv run python scripts/eval/copies/copy_noise.py score --events *.jsonl --labels labels.tsv \\
+        --seeds seeds.jsonl --seeded-events seeded.jsonl --generated 'gen/*'
 
 Run scan on disposable clones. Standard library only.
 """
@@ -145,13 +147,33 @@ def literals(line: str, lang: str) -> list[str]:
     return out
 
 
-GO_IMPORT_SPEC = re.compile(r'\s*(import\s+)?(\(\s*)?([\w.]+\s+)?"[^"]*"\s*\)?\s*(//.*)?')
+GO_IMPORT_OPEN = re.compile(r"^\s*import\s*\(")
+GO_IMPORT_ONE = re.compile(r'^\s*import\s+(?:[\w.]+\s+)?"')
 JS_IMPORT_SPEC = re.compile(r"""(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]""")
 
 
-def code_literals(line: str, lang: str) -> list[str]:
-    """Literals of a line, without import paths: they name a package, they hold no knowledge."""
-    if lang == "go" and GO_IMPORT_SPEC.fullmatch(line):
+def go_import_lines(text: str) -> set[int]:
+    """Line numbers (from 1) of a Go file's import declarations, blocks included."""
+    lines: set[int] = set()
+    inside = False
+    for n, line in enumerate(text.split("\n"), 1):
+        code = line.split("//", 1)[0]
+        if inside:
+            lines.add(n)
+            inside = ")" not in code
+        elif GO_IMPORT_OPEN.match(code):
+            lines.add(n)
+            inside = ")" not in code[code.index("(") + 1 :]
+        elif GO_IMPORT_ONE.match(code):
+            lines.add(n)
+    return lines
+
+
+def code_literals(line: str, lang: str, in_import: bool = False) -> list[str]:
+    """Literals of a line, without import paths: they name a package, they hold no knowledge.
+
+    Go import paths need the file around the line: pass in_import from go_import_lines."""
+    if in_import:
         return []
     found = literals(line, lang)
     if lang == "js":
@@ -187,6 +209,37 @@ def shape(literal: str) -> str:
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
+C_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
+
+
+def c_unquote(quoted: str) -> str:
+    """A path git wrote as a C string ("…" with backslash escapes and octal UTF-8 bytes)."""
+    body = quoted[1:-1] if quoted.endswith('"') else quoted[1:]
+    out = bytearray()
+    i = 0
+    while i < len(body):
+        if body[i] == "\\" and i + 1 < len(body):
+            octal = body[i + 1 : i + 4]
+            if len(octal) == 3 and all(ch in "01234567" for ch in octal):
+                out.append(int(octal, 8))
+                i += 4
+                continue
+            out.append(C_ESCAPES.get(body[i + 1], ord(body[i + 1])))
+            i += 2
+            continue
+        out += body[i].encode()
+        i += 1
+    return out.decode("utf-8", errors="replace")
+
+
+def diff_path(target: str) -> str | None:
+    """The new path of a `+++ ` header: git adds a tab after a name with a space and quotes odd names."""
+    target = target.removesuffix("\t")
+    if target.startswith('"'):
+        target = c_unquote(target)
+    return target[2:] if target.startswith("b/") else None
+
+
 def added_lines(diff: str) -> dict[str, list[tuple[int, str]]]:
     """Added lines per new path from `git diff -U0` output."""
     out: dict[str, list[tuple[int, str]]] = defaultdict(list)
@@ -194,8 +247,7 @@ def added_lines(diff: str) -> dict[str, list[tuple[int, str]]]:
     line_no = 0
     for raw in diff.split("\n"):
         if raw.startswith("+++ "):
-            target = raw[4:]
-            path = target[2:] if target.startswith("b/") else None
+            path = diff_path(raw[4:])
             continue
         if raw.startswith("diff --git ") or raw.startswith("--- "):
             continue
@@ -252,8 +304,10 @@ class LiteralIndex:
             if status == "D" or lang is None or not owners[path].production:
                 continue
             first: dict[str, int] = {}
-            for n, line in enumerate((self.blobs.read(rev, path) or "").split("\n"), 1):
-                for lit in code_literals(line, lang):
+            text = self.blobs.read(rev, path) or ""
+            imports = go_import_lines(text) if lang == "go" else set()
+            for n, line in enumerate(text.split("\n"), 1):
+                for lit in code_literals(line, lang, n in imports):
                     if len(lit) >= FLOOR:
                         first.setdefault(lit, n)
             self.by_file[path] = list(first)
@@ -283,7 +337,8 @@ class Event:
     module: str
     literal: str
     other_module: str
-    other_sites: list[str]
+    other_sites: list[str]  # up to MAX_OTHER_SITES, for reading
+    other_files: list[str]  # every file of the other module that holds the literal
     holder_modules: int
     holder_files: int
     module_had_it: bool
@@ -353,8 +408,9 @@ def scan_unit(
         owner, lang = owners[path], cg.language(path)
         if not owner.production or lang is None:
             continue
+        imports = go_import_lines(index.blobs.read(unit.sha, path) or "") if lang == "go" else set()
         for line_no, text in rows:
-            for lit in code_literals(text, lang):
+            for lit in code_literals(text, lang, line_no in imports):
                 stats.added_literals += 1
                 if len(lit) >= FLOOR:
                     sites[lit].append(Site(path, line_no, owner.module))
@@ -395,6 +451,7 @@ def scan_unit(
                         other_sites=[
                             f"{s.path}:{s.line}" for s in other_sites[:MAX_OTHER_SITES]
                         ],
+                        other_files=sorted({s.path for s in other_sites}),
                         holder_modules=len(by_module),
                         holder_files=len({s.path for s in held}),
                         module_had_it=site.module in by_module,
@@ -421,7 +478,7 @@ def mark_heuristics(repo: Path, events: list[Event]) -> None:
     for ev in events:
         if ev.unit not in parents:
             parents[ev.unit] = cg.git(repo, "rev-parse", f"{ev.unit}^1").strip()
-        others = [s.rsplit(":", 1)[0] for s in ev.other_sites]
+        others = ev.other_files
         ev.test_added = cg.is_test_path(ev.path)
         ev.test_other = all(cg.is_test_path(p) for p in others)
         ev.generated_added = generated(ev.unit, ev.path)
@@ -608,10 +665,16 @@ def rules() -> list[Rule]:
 
 
 def declare_generated(events: list[dict], globs: list[str]) -> None:
-    """Mark events either of whose sites is in a declared `generated` path (design 6.1)."""
+    """Mark events an owner's `generated` list removes (design 6.1): the added file is declared,
+    or every file of the other module that holds the literal is."""
+
+    def declared(path: str) -> bool:
+        return any(fnmatch.fnmatchcase(path, g) for g in globs)
+
     for ev in events:
-        paths = [ev["path"], *(site.rsplit(":", 1)[0] for site in ev["other_sites"])]
-        ev["declared_generated"] = any(fnmatch.fnmatchcase(p, g) for p in paths for g in globs)
+        ev["declared_generated"] = bool(globs) and (
+            declared(ev["path"]) or all(declared(p) for p in ev["other_files"])
+        )
 
 
 LEVELS = (
@@ -826,6 +889,7 @@ def main(argv: list[str] | None = None) -> int:
         levels = [rule_named(name) for name in (args.level or LEVELS)]
         labels = read_labels(args.labels, args.strict)
         declare_generated(events, args.generated)
+        declare_generated(seeded_events, args.generated)
         repos = set(args.repos) if args.repos else None
         print(render(score(events, labels, seeds, seeded_events, levels, repos)))
         rewritten = [seed for seed in seeds if seed["kind"] == "rewritten"]

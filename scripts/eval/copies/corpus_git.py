@@ -31,8 +31,9 @@ LANGUAGES = {
 }
 CODE_PATHSPECS = tuple(f"*{ext}" for ext in LANGUAGES)
 
-# Name heuristics. The 4.0 policy excludes only declared paths; these flag what a declared list
-# would have to cover, so the measurement can show what the heuristics change.
+# Name heuristics. The 4.0 policy excludes only declared paths; these stand in for what a declared
+# list would have to cover. copy_noise records them as flags; request_load skips test importers and
+# reports the pairs that leaves out.
 TEST_DIRS = frozenset(
     {
         "test",
