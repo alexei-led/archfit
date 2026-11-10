@@ -109,7 +109,8 @@ class Resolver:
             found = self.file(target)
             if found:
                 return ("file", found)
-        if config["base_url"] is not None:
+        # TypeScript tries baseUrl only when no paths pattern matched.
+        if pattern is None and config["base_url"] is not None:
             found = self.file(f"{config['base_url']}/{spec}")
             if found:
                 return ("file", found)
@@ -314,9 +315,10 @@ def pnpm_patterns(root: Path) -> list[str]:
         text = line.split(" #", 1)[0].rstrip()
         if not text.strip() or text.lstrip().startswith("#"):
             continue
-        if not line[0].isspace():
+        item = text.lstrip().startswith("- ")
+        if not line[0].isspace() and not item:
             inside = text == "packages:"
-        elif inside and text.lstrip().startswith("- "):
+        elif inside and item:
             patterns.append(text.lstrip()[2:].strip().strip("'\""))
     return patterns
 

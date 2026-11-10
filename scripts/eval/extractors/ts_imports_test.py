@@ -66,6 +66,7 @@ TREE = {
     "nx/apps/web/tsconfig.strict.json": '{"compilerOptions": {"strict": true}}',
     "nx/apps/web/src/x.ts": "",
     "star/tsconfig.json": '{"compilerOptions": {"paths": {"*": ["types/*"]}}}',
+    "@app/zzz.ts": "",
 }
 
 
@@ -127,6 +128,7 @@ class ResolveTest(unittest.TestCase):
             ),
             ("paths wildcard", "src/x.ts", "@app/a", ("file", "src/a.ts")),
             ("paths match without a file is unknown", "src/x.ts", "@app/missing", ("unknown", "@app/missing")),
+            ("paths match without a file skips baseUrl", "src/x.ts", "@app/zzz", ("unknown", "@app/zzz")),
             ("catch-all paths does not make a package first-party", "star/a.ts", "react", ("external", "react")),
             ("baseUrl alone resolves a bare specifier", "apps/web/src/app.tsx", "components/Button", ("file", "apps/web/src/components/Button.tsx")),
             ("array extends merges; paths use the inherited baseUrl", "nx/apps/web/src/main.ts", "@web/x", ("file", "nx/apps/web/src/x.ts")),
@@ -202,6 +204,16 @@ class WorkspaceTest(unittest.TestCase):
             },
         )
         self.assertEqual(ts_imports.workspace_packages(self.root), {"@org/a": "libs/a"})
+
+    def test_pnpm_block_list_at_the_key_indentation(self):
+        write_tree(
+            self.root,
+            {
+                "pnpm-workspace.yaml": "packages:\n- libs/*\nonlyBuiltDependencies:\n- esbuild\n",
+                "libs/a/package.json": json.dumps({"name": "@org/a"}),
+            },
+        )
+        self.assertEqual(ts_imports.pnpm_patterns(self.root), ["libs/*"])
 
 
 @unittest.skipUnless(shutil.which("ast-grep"), "ast-grep is not installed")
