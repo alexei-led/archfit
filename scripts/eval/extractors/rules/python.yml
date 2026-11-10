@@ -1,0 +1,57 @@
+# Python import facts for the parser-based extractor prototype (py_imports.py).
+# Names match by parent kind, not by field: tree-sitter loses the `name` field
+# of a from-import name that follows a comment inside parentheses.
+id: import-stmt
+language: python
+rule:
+  kind: import_statement
+---
+id: from-stmt
+language: python
+rule:
+  kind: import_from_statement
+---
+id: from-module
+language: python
+rule:
+  any:
+    - kind: dotted_name
+    - kind: relative_import
+  inside:
+    kind: import_from_statement
+    field: module_name
+---
+id: name
+language: python
+rule:
+  kind: dotted_name
+  any:
+    - inside:
+        kind: import_statement
+    - inside:
+        kind: import_from_statement
+    - inside:
+        kind: aliased_import
+---
+id: wildcard
+language: python
+rule:
+  kind: wildcard_import
+---
+id: type-checking
+language: python
+rule:
+  kind: block
+  any:
+    - inside:
+        kind: if_statement
+        field: consequence
+        has:
+          field: condition
+          regex: ^([A-Za-z_][A-Za-z0-9_]*\.)*TYPE_CHECKING$
+    - inside:
+        kind: elif_clause
+        field: consequence
+        has:
+          field: condition
+          regex: ^([A-Za-z_][A-Za-z0-9_]*\.)*TYPE_CHECKING$
