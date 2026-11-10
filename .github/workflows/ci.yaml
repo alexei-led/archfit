@@ -84,7 +84,7 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-workflows
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ steps.pins.outputs.python }}
           version: ${{ steps.pins.outputs.uv }}
@@ -134,7 +134,7 @@ jobs:
           key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-${{ steps.epoch.outputs.day }}-${{ hashFiles('scripts/ci_test_shards.py') }}
           restore-keys: |
             go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ steps.pins.outputs.python }}
           version: ${{ steps.pins.outputs.uv }}
@@ -231,7 +231,7 @@ jobs:
           key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-split-${{ matrix.label }}-${{ matrix.half }}-${{ steps.epoch.outputs.day }}
           restore-keys: |
             go-${{ runner.os }}-${{ steps.pins.outputs.go }}-split-${{ matrix.label }}-${{ matrix.half }}-
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ steps.pins.outputs.python }}
           version: ${{ steps.pins.outputs.uv }}
@@ -344,7 +344,7 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-gates
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ steps.pins.outputs.python }}
           version: ${{ steps.pins.outputs.uv }}
