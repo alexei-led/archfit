@@ -3,8 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"os/exec"
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/config"
@@ -18,6 +17,13 @@ import (
 // exclusions and no fact cache, and keeps its first-party edges.
 func reference(ctx context.Context, lang, root string, cfg config.Config) (facts, error) {
 	cfg = mergedExclusions(cfg)
+	var std map[string]bool
+	if lang == config.LangGo {
+		var err error
+		if std, err = goStdlib(ctx, root); err != nil {
+			return facts{}, err
+		}
+	}
 	ex := registry.New(lang, toolrun.New(), cfg.ForExtract(lang), nil)
 	if ex == nil {
 		return facts{}, fmt.Errorf("no extractor for language %q", lang)
@@ -57,8 +63,8 @@ func reference(ctx context.Context, lang, root string, cfg config.Config) (facts
 			// The Go load emits no node for the root package; its import is
 			// still first-party.
 			out.Edges = append(out.Edges, edge{From: from, To: to})
-		case lang == config.LangGo && isGoPackageDir(root, to):
-			// An import of a first-party dir the load produced no package for.
+		case lang == config.LangGo && firstPartyGoPath(to, std):
+			// A stripped first-party import the load produced no package for.
 			out.Unknown = append(out.Unknown, unresolved{From: from, Specifier: to})
 		case lang == config.LangTypeScript && e.Confidence == "low":
 			// dependency-cruiser could not resolve the specifier.
@@ -77,27 +83,26 @@ func nodePath(id string) string {
 	return p
 }
 
-// isGoPackageDir reports whether rel names a directory under root that holds
-// a non-test Go file.
-func isGoPackageDir(root, rel string) bool {
-	if rel == "" || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-		return false
-	}
-	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(rel)))
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if isGoSource(e.Name()) && !e.IsDir() {
-			return true
-		}
-	}
-	return false
+// firstPartyGoPath reports whether a package path the Go load left without a
+// node is a stripped first-party dir: not "C", not standard library, and not
+// a module path (whose first element holds a dot).
+func firstPartyGoPath(p string, std map[string]bool) bool {
+	first, _, _ := strings.Cut(p, "/")
+	return p != "C" && !std[p] && !strings.Contains(first, ".")
 }
 
-// isGoSource reports whether name is a Go file the go command reads for a
-// package: a .go file that is not a test and does not start with "." or "_".
-func isGoSource(name string) bool {
-	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") &&
-		!strings.HasPrefix(name, ".") && !strings.HasPrefix(name, "_")
+// goStdlib lists the standard-library packages of the toolchain the typed
+// loader uses in root.
+func goStdlib(ctx context.Context, root string) (map[string]bool, error) {
+	cmd := exec.CommandContext(ctx, "go", "list", "std")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("go list std: %w", err)
+	}
+	std := make(map[string]bool)
+	for _, p := range strings.Fields(string(out)) {
+		std[p] = true
+	}
+	return std, nil
 }

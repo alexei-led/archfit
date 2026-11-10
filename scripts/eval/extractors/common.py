@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from functools import cache, lru_cache
+from functools import cache
 from pathlib import Path
 
 RULES_DIR = Path(__file__).resolve().parent / "rules"

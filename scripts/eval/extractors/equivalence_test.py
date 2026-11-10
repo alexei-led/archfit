@@ -67,6 +67,12 @@ class CompareTest(unittest.TestCase):
         self.assertEqual(got["modules"]["reference"], 0)
         self.assertIn("no mapping", equivalence.summary("r", "typescript", got))
 
+    def test_summary_shows_the_reference_coverage(self):
+        ref = side([])
+        ref["coverage"] = {"status": "partial"}
+        got = equivalence.compare(ref, side([]), {})
+        self.assertTrue(equivalence.summary("r", "go", got).endswith("| partial |"))
+
 
 if __name__ == "__main__":
     unittest.main()

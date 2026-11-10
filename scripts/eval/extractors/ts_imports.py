@@ -104,23 +104,30 @@ class Resolver:
         if spec.startswith("#"):
             found = self.package_import(importer, spec, config["conditions"])
             return ("file", found) if found else ("unknown", spec)
-        for target in alias_targets(config, spec):
+        pattern, targets = alias_targets(config, spec)
+        for target in targets:
             found = self.file(target)
             if found:
                 return ("file", found)
+        if config["base_url"] is not None:
+            found = self.file(f"{config['base_url']}/{spec}")
+            if found:
+                return ("file", found)
         package = self.package_of(spec)
-        if package is None:
-            return ("external", spec)
-        name, pkg_dir = package
-        found = self.package_entry(
-            pkg_dir, "." + spec[len(name) :], config
-        )
-        return ("file", found) if found else ("unknown", spec)
+        if package is not None:
+            name, pkg_dir = package
+            found = self.package_entry(pkg_dir, "." + spec[len(name) :], config)
+            return ("file", found) if found else ("unknown", spec)
+        # A configured alias names first-party code; a bare "*" also matches
+        # every third-party package, so it alone proves nothing.
+        if pattern not in (None, "*"):
+            return ("unknown", spec)
+        return ("external", spec)
 
-    def file(self, base: str) -> str | None:
+    def file(self, base: str, seen: frozenset[str] = frozenset()) -> str | None:
         """Probe a root-relative base path as a file, with extensions, then as a dir."""
         base = os.path.normpath(base).replace(os.sep, "/")
-        if base.startswith("../"):
+        if base.startswith("../") or base in seen:
             return None
         path = self.root / base
         if path.is_file():
@@ -137,7 +144,7 @@ class Resolver:
             for field in ("types", "module", "main"):
                 entry = manifest.get(field)
                 if isinstance(entry, str):
-                    found = self.file(f"{base}/{entry}")
+                    found = self.file(f"{base}/{entry}", seen | {base})
                     if found:
                         return found
             for ext in PROBE:
@@ -197,12 +204,15 @@ class Resolver:
             if candidate.is_file():
                 return load_tsconfig(self.root, candidate)
             if current.as_posix() in ("", "."):
-                return {"paths": {}, "paths_base": "", "conditions": CONDITIONS, "exports": True}
+                return _settings({})
             current = current.parent
 
 
-def alias_targets(config: dict, spec: str) -> list[str]:
-    """Root-relative candidates for a spec under tsconfig paths, best match first."""
+def alias_targets(config: dict, spec: str) -> tuple[str | None, list[str]]:
+    """The tsconfig ``paths`` pattern a spec matches and its root-relative candidates.
+
+    An exact pattern wins; otherwise the wildcard with the longest prefix.
+    """
     best, star = None, ""
     for pattern in config["paths"]:
         prefix, _, suffix = pattern.partition("*")
@@ -218,16 +228,17 @@ def alias_targets(config: dict, spec: str) -> list[str]:
             if best is None or len(prefix) > len(best.partition("*")[0]):
                 best, star = pattern, spec[len(prefix) : len(spec) - len(suffix)]
     if best is None:
-        return []
+        return None, []
     base = PurePosixPath(config["paths_base"])
-    return [(base / t.replace("*", star)).as_posix() for t in config["paths"][best]]
+    return best, [(base / t.replace("*", star)).as_posix() for t in config["paths"][best]]
 
 
 def export_targets(exports, subpath: str, conditions: tuple[str, ...]) -> list[str]:
     """Targets of an ``exports`` or ``imports`` map for a subpath.
 
     Every target whose condition is active, in key order: the caller takes the
-    first that names a file, so an unbuilt ``dist`` target falls through.
+    first that names a file, so an unbuilt ``dist`` target falls through. An
+    explicit ``null`` blocks the subpath, as in Node.
     """
     if isinstance(exports, (str, list)) or (
         isinstance(exports, dict) and not any(k.startswith((".", "#")) for k in exports)
@@ -236,7 +247,7 @@ def export_targets(exports, subpath: str, conditions: tuple[str, ...]) -> list[s
     if not isinstance(exports, dict):
         return []
     entry, star = exports.get(subpath), ""
-    if entry is None:
+    if subpath not in exports:
         for key in sorted(
             (k for k in exports if "*" in k),
             key=lambda k: len(k.partition("*")[0]),
@@ -258,63 +269,109 @@ def _condition_targets(entry, conditions: tuple[str, ...]) -> list[str]:
     if isinstance(entry, list):
         return [t for item in entry for t in _condition_targets(item, conditions)]
     if isinstance(entry, dict):
-        return [
-            t
-            for key, value in entry.items()
-            if key in conditions
-            for t in _condition_targets(value, conditions)
-        ]
+        targets: list[str] = []
+        for key, value in entry.items():
+            if key in conditions:
+                if value is None:
+                    break
+                targets.extend(_condition_targets(value, conditions))
+        return targets
     return []
 
 
 def workspace_packages(root: Path) -> dict[str, str]:
-    """Map each workspace package name to its root-relative dir."""
-    manifest = read_json(root / "package.json")
-    patterns = manifest.get("workspaces", [])
-    if isinstance(patterns, dict):
-        patterns = patterns.get("packages", [])
+    """Map each workspace package name to its root-relative dir.
+
+    Patterns come from package.json ``workspaces`` (npm, Yarn) and from
+    pnpm-workspace.yaml ``packages``; a "!" pattern excludes.
+    """
+    workspaces = read_json(root / "package.json").get("workspaces", [])
+    if isinstance(workspaces, dict):
+        workspaces = workspaces.get("packages", [])
+    patterns = [p.removeprefix("./") for p in [*workspaces, *pnpm_patterns(root)] if isinstance(p, str)]
+    excludes = [p[1:].removeprefix("./") for p in patterns if p.startswith("!")]
     packages = {}
-    for pattern in patterns:
+    for pattern in (p for p in patterns if not p.startswith("!")):
         for pkg in sorted(root.glob(pattern)):
+            rel = pkg.relative_to(root).as_posix()
             name = read_json(pkg / "package.json").get("name")
-            if isinstance(name, str) and "node_modules" not in pkg.parts:
-                packages[name] = pkg.relative_to(root).as_posix()
+            if isinstance(name, str) and "node_modules" not in pkg.parts and not common.excluded(excludes, rel):
+                packages[name] = rel
     return packages
 
 
-def load_tsconfig(root: Path, path: Path, depth: int = 0) -> dict:
-    """Read paths, their base dir, conditions, and whether ``exports`` applies.
+def pnpm_patterns(root: Path) -> list[str]:
+    """The block-list ``packages`` entries of pnpm-workspace.yaml.
 
-    Follows a relative ``extends`` chain; a package ``extends`` would need
+    A flow list (``packages: [a, b]``) is not read; the corpus has none.
+    """
+    try:
+        lines = (root / "pnpm-workspace.yaml").read_text().splitlines()
+    except OSError:
+        return []
+    patterns, inside = [], False
+    for line in lines:
+        text = line.split(" #", 1)[0].rstrip()
+        if not text.strip() or text.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            inside = text == "packages:"
+        elif inside and text.lstrip().startswith("- "):
+            patterns.append(text.lstrip()[2:].strip().strip("'\""))
+    return patterns
+
+
+def load_tsconfig(root: Path, path: Path) -> dict:
+    """The resolution settings of one tsconfig, after its ``extends`` chain."""
+    return _settings(_tsconfig_options(root, path, 0))
+
+
+def _settings(options: dict) -> dict:
+    """Resolution settings from merged options, with TypeScript's defaults.
+
+    ``paths`` resolve against ``baseUrl`` when any config in the chain sets it,
+    else against the directory of the config that sets ``paths``.
+    """
+    base_url = options.get("base_url")
+    return {
+        "paths": options.get("paths", {}),
+        "paths_base": base_url if base_url is not None else options.get("paths_dir", ""),
+        "base_url": base_url,
+        "conditions": options.get("conditions", CONDITIONS),
+        "exports": options.get("exports", True),
+    }
+
+
+def _tsconfig_options(root: Path, path: Path, depth: int) -> dict:
+    """The options a tsconfig sets, merged over its parents in ``extends`` order.
+
+    Follows relative ``extends`` only; a package ``extends`` would need
     node_modules and is skipped.
     """
     data = read_jsonc(path)
-    base = {"paths": {}, "paths_base": "", "conditions": CONDITIONS, "exports": True}
+    merged: dict = {}
     extends = data.get("extends")
     for parent in [extends] if isinstance(extends, str) else extends or []:
-        if parent.startswith(".") and depth < 10:
+        if isinstance(parent, str) and parent.startswith(".") and depth < 10:
             target = (path.parent / parent).resolve()
             if target.is_dir():
                 target = target / "tsconfig.json"
             if target.suffix != ".json":
                 target = target.with_name(target.name + ".json")
             if target.is_file():
-                base = load_tsconfig(root, target, depth + 1)
+                merged.update(_tsconfig_options(root, target, depth + 1))
     options = data.get("compilerOptions") or {}
     here = path.parent.resolve().relative_to(root.resolve()).as_posix()
     if "baseUrl" in options:
-        base["paths_base"] = os.path.normpath(
-            os.path.join(here, options["baseUrl"])
-        ).replace(os.sep, "/")
+        merged["base_url"] = os.path.normpath(os.path.join(here, options["baseUrl"])).replace(os.sep, "/")
     if "paths" in options:
-        base["paths"] = options["paths"]
-        if "baseUrl" not in options:
-            base["paths_base"] = here
+        merged["paths"] = options["paths"]
+        merged["paths_dir"] = here
     if "customConditions" in options:
-        base["conditions"] = CONDITIONS + tuple(options["customConditions"])
+        merged["conditions"] = CONDITIONS + tuple(options["customConditions"])
     if "moduleResolution" in options:
-        base["exports"] = str(options["moduleResolution"]).lower() not in ("node", "node10")
-    return base
+        merged["exports"] = str(options["moduleResolution"]).lower() not in ("node", "node10")
+    return merged
 
 
 _JSONC = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.DOTALL)

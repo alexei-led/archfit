@@ -6,29 +6,28 @@
 //
 //	gofacts reference -lang go|typescript|python -root DIR [-config FILE]
 //	gofacts goparse -root DIR [-config FILE]
-//	gofacts modules -lang LANG [-config FILE] < node-paths
+//	gofacts modules -lang LANG [-config FILE] < node-paths.json
 //	gofacts config -lang LANG [-config FILE]
 //
 // reference runs today's extractor for one language. goparse is the new Go
 // extractor: go/parser imports, go/build constraints, go.mod module paths, no
-// Go toolchain. modules maps node paths, one per line, to declared modules
-// with the engine's own module map. config prints the extractor configuration
+// Go toolchain. modules maps node paths, a JSON array on stdin, to declared
+// modules with the engine's own module map. config prints the extractor configuration
 // the engine projects for one language, so the Python prototypes read the same
 // exclusions and package settings. Each command writes JSON to stdout.
 package main
 
 import (
-	"bufio"
 	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/goccy/go-yaml"
 
@@ -58,6 +57,8 @@ type edge struct {
 }
 
 // unresolved is a first-party import the side could not place on a node.
+// Go spells the specifier as the package dir the import names, as the
+// engine spells package nodes; TypeScript and Python as written.
 type unresolved struct {
 	From      string `json:"from"`
 	Specifier string `json:"specifier"`
@@ -79,7 +80,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, args []string, stdin *os.File, stdout *os.File) error {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("want a command: reference, goparse, or modules")
 	}
@@ -159,20 +160,19 @@ func mergedExclusions(cfg config.Config) config.Config {
 	return cfg
 }
 
-// modules maps each node path read from in to its declared module, "" for none.
-func modules(mm policy.ModuleMap, lang string, in *os.File) (map[string]string, error) {
-	out := make(map[string]string)
-	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		p := strings.TrimSpace(sc.Text())
-		if p == "" {
-			continue
-		}
+// modules maps each node path in the JSON array read from in to its declared
+// module, "" for none. JSON keeps "", the Go root package, a node.
+func modules(mm policy.ModuleMap, lang string, in io.Reader) (map[string]string, error) {
+	var paths []string
+	if err := json.NewDecoder(in).Decode(&paths); err != nil {
+		return nil, fmt.Errorf("modules: want a JSON array of node paths: %w", err)
+	}
+	out := make(map[string]string, len(paths))
+	for _, p := range paths {
 		mod, _ := mm.ModuleForNode(p, lang)
 		out[p] = mod
 	}
-	return out, sc.Err()
+	return out, nil
 }
 
 // finish sorts and de-duplicates the lists so two runs compare byte for byte.

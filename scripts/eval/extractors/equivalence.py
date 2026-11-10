@@ -86,6 +86,7 @@ def compare(ref: dict, new: dict, module_of: dict[str, str]) -> dict:
             "only_reference": _pair_list(ref_pairs, new_pairs),
             "only_new": _pair_list(new_pairs, ref_pairs),
         },
+        "reference_coverage": ref.get("coverage") or {},
         "unknown": {
             "reference": len(ref["unknown"]),
             "new": len(new["unknown"]),
@@ -143,8 +144,13 @@ def _edge_list(edges: set[tuple[str, str]]) -> list[list[str]]:
 
 
 def summary(name: str, lang: str, result: dict) -> str:
-    """One Markdown table row for the findings report."""
+    """One Markdown table row for the findings report.
+
+    The last cell is the reference's own coverage status: an absent or partial
+    reference makes every other cell a partial comparison.
+    """
     f, m, u = result["files"], result["modules"], result["unknown"]
+    status = result["reference_coverage"].get("status", "unknown")
     pairs = (
         f"{m['reference']} / {m['new']} / {m['both']} / {len(m['only_reference'])} / {len(m['only_new'])}"
         if m["mapped"]
@@ -152,7 +158,7 @@ def summary(name: str, lang: str, result: dict) -> str:
     )
     return (
         f"| {name} | {lang} | {f['reference']} / {f['new']} / {f['both']} / {len(f['only_reference'])} / {len(f['only_new'])} "
-        f"| {pairs} | {u['reference']} / {u['new']} ({u['new_share']:.1%}) |"
+        f"| {pairs} | {u['reference']} / {u['new']} ({u['new_share']:.1%}) | {status} |"
     )
 
 
@@ -192,7 +198,7 @@ def main() -> None:
         args.lang,
         None,
         args.config,
-        "\n".join(nodes(ref, new)),
+        json.dumps(nodes(ref, new)),
     )
     result = compare(ref, new, module_of)
     for side, data in (("reference", ref), ("new", new), ("compare", result)):

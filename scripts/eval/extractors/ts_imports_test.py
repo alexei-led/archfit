@@ -31,6 +31,9 @@ TREE = {
                 },
                 "./plain": "./src/plain.ts",
                 "./internal/*": {"code": "./src/internal/*.ts"},
+                "./private": None,
+                "./blocked": {"code": None, "default": "./src/plain.ts"},
+                "./*": {"code": "./src/*.ts"},
             },
             "imports": {
                 "#store": {
@@ -52,6 +55,17 @@ TREE = {
     "packages/node10/package.json": json.dumps({"name": "node10"}),
     "packages/node10/use.js": "",
     "packages/core/preview.js": "",
+    "packages/core/src/private.ts": "",
+    "packages/loop/package.json": json.dumps({"name": "loop", "main": "."}),
+    "packages/loop/index.js": "",
+    "apps/web/tsconfig.json": '{"compilerOptions": {"baseUrl": "src"}}',
+    "apps/web/src/components/Button.tsx": "",
+    "nx/tsconfig.base.json": '{"compilerOptions": {"baseUrl": "."}}',
+    "nx/apps/web/tsconfig.json": '{"extends": ["../../tsconfig.base.json", "./tsconfig.paths.json", "./tsconfig.strict.json"]}',
+    "nx/apps/web/tsconfig.paths.json": '{"compilerOptions": {"paths": {"@web/*": ["apps/web/src/*"]}}}',
+    "nx/apps/web/tsconfig.strict.json": '{"compilerOptions": {"strict": true}}',
+    "nx/apps/web/src/x.ts": "",
+    "star/tsconfig.json": '{"compilerOptions": {"paths": {"*": ["types/*"]}}}',
 }
 
 
@@ -112,6 +126,13 @@ class ResolveTest(unittest.TestCase):
                 ("unknown", "../../x"),
             ),
             ("paths wildcard", "src/x.ts", "@app/a", ("file", "src/a.ts")),
+            ("paths match without a file is unknown", "src/x.ts", "@app/missing", ("unknown", "@app/missing")),
+            ("catch-all paths does not make a package first-party", "star/a.ts", "react", ("external", "react")),
+            ("baseUrl alone resolves a bare specifier", "apps/web/src/app.tsx", "components/Button", ("file", "apps/web/src/components/Button.tsx")),
+            ("array extends merges; paths use the inherited baseUrl", "nx/apps/web/src/main.ts", "@web/x", ("file", "nx/apps/web/src/x.ts")),
+            ("exports null blocks a subpath a pattern would match", core, "@acme/core/private", ("unknown", "@acme/core/private")),
+            ("exports null under an active condition blocks", core, "@acme/core/blocked", ("unknown", "@acme/core/blocked")),
+            ("main naming its own dir falls back to index", "src/x.ts", "loop", ("file", "packages/loop/index.js")),
             ("paths exact", "src/x.ts", "@lib", ("file", "src/lib/index.ts")),
             ("exports with the tsconfig condition", core, "@acme/core", ("file", core)),
             (
@@ -163,6 +184,24 @@ class ResolveTest(unittest.TestCase):
         for name, importer, spec, want in cases:
             with self.subTest(name):
                 self.assertEqual(self.resolver.resolve(importer, spec), want)
+
+
+class WorkspaceTest(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root)
+
+    def test_pnpm_workspace_with_an_exclusion(self):
+        write_tree(
+            self.root,
+            {
+                "package.json": "{}",
+                "pnpm-workspace.yaml": "# workspace\npackages:\n  - 'libs/*'\n  - \"!libs/skip\"\ncatalog:\n  - x\n",
+                "libs/a/package.json": json.dumps({"name": "@org/a"}),
+                "libs/skip/package.json": json.dumps({"name": "@org/skip"}),
+            },
+        )
+        self.assertEqual(ts_imports.workspace_packages(self.root), {"@org/a": "libs/a"})
 
 
 @unittest.skipUnless(shutil.which("ast-grep"), "ast-grep is not installed")

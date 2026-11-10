@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 const (
@@ -76,7 +78,7 @@ func TestGoparseRules(t *testing.T) {
 	if !slices.Equal(got.Edges, wantEdges) {
 		t.Errorf("edges = %v, want %v", got.Edges, wantEdges)
 	}
-	wantUnknown := []unresolved{{From: "internal/a/missing.go", Specifier: "example.com/q/internal/gone"}}
+	wantUnknown := []unresolved{{From: "internal/a/missing.go", Specifier: "internal/gone"}}
 	if !slices.Equal(got.Unknown, wantUnknown) {
 		t.Errorf("unknown = %v, want %v", got.Unknown, wantUnknown)
 	}
@@ -105,6 +107,43 @@ func TestGoparseBuildTags(t *testing.T) {
 	}
 }
 
+func TestGoparseCgoSetting(t *testing.T) {
+	for _, tc := range []struct {
+		cgo    string
+		reads  bool
+		reason string
+	}{
+		{cgo: "0", reads: false, reason: "the go command ignores a cgo file when cgo is off"},
+		{cgo: "1", reads: true, reason: "cgo on reads the file"},
+	} {
+		t.Run("CGO_ENABLED="+tc.cgo, func(t *testing.T) {
+			t.Setenv("CGO_ENABLED", tc.cgo)
+			got, err := goparse(writeTree(t, goFixture), fixtureConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if slices.Contains(got.Sources, "internal/cgo/cgo.go") != tc.reads {
+				t.Errorf("internal/cgo/cgo.go source = %v: %s", !tc.reads, tc.reason)
+			}
+		})
+	}
+}
+
+func TestModulesKeepsTheRootPackage(t *testing.T) {
+	const module = "app"
+	mm := config.Config{Modules: map[string]policy.ModuleDef{module: {Paths: []string{"**"}}}}.ModuleMapView()
+	got, err := modules(mm, config.LangGo, strings.NewReader(`["", "internal/a"]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[""] != module || got["internal/a"] != module {
+		t.Errorf("modules = %v, want both paths in app", got)
+	}
+	if _, err := modules(mm, config.LangGo, strings.NewReader("internal/a\n")); err == nil {
+		t.Error("a line list is not a JSON array and must be refused")
+	}
+}
+
 // TestGoparseMatchesTypedLoader runs today's extractor on the same fixture: the
 // equivalence the corpus measured, kept as a regression check.
 func TestGoparseMatchesTypedLoader(t *testing.T) {
@@ -123,7 +162,8 @@ func TestGoparseMatchesTypedLoader(t *testing.T) {
 	if ref.Coverage.Status == "absent" {
 		t.Fatalf("typed loader did not run: %+v", ref.Coverage)
 	}
-	if !slices.Equal(ref.Edges, newSide.Edges) || !slices.Equal(ref.Sources, newSide.Sources) {
-		t.Errorf("typed loader edges %v sources %v\nparser edges %v sources %v", ref.Edges, ref.Sources, newSide.Edges, newSide.Sources)
+	if !slices.Equal(ref.Edges, newSide.Edges) || !slices.Equal(ref.Sources, newSide.Sources) || !slices.Equal(ref.Unknown, newSide.Unknown) {
+		t.Errorf("typed loader edges %v sources %v unknown %v\nparser edges %v sources %v unknown %v",
+			ref.Edges, ref.Sources, ref.Unknown, newSide.Edges, newSide.Sources, newSide.Unknown)
 	}
 }

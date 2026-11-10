@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -72,6 +73,9 @@ func goparse(root string, cfg config.Config) (facts, error) {
 			if parseErr != nil {
 				return nil //nolint:nilerr // a file that does not parse has no imports to compare
 			}
+			if !ctxt.CgoEnabled && slices.Contains(imports, "C") {
+				return nil // the go command ignores a cgo file when cgo is off
+			}
 			packages[packageDir(rel)] = true
 			files = append(files, fileImports{rel: rel, imports: imports})
 			return nil
@@ -92,7 +96,7 @@ func goparse(root string, cfg config.Config) (facts, error) {
 			case packages[dir]:
 				out.Edges = append(out.Edges, edge{From: f.rel, To: dir})
 			default:
-				out.Unknown = append(out.Unknown, unresolved{From: f.rel, Specifier: imp})
+				out.Unknown = append(out.Unknown, unresolved{From: f.rel, Specifier: dir})
 			}
 		}
 	}
@@ -157,9 +161,16 @@ func skipDir(name, base string) bool {
 }
 
 // buildContext is the host build context with the run's -tags, read from
-// GOFLAGS and the configured build flags, as today's extractor reads them.
+// GOFLAGS and the configured build flags, as today's extractor reads them, and
+// with cgo as CGO_ENABLED sets it.
 func buildContext(getenv func(string) string, buildFlags []string) build.Context {
 	ctxt := build.Default
+	switch getenv("CGO_ENABLED") {
+	case "0":
+		ctxt.CgoEnabled = false
+	case "1":
+		ctxt.CgoEnabled = true
+	}
 	flags := append(strings.Fields(getenv("GOFLAGS")), buildFlags...)
 	for i, flag := range flags {
 		value, ok := strings.CutPrefix(flag, "-tags=")
@@ -188,6 +199,13 @@ func parseImports(name string) ([]string, error) {
 		imports = append(imports, p)
 	}
 	return imports, nil
+}
+
+// isGoSource reports whether name is a Go file the go command reads for a
+// package: a .go file that is not a test and does not start with "." or "_".
+func isGoSource(name string) bool {
+	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") &&
+		!strings.HasPrefix(name, ".") && !strings.HasPrefix(name, "_")
 }
 
 // excluded reports whether a root-relative path matches an exclusion glob.
