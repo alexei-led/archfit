@@ -1121,6 +1121,8 @@ the milestones.
 | --- | --- | --- |
 | `archfit` | `docs/plans/current.md` | Kept: `CONTRIBUTING.md` and the documentation check use it. It now points to this document and marks the items this design replaces. Done on 2026-11-10. |
 | `archfit` | `docs/plans/20261027-dotnet-support.md` | Shipped in 3.3.0; moved to `docs/archived/plans/`. Done on 2026-11-10. |
+| `archfit` | Toolchain resilience design and evidence (2026-10-25), kept until now only on the branch `archive/toolchain-resilience-2026-10-26` | Added to `docs/archived/plans/`. Section 11.8 decides the tools. Done on 2026-11-10. |
+| `archfit` | 40-PR replay study and its change-review prototype (2026-10-31), until now untracked files | Added to `docs/archived/research/architecture-diff-replay-2026-10/`. The replay is evidence; the prototype is replaced by the one in 12.6. Done on 2026-11-10. |
 | `archfit` | `README.md`, `docs/getting-started.md`, `commands.md`, `configuration.md`, `rules.md`, `results.md`, `agents.md`, `ci.md`, `migration.md`, the shipped skill | Rewrite in the milestone that changes the behaviour, in the words of section 5 |
 | `archfit` | `docs/coupling.md`, `metrics.md`, `evidence.md`, `languages.md`, `architecture.md`, `development.md` | Keep; update the parts on checks, baselines, and comparisons |
 | `archfit-app` | `docs/design/product.md`, `decisions.md`, `trust-and-reporting.md`, `ui-redesign.md`, `ui-review.md`, `docs/design/prototypes/` | Moved to `docs/archive/design/` with a README that points here. `internal/module.md` names them as the requirements of the behaviour shipped today. What survives is restated in sections 4, 9, and 11.6. Done on 2026-11-10. |

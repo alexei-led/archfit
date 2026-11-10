@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Archfit · Change review design notes</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2328;background:#fff}header{padding:15px 24px;background:#f6f8fa;border-bottom:1px solid #d1d9e0;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}a{color:#0969da;text-underline-offset:3px}main{max-width:1000px;margin:auto;padding:28px 24px 50px}h1{font-size:26px;line-height:1.3;margin:0 0 10px}h2{font-size:20px;margin:0 0 12px}h3{font-size:14px;margin:0 0 7px}p{margin:0 0 12px}.muted{color:#59636e}.box{border:1px solid #d1d9e0;border-radius:6px;padding:20px;margin:20px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.step{border:1px solid #d1d9e0;border-radius:6px;padding:15px}.step small{color:#59636e}.step p{font-size:12px;margin:8px 0 0}.step.model{background:#fff8c5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;border:1px solid #dde3e9;border-radius:6px;padding:15px;font:12px/1.6 ui-monospace,monospace}li{margin-bottom:7px}.note{border-left:3px solid #0969da;background:#ddf4ff;padding:12px 15px}.small{font-size:12px}details{margin:16px 0;border:1px solid #d1d9e0;border-radius:6px;padding:14px}summary{font-weight:600;cursor:pointer}details p{margin-top:12px}a:focus-visible,summary:focus-visible{outline:2px solid #0969da;outline-offset:3px}@media(max-width:700px){.steps,.grid{grid-template-columns:1fr}main{padding:22px 16px}}
+</style></head><body>
+<header><strong>Archfit · Design notes</strong><nav><a href="index.html">Open prototype</a> · <a href="replay/index.html">40-PR replay</a></nav></header>
+<main>
+<h1>Short for people. Complete for agents.</h1>
+<p class="muted">One review flow. No new product modes, scores or mandatory AI commentary.</p>
+<div class="grid">
+<section class="box"><h2>Human first screen</h2><ol><li><strong>Merge effect:</strong> advisory or evidence needed.</li><li><strong>Change:</strong> one factual headline and a focused before/after diagram.</li><li><strong>Next:</strong> one concrete check.</li><li><strong>Action:</strong> view evidence, view a policy diff, or show recovery steps.</li></ol><p class="small muted">Existing App tokens, compact boxes, Findings / Graph tabs, light/dark themes and progressive disclosure. No new sidebar or navigation system.</p></section>
+<section class="box"><h2>Agent handoff</h2><p><strong>Copy review task</strong> copies JSON with the case, source evidence, comparison scope, constraints, validation and existing result.</p><p>Nothing runs automatically. It grants no merge, waiver or policy-edit permission.</p><p class="small muted">On GitHub, the payload stays in a folded code block. In the App, copying is a real button with success feedback and a manual-copy fallback.</p></section>
+</div>
+<h2>Jev/Clef has one bounded job</h2>
+<p>Classify the transformation—not whether the code is “good,” and not whether a PR may merge.</p>
+<div class="steps"><div class="step"><small>1 · Tools + Git</small><h3>Establish facts</h3><p>Exact references, source changes, policy, scope and completeness.</p></div><div class="step"><small>2 · Engine</small><h3>Route the event</h3><p>Skip models for docs-only, policy-only or incomplete evidence.</p></div><div class="step model"><small>3 · Optional Jev or Clef</small><h3>Select a label</h3><p>Callback extraction, responsibility move, contract expansion, relocation—or insufficient context.</p></div><div class="step"><small>4 · App</small><h3>Use a template</h3><p>One interpretation and a bounded review focus. Facts-only fallback always works.</p></div></div>
+<div class="grid"><section><h3>Input · illustrative, not a vendor API</h3><pre>{
+  "before": "handler writes private runtime state",
+  "after": "handler invokes a supplied callback",
+  "intent": "runtime owns restart state",
+  "evidence": ["source diff", "resolved reference"],
+  "context": "bounded old/new source",
+  "allowed_labels": [
+    "private_state_to_callback",
+    "responsibility_move",
+    "dependency_relocation",
+    "insufficient_context"
+  ]
+}</pre></section><section><h3>Output · simulated</h3><pre>{
+  "transformation": "private_state_to_callback",
+  "review_focus": "preserve_restart_sequence",
+  "authority": "advisory_only"
+}</pre><p class="small muted">No actual model calls or calibrated probability are shown. Typed output is easier to validate, not guaranteed correct.</p><p class="note small">The classifier cannot invent a removed edge, hide a blocker, fill missing evidence, prove behavior, or change approved policy.</p></section></div>
+<details><summary>Automation, privacy and fallback</summary><p>Required checks always run. Only optional interpretation is routed. Refusal, timeout, invalid output or abstention retains factual events. Repository prose is untrusted data, not model instructions.</p><p>Source-aware inference stays in customer CI or needs additional sharing consent. Record model/configuration, prompt and input identities. Customer-attested reports are not independent execution proof.</p><p>In the prototype, open <strong>Test options</strong> to compare the simulated label, facts-only and abstention. The existing result never changes.</p></details>
+<details><summary>Why the five cases behave differently</summary><ul><li><strong>#341 / #350:</strong> show the observed structural change; optionally interpret the refactoring.</li><li><strong>#342:</strong> policy-only change. Compare policy, not code quality. No model.</li><li><strong>#363:</strong> docs-only change. No new architecture comment. Keep check and repository attention.</li><li><strong>Missing base:</strong> unknown, not green. Show recovery steps. No model.</li></ul></details>
+<details><summary>What is existing, proposed and still unproven</summary><p>Existing: policy, graph evidence, findings, comparison identities, governance, agent tasks, PR comments and App pages.</p><p>Proposed: exact member-level change events, resolved-change summaries, contextual transformation labels and quieter presentation.</p><p>Unproven: extra prevented defects, reviewer time savings, classifier value and willingness to pay. The replay found existing useful signals and substantial overlap with other review tools.</p><p>Compare deterministic templates with templates plus classifiers on held-out cases. Keep a model only if it improves correct decisions without hiding important evidence.</p></details>
+<p class="small muted">Sources: <a href="https://docs.typesafe.ai/introduction/coding-agents" target="_blank" rel="noopener noreferrer">Jev documentation</a> · <a href="https://huggingface.co/Cloudflare/clef" target="_blank" rel="noopener noreferrer">Clef model card</a> · <a href="README.md">Implementation notes</a>.</p>
+</main></body></html>

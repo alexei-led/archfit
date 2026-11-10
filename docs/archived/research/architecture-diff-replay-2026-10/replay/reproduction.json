@@ -1,0 +1,27 @@
+{
+  "case": "archfit PR106 producer/consumer mismatch; later fixed in PR120",
+  "classification": "hindsight-confirmed workflow contract regression, not prospective detector success",
+  "beforeCommit": "7e4d4787b6ff22c5feec58a1b83fabb232901bbd",
+  "afterCommit": "8b22cfdce2b6399d4ddfc04909bc4533ce9f3d66",
+  "fixture": {
+    "module": "example.com/replay",
+    "go": "1.27.0",
+    "source": "package main\nfunc main() {}\n"
+  },
+  "build": "GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off go build ./cmd/archfit",
+  "commands": [
+    "config init --root <fixture> --output <fresh-output>",
+    "config lint --root <fixture> --config <fresh-output> --strict"
+  ],
+  "before": {
+    "init_exit": 0,
+    "lint_exit": 1,
+    "diagnostic": "error missing_rationale rules[no-module-cycles].rationale: blocking rule has no rationale: say which consequence it prevents, so the agent fixes the cause"
+  },
+  "after": {
+    "init_exit": 0,
+    "lint_exit": 0
+  },
+  "noModelCalls": true,
+  "noOriginalTreeChanges": true
+}

@@ -1,0 +1,953 @@
+{
+  "method": {
+    "captured_at": "2026-10-31T16:07:34Z",
+    "sampling": "Last 20 merged PRs per repository after full closed-PR pagination and sorting by merged_at. No topic exclusions.",
+    "diff_basis": "First parent of merge commit to merge commit; final integrated patch, not first submitted revision.",
+    "existing_feedback": "Issue comments created AND updated before merge; final-head checks completed before merge; separate review timestamp limits.",
+    "not_blind": true,
+    "human_study": false,
+    "classifiers_run": false,
+    "full_historical_analyzer_sweep": false,
+    "partial_large_reviews": [
+      "archfit#111:287 files",
+      "ccgram#330:246 files"
+    ],
+    "hindsight_case": "archfit#106 to #120: selected after reading fix; not a preventive success.",
+    "scope_limit": "Short windows; largely one human owner plus bots. Not a year-long multi-team test.",
+    "raw_capture_directory": "/tmp/archfit-replay.T7MOAg"
+  },
+  "counts": {
+    "quiet": 12,
+    "explain": 11,
+    "hindsight": 1,
+    "unknown": 1,
+    "covered": 7,
+    "evidence": 8
+  },
+  "rows": [
+    {
+      "repo": "archfit",
+      "number": 97,
+      "title": "build: keep non-build inputs out of the image context and the compiler cache out of the layers",
+      "url": "https://github.com/alexei-led/archfit/pull/97",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory",
+      "comment_chars": 1417,
+      "advisories": 0,
+      "origins": [
+        5,
+        12,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/97#issuecomment-6419690610",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-27T07:29:50Z",
+      "base": "58c94eff0a06ee03980684d78fd3c8f3be1a794c",
+      "head": "b121e8824e4bc8254fdf5d41d1744e9e3ce5bb3a",
+      "disposition": "quiet",
+      "rationale": "Docker context/cache hygiene; дополнительного boundary decision нет.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 103,
+      "title": "ci: bump actions/cache to v6.1.0 (every other action is already latest stable)",
+      "url": "https://github.com/alexei-led/archfit/pull/103",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory",
+      "comment_chars": 1418,
+      "advisories": 0,
+      "origins": [
+        5,
+        12,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/103#issuecomment-6436671367",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-27T08:04:01Z",
+      "base": "b121e8824e4bc8254fdf5d41d1744e9e3ce5bb3a",
+      "head": "a1f15a5e08e4451e36963ced544b0ef73779f837",
+      "disposition": "quiet",
+      "rationale": "actions/cache version bump; не создавать architecture advice.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 99,
+      "title": "chore(deps): bump github.com/anthropics/anthropic-sdk-go/v2 from 2.2.0 to 2.3.0 in the go-minor-patch group",
+      "url": "https://github.com/alexei-led/archfit/pull/99",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory",
+      "comment_chars": 1417,
+      "advisories": 0,
+      "origins": [
+        5,
+        12,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/99#issuecomment-6431852507",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-27T08:09:12Z",
+      "base": "a1f15a5e08e4451e36963ced544b0ef73779f837",
+      "head": "440b31cf8d248f5525f1fe3ef86e53afbe8e75e5",
+      "disposition": "quiet",
+      "rationale": "SDK bump без first-party source diff; влияние по go.mod не устанавливается.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 104,
+      "title": "feat(check): one result contract with identity, change status and repository attention (E1)",
+      "url": "https://github.com/alexei-led/archfit/pull/104",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory",
+      "comment_chars": 1605,
+      "advisories": null,
+      "origins": [
+        6,
+        12,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/104#issuecomment-6453394421",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-27T21:00:56Z",
+      "base": "440b31cf8d248f5525f1fe3ef86e53afbe8e75e5",
+      "head": "787333faa833a71a09c95d9c16cdae63b01abbf6",
+      "disposition": "explain",
+      "rationale": "agent-result.v1 меняет shape; нужен consumer/migration context. Решение уже описано автором.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "archfit",
+      "number": 105,
+      "title": "feat(check): linter-shaped text output; analyze keeps the report (E2, E10)",
+      "url": "https://github.com/alexei-led/archfit/pull/105",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory",
+      "comment_chars": 1605,
+      "advisories": null,
+      "origins": [
+        5,
+        13,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/105#issuecomment-6453821883",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-27T21:21:41Z",
+      "base": "787333faa833a71a09c95d9c16cdae63b01abbf6",
+      "head": "cf85050f73e62d90cb8564dc42ad9d7f603f9b2e",
+      "disposition": "explain",
+      "rationale": "check text меняет contract; useful migration context, не новый defect.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "archfit",
+      "number": 106,
+      "title": "feat(config): lint blocking rules without a rationale; explain the self rules (E6)",
+      "url": "https://github.com/alexei-led/archfit/pull/106",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory",
+      "comment_chars": 1605,
+      "advisories": null,
+      "origins": [
+        5,
+        13,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/106#issuecomment-6462047636",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-28T06:10:33Z",
+      "base": "cf85050f73e62d90cb8564dc42ad9d7f603f9b2e",
+      "head": "7e4d4787b6ff22c5feec58a1b83fabb232901bbd",
+      "disposition": "hindsight",
+      "rationale": "Strict lint конфликтовал с output config init. Reproduction после чтения #120, не prospective discovery.",
+      "disposition_label": "Regression подтверждён hindsight"
+    },
+    {
+      "repo": "archfit",
+      "number": 107,
+      "title": "feat(check): resolve the change against the target branch and guard the policy (E3)",
+      "url": "https://github.com/alexei-led/archfit/pull/107",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory",
+      "comment_chars": 1605,
+      "advisories": null,
+      "origins": [
+        5,
+        13,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/107#issuecomment-6462788441",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-28T07:00:49Z",
+      "base": "7e4d4787b6ff22c5feec58a1b83fabb232901bbd",
+      "head": "4dd73ab8853de73ba0fed7feaa1e1cad4cbbba97",
+      "disposition": "explain",
+      "rationale": "Target-scoped check и временно HEAD-scoped hooks: известный transitional behavioral contract.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "archfit",
+      "number": 111,
+      "title": "feat(dotnet): C# and .NET support, end to end",
+      "url": "https://github.com/alexei-led/archfit/pull/111",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T13:57:39Z",
+      "base": "4dd73ab8853de73ba0fed7feaa1e1cad4cbbba97",
+      "head": "dcf9351f548fa37b31d2760a645f60fbbb02d0d1",
+      "disposition": "unknown",
+      "rationale": "287 files, focused review. .NET helper исключён из self-scan; producer check failed. Не green missed-erosion case.",
+      "disposition_label": "Недостаточно evidence"
+    },
+    {
+      "repo": "archfit",
+      "number": 112,
+      "title": "docs(release): finish the v3.3.0 notes for the check contract",
+      "url": "https://github.com/alexei-led/archfit/pull/112",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T16:38:26Z",
+      "base": "dcf9351f548fa37b31d2760a645f60fbbb02d0d1",
+      "head": "5f6f7c862a5d6b735a6994fddb38f3a3ee870a77",
+      "disposition": "quiet",
+      "rationale": "Release notes. Ещё один пересказ migration не нужен.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 113,
+      "title": "feat(policy): can-import names where to go instead (E5)",
+      "url": "https://github.com/alexei-led/archfit/pull/113",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T17:16:05Z",
+      "base": "5f6f7c862a5d6b735a6994fddb38f3a3ee870a77",
+      "head": "223d944cfe3f75ce30a91272c7d31a8fa9e545c8",
+      "disposition": "explain",
+      "rationale": "Policy-checked alternative не доказывает semantic equivalence; contract уже описан и tested.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "archfit",
+      "number": 110,
+      "title": "feat(config): config compare classifies the policy change (E11)",
+      "url": "https://github.com/alexei-led/archfit/pull/110",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 1066,
+      "advisories": null,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/archfit/pull/110#issuecomment-6470009394",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T17:27:55Z",
+      "base": "223d944cfe3f75ce30a91272c7d31a8fa9e545c8",
+      "head": "feec08c35ff8eb61d9f6dfb27733ae00393abfde",
+      "disposition": "covered",
+      "rationale": "PR реализует policy-change classification. Описание этой feature — не новая находка review.",
+      "disposition_label": "Уже покрыто review / самим PR"
+    },
+    {
+      "repo": "archfit",
+      "number": 108,
+      "title": "test(results): state-report fixtures for the five contract cases",
+      "url": "https://github.com/alexei-led/archfit/pull/108",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 1066,
+      "advisories": null,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/archfit/pull/108#issuecomment-6467244941",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T17:52:02Z",
+      "base": "feec08c35ff8eb61d9f6dfb27733ae00393abfde",
+      "head": "653021277a94232f2445948d13d54deb0d5991b1",
+      "disposition": "quiet",
+      "rationale": "Report fixtures; дополнительный boundary decision не подтверждён.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 109,
+      "title": "feat(check): files the change adds that no analysis covers are visible, unknown under change_gate: fail (E4)",
+      "url": "https://github.com/alexei-led/archfit/pull/109",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 1066,
+      "advisories": null,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/archfit/pull/109#issuecomment-6468883976",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T18:01:52Z",
+      "base": "653021277a94232f2445948d13d54deb0d5991b1",
+      "head": "17a2db9435605b181b664cdaeafafb0fc5aef8e2",
+      "disposition": "covered",
+      "rationale": "PR реализует uncovered-source detection. Это не uncovered-source finding самого PR.",
+      "disposition_label": "Уже покрыто review / самим PR"
+    },
+    {
+      "repo": "archfit",
+      "number": 114,
+      "title": "feat(hook): hook install and hook run for Claude Code, Codex and git; doctor reports the agent loop (E7)",
+      "url": "https://github.com/alexei-led/archfit/pull/114",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T18:11:11Z",
+      "base": "17a2db9435605b181b664cdaeafafb0fc5aef8e2",
+      "head": "a8b8646f3c1cadf9d02722f4ddb03ab313ed7b78",
+      "disposition": "explain",
+      "rationale": "Hook lifecycle заслуживает contract explanation; нового architectural defect не установлено.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "archfit",
+      "number": 116,
+      "title": "feat(agents): a short AGENTS.md block and a worker-loop skill; owner material in docs (E8)",
+      "url": "https://github.com/alexei-led/archfit/pull/116",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T18:26:44Z",
+      "base": "a8b8646f3c1cadf9d02722f4ddb03ab313ed7b78",
+      "head": "3875e477acb550a45c125d77f78bbea0af098ad5",
+      "disposition": "quiet",
+      "rationale": "Agent instructions/docs; дополнительной architecture advice не требуется.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 115,
+      "title": "ci: run the architecture drift check in the image built from the change",
+      "url": "https://github.com/alexei-led/archfit/pull/115",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-28T18:42:04Z",
+      "base": "3875e477acb550a45c125d77f78bbea0af098ad5",
+      "head": "c709742267a957e310bb720c1e99fa954fb6645c",
+      "disposition": "evidence",
+      "rationale": "Drift check перенесён в image: measurement consistency, не code quality.",
+      "disposition_label": "Policy / evidence change"
+    },
+    {
+      "repo": "archfit",
+      "number": 117,
+      "title": "docs(release): v3.4.0 release notes",
+      "url": "https://github.com/alexei-led/archfit/pull/117",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [],
+      "merged_at": "2026-10-28T18:42:58Z",
+      "base": "c709742267a957e310bb720c1e99fa954fb6645c",
+      "head": "2692cd6b8aab23e559d0aa76712a192d69b4229f",
+      "disposition": "quiet",
+      "rationale": "Release notes; подходящих premerge final-head checks в capture нет.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 120,
+      "title": "fix(init): starter rules carry a rationale so config init passes config lint --strict",
+      "url": "https://github.com/alexei-led/archfit/pull/120",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [
+        "failure"
+      ],
+      "merged_at": "2026-10-29T10:55:47Z",
+      "base": "2692cd6b8aab23e559d0aa76712a192d69b4229f",
+      "head": "8b22cfdce2b6399d4ddfc04909bc4533ce9f3d66",
+      "disposition": "quiet",
+      "rationale": "Исправляет уже найденный init→lint mismatch; к merge нового действия нет.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "archfit",
+      "number": 119,
+      "title": "chore(archfit): pin Action v3.1.0 with the default engine (v3.4.0)",
+      "url": "https://github.com/alexei-led/archfit/pull/119",
+      "state": "action_required",
+      "state_title": "Action required",
+      "comment_chars": 2599,
+      "advisories": 0,
+      "origins": [
+        5,
+        12,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/archfit/pull/119#issuecomment-6498033072",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-29T14:15:22Z",
+      "base": "8b22cfdce2b6399d4ddfc04909bc4533ce9f3d66",
+      "head": "59fa99c34927cc8a5622a5dbf4d7a66898c6b6e4",
+      "disposition": "evidence",
+      "rationale": "Producer migration требует re-anchor. App уже явно запросил его.",
+      "disposition_label": "Policy / evidence change"
+    },
+    {
+      "repo": "archfit",
+      "number": 122,
+      "title": "Update the Archfit baseline",
+      "url": "https://github.com/alexei-led/archfit/pull/122",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [],
+      "merged_at": "2026-10-29T14:37:29Z",
+      "base": "59fa99c34927cc8a5622a5dbf4d7a66898c6b6e4",
+      "head": "5bfcfd3c4104ec2317945dddafc5e0928f8398bd",
+      "disposition": "evidence",
+      "rationale": "Baseline profile migration; нельзя объявлять устранение code debt.",
+      "disposition_label": "Policy / evidence change"
+    },
+    {
+      "repo": "ccgram",
+      "number": 330,
+      "title": "feat(protocol): unify Telegram and mobile on shared session core",
+      "url": "https://github.com/alexei-led/ccgram/pull/330",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": true,
+      "ci_archfit": [],
+      "merged_at": "2026-10-21T17:57:32Z",
+      "base": "61b8d5c4b821b9577ecf53abcaff7afac8bb5b0a",
+      "head": "6ceac8466691d1b6bc1097af3902d84199f8f83b",
+      "disposition": "explain",
+      "rationale": "Общий SessionService для transports. Greptile уже дал architecture summary; 246 files reviewed selectively.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "ccgram",
+      "number": 331,
+      "title": "Add Archfit advisory feedback",
+      "url": "https://github.com/alexei-led/ccgram/pull/331",
+      "state": "not_captured",
+      "state_title": "",
+      "comment_chars": 0,
+      "advisories": null,
+      "origins": null,
+      "comment_url": null,
+      "greptile_comment": false,
+      "ci_archfit": [],
+      "merged_at": "2026-10-22T14:26:45Z",
+      "base": "6ceac8466691d1b6bc1097af3902d84199f8f83b",
+      "head": "c3fe38e99ee51c3ce3f55515ce2d5b238ad85506",
+      "disposition": "evidence",
+      "rationale": "App/CODEOWNERS onboarding: сама feature — не новая находка review.",
+      "disposition_label": "Policy / evidence change"
+    },
+    {
+      "repo": "ccgram",
+      "number": 334,
+      "title": "fix(status): isolate optional native probe failures",
+      "url": "https://github.com/alexei-led/ccgram/pull/334",
+      "state": "action_required",
+      "state_title": "Action required",
+      "comment_chars": 10146,
+      "advisories": 3,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/334#issuecomment-6360522121",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-23T08:19:05Z",
+      "base": "d817d56cd79ded78c123736f21d1a8e6affc1cf9",
+      "head": "d39aebccc32ab24da6bd583b7ea395cb31e2ec07",
+      "disposition": "quiet",
+      "rationale": "Optional probe isolation исправлена в самом PR; generic architecture card не добавляет решения.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "ccgram",
+      "number": 332,
+      "title": "fix(files): allow legal Unicode session paths",
+      "url": "https://github.com/alexei-led/ccgram/pull/332",
+      "state": "action_required",
+      "state_title": "Action required",
+      "comment_chars": 10146,
+      "advisories": 3,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/332#issuecomment-6360271198",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-23T08:34:20Z",
+      "base": "d39aebccc32ab24da6bd583b7ea395cb31e2ec07",
+      "head": "7dd22b7334d0cd132cf96cbd768ffeb81ab42423",
+      "disposition": "quiet",
+      "rationale": "Локальное исправление Unicode path validation.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "ccgram",
+      "number": 335,
+      "title": "perf(status): share bounded native probes across refreshers",
+      "url": "https://github.com/alexei-led/ccgram/pull/335",
+      "state": "action_required",
+      "state_title": "Action required",
+      "comment_chars": 10146,
+      "advisories": 3,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/335#issuecomment-6360940947",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-23T09:14:29Z",
+      "base": "7dd22b7334d0cd132cf96cbd768ffeb81ab42423",
+      "head": "006a88885d0876f132f40cb3525c20d2986a37ac",
+      "disposition": "covered",
+      "rationale": "Cache freshness concern уже найден review и покрыт regression tests.",
+      "disposition_label": "Уже покрыто review / самим PR"
+    },
+    {
+      "repo": "ccgram",
+      "number": 345,
+      "title": "fix(relay): restore Pi hooks and require agent readiness",
+      "url": "https://github.com/alexei-led/ccgram/pull/345",
+      "state": "action_required",
+      "state_title": "Action required",
+      "comment_chars": 10146,
+      "advisories": 3,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/345#issuecomment-6386130767",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-24T16:44:39Z",
+      "base": "006a88885d0876f132f40cb3525c20d2986a37ac",
+      "head": "66361fdfe4f057e32e221525d06b4796082c086d",
+      "disposition": "covered",
+      "rationale": "Readiness bypass уже поднят Greptile; final diff содержит fix.",
+      "disposition_label": "Уже покрыто review / самим PR"
+    },
+    {
+      "repo": "ccgram",
+      "number": 347,
+      "title": "fix(protocol): allow first Claude input before its transcript exists",
+      "url": "https://github.com/alexei-led/ccgram/pull/347",
+      "state": "action_required",
+      "state_title": "Action required",
+      "comment_chars": 10146,
+      "advisories": 3,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/347#issuecomment-6388426046",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-24T19:19:48Z",
+      "base": "66361fdfe4f057e32e221525d06b4796082c086d",
+      "head": "36a6efa5aa897472c3b09bb9ad5b10fb5c5c6062",
+      "disposition": "covered",
+      "rationale": "Initial missing transcript vs lost source уже объяснены Greptile.",
+      "disposition_label": "Уже покрыто review / самим PR"
+    },
+    {
+      "repo": "ccgram",
+      "number": 349,
+      "title": "ci: adopt the approved Archfit v3.2.0 producer",
+      "url": "https://github.com/alexei-led/ccgram/pull/349",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 16958,
+      "advisories": 88,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/349#issuecomment-6395966221",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T09:59:04Z",
+      "base": "36a6efa5aa897472c3b09bb9ad5b10fb5c5c6062",
+      "head": "04a3a41d6b67dd68eece2189954ed2018d4da0ed",
+      "disposition": "evidence",
+      "rationale": "Producer pins: evidence recovery не равна улучшению кода.",
+      "disposition_label": "Policy / evidence change"
+    },
+    {
+      "repo": "ccgram",
+      "number": 348,
+      "title": "fix(protocol): keep internal provider records out of conversations",
+      "url": "https://github.com/alexei-led/ccgram/pull/348",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 16902,
+      "advisories": 88,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/348#issuecomment-6395410670",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T10:33:53Z",
+      "base": "04a3a41d6b67dd68eece2189954ed2018d4da0ed",
+      "head": "8828da13ccba1a3d3ded290219292bc097a9de03",
+      "disposition": "explain",
+      "rationale": "Canonical transcript visibility boundary; полезная invariant, но gaps уже обсуждались review.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "ccgram",
+      "number": 341,
+      "title": "refactor(upgrade): make restart state runtime-owned",
+      "url": "https://github.com/alexei-led/ccgram/pull/341",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 16918,
+      "advisories": 87,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/341#issuecomment-6368107632",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T10:40:41Z",
+      "base": "8828da13ccba1a3d3ded290219292bc097a9de03",
+      "head": "64bfc0cbb8719e729638474a113c289f2f5bbf87",
+      "disposition": "explain",
+      "rationale": "Private main-state access заменён runtime callback. Реальное improvement уже есть в facts и intent.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "ccgram",
+      "number": 342,
+      "title": "fix(archfit): map shared core and adapter contracts",
+      "url": "https://github.com/alexei-led/ccgram/pull/342",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 16791,
+      "advisories": 98,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/342#issuecomment-6368363170",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T10:45:40Z",
+      "base": "64bfc0cbb8719e729638474a113c289f2f5bbf87",
+      "head": "2a19f3f21750a5f233941fdffdf32f7b6c4e8df1",
+      "disposition": "evidence",
+      "rationale": "Меняется только policy map. Рост advisories не доказывает erosion.",
+      "disposition_label": "Policy / evidence change"
+    },
+    {
+      "repo": "ccgram",
+      "number": 351,
+      "title": "fix(logs): report a multiplexer outage once, with its cause",
+      "url": "https://github.com/alexei-led/ccgram/pull/351",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 17302,
+      "advisories": 98,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/351#issuecomment-6397243266",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T11:48:24Z",
+      "base": "2a19f3f21750a5f233941fdffdf32f7b6c4e8df1",
+      "head": "bfe7bb77995870124d1a5a1a595f4ae8132ffcfe",
+      "disposition": "covered",
+      "rationale": "Log/recovery semantics и новый import уже покрыты review.",
+      "disposition_label": "Уже покрыто review / самим PR"
+    },
+    {
+      "repo": "ccgram",
+      "number": 350,
+      "title": "refactor(runtime): isolate monitor and lifecycle callbacks",
+      "url": "https://github.com/alexei-led/ccgram/pull/350",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 17345,
+      "advisories": 95,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/350#issuecomment-6396991611",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T12:04:12Z",
+      "base": "bfe7bb77995870124d1a5a1a595f4ae8132ffcfe",
+      "head": "6cfe0ebd37933d640239e3eb00afbd31b4259693",
+      "disposition": "explain",
+      "rationale": "Neutral monitor + awaited adapter. Existing Archfit/Greptile уже участвовали; новый вклад — presentation.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "ccgram",
+      "number": 352,
+      "title": "docs: prepare v4.18.4 release notes",
+      "url": "https://github.com/alexei-led/ccgram/pull/352",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 16800,
+      "advisories": 95,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/352#issuecomment-6397490142",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T12:16:58Z",
+      "base": "6cfe0ebd37933d640239e3eb00afbd31b4259693",
+      "head": "0d9248314f53e94c5e69533420875abc39ed3e9b",
+      "disposition": "quiet",
+      "rationale": "CHANGELOG only; bot показывает 95 advisories. Repository attention следует отделить.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "ccgram",
+      "number": 353,
+      "title": "ci: adopt the qualified Archfit v3.2.2 producer",
+      "url": "https://github.com/alexei-led/ccgram/pull/353",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 21427,
+      "advisories": 95,
+      "origins": null,
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/353#issuecomment-6400868299",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-25T18:09:35Z",
+      "base": "0d9248314f53e94c5e69533420875abc39ed3e9b",
+      "head": "f9ccb669e12bfa5596c556ee58bd3e570cc33e19",
+      "disposition": "evidence",
+      "rationale": "Producer migration, не code-quality event.",
+      "disposition_label": "Policy / evidence change"
+    },
+    {
+      "repo": "ccgram",
+      "number": 359,
+      "title": "feat(topics): start a session from one typed line",
+      "url": "https://github.com/alexei-led/ccgram/pull/359",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 1814,
+      "advisories": 95,
+      "origins": [
+        5,
+        90,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/359#issuecomment-6465326869",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-28T09:48:29Z",
+      "base": "f9ccb669e12bfa5596c556ee58bd3e570cc33e19",
+      "head": "92b77fdc8170d48c5c55a662d0c0a41d2328e9aa",
+      "disposition": "explain",
+      "rationale": "Trust seeding/defaults — важный, уже заявленный behavioral decision; нового defect не установлено.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "ccgram",
+      "number": 360,
+      "title": "feat(pi): support interactive command menus in Telegram",
+      "url": "https://github.com/alexei-led/ccgram/pull/360",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 1814,
+      "advisories": 95,
+      "origins": [
+        0,
+        95,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/360#issuecomment-6468109790",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-28T12:16:33Z",
+      "base": "92b77fdc8170d48c5c55a662d0c0a41d2328e9aa",
+      "head": "d17b5d4d62f8bf2643de4d97a56907299eec6562",
+      "disposition": "covered",
+      "rationale": "Menu routing concern найден Greptile и исправлен; finding IDs не меняются.",
+      "disposition_label": "Уже покрыто review / самим PR"
+    },
+    {
+      "repo": "ccgram",
+      "number": 361,
+      "title": "feat(ui): mirror native command menus across coding agents",
+      "url": "https://github.com/alexei-led/ccgram/pull/361",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 1814,
+      "advisories": 95,
+      "origins": [
+        0,
+        95,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/361#issuecomment-6476464519",
+      "greptile_comment": false,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-28T18:05:40Z",
+      "base": "d17b5d4d62f8bf2643de4d97a56907299eec6562",
+      "head": "25de090167eab9c51b82cc1c2e03cafe30793efc",
+      "disposition": "explain",
+      "rationale": "Provider menu contract: semantic/version limits явно документированы. 76 files не доказывают erosion.",
+      "disposition_label": "Пояснение, не новый defect"
+    },
+    {
+      "repo": "ccgram",
+      "number": 363,
+      "title": "docs: prepare v4.21.0 release notes",
+      "url": "https://github.com/alexei-led/ccgram/pull/363",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 1814,
+      "advisories": 95,
+      "origins": [
+        0,
+        95,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/363#issuecomment-6489707536",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-29T06:33:09Z",
+      "base": "25de090167eab9c51b82cc1c2e03cafe30793efc",
+      "head": "b375cd7d9734c189045d5f47b55522b937c67d21",
+      "disposition": "quiet",
+      "rationale": "CHANGELOG only; 0 introduced, 95 pre-existing advisories.",
+      "disposition_label": "Без новой карточки"
+    },
+    {
+      "repo": "ccgram",
+      "number": 364,
+      "title": "chore(archfit): migrate to engine v3.4.0 and Action v3.1.0",
+      "url": "https://github.com/alexei-led/ccgram/pull/364",
+      "state": "neutral",
+      "state_title": "Architecture needs attention · advisory · no baseline",
+      "comment_chars": 2465,
+      "advisories": 95,
+      "origins": [
+        0,
+        95,
+        0
+      ],
+      "comment_url": "https://github.com/alexei-led/ccgram/pull/364#issuecomment-6497784332",
+      "greptile_comment": true,
+      "ci_archfit": [
+        "success"
+      ],
+      "merged_at": "2026-10-29T13:35:06Z",
+      "base": "b375cd7d9734c189045d5f47b55522b937c67d21",
+      "head": "5ffe825ae981faa070db11a2033a2561b0096492",
+      "disposition": "evidence",
+      "rationale": "Engine/Action/rationale migration; нужна provenance, не новая semantic advice.",
+      "disposition_label": "Policy / evidence change"
+    }
+  ]
+}
