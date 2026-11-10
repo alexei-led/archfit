@@ -36,6 +36,18 @@ make arch-lint
 It also runs the SCIP reader tests, evaluation harness tests, and shell exit-contract tests.
 `make test-fast` skips slow integration tests for the inner development loop.
 
+`make test` uses analyzers installed on the host.
+Their versions come from the [tool manifest](tools/manifest.json):
+
+| Tool | Required version | How the tests find it | When absent |
+| --- | --- | --- | --- |
+| dependency-cruiser | 18.7.0 with TypeScript 6.0.3 installed beside it. Version 18.7.0 accepts TypeScript `>=2.0.0 <7.0.0`. | `depcruise` and `node` on `PATH` | Its tests skip. |
+| `grpcio-tools` and `protobuf` | 1.84.1 and 7.36.2 | Imported by `ARCHFIT_TOOL_PYTHON`, else by `python3` on `PATH` | The SCIP reader tests fail. |
+| `ARCHFIT_TOOL_PYTHON` | Python 3.14 or later with `grimp` 3.17, `grpcio-tools` 1.84.1, and `protobuf` 7.36.2 | Environment variable with an absolute interpreter path outside the checkout | Go tests provision through `uv`, or skip without it. |
+
+When `ARCHFIT_TOOL_PYTHON` is set, the Go tests use that interpreter and do not fall back.
+[Install analyzers](docs/languages.md#install-analyzers) shows how to install the locked Node and Python environments.
+
 Use focused checks during development:
 
 | Change | Check |
