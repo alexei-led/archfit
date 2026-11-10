@@ -18,20 +18,29 @@ _IMPORT = re.compile(
 # archfit in command position: first word, or after a shell separator, with an optional path.
 _ARCHFIT_CALL = re.compile(r"(?:^|[;&|(\n])\s*(?:[\w./~-]*/)?archfit(?:\s|$)")
 
-# A final message files a request when it hands a decision to the owner or the
-# user: it names the decider with a decision word, or asks a question about the
-# options. Courtesy offers ("let me know if you want more tests") and
-# descriptions of the process ("needs an owner-approved change") do not count.
-# Heuristic: records keep the final message so a reader can check each call.
-_DECIDER = r"(?:your|(?:the |an? )?(?:architecture |module )?owner(?:'s)?)"
+# A final message files a request when it hands the decision to the owner or the
+# user in an explicit form: a question about the options, a named decider with a
+# decision word, or a request for the owner's answer. Precision comes first:
+# courtesy offers ("want me to add tests for the edge cases?") and explanations
+# ("would require owner approval") do not count. Heuristic: records keep the final
+# message, and a reader checks each call until `archfit request` gives a signal.
+_DECIDER = r"(?:your|the (?:architecture |module )?owner(?:'s)?)"
 _REQUEST = [
     re.compile(p, re.IGNORECASE)
     for p in (
-        _DECIDER
-        + r"\s+(?:explicit\s+)?(?:decision|call|approval|go-ahead|sign-?off|choice)\b",
+        r"\b(?:which|what)\b[^.?!\n]{0,40}\b(?:do|would)\s+you\s+(?:want|prefer|like|choose)\b[^.?!\n]*\?",
+        r"\b(?:do|would) you\b[^.?!\n]*\boption\s*\d?\b[^.?!\n]*\?",
+        r"\bif you (?:want|prefer|'d rather)\b[^.?!\n]*\boption\s*\d",
         r"\b(?:decision|options?|choice)\s*,?\s+for\s+(?:you|the (?:architecture |module )?owner)\b",
+        r"\b(?:decision|approval|sign-?off) needed from\b",
+        r"\b(?:needs?|awaiting|waiting (?:for|on))\s+(?:an?\s+)?"
+        + _DECIDER
+        + r"\s+(?:explicit\s+)?(?:decision|approval|go-ahead|sign-?off|call)\b",
+        r"\bis your (?:call|decision)\b",
+        r"\b(?:what I need from you|I need your)\b",
+        r"\b(?:once|when) you (?:pick|choose|decide|approve)\b",
         r"\btell me (?:which|whether|once)\b",
-        r"[^.?!\n]*\b(?:which|options?|owner|approv\w*|policy|edge|depends_on|allowlist)\b[^.?!\n]*\?",
+        r"\b(?:should|shall) I\b[^.?!\n]*\b(?:ask|owner|approv\w*|depends_on|allowlist)\b[^.?!\n]*\?",
     )
 ]
 

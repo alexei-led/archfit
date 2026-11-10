@@ -305,8 +305,8 @@ def run_one(cfg: Config, spec: RunSpec, runner: Runner) -> dict[str, Any]:
         save("agent-stderr.txt", agent.stderr)
         if (
             agent.returncode != 0
-            or not transcript["finished"]
             or transcript["is_error"]
+            or transcript["subtype"] != "success"
         ):
             # A crash, timeout, or budget stop leaves the pinned tree: not a clean run.
             raise RuntimeError(

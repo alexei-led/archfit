@@ -363,6 +363,17 @@ class BenchTest(unittest.TestCase):
             (self.out / "runs" / "block.test.1" / "transcript.jsonl").exists()
         )
 
+    def test_an_agent_stopped_by_the_budget_cap_is_not_a_clean_run(self):
+        def capped_agent(clone: Path) -> str:
+            event = result_event("Stopped.")
+            event["subtype"] = "error_max_budget_usd"
+            return json.dumps(event) + "\n"
+
+        record = self.run_bench("block", FakeProcesses(capped_agent))
+        self.assertIn(
+            "agent run not measured: exit 0, error_max_budget_usd", record["error"]
+        )
+
     def test_errors_never_hold_secret_values(self):
         self.origin = self.origin.parent / f"missing-{SECRET}"
         record = self.run_bench("block", FakeProcesses(copying_agent))
