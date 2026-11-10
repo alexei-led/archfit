@@ -114,6 +114,19 @@ Keep AI runs optional and separate from deterministic checks.
 Use overlay copies for provider-backed configuration review.
 Do not let AI output change the candidate policy used for comparison.
 
+## Extractor equivalence
+
+`scripts/eval/extractors` compares today's import extractors with the parser-based ones planned for Archfit 4.
+It reports file edges, module pairs, and `unknown` imports for one language and repository.
+Run it on a disposable clone, because today's extractors can write caches in the target.
+
+```sh
+go build -o /tmp/gofacts ./scripts/eval/extractors/gofacts
+PYTHONPATH=scripts/eval uv run python -m extractors.equivalence \
+  --lang typescript --root /tmp/clone --config /tmp/clone/.archfit.yaml \
+  --gofacts /tmp/gofacts --out /tmp/equivalence
+```
+
 ## Classify results
 
 | Result | Required response |
