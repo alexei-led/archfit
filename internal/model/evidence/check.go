@@ -48,16 +48,36 @@ const (
 	ShapeTag LiteralShape = "tag"
 )
 
-// UnknownItem is something in a file the check needs and cannot read: an
-// import it cannot resolve, or a file it cannot parse. Line is zero when the
-// item is the whole file. Missing evidence is not zero: an unknown item can
-// stop a verdict.
+// UnknownItem is something the check needs and cannot read: an import it
+// cannot resolve, a file it cannot parse, a tool that is not installed, or a
+// base it cannot read. Line is zero when the item is the whole file; File is
+// empty when the item is about the whole tree, such as a missing tool.
+// Missing evidence is not zero: an unknown item can stop a verdict.
 type UnknownItem struct {
 	File      string `json:"file"`
 	Line      int    `json:"line,omitempty"`
 	Specifier string `json:"specifier,omitempty"`
 	Reason    string `json:"reason"`
+	// Cause says what is missing.
+	Cause UnknownCause `json:"cause"`
+	// Fix is the one step that restores the evidence, as the record prints it
+	// after "next:".
+	Fix string `json:"fix"`
 }
+
+// UnknownCause says what kind of evidence an unknown item misses. The values
+// are those of the result's unknown causes.
+type UnknownCause string
+
+// The causes of an unknown item.
+const (
+	// CauseImport: an import cannot be resolved, or a file cannot be parsed.
+	CauseImport UnknownCause = "import"
+	// CauseTool: a tool the check needs is not installed or fails.
+	CauseTool UnknownCause = "tool"
+	// CauseBase: the base tree cannot be read.
+	CauseBase UnknownCause = "base"
+)
 
 // AddedLines holds, for each repository-relative file of the working tree, the
 // ascending line numbers the change adds against its base. A file with no

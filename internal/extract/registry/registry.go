@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/extract/rust"
 	"github.com/alexei-led/archfit/v3/internal/extract/ts"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
@@ -75,6 +76,12 @@ type Descriptor struct {
 	// language cannot spell an edge without its tool (Rust needs cargo
 	// metadata for crate roots).
 	QueryEdge func(root string, cfg evidenceports.ExtractConfig, from, target string) (graph.Facts, error)
+	// CheckFacts reads the facts the check uses from the tree at root: the
+	// imports, the source files and the unknown items, with the tools of the
+	// check and no optional analyzer. cfg.Exclusions holds the check's one
+	// exclusion rule. A tree without the language gives empty facts; a missing
+	// tool is an unknown item, not an error. ReadCheck merges every language.
+	CheckFacts func(ctx context.Context, runner toolrun.Runner, root string, cfg evidenceports.ExtractConfig) (evidence.CheckFacts, error)
 	// PrimaryTool is the coverage name of the dependency-graph analyzer this
 	// language unlocks (as it appears in ToolCoverage, e.g. "go/packages").
 	PrimaryTool string
@@ -120,6 +127,7 @@ var languages = []Descriptor{
 			return ex
 		},
 		QueryEdge:   golang.QueryEdge,
+		CheckFacts:  goCheckFacts,
 		PrimaryTool: ToolGoPackages,
 		InstallHint: "https://go.dev/dl (runtime SDK; go/packages is linked into archfit)",
 		DoctorTools: []Tool{
@@ -137,6 +145,7 @@ var languages = []Descriptor{
 			return ex
 		},
 		QueryEdge:   ts.QueryEdge,
+		CheckFacts:  tsCheckFacts,
 		PrimaryTool: ToolDepCruiser,
 		InstallHint: analyzerSetupURL,
 		DoctorTools: []Tool{
@@ -153,6 +162,7 @@ var languages = []Descriptor{
 			return py.New(r, cfg)
 		},
 		QueryEdge:   py.QueryEdge,
+		CheckFacts:  pyCheckFacts,
 		PrimaryTool: ToolGrimp,
 		InstallHint: "install uv (selects Python 3.14 + grimp==3.17), or put a separate Python 3.14+ environment with grimp==3.17 on PATH",
 		DoctorTools: []Tool{
@@ -169,6 +179,7 @@ var languages = []Descriptor{
 			ex.Cache = fc
 			return ex
 		},
+		CheckFacts:  rustCheckFacts,
 		PrimaryTool: ToolCargo,
 		InstallHint: "https://rustup.rs (rustup installs cargo)",
 		DoctorTools: []Tool{
@@ -187,6 +198,7 @@ var languages = []Descriptor{
 			return ex
 		},
 		QueryEdge:   dotnet.QueryEdge,
+		CheckFacts:  dotnetCheckFacts,
 		PrimaryTool: ToolDotNetMSBuild,
 		InstallHint: dotnetSDKURL + " (the .NET SDK provides dotnet msbuild)",
 		DoctorTools: []Tool{

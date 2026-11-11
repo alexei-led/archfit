@@ -55,7 +55,7 @@ func TestExtractFailures(t *testing.T) {
 		runner := &toolrun.RunnerMock{
 			DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false },
 		}
-		if _, err := Extract(context.Background(), runner, root); !errors.Is(err, ErrNoAstGrep) {
+		if _, err := Extract(context.Background(), runner, root, Config{}); !errors.Is(err, ErrNoAstGrep) {
 			t.Errorf("err = %v, want ErrNoAstGrep", err)
 		}
 	})
@@ -63,7 +63,7 @@ func TestExtractFailures(t *testing.T) {
 	t.Run("no sources needs no ast-grep", func(t *testing.T) {
 		t.Parallel()
 		runner := &toolrun.RunnerMock{} // any call panics
-		got, err := Extract(context.Background(), runner, writeTree(t, map[string]string{"main.go": "", "node_modules/x/i.js": ""}))
+		got, err := Extract(context.Background(), runner, writeTree(t, map[string]string{"main.go": "", "node_modules/x/i.js": ""}), Config{})
 		if err != nil || len(got.Sources) != 0 || len(got.Imports) != 0 {
 			t.Errorf("Extract = %+v, %v, want empty facts", got, err)
 		}
@@ -74,7 +74,7 @@ func TestExtractFailures(t *testing.T) {
 		runner, _ := fakeAstGrep(func([]string) (toolrun.Output, error) {
 			return toolrun.Output{ExitCode: 2, Stderr: []byte("bad rule\n")}, nil
 		})
-		_, err := Extract(context.Background(), runner, root)
+		_, err := Extract(context.Background(), runner, root, Config{})
 		if err == nil || !strings.Contains(err.Error(), "exited 2: bad rule") {
 			t.Errorf("err = %v, want the exit code and stderr", err)
 		}
@@ -85,7 +85,7 @@ func TestExtractFailures(t *testing.T) {
 		runner, _ := fakeAstGrep(func([]string) (toolrun.Output, error) {
 			return toolrun.Output{ExitCode: -1, Stdout: []byte(`{"text":"'./a'","file":"src/x.ts","ruleId":"ts-source"}` + "\n")}, nil
 		})
-		if _, err := Extract(context.Background(), runner, root); err == nil || !strings.Contains(err.Error(), "exited -1") {
+		if _, err := Extract(context.Background(), runner, root, Config{}); err == nil || !strings.Contains(err.Error(), "exited -1") {
 			t.Errorf("err = %v, want exited -1", err)
 		}
 	})
@@ -94,7 +94,7 @@ func TestExtractFailures(t *testing.T) {
 		t.Parallel()
 		boom := errors.New("boom")
 		runner, _ := fakeAstGrep(func([]string) (toolrun.Output, error) { return toolrun.Output{}, boom })
-		if _, err := Extract(context.Background(), runner, root); !errors.Is(err, boom) {
+		if _, err := Extract(context.Background(), runner, root, Config{}); !errors.Is(err, boom) {
 			t.Errorf("err = %v, want boom", err)
 		}
 	})
@@ -104,14 +104,14 @@ func TestExtractFailures(t *testing.T) {
 		runner, _ := fakeAstGrep(func([]string) (toolrun.Output, error) {
 			return toolrun.Output{Stdout: []byte("{not json\n")}, nil
 		})
-		if _, err := Extract(context.Background(), runner, root); err == nil {
+		if _, err := Extract(context.Background(), runner, root, Config{}); err == nil {
 			t.Error("err = nil, want a read error")
 		}
 	})
 
 	t.Run("missing root is an error", func(t *testing.T) {
 		t.Parallel()
-		if _, err := Extract(context.Background(), &toolrun.RunnerMock{}, filepath.Join(root, "gone")); err == nil {
+		if _, err := Extract(context.Background(), &toolrun.RunnerMock{}, filepath.Join(root, "gone"), Config{}); err == nil {
 			t.Error("err = nil, want a walk error")
 		}
 	})
@@ -124,7 +124,7 @@ func TestExtractBatches(t *testing.T) {
 		files[fmt.Sprintf("src/f%03d.ts", i)] = ""
 	}
 	runner, calls := fakeAstGrep(noMatches)
-	got, err := Extract(context.Background(), runner, writeTree(t, files))
+	got, err := Extract(context.Background(), runner, writeTree(t, files), Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestExtractUnknownItems(t *testing.T) {
 		"nosource/tsconfig.json":   `{"extends": "@unused/tsconfig"}`,
 		"nosource/notes/readme.md": "",
 	})
-	got, err := Extract(context.Background(), runner, root)
+	got, err := Extract(context.Background(), runner, root, Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestExtractWithAstGrep(t *testing.T) {
 			"src/y.tsx": source,
 			"src/z.js":  "import a from './a';\nrequire('./req');\n",
 		})
-		got, err := Extract(context.Background(), runner, root)
+		got, err := Extract(context.Background(), runner, root, Config{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -234,7 +234,7 @@ func TestExtractWithAstGrep(t *testing.T) {
 			srcA:                        "",
 			"node_modules/dep/index.js": "import x from './x';\n",
 		})
-		got, err := Extract(context.Background(), runner, root)
+		got, err := Extract(context.Background(), runner, root, Config{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -284,5 +284,47 @@ func TestWorkspacePackagesDoNotFollowSymlinks(t *testing.T) {
 	want := map[string]string{"@org/a": "libs/a", "@org/b": "linked/b"}
 	if !maps.Equal(got, want) {
 		t.Errorf("workspacePackages = %v, want %v", got, want)
+	}
+}
+
+// appTS is the kept script of TestExtractExclude.
+const appTS = "app.ts"
+
+// TestExtractExclude: an excluded file or directory is not parsed and its
+// tsconfig gives no unknown item, while an import of an excluded file still
+// resolves to it; a tree with only excluded scripts needs no ast-grep; a bad
+// glob is an error.
+func TestExtractExclude(t *testing.T) {
+	t.Parallel()
+	root := writeTree(t, map[string]string{
+		appTS:                   "",
+		"gen/g.ts":              "",
+		"tests/example.spec.ts": "",
+		"tests/tsconfig.json":   extendsCompany,
+	})
+	runner, calls := fakeAstGrep(func([]string) (toolrun.Output, error) {
+		return toolrun.Output{Stdout: []byte(`{"text":"'./gen/g'","file":"app.ts","ruleId":"import-from","range":{"start":{"line":0}}}` + "\n")}, nil
+	})
+	got, err := Extract(context.Background(), runner, root, Config{Exclude: []string{"**/*.spec.ts", "gen/**"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Sources, []string{appTS}) || len(*calls) != 1 || !slices.Equal((*calls)[0], []string{appTS}) {
+		t.Errorf("sources = %q, ast-grep read %q; want app.ts only", got.Sources, *calls)
+	}
+	if len(got.Unknown) != 0 {
+		t.Errorf("Unknown = %+v, want none: only an excluded file uses tests/tsconfig.json", got.Unknown)
+	}
+	want := []Import{{File: appTS, Line: 1, Specifier: "./gen/g", Kind: KindFile, Target: "gen/g.ts"}}
+	if !slices.Equal(got.Imports, want) {
+		t.Errorf("Imports = %+v, want %+v", got.Imports, want)
+	}
+
+	all, err := Extract(context.Background(), &toolrun.RunnerMock{}, root, Config{Exclude: []string{"**/*.ts"}})
+	if err != nil || len(all.Sources) != 0 || len(all.Unknown) != 0 {
+		t.Errorf("all excluded: %+v, %v; want empty facts and no ast-grep", all, err)
+	}
+	if _, err := Extract(context.Background(), &toolrun.RunnerMock{}, root, Config{Exclude: []string{"src/["}}); err == nil {
+		t.Error("err = nil, want a bad glob error")
 	}
 }

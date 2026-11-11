@@ -105,6 +105,22 @@ func BuildIndex(lits []Literal) Index {
 // Config holds the policy settings the extractor reads.
 type Config struct {
 	Exclude []string // globs of paths no extractor reads
+	// Languages are the languages whose files are read, by registry id (go,
+	// typescript, python, rust, dotnet). Empty reads every language.
+	Languages []string
+}
+
+// Facts are the literals of a tree and the files whose literals were not read.
+type Facts struct {
+	Literals []Literal // sorted by file, line and value
+	Unread   []Unread  // sorted by file
+}
+
+// Unread is a file whose literals are not read, because it does not parse.
+// The other files are read: one broken file hides no other literal.
+type Unread struct {
+	File   string // root-relative, slash-separated
+	Reason string
 }
 
 // ErrNoAstGrep reports that the tree has TypeScript, JavaScript, Python, Rust
@@ -117,51 +133,92 @@ var skippedDirs = []string{".git", "node_modules", "vendor"}
 
 const goExt = ".go"
 
-// astGrepExts are the extensions of the files ast-grep reads: the script
-// files tsimports parses, then Python, Rust and C#.
-var astGrepExts = []string{".js", ".cjs", ".mjs", ".jsx", ".ts", ".cts", ".mts", ".tsx", ".py", ".rs", ".cs"}
+// languageExts are the extensions of each language's files, by registry id.
+// The ast-grep languages read the script files tsimports parses, then Python,
+// Rust and C#.
+var languageExts = map[string][]string{
+	"go":         {goExt},
+	"typescript": {".js", ".cjs", ".mjs", ".jsx", ".ts", ".cts", ".mts", ".tsx"},
+	"python":     {".py"},
+	"rust":       {".rs"},
+	"dotnet":     {".cs"},
+}
 
 // Extract reads the literals of every Go, TypeScript, JavaScript, Python,
-// Rust and C# file under root that cfg does not exclude, sorted by file, line
-// and value. A tree with only Go files needs no ast-grep.
-func Extract(ctx context.Context, runner toolrun.Runner, root string, cfg Config) ([]Literal, error) {
+// Rust and C# file under root that cfg does not exclude and whose language cfg
+// reads, sorted by file, line and value. A Go file that does not parse is
+// Unread. A tree with only Go files needs no ast-grep.
+func Extract(ctx context.Context, runner toolrun.Runner, root string, cfg Config) (Facts, error) {
 	for _, pattern := range cfg.Exclude {
 		if !doublestar.ValidatePattern(pattern) {
-			return nil, fmt.Errorf("literals: bad exclude glob %q", pattern)
+			return Facts{}, fmt.Errorf("literals: bad exclude glob %q", pattern)
 		}
+	}
+	exts, err := extensions(cfg.Languages)
+	if err != nil {
+		return Facts{}, err
 	}
 	fsys := os.DirFS(root)
-	goFiles, sgFiles, err := sourceFiles(fsys, cfg.Exclude)
+	goFiles, sgFiles, err := sourceFiles(fsys, cfg.Exclude, exts)
 	if err != nil {
-		return nil, err
+		return Facts{}, err
 	}
-	var lits []Literal
+	var facts Facts
 	for _, file := range goFiles {
-		found, err := readGo(fsys, file)
+		found, parseErr, err := readGo(fsys, file)
 		if err != nil {
-			return nil, err
+			return Facts{}, err
 		}
-		lits = append(lits, found...)
+		if parseErr != nil {
+			facts.Unread = append(facts.Unread, Unread{File: file, Reason: "does not parse: " + parseErr.Error()})
+			continue
+		}
+		facts.Literals = append(facts.Literals, found...)
 	}
 	if len(sgFiles) > 0 {
 		if _, ok := runner.Detect(ctx, astGrep); !ok {
-			return nil, ErrNoAstGrep
+			return Facts{}, ErrNoAstGrep
 		}
 		found, err := readAstGrep(ctx, runner, root, sgFiles)
 		if err != nil {
-			return nil, err
+			return Facts{}, err
 		}
-		lits = append(lits, found...)
+		facts.Literals = append(facts.Literals, found...)
 	}
-	slices.SortFunc(lits, func(a, b Literal) int {
+	slices.SortFunc(facts.Literals, func(a, b Literal) int {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Value, b.Value))
 	})
-	return lits, nil
+	return facts, nil
 }
 
-// sourceFiles lists the root-relative Go files and the files for ast-grep,
-// sorted. Only regular files count: a symlink is not followed out of the tree.
-func sourceFiles(fsys fs.FS, exclude []string) (goFiles, sgFiles []string, err error) {
+// extensions returns the extensions of the files to read: those of languages,
+// or of every language when it is empty.
+func extensions(languages []string) (map[string]bool, error) {
+	exts := map[string]bool{}
+	if len(languages) == 0 {
+		for _, list := range languageExts {
+			for _, ext := range list {
+				exts[ext] = true
+			}
+		}
+		return exts, nil
+	}
+	for _, lang := range languages {
+		list, ok := languageExts[lang]
+		if !ok {
+			return nil, fmt.Errorf("literals: unknown language %q", lang)
+		}
+		for _, ext := range list {
+			exts[ext] = true
+		}
+	}
+	return exts, nil
+}
+
+// sourceFiles lists the root-relative Go files and the files for ast-grep
+// whose extension is in exts, sorted. Only regular files count: a symlink is
+// not followed out of the tree.
+func sourceFiles(fsys fs.FS, exclude []string, exts map[string]bool) (goFiles, sgFiles []string, err error) {
 	err = fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("literals: walk %s: %w", name, err)
@@ -179,9 +236,10 @@ func sourceFiles(fsys fs.FS, exclude []string) (goFiles, sgFiles []string, err e
 			return nil
 		}
 		switch ext := path.Ext(name); {
+		case !exts[ext]:
 		case ext == goExt:
 			goFiles = append(goFiles, name)
-		case slices.Contains(astGrepExts, ext):
+		default:
 			sgFiles = append(sgFiles, name)
 		}
 		return nil

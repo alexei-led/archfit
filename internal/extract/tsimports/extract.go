@@ -45,6 +45,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -120,11 +122,25 @@ var noIgnore = func() []string {
 
 var referencePath = regexp.MustCompile(`\bpath\s*=\s*["']([^"']+)["']`)
 
+// Config holds the policy settings the extractor reads.
+type Config struct {
+	// Exclude are globs of paths no extractor reads. An excluded file is not
+	// parsed and its tsconfig gives no unknown item, but it stays a file, so
+	// an import of it still resolves.
+	Exclude []string
+}
+
 // Extract reads and resolves the imports of every TypeScript and JavaScript
-// file under root. A tree without such files needs no ast-grep.
-func Extract(ctx context.Context, runner toolrun.Runner, root string) (Facts, error) {
+// file under root that cfg does not exclude. A tree without such files needs
+// no ast-grep.
+func Extract(ctx context.Context, runner toolrun.Runner, root string, cfg Config) (Facts, error) {
+	for _, pattern := range cfg.Exclude {
+		if !doublestar.ValidatePattern(pattern) {
+			return Facts{}, fmt.Errorf("tsimports: bad exclude glob %q", pattern)
+		}
+	}
 	fsys := os.DirFS(root)
-	files, err := sourceFiles(fsys)
+	files, err := sourceFiles(fsys, cfg.Exclude)
 	if err != nil || len(files) == 0 {
 		return Facts{}, err
 	}
@@ -159,12 +175,19 @@ func Extract(ctx context.Context, runner toolrun.Runner, root string) (Facts, er
 	return Facts{Sources: files, Imports: slices.Compact(imports), Unknown: slices.Compact(unknown)}, nil
 }
 
-// sourceFiles lists the root-relative files to parse, sorted.
-func sourceFiles(fsys fs.FS) ([]string, error) {
+// sourceFiles lists the root-relative files to parse, sorted: outside
+// node_modules, .git and the exclude globs.
+func sourceFiles(fsys fs.FS, exclude []string) ([]string, error) {
 	var files []string
 	err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("tsimports: walk %s: %w", name, err)
+		}
+		if name != "." && matchesAny(exclude, name) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() {
 			if name != "." && (d.Name() == nodeModules || d.Name() == ".git") {
@@ -179,6 +202,17 @@ func sourceFiles(fsys fs.FS) ([]string, error) {
 	})
 	slices.Sort(files)
 	return files, err
+}
+
+// matchesAny reports whether an exclude glob matches the path. The walk skips
+// an excluded directory, so a file under it is never asked.
+func matchesAny(exclude []string, name string) bool {
+	for _, pattern := range exclude {
+		if ok, _ := doublestar.Match(pattern, name); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // sgMatch is the part of an ast-grep --json=stream match the extractor reads.
