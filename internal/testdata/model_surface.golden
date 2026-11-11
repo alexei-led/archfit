@@ -4,7 +4,7 @@ package internal/model/clone
   func internal/model/clone.ModulePairs(clusters []internal/model/clone.Cluster, key func(string) string) [][2]string
 package internal/model/evidence
   type internal/model/evidence.AddedLines map[string][]int
-  type internal/model/evidence.CheckFacts struct{Imports []internal/model/evidence.ImportFact "json:\"imports,omitempty\""; Literals []internal/model/evidence.LiteralOccurrence "json:\"literals,omitempty\""; Unknown []internal/model/evidence.UnknownItem "json:\"unknown,omitempty\""}
+  type internal/model/evidence.CheckFacts struct{Imports []internal/model/evidence.ImportFact "json:\"imports,omitempty\""; Literals []internal/model/evidence.LiteralOccurrence "json:\"literals,omitempty\""; Unknown []internal/model/evidence.UnknownItem "json:\"unknown,omitempty\""; Sources []string "json:\"sources,omitempty\""}
   type internal/model/evidence.ConnascenceReport struct{EdgesWithEvidence int "json:\"edges_with_evidence\""; AbstainedEdges int "json:\"abstained_edges\""; TotalEvidence int "json:\"total_evidence\""; ByKind map[string]int "json:\"by_kind,omitempty\""; BySource map[string]int "json:\"by_source,omitempty\""; Unmeasured []string "json:\"unmeasured,omitempty\""; Roadmap []internal/model/evidence.ConnascenceRoadmapItem "json:\"roadmap,omitempty\""}
   type internal/model/evidence.ConnascenceRoadmapItem struct{Kind string "json:\"kind\""; CurrentStatus string "json:\"current_status\""; Sources []string "json:\"sources,omitempty\""; RelatedSignals []string "json:\"related_signals,omitempty\""; UpgradeTrigger string "json:\"upgrade_trigger,omitempty\""}
   type internal/model/evidence.CorroboratedDeployUnit struct{Path string "json:\"path\""; Unit string "json:\"unit\""; Source internal/model/evidence.TopologySource "json:\"source\""}
@@ -31,7 +31,8 @@ package internal/model/evidence
   const internal/model/evidence.FreshnessStale internal/model/evidence.CoverageFreshness
   const internal/model/evidence.FreshnessUnverified internal/model/evidence.CoverageFreshness
   type internal/model/evidence.ImportFact struct{File string "json:\"file\""; Line int "json:\"line\""; Target string "json:\"target\""; External bool "json:\"external,omitempty\""}
-  type internal/model/evidence.LiteralOccurrence struct{File string "json:\"file\""; Line int "json:\"line\""; Value string "json:\"value\""}
+  type internal/model/evidence.LiteralOccurrence struct{File string "json:\"file\""; Line int "json:\"line\""; Value string "json:\"value\""; Shape internal/model/evidence.LiteralShape "json:\"shape,omitempty\""}
+  type internal/model/evidence.LiteralShape string
   type internal/model/evidence.LocalCouplingEdge struct{From string "json:\"from\""; To string "json:\"to\""; Strength string "json:\"strength\""; Balance int "json:\"balance\""; Band string "json:\"band\""; File string "json:\"file,omitempty\""; Line int "json:\"line,omitempty\""}
   type internal/model/evidence.LocalCouplingModule struct{Module string "json:\"module\""; ScoredEdges int "json:\"scored_edges\""; AbstainedEdges int "json:\"abstained_edges,omitempty\""; ComplexityEdges int "json:\"complexity_edges\""; ComplexitySharePct int "json:\"complexity_share_pct\""; MeanBalance float64 "json:\"mean_balance\""; WorstOffenders []internal/model/evidence.LocalCouplingEdge "json:\"worst_offenders,omitempty\""}
   func internal/model/evidence.MeasurementContract(tool string) (semantics string, external bool)
@@ -49,6 +50,9 @@ package internal/model/evidence
   type internal/model/evidence.RuntimeAsyncSite struct{File string "json:\"file\""; Line int "json:\"line\""; Library string "json:\"library\""; IntegrationKind string "json:\"integration_kind\""; Language string "json:\"language\""}
   type internal/model/evidence.SemanticStrengthOverlay struct{ByLanguage map[string]internal/model/evidence.SemanticStrengthOverlayStats "json:\"by_language,omitempty\""}
   type internal/model/evidence.SemanticStrengthOverlayStats struct{CandidateEdges int "json:\"candidate_edges\""; Applied int "json:\"applied\""; Missed int "json:\"missed\""; Before map[string]int "json:\"before,omitempty\""; After map[string]int "json:\"after,omitempty\""}
+  const internal/model/evidence.ShapeOther internal/model/evidence.LiteralShape
+  const internal/model/evidence.ShapeTag internal/model/evidence.LiteralShape
+  const internal/model/evidence.ShapeWord internal/model/evidence.LiteralShape
   func internal/model/evidence.SortSyntaxFacts(facts []internal/model/evidence.SyntaxFact)
   const internal/model/evidence.StatusAbsent untyped string
   const internal/model/evidence.StatusDisabled untyped string

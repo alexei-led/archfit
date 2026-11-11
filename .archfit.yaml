@@ -135,6 +135,7 @@ modules:
       - internal/model/rule/**
     public:
       - internal/policy
+      - internal/policy/resolved
       - internal/model/rule
     layer: core
     subdomain: core
@@ -148,6 +149,7 @@ modules:
       - internal/relationship/**
     public:
       - internal/relationship
+      - internal/relationship/balance
       - internal/relationship/coupling
       - internal/relationship/facts
       - internal/relationship/labels
