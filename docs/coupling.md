@@ -111,6 +111,38 @@ V=10. Its balance is 2, with band `critical`.
 
 The same internal call into a module with V=3 has balance 8, with band `low`.
 
+## The `coupling` rule
+
+Archfit 4 adds a built-in `coupling` rule to the check of policy version 3. It
+is not released yet. The rule judges a dependency a change adds: new knowledge
+across a module boundary needs a balance of at least 7. The balance uses the
+formula above at D=9 and is shown as `9/10 (min 7)`.
+
+| Volatility that applies | Use of the public part | Use past the public part | Copy |
+| --- | ---: | ---: | ---: |
+| `low` | 9 or 8 | 8 | 8 |
+| `medium` | 9 or 7 | 5 ✗ | 5 ✗ |
+| `high` | 9 or 7 | 2 ✗ | 1 ✗ |
+
+- A use of the public part is `contract` (9) or `model` (8 or 7). A use past it
+  is `functional`, a copy `symmetric`.
+- The volatility that applies is the target's for a use of the public part, and
+  the higher of the two modules for a use past it and for a copy.
+- An `intrusive` use reaches past the public part, so it also takes the higher
+  of the two: a high-volatility source into a low target gives 2. This differs
+  from the report's edge classification above, which keeps the target's
+  volatility for intrusive edges. The rule lets a use past the public part
+  happen only into a stable module, so a volatile source counts too.
+- The rule uses the declared volatility. The cascade is not used, because with
+  it one new dependency changes the balance of code the change did not touch.
+- The `public` globs alone tell a use of the public part from a use past it. Both
+  kinds of public use pass at every volatility, so the check needs no type
+  analysis.
+
+In words: a module may use the public part of a module it is allowed to depend
+on. It may reach past the public part only when neither module is more volatile
+than `low`.
+
 ## Distributed-monolith seam gate
 
 The gate counts ordered module pairs, called seams. One seam can contain many
