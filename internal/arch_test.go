@@ -653,9 +653,10 @@ func TestCouplingContractDoesNotImportGraph(t *testing.T) {
 }
 
 const (
-	dotnetExtractorPkg = modulePrefix + "internal/extract/dotnet"
-	toolrunPkg         = modulePrefix + "internal/toolrun"
-	osExecPkg          = "os/exec"
+	dotnetExtractorPkg    = modulePrefix + "internal/extract/dotnet"
+	tsImportsExtractorPkg = modulePrefix + "internal/extract/tsimports"
+	toolrunPkg            = modulePrefix + "internal/toolrun"
+	osExecPkg             = "os/exec"
 )
 
 // extractorBoundaryViolations lists the imports an out-of-process extractor
@@ -700,29 +701,32 @@ func TestExtractorBoundaryViolations(t *testing.T) {
 	}
 }
 
-// TestDotnetExtractorRunsToolsOnlyThroughToolrun keeps the .NET extractor an
-// adapter that cannot start a process itself and cannot reach a sibling adapter.
-func TestDotnetExtractorRunsToolsOnlyThroughToolrun(t *testing.T) {
+// TestExtractorsRunToolsOnlyThroughToolrun keeps the .NET and TypeScript
+// import extractors adapters that cannot start a process themselves and cannot
+// reach a sibling adapter.
+func TestExtractorsRunToolsOnlyThroughToolrun(t *testing.T) {
 	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedImports, Dir: "."}
-	pkgs, err := packages.Load(cfg, dotnetExtractorPkg)
-	if err != nil {
-		t.Fatalf("packages.Load: %v", err)
-	}
-	if len(pkgs) != 1 {
-		t.Fatalf("load %s: got %d packages, want 1", dotnetExtractorPkg, len(pkgs))
-	}
-	if len(pkgs[0].Errors) > 0 {
-		t.Fatalf("load %s: %v", dotnetExtractorPkg, pkgs[0].Errors)
-	}
-	imports := make([]string, 0, len(pkgs[0].Imports))
-	for imp := range pkgs[0].Imports {
-		imports = append(imports, imp)
-	}
-	if _, ok := pkgs[0].Imports[toolrunPkg]; !ok {
-		t.Fatalf("%s must import %s: the rule would pass vacuously", dotnetExtractorPkg, toolrunPkg)
-	}
-	for _, violation := range extractorBoundaryViolations(dotnetExtractorPkg, imports) {
-		t.Errorf("%s imports %s", dotnetExtractorPkg, violation)
+	for _, pkgPath := range []string{dotnetExtractorPkg, tsImportsExtractorPkg} {
+		pkgs, err := packages.Load(cfg, pkgPath)
+		if err != nil {
+			t.Fatalf("packages.Load: %v", err)
+		}
+		if len(pkgs) != 1 {
+			t.Fatalf("load %s: got %d packages, want 1", pkgPath, len(pkgs))
+		}
+		if len(pkgs[0].Errors) > 0 {
+			t.Fatalf("load %s: %v", pkgPath, pkgs[0].Errors)
+		}
+		imports := make([]string, 0, len(pkgs[0].Imports))
+		for imp := range pkgs[0].Imports {
+			imports = append(imports, imp)
+		}
+		if _, ok := pkgs[0].Imports[toolrunPkg]; !ok {
+			t.Fatalf("%s must import %s: the rule would pass vacuously", pkgPath, toolrunPkg)
+		}
+		for _, violation := range extractorBoundaryViolations(pkgPath, imports) {
+			t.Errorf("%s imports %s", pkgPath, violation)
+		}
 	}
 }
 
