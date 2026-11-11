@@ -114,12 +114,15 @@ func readJSON(fsys fs.FS, name string) *object {
 	if err != nil {
 		return nil
 	}
-	v, err := decodeJSON(data)
+	v, err := decodeJSON(bytes.TrimPrefix(data, []byte(byteOrderMark)))
 	if err != nil {
 		return nil
 	}
 	return asObject(v)
 }
+
+// byteOrderMark may start a file; Node and TypeScript drop it before parsing.
+const byteOrderMark = "\uFEFF"
 
 var (
 	// A string is matched first, so comment markers inside it stay.
@@ -128,13 +131,14 @@ var (
 )
 
 // readJSONC reads a JSON file with comments and trailing commas, as tsconfig
-// allows. Comments go first, so a comma before a comment still trails.
+// allows. Comments go first, so a comma before a comment still trails. A file
+// with nothing but comments and space is an empty object, as in TypeScript.
 func readJSONC(fsys fs.FS, name string) *object {
 	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil
 	}
-	text := jsoncComment.ReplaceAllStringFunc(string(data), func(m string) string {
+	text := jsoncComment.ReplaceAllStringFunc(strings.TrimPrefix(string(data), byteOrderMark), func(m string) string {
 		if strings.HasPrefix(m, `"`) {
 			return m
 		}
@@ -146,6 +150,9 @@ func readJSONC(fsys fs.FS, name string) *object {
 		}
 		return m[1:]
 	})
+	if strings.TrimSpace(text) == "" {
+		return &object{vals: map[string]any{}}
+	}
 	v, err := decodeJSON([]byte(text))
 	if err != nil {
 		return nil

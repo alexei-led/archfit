@@ -6,6 +6,13 @@
 //
 // The package reads no file and runs no tool: it decides over
 // internal/model/evidence facts and an internal/policy/resolved policy.
+//
+// A cycle is keyed by each dependency inside it (rule, from, to), not by the
+// sorted module set the milestone 1 plan names: a change that deletes a
+// dependency of a cycle leaves a smaller set, and a set key would count that
+// set as new. When a change closes a cycle, the record should show first the
+// dependency whose site is on an added line; Evaluate does not know added
+// lines, so the count on base and head applies that order.
 package change
 
 import "github.com/alexei-led/archfit/v3/internal/model/result"
@@ -42,14 +49,15 @@ type Error struct {
 type Key struct {
 	// Rule is the rule id.
 	Rule string
-	// From and To are modules. For a dependency rule: the module the
-	// dependency starts in and the module it reaches, or for an only rule
-	// the library or package set. For duplication: the two modules, sorted.
-	// Empty for cycle and unowned.
+	// From and To are modules. For a dependency rule and for cycle: the
+	// module the dependency starts in and the module it reaches, or for an
+	// only rule the library or package set; From is empty for an importer
+	// in no module. For duplication: the two modules, sorted. Empty for
+	// unowned.
 	From, To string
 	// Symbol is the imported package or library for a dependency rule, the
-	// file for unowned, the sorted module names joined by commas for cycle,
-	// and "sha256:" with the hex SHA-256 of the literal for duplication.
+	// file for unowned, empty for cycle, and "sha256:" with the hex SHA-256
+	// of the literal for duplication.
 	Symbol string
 }
 
