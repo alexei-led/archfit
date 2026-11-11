@@ -1,0 +1,10 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+exceptions:
+  - rule: unowned
+    from: scripts/**
+    to: app
+    why: Unowned code has no target.
