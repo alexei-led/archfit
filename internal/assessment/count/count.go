@@ -23,9 +23,9 @@
 //  2. fail, with the errors and any unknown reasons, when the change adds an
 //     error or an exception has expired: the worker must fix that anyway.
 //  3. unknown, with the reasons, when an unknown item qualifies: a tool is
-//     missing; an item touches a file the change adds lines to; or the head
-//     has an item the base does not have (an unchanged file whose import no
-//     longer resolves, for example after a change to tsconfig paths).
+//     missing; a head item is in a file the change adds lines to; or the head
+//     has more items of a key than the base (an unchanged file whose import
+//     no longer resolves, for example after a change to tsconfig paths).
 //  4. pass.
 //
 // The engine never sets waiting: only the App knows the open requests.
@@ -57,7 +57,6 @@ const (
 	nextWaitText     = "wait for an owner: #"
 	whyBaseUnread    = "the base cannot be read, so the change cannot be compared with it"
 	whyTool          = "a tool the check needs is missing, so some files are not read"
-	whyBaseChanged   = "the base cannot read a file the change touches"
 	whyHeadChanged   = "the change touches a file the check cannot read"
 	whyHeadNotOnBase = "the head cannot read what the base could, so the change may hide an error"
 )
@@ -119,7 +118,7 @@ func Assess(in Input) Verdict {
 			holding = append(holding, x)
 		}
 	}
-	added := addedErrors(uncovered(p, holding, base), uncovered(p, holding, head), in.Added)
+	added := addedErrors(uncovered(p, holding, base), uncovered(p, holding, head), in.Added, ruleOrder(p))
 	errs := make([]Error, 0, len(added))
 	addedKeys := map[change.Key]bool{}
 	for _, e := range added {
@@ -158,27 +157,37 @@ func uncovered(p resolved.Policy, holding []resolved.Exception, errs []change.Er
 // matches reports whether an exception covers an error: the same rule, and
 // the error's from and to modules. A duplication key holds its pair sorted,
 // so the exception's pair matches in either order; an unowned exception's
-// from is a path glob over the error's file.
+// from is a path glob over the error's file; an exception of a custom only
+// rule matches by from alone, because the rule id fixes the library its key
+// holds as to.
 func matches(p resolved.Policy, x resolved.Exception, e change.Error) bool {
 	if x.Rule != e.Key.Rule {
 		return false
 	}
-	switch x.Rule {
-	case resolved.RuleUnowned:
+	switch {
+	case x.Rule == resolved.RuleUnowned:
 		return p.Covers(x.From, e.Key.Symbol)
-	case resolved.RuleDuplication:
+	case x.Rule == resolved.RuleDuplication:
 		pair := []string{x.From, x.To}
 		slices.Sort(pair)
 		return pair[0] == e.Key.From && pair[1] == e.Key.To
+	case isOnly(p, x.Rule):
+		return x.From == e.Key.From
 	default:
 		return x.From == e.Key.From && x.To == e.Key.To
 	}
 }
 
+// isOnly reports whether id names a custom only rule of the policy.
+func isOnly(p resolved.Policy, id string) bool {
+	return slices.ContainsFunc(p.Rules, func(r resolved.Rule) bool { return r.ID == id && r.Form == resolved.FormOnly })
+}
+
 // addedErrors returns the errors of head the change adds, in record order:
 // an error whose first site is on an added line first, then by file, line,
-// rule and key. Each error's sites on added lines come first.
-func addedErrors(base, head []change.Error, lines evidence.AddedLines) []change.Error {
+// rule (order ranks them) and key. Each error's sites on added lines come
+// first.
+func addedErrors(base, head []change.Error, lines evidence.AddedLines, order map[string]int) []change.Error {
 	onBase := map[change.Key]int{}
 	var dupBase, dupHead, out []change.Error
 	for _, e := range base {
@@ -212,6 +221,7 @@ func addedErrors(base, head []change.Error, lines evidence.AddedLines) []change.
 			cmp.Compare(rank(a.Sites[0], lines), rank(b.Sites[0], lines)),
 			cmp.Compare(a.Sites[0].File, b.Sites[0].File),
 			cmp.Compare(a.Sites[0].Line, b.Sites[0].Line),
+			cmp.Compare(order[a.Key.Rule], order[b.Key.Rule]),
 			cmp.Compare(a.Key.Rule, b.Key.Rule),
 			cmp.Compare(a.Key.From, b.Key.From),
 			cmp.Compare(a.Key.To, b.Key.To),
@@ -219,6 +229,19 @@ func addedErrors(base, head []change.Error, lines evidence.AddedLines) []change.
 		)
 	})
 	return out
+}
+
+// ruleOrder ranks the rules as change.Evaluate does: the built-in rules in
+// design 6.2 order, then the custom rules in policy order.
+func ruleOrder(p resolved.Policy) map[string]int {
+	order := map[string]int{}
+	for i, id := range resolved.BuiltinRules {
+		order[id] = i
+	}
+	for i, r := range p.Rules {
+		order[r.ID] = len(resolved.BuiltinRules) + i
+	}
+	return order
 }
 
 // addedFirst returns sites with those on added lines first, each group in
@@ -303,41 +326,48 @@ func baseUnread(base evidence.CheckFacts) []result.Unknown {
 	return out
 }
 
-// itemKey names an unknown item in a tree. An unchanged file has the same
-// lines on the base and the head.
+// itemKey groups unknown items as errors are grouped: by what cannot be
+// read, not where, so a deletion above an item or a pure rename keeps its key
+// and count. An item without a specifier (a file that cannot be parsed) is
+// keyed by its file, so a rename of such a file is a new item.
 type itemKey struct {
-	file, specifier string
-	line            int
+	specifier, file string
 	cause           evidence.UnknownCause
 }
 
 func keyOf(u evidence.UnknownItem) itemKey {
-	return itemKey{file: u.File, specifier: u.Specifier, line: u.Line, cause: u.Cause}
+	k := itemKey{specifier: u.Specifier, cause: u.Cause}
+	if u.Specifier == "" {
+		k.file = u.File
+	}
+	return k
 }
 
 // unknowns returns the unknown items that stop a verdict: a missing tool on
-// either tree, an item in a file the change adds lines to, and a head item
-// the base does not have. Other base items are existing and change nothing.
+// either tree, a head item in a file the change adds lines to, and the head
+// items of a key the head has more of than the base. Other base items are
+// existing: a base that cannot read an import only lowers the base counts,
+// which can make an error look added but never hides one.
 func unknowns(base, head []evidence.UnknownItem, added evidence.AddedLines) []result.Unknown {
 	changed := func(u evidence.UnknownItem) bool { return u.File != "" && len(added[u.File]) > 0 }
 	out := []result.Unknown{}
-	onBase := map[itemKey]bool{}
+	onBase, onHead := map[itemKey]int{}, map[itemKey]int{}
 	for _, u := range base {
-		onBase[keyOf(u)] = true
-		switch {
-		case u.Cause == evidence.CauseTool:
+		onBase[keyOf(u)]++
+		if u.Cause == evidence.CauseTool {
 			out = append(out, reason(u, result.CauseTool, whyTool))
-		case changed(u):
-			out = append(out, reason(u, result.CauseBase, whyBaseChanged))
 		}
 	}
 	for _, u := range head {
-		switch {
+		onHead[keyOf(u)]++
+	}
+	for _, u := range head {
+		switch k := keyOf(u); {
 		case u.Cause == evidence.CauseTool:
 			out = append(out, reason(u, result.CauseTool, whyTool))
 		case changed(u):
 			out = append(out, reason(u, causeOf(u.Cause), whyHeadChanged))
-		case !onBase[keyOf(u)]:
+		case onHead[k] > onBase[k]:
 			out = append(out, reason(u, causeOf(u.Cause), whyHeadNotOnBase))
 		}
 	}

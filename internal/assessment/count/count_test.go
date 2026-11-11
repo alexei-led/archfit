@@ -228,14 +228,14 @@ func TestAssessShowsAddedSitesFirst(t *testing.T) {
 }
 
 // When a change closes a cycle, the record shows first the errors whose site
-// is on an added line.
+// is on an added line; at one site, rules come in design 6.2 order.
 func TestAssessClosingACycle(t *testing.T) {
 	base := tree{imports: []evidence.ImportFact{imp(tcFile, 5, "pkg/util")}}
 	head := tree{imports: []evidence.ImportFact{imp(tcFile, 5, "pkg/util"), imp(utilFile, 4, "pkg/tc")}}
 	v := assess(policy(), base, head, evidence.AddedLines{utilFile: {4}})
 	want := []change.Key{
-		{Rule: resolved.RuleCycle, From: util, To: tc},
 		{Rule: resolved.RuleGraph, From: util, To: tc, Symbol: "pkg/tc"},
+		{Rule: resolved.RuleCycle, From: util, To: tc},
 		{Rule: resolved.RuleCycle, From: tc, To: util},
 	}
 	if v.Status != result.StatusFail || !reflect.DeepEqual(keys(v.Errors), want) {
@@ -363,6 +363,56 @@ func TestAssessExpiredExceptionFailsAnUnrelatedChange(t *testing.T) {
 	}
 }
 
+// An only rule's key holds the library as to, which an exception cannot name:
+// the rule id fixes the library, so the exception matches by rule and from.
+func TestAssessOnlyRuleException(t *testing.T) {
+	dockerOnly := resolved.Rule{
+		ID: "docker-in-runtime", Form: resolved.FormOnly, Use: "github.com/docker/docker",
+		In: []string{runtime}, Why: "One adapter owns the Docker API.",
+	}
+	use := tree{imports: []evidence.ImportFact{{File: tcFile, Line: 5, Target: "github.com/docker/docker", External: true}}}
+	onlyKey := change.Key{Rule: dockerOnly.ID, From: tc, To: dockerOnly.Use, Symbol: dockerOnly.Use}
+	expiredOnly := change.Key{Rule: count.RuleException, From: tc, Symbol: dockerOnly.ID}
+	cases := []struct {
+		name       string
+		exception  *resolved.Exception
+		base, head tree
+		added      evidence.AddedLines
+		want       []change.Key
+	}{
+		{name: "no exception", head: use, added: evidence.AddedLines{tcFile: {5}}, want: []change.Key{onlyKey}},
+		{
+			name: "an exception from the module", exception: &resolved.Exception{Rule: dockerOnly.ID, From: tc, Expires: day(0)},
+			head: use, added: evidence.AddedLines{tcFile: {5}},
+		},
+		{
+			name: "an exception from another module", exception: &resolved.Exception{Rule: dockerOnly.ID, From: chaos},
+			head: use, added: evidence.AddedLines{tcFile: {5}}, want: []change.Key{onlyKey},
+		},
+		{
+			name: "an expired exception, seen by an unrelated change", exception: &resolved.Exception{Rule: dockerOnly.ID, From: tc, Expires: day(-1)},
+			base: use, head: use, added: evidence.AddedLines{chaosFile: {1}}, want: []change.Key{expiredOnly},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := policy()
+			if c.exception != nil {
+				p = policy(*c.exception)
+			}
+			p.Rules = []resolved.Rule{dockerOnly}
+			v := assess(p, c.base, c.head, c.added)
+			want, status := c.want, result.StatusFail
+			if want == nil {
+				want, status = []change.Key{}, result.StatusPass
+			}
+			if v.Status != status || !reflect.DeepEqual(keys(v.Errors), want) {
+				t.Fatalf("status %s, keys %v; want %s, %v", v.Status, keys(v.Errors), status, want)
+			}
+		})
+	}
+}
+
 func TestAssessExpiredExceptionWithoutBrokenCode(t *testing.T) {
 	x := resolved.Exception{Rule: resolved.RuleGraph, From: tc, To: util, Expires: day(-30), Why: "Request #431 is open."}
 	v := assess(policy(x), tree{}, tree{}, nil)
@@ -422,9 +472,30 @@ func TestAssessUnknown(t *testing.T) {
 			status: result.StatusUnknown, causes: []result.Cause{result.CauseImport},
 		},
 		{
-			name: "the base cannot read a changed file",
-			base: tree{unknown: []evidence.UnknownItem{unresolved(netemFile, 9)}}, added: evidence.AddedLines{netemFile: {2}},
-			status: result.StatusUnknown, causes: []result.Cause{result.CauseBase},
+			// A base that cannot read an import only lowers its counts.
+			name:   "the change fixes an import the base could not resolve",
+			base:   tree{unknown: []evidence.UnknownItem{unresolved(chaosFile, 3)}},
+			head:   tree{imports: []evidence.ImportFact{imp(chaosFile, 3, "pkg/util")}},
+			added:  evidence.AddedLines{chaosFile: {3}},
+			status: result.StatusPass, causes: []result.Cause{},
+		},
+		{
+			name:   "lines deleted above an unknown item",
+			base:   tree{unknown: []evidence.UnknownItem{unresolved(utilFile, 10)}},
+			head:   tree{unknown: []evidence.UnknownItem{unresolved(utilFile, 7)}},
+			status: result.StatusPass, causes: []result.Cause{},
+		},
+		{
+			name:   "a pure rename of a file with an unknown item",
+			base:   tree{unknown: []evidence.UnknownItem{unresolved("pkg/tc/a.ts", 3)}},
+			head:   tree{unknown: []evidence.UnknownItem{unresolved("pkg/tc/b.ts", 3)}},
+			status: result.StatusPass, causes: []result.Cause{},
+		},
+		{
+			name:   "one more unresolved use of a specifier, in an unchanged file",
+			base:   tree{unknown: []evidence.UnknownItem{unresolved(utilFile, 3)}},
+			head:   tree{unknown: []evidence.UnknownItem{unresolved(utilFile, 3), unresolved(chaosFile, 5)}},
+			status: result.StatusUnknown, causes: []result.Cause{result.CauseImport, result.CauseImport},
 		},
 		{
 			name:   "a new unknown item in an unchanged file",
