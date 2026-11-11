@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "archfit",
+          "version": "4.0.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication",
+          "level": "error",
+          "message": {
+            "text": "this literal already lives in pkg/util/util.go:15\nwhy: two copies must change together and nothing checks that they do\nnext: use pkg_util, or run: archfit request -m \"<why a copy is needed>\" --expires 2026-12-10"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "pkg/tc/interface.go"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "archfitKey/v1": "duplication pkg_tc pkg_util sha256:3f1c2a0e5b7d4c6a8e9f0b1d2c3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"
+          }
+        }
+      ]
+    }
+  ]
+}
