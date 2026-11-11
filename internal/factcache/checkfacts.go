@@ -13,7 +13,8 @@ const (
 )
 
 // TreeFactsKey is the key of the facts read from a git tree: the base of the
-// check. The tree id names the tree's content, so no file is read. toolVersion
+// check, and the head as git.WorkingTreeID names it. The tree id names the
+// tree's content, so no file is read. toolVersion
 // is the version of the extractors that read the facts and settingsHash the
 // hash of the settings they read with; a change to either is a new key.
 func TreeFactsKey(toolVersion, settingsHash, treeID string) string {

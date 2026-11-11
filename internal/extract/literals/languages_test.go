@@ -175,7 +175,7 @@ func TestExtractPerLanguage(t *testing.T) {
 				t.Fatal(err)
 			}
 			var lines []string
-			for _, l := range got {
+			for _, l := range got.Literals {
 				if l.File != tt.file {
 					t.Errorf("literal of %s, want only %s", l.File, tt.file)
 				}
@@ -209,10 +209,10 @@ func TestIndexOfFixtureTreeIsStable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(first, second) {
+	if !slices.Equal(first.Literals, second.Literals) {
 		t.Fatalf("two runs differ:\n%v\n%v", first, second)
 	}
-	idx := BuildIndex(first)
+	idx := BuildIndex(first.Literals)
 	sites := func(value string) []string {
 		out := make([]string, 0, len(idx[value]))
 		for _, l := range idx[value] {
