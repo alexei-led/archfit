@@ -269,6 +269,26 @@ func TestReadCheckExcludedScriptsNeedNoAstGrep(t *testing.T) {
 	}
 }
 
+// TestReadCheckMixedExclusion: with kept and excluded scripts in one tree,
+// the tsconfig only an excluded test uses gives no unknown item.
+func TestReadCheckMixedExclusion(t *testing.T) {
+	t.Parallel()
+	requireAstGrep(t)
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"app.ts":                "export const a = 1;\n",
+		"tests/example.spec.ts": "import { a } from '../app';\n",
+		"tests/tsconfig.json":   `{"extends": "@tsconfig/node20/tsconfig.json"}`,
+	})
+	got, err := registry.ReadCheck(context.Background(), toolrun.New(), root, registry.CheckRequest{
+		Configs: auto("typescript"), Exclude: []string{"**/*.spec.ts"},
+	})
+	want := evidence.CheckFacts{Sources: []string{"app.ts"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("facts = %s, %v; want app.ts and no unknown", jsonOf(got), err)
+	}
+}
+
 // TestReadCheckLooseScripts: Python files outside any package are not a
 // Python project, so a Go repository with scripts needs no ast-grep and has
 // no unknown item.

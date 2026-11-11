@@ -43,10 +43,6 @@ const (
 	fixRetry   = "fix the error, then run archfit check again"
 )
 
-// scriptExts are the extensions of the TypeScript and JavaScript files
-// tsimports reads.
-var scriptExts = []string{".js", ".cjs", ".mjs", ".jsx", ".ts", ".cts", ".mts", ".tsx"}
-
 // goFileExt is the extension of a Go source file.
 const goFileExt = ".go"
 
@@ -305,15 +301,11 @@ func dirOrDot(dir string) string {
 }
 
 // tsCheckFacts reads TypeScript and JavaScript through ast-grep and the
-// built-in resolver. tsimports takes no exclusions: a tree whose script files
-// are all excluded is not read at all, so it needs no ast-grep, and ReadCheck
-// drops the facts of excluded files after it.
+// built-in resolver. tsimports skips the excluded files, so a tree whose
+// script files are all excluded needs no ast-grep, and an excluded file's
+// tsconfig gives no unknown item.
 func tsCheckFacts(ctx context.Context, runner toolrun.Runner, root string, cfg evidenceports.ExtractConfig) (evidence.CheckFacts, error) {
-	kept, err := walkSources(root, scriptExts, cfg.Exclusions)
-	if err != nil || len(kept) == 0 {
-		return evidence.CheckFacts{}, err
-	}
-	facts, err := tsimports.Extract(ctx, runner, root)
+	facts, err := tsimports.Extract(ctx, runner, root, tsimports.Config{Exclude: cfg.Exclusions})
 	if errors.Is(err, tsimports.ErrNoAstGrep) {
 		return noAstGrep("TypeScript and JavaScript imports"), nil
 	}
