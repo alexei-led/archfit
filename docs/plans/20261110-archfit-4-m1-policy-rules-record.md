@@ -87,6 +87,7 @@ The manager approved these on 2026-11-10.
 | D11 | `init` in milestone 1 writes the policy and the five-line instruction block. The workflow file waits for Action 4 (milestone 2). |
 | D12 | The user-level Claude Code plugin (design 11.3) is not in milestone 1 but is in 4.0: a release-blocking follow-up for milestone 2 or 3. Fresh clones and worktrees are the gap of design 2.1. |
 | D13 | The worker of task 42 picks the extra TypeScript repository: a non-monorepo with the most `tsconfig` `paths` imports. On a tie, `codegraph`. |
+| D14 | Two tasks of one wave may both edit `.archfit.yaml` only when each edit deletes lines and names what it deletes in the pull-request description. Both are Merge: manager. The second to merge merges main, re-checks `archfit check --policy .archfit.yaml`, and shows the result. |
 
 ## Development approach
 
@@ -105,7 +106,8 @@ The manager approved these on 2026-11-10.
 - A task that deletes a file, package or directory named in `internal/arch_test.go` or `.archfit.yaml` updates those
   entries in the same pull request, and so does a task that breaks a test file of the root `internal` test package
   (`internal/coverage_names_test.go` names extractors). A pull request that edits `.archfit.yaml` passes CI through
-  `archfit check --policy .archfit.yaml` (task 27) and merges by the manager.
+  `archfit check --policy .archfit.yaml` (task 27) and merges by the manager. Two such tasks share a wave only under
+  D14.
 
 ## Coverage
 
@@ -853,7 +855,7 @@ Design: 11.8, 13. Packages: `internal/extract/scip` (deleted), `internal/extract
 `internal/evidence/acquisition`, `internal/extract/registry`, `internal/relationship/classify` (hint precedence).
 Files: `.archfit.yaml`, `Dockerfile`, `tools/manifest.json`, `tools/scip-go/`, `tools/node/`, `tools/python/`,
 `scripts/provision-analyzers.sh`, `.github/workflows/ci.yaml`, `Makefile`, `internal/coverage_names_test.go`,
-`CONTRIBUTING.md`, `docs/languages.md`, `docs/development.md`. Depends on: 37, 41. Merge: manager (edits
+`CONTRIBUTING.md`, `docs/languages.md`, `docs/development.md`. Depends on: 37, 42. Merge: manager (edits
 `.archfit.yaml`). Impact first: `scip.New`, `enrichEdges`, the symbol graph consumers.
 
 - [ ] delete the SCIP adapter, the Python reader and `scip.proto`; acquisition stops filling the symbol graph;
@@ -872,7 +874,7 @@ Design: 11.8 (`jscpd` leaves the check), 13, D2. Packages: `internal/extract/clo
 `internal/extract/acquire`, `internal/evidence/acquisition`, `internal/relationship/classify` (`clone_only.go`),
 `internal/relationship/analysis`, `internal/model/clone`, `internal/assessment/evaluation`,
 `internal/assessment/signals` (duplication signals). Files: `.archfit.yaml`, `internal/coverage_names_test.go`,
-`tools/manifest.json`, `tools/node/`, `Dockerfile`, `docs/languages.md`, `docs/coupling.md`. Depends on: 36, 42.
+`tools/manifest.json`, `tools/node/`, `Dockerfile`, `docs/languages.md`, `docs/coupling.md`. Depends on: 36, 38.
 Merge: manager (edits `.archfit.yaml`).
 Impact first: `clones.Run`, `clonePairs`, `DuplicationSignals`.
 
@@ -916,7 +918,7 @@ Merge: manager (edits `.archfit.yaml`). Impact first: `py.New`, `provisionedPyth
 Design: 11.8 (equivalence first), 13, D13. Packages: `internal/extract/ts` (deleted), `internal/extract/registry`.
 Files: `.archfit.yaml`, `internal/coverage_names_test.go`, `tools/node/`, `tools/manifest.json`, `Dockerfile`,
 `Makefile`, `.github/workflows/ci.yaml`, `CONTRIBUTING.md`, `docs/languages.md`. Depends on: 33 (it deletes
-`internal/evidence/acquisition/measurement.go`, which imports `ts`), 38. Merge: manager (edits `.archfit.yaml`).
+`internal/evidence/acquisition/measurement.go`, which imports `ts`), 41. Merge: manager (edits `.archfit.yaml`).
 Impact first: `ts.New`, the `depcruise` probes.
 
 - [ ] pick one more TypeScript repository (D13), run the milestone 0 equivalence tool with the engine's `tsimports`
