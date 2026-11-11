@@ -113,6 +113,38 @@ Changing a module name can change seam identity. Changing labels can change stre
 
 The raw config hash identifies the config file. It is not a comparability fingerprint. Comments, waivers, rules, and `reviewed_at` can change raw bytes without changing the facts used by a numeric comparison.
 
+## What the check reads
+
+Schema 3 `archfit check` reads three kinds of fact from each tree: which file imports which package, file or library; the source files; and the string literals, which only the `duplication` rule needs. It reads them from two trees in one run: the merge base and the head. The head is the working tree as a commit of every change would hold it: edits and new files count, files git ignores do not. Both trees are written from git objects to a temporary directory and read there, so the head resolves imports against the same files the base and CI see, and the working tree is never changed.
+
+| Language | Read with | A first-party import targets |
+|---|---|---|
+| Go | The standard parser, built in. `go.mod` and `go.work` give the module path. | The package directory (`.` for the root package) |
+| TypeScript, JavaScript | `ast-grep`, and a built-in resolver for relative paths, `tsconfig` `paths` and workspace packages | The file |
+| Python | `ast-grep`, and a built-in resolver for packages and the `src` layout | The file |
+| Rust | `cargo metadata`: crates only | The crate directory; the site is the dependency's line in `Cargo.toml` |
+| C# | MSBuild project references | The project directory; the site is the reference's line in the project file |
+| Literals | The standard parser for Go, `ast-grep` for the other languages | — |
+
+The check never runs a language toolchain for Go, TypeScript or Python, `node_modules`, dependency-cruiser, grimp, the typed Go loader, SCIP indexers or `jscpd`, and no optional analyzer: the facts are the same with every `analyzers` key on or off. A Go repository needs only `git`. TypeScript and Python need `git` and `ast-grep`. Rust needs `cargo` and C# the .NET SDK, plus `ast-grep` for their literals.
+
+A language is read where its files exist, unless `languages.<id>.enabled` is `false`; `true` reads the same as `auto`. Python files outside any package (loose scripts) are not a Python project: they give no facts and need no `ast-grep`.
+
+One exclusion rule covers every extractor: the policy's `exclude`, plus `.git`, `node_modules` and `vendor` at any depth. The Go parser also follows the go command: it skips `testdata`, directories that start with `_` or `.`, `_test.go` files, nested modules the run does not load, and files the build constraints exclude. The Go literals come from every `.go` file the rule keeps, test files included.
+
+Facts are cached under the tree's git id in `.archfit-cache/facts/checkfacts/`. A tree read once is not read again. The key also holds the engine version and the version of `ast-grep`, `cargo` and `dotnet` where they are used, the policy settings the facts depend on, and the Go build settings (`GOOS`, `GOARCH`, `GOFLAGS`, `CGO_ENABLED`, the go env file). A build without a version reads without the cache.
+
+Missing evidence is not zero. Each thing the check needs and cannot read is an `unknown` item with a cause and the step that restores it:
+
+| Cause | When | Next |
+|---|---|---|
+| `import` | A first-party import that names no file or package | fix the import |
+| `import` | A file that does not parse, or a `tsconfig` that does not parse | fix the syntax error |
+| `import` | A `tsconfig` `extends` the resolver does not read (a package, `node_modules`, outside the repository) | make the extends a relative path inside the repository |
+| `import` | A Go file whose build depends on cgo while `CGO_ENABLED` is not set | set `CGO_ENABLED` to 0 or 1 |
+| `tool` | `ast-grep`, `cargo` or `dotnet` is not installed where its language has files; the item is about the whole tree | install the tool |
+| `base` | The merge base cannot be read | run `git fetch`, then `archfit check` again |
+
 ## Fact cache
 
 The fact cache stores extractor facts. It does not store relationship classifications, assessment results, scores, or verdicts. Those are recomputed on each run.
@@ -131,6 +163,7 @@ The fact cache is best effort. A missing, unreadable, or corrupt entry is a cach
 
 The key has limits that vary by analyzer:
 
+- The check's facts are keyed by git tree id, not by an input tree hash: see [what the check reads](#what-the-check-reads).
 - Python extraction does not use the fact cache. It validates an explicit installed tool environment when configured; otherwise the isolated local uv environment is resolved outside the repository. No target cache or virtualenv establishes freshness.
 - TypeScript keys supported data-only `tsconfig` inputs, Node dependency metadata, owned runtime/compiler identity and fixed judge options. Project dependency-cruiser configuration is ignored. Incomplete source inventories and unusable graphs are not cached.
 - Go keys each workspace member with Go toolchain version, Go environment, build settings, module files, and the member's transitive workspace dependency inputs. The Go environment includes `GOOS`, `GOARCH`, `CGO_ENABLED`, build flags, and toolchain options. The Go toolchain version identifies standard-library facts.
