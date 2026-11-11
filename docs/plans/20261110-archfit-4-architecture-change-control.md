@@ -553,8 +553,8 @@ same path.
 Set up at onboarding:
 
 - a ruleset on the default branch: changes through pull requests only, 0 required approvals, and
-  the check `archfit/gate` required, with the App as its expected source. The App is not a bypass
-  actor. A bypass actor ignores the check: the App merged #5 while its check was `in_progress`
+  the check `archfit/gate` required, with the App as its expected source. The App must not be a
+  bypass actor. A bypass actor ignores the check: the App merged #5 while its check was `in_progress`
   ([Appendix D.2](#d2-github-mechanics)). "Approve and merge" needs no bypass actor.
 - on organization-owned private or internal repositories, on a plan with rulesets for private
   repositories, a push ruleset that restricts the policy path, with the App as the only actor
@@ -1374,7 +1374,7 @@ Against the targets of section 15.2:
 - Two runs per arm and model. Cell numbers are anecdotal. Later milestones need about 10 runs per arm (`--reps`).
 - Every run loads the global `~/.claude/CLAUDE.md`. This affects all arms alike.
 - "Request filed" is a text heuristic. Its forms were fitted to these 30 final messages. A manual reading of all 30 agrees.
-- The permission checks refused 5 `archfit` commands in `prose`, by design, and 3 other commands. No refusal stopped a run.
+- The permission checks refused 5 `archfit` commands in `prose`, by design. Three other denials occurred across the arms. None stopped a run.
 
 **Source.** PR [#132](https://github.com/alexei-led/archfit/pull/132), merged as `6c90ae9d`. Its 29 unit test methods fake `claude` and `archfit` and make no model calls.
 
@@ -1414,7 +1414,7 @@ Verdict: the first candidate works under the four conditions of 10.5. The App to
 | App | App, `pull_request` mode | `in_progress` | Merged (#5). The rule insights record a bypass. |
 | App, then owner | None, 1 approval required | Success, set by the App | 405: approval required |
 
-Verdict: the merge works with 0 required approvals and no bypass actor. A bypass actor ignores the check. The App merged #5 while its check was `in_progress`. So the App is not a bypass actor.
+Verdict: the merge works with 0 required approvals and no bypass actor. A bypass actor ignores the check. The App merged #5 while its check was `in_progress`. So the App must not be a bypass actor: as one, it merged past a pending check.
 
 **Pending check.** The App set the check to each state on one head.
 
