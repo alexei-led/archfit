@@ -83,8 +83,8 @@ Keep deterministic analysis independent of AI providers.
 The [evidence contract](docs/evidence.md) defines completeness and comparison limits.
 
 Run `make mock` after changing interfaces that use generated fakes.
-Run `make schema` after changing configuration, report, or agent-result contracts.
-This command rewrites the three published schemas and checks for drift.
+Run `make schema` after changing configuration, report, agent-result, or result contracts.
+This command rewrites the published schemas and checks for drift.
 Review those changes with their source types.
 
 ## Documentation style

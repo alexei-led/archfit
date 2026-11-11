@@ -1,0 +1,402 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.result.schema.json",
+  "$defs": {
+    "Balance": {
+      "properties": {
+        "value": {
+          "type": "integer",
+          "maximum": 10,
+          "minimum": 1,
+          "description": "Value is the balance of the dependency, 1 to 10."
+        },
+        "min": {
+          "type": "integer",
+          "maximum": 10,
+          "minimum": 1,
+          "description": "Min is the policy's min_balance, 1 to 10."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "value",
+        "min"
+      ],
+      "description": "Balance is the coupling number of a dependency, printed as \"Value/10 (min Min)\"."
+    },
+    "CanAnswer": {
+      "properties": {
+        "schema": {
+          "type": "string",
+          "enum": [
+            "archfit.can.v1"
+          ],
+          "description": "Schema is always archfit.can.v1."
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "From is the module of the first argument, or the argument as given\nwhen it is in no module."
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "description": "To is the module or library of the second argument, or the argument as\ngiven when it is in no module."
+        },
+        "answer": {
+          "type": "string",
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "description": "Answer is the answer."
+        },
+        "rule": {
+          "type": "string",
+          "description": "Rule is the rule that decides a no or an unknown."
+        },
+        "what": {
+          "type": "string",
+          "description": "What says why the answer is not yes."
+        },
+        "why": {
+          "type": "string",
+          "description": "Why is the reason the rule exists."
+        },
+        "instead": {
+          "type": "string",
+          "description": "Instead is what the owner says to do, when the rule has it."
+        },
+        "balance": {
+          "$ref": "#/$defs/Balance",
+          "description": "Balance is the balance the dependency would have."
+        },
+        "next": {
+          "$ref": "#/$defs/Next",
+          "description": "Next is the one step to take, when the answer is not yes."
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy",
+          "description": "Policy names the policy that gave the answer."
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "description": "Head is the HEAD commit when the question was asked."
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Date is the date of the answer (YYYY-MM-DD)."
+        },
+        "engine": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Engine is the version of the archfit build that answered."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "schema",
+        "from",
+        "to",
+        "answer",
+        "policy",
+        "date",
+        "engine"
+      ],
+      "description": "CanAnswer is the answer of `archfit can \u003cfrom\u003e \u003cto\u003e`: may this dependency or library be used."
+    },
+    "Error": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path is the file, relative to the repository root. An error of the\npolicy itself, such as an expired exception, has the path .archfit.yaml."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line is the line in Path. Absent for an error of the policy file."
+        },
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Rule is the rule id: a built-in rule (graph, coupling, duplication,\ncycle, layers, unowned), a custom rule id, or \"exception\" for an\nexception past its date."
+        },
+        "what": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What says what is wrong."
+        },
+        "why": {
+          "type": "string",
+          "description": "Why is the reason the rule exists."
+        },
+        "instead": {
+          "type": "string",
+          "description": "Instead is what the owner says to do, when the rule has it."
+        },
+        "balance": {
+          "$ref": "#/$defs/Balance",
+          "description": "Balance is the balance of the dependency, when the rule is about\ncoupling."
+        },
+        "next": {
+          "$ref": "#/$defs/Next",
+          "description": "Next is the one step to take."
+        },
+        "from": {
+          "type": "string",
+          "description": "From is the module the dependency starts in."
+        },
+        "to": {
+          "type": "string",
+          "description": "To is the module the dependency reaches, or the library for an only\nrule."
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key identifies the error: its rule, modules, and symbol or literal.\nAn expired exception is keyed by \"exception\", the rule it covers and\nits modules, so it never shares a key with an error of that rule.\nEqual keys name the same error in two results of one engine version.\nConsumers compare keys and do not parse them."
+        },
+        "from_change": {
+          "type": "boolean",
+          "description": "FromChange is true when the change added the error. It is false for\nan expired exception listed because its date has passed, which the\nchange did not add to."
+        },
+        "exception": {
+          "$ref": "#/$defs/Exception",
+          "description": "Exception names the policy exception that has expired. Set only when\nRule is \"exception\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "rule",
+        "what",
+        "next",
+        "key",
+        "from_change"
+      ],
+      "description": "Error is one place where the change breaks a rule."
+    },
+    "Exception": {
+      "properties": {
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Rule is the rule the exception covers."
+        },
+        "expires": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Expires is the date the exception ended (YYYY-MM-DD)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule",
+        "expires"
+      ],
+      "description": "Exception identifies an exception of the policy by its rule; From and To of the error hold its modules."
+    },
+    "Next": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "fix",
+            "command",
+            "wait",
+            "restore"
+          ],
+          "description": "Kind is the kind of step."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text is the step as the record prints it: \"fix the code\", a command, or\n\"wait for an owner: #431\"."
+        },
+        "note": {
+          "type": "string",
+          "description": "Note is a short hint the record prints in parentheses after Text, such\nas \"do not copy the code\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "text"
+      ],
+      "description": "Next is the one step a record names."
+    },
+    "Policy": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path is the policy file, relative to the repository root."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Digest is \"sha256:\" and the hex SHA-256 of the file's bytes."
+        },
+        "protected": {
+          "type": "boolean",
+          "description": "Protected is true when a workflow runs the check on pull requests."
+        },
+        "differs": {
+          "type": "boolean",
+          "description": "Differs is true when the local policy differs from the target's."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target is the ref the policy was compared with, such as origin/main.\nAbsent when no comparison was made."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "digest",
+        "protected",
+        "differs"
+      ],
+      "description": "Policy names the policy that judged a change."
+    },
+    "Result": {
+      "properties": {
+        "schema": {
+          "type": "string",
+          "enum": [
+            "archfit.result.v1"
+          ],
+          "description": "Schema is always archfit.result.v1."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "waiting",
+            "unknown"
+          ],
+          "description": "The status of the change. The App sets waiting; the engine never emits it."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Summary is the status line of the record, such as\n\"archfit: fail, 1 error (not from this change)\"."
+        },
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/Error"
+          },
+          "type": "array",
+          "description": "Errors are the errors of the change, in record order. An expired\nexception is listed for every change, whether or not the change added\nto it."
+        },
+        "unknown": {
+          "items": {
+            "$ref": "#/$defs/Unknown"
+          },
+          "type": "array",
+          "description": "Unknown are the reasons for an unknown status, in record order."
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy",
+          "description": "Policy names the policy that judged the change."
+        },
+        "base": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "description": "Base is the merge-base commit. Absent when there is no merge base."
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "description": "Head is the HEAD commit of the checked tree."
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Date is the date the exceptions were judged on (YYYY-MM-DD). It is an\ninput: the same tree, policy, engine and date give the same result."
+        },
+        "engine": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Engine is the version of the archfit build that produced the result."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "schema",
+        "status",
+        "summary",
+        "errors",
+        "unknown",
+        "policy",
+        "date",
+        "engine"
+      ],
+      "description": "Result is the verdict of `archfit check` for one change."
+    },
+    "Unknown": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path is the file the reason is about, when there is one."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line is the line in Path, when there is one."
+        },
+        "cause": {
+          "type": "string",
+          "enum": [
+            "policy",
+            "base",
+            "tool",
+            "import"
+          ],
+          "description": "Cause is what is missing or wrong."
+        },
+        "what": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What says what is missing or wrong."
+        },
+        "why": {
+          "type": "string",
+          "description": "Why is the reason this stops the verdict."
+        },
+        "next": {
+          "$ref": "#/$defs/Next",
+          "description": "Next is the one step that restores a verdict."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "cause",
+        "what",
+        "next"
+      ],
+      "description": "Unknown is one reason the check gave no verdict."
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Result"
+    },
+    {
+      "$ref": "#/$defs/CanAnswer"
+    }
+  ],
+  "description": "The result of archfit check (schema archfit.result.v1) or the answer of archfit can (schema archfit.can.v1)."
+}
