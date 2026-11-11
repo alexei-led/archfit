@@ -1,0 +1,114 @@
+version: 3
+owners:
+  - alexei-led
+layers:
+  - core
+  - cmd
+builtin:
+  cycle: off
+  min_balance: 8
+modules:
+  pkg_chaos:
+    paths:
+      - pkg/chaos/**
+    public:
+      - pkg/chaos
+      - pkg/chaos/cliflags
+    volatility: high
+    layer: core
+    depends_on:
+      - pkg_container
+      - pkg_util
+  pkg_chaos_netem:
+    paths:
+      - pkg/chaos/netem/**
+    layer: core
+    depends_on:
+      - pkg_chaos
+  pkg_container:
+    paths:
+      - pkg/container/**
+    subdomain: supporting
+    layer: core
+  pkg_runtime:
+    paths:
+      - pkg/runtime/**
+    layer: core
+  pkg_tc:
+    paths:
+      - pkg/tc/**
+    public:
+      - pkg/tc
+    volatility: high
+    layer: core
+  pkg_util:
+    paths:
+      - pkg/util/**
+    volatility: low
+    layer: core
+  cmd_pumba:
+    paths:
+      - cmd/**
+    layer: cmd
+    depends_on:
+      - pkg_chaos
+  tools:
+    paths:
+      - tools/**
+rules:
+  - id: no-chaos-to-runtime
+    deny:
+      from:
+        - pkg_chaos
+      to:
+        - pkg_runtime
+    why: A direct import ties a chaos action to one runtime.
+    instead: Add a method to container.Client.
+  - id: no-tc-internals-to-util
+    deny:
+      from:
+        - pkg/tc/internal/**
+      to:
+        - pkg_util
+    why: The traffic shaper stays free of helpers.
+    instead: Copy nothing; pass the value in.
+  - id: no-scripts-to-chaos
+    deny: { from: [scripts/**], to: [pkg_chaos] }
+    why: Release scripts must not start chaos.
+    instead: Call the chaos command from the release job.
+  - id: docker-sdk-in-runtime
+    only:
+      use: github.com/docker/docker
+      in:
+        - pkg_runtime
+    why: One adapter owns the Docker API.
+  - id: fan-out-through-runner
+    note: Chaos actions fan out through RunOnContainers.
+    why: One place checks the target limit before injection.
+exceptions:
+  - rule: duplication
+    from: pkg_tc
+    to: pkg_util
+    expires: 2026-11-19
+    why: 'Request #431 is open.'
+  - rule: graph
+    from: pkg_tc
+    to: pkg_container
+    expires: 2026-11-01
+    why: The move to the runner ends this.
+  - rule: no-chaos-to-runtime
+    from: pkg_chaos
+    to: pkg_runtime
+    why: The old runtime goes in the next release.
+  - rule: cycle
+    from: pkg_tc
+    to: pkg_util
+    expires: 2026-12-01
+    why: The rule is off; this stays for when it is on.
+  - rule: unowned
+    from: scripts/**
+    why: Build scripts belong to no module.
+tests:
+  - '**/*_test.go'
+generated:
+  - pkg/gen/**

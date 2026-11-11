@@ -1,0 +1,3 @@
+fan-out-through-runner: Chaos actions fan out through RunOnContainers.
+  why: One place checks the target limit before injection.
+  not checked

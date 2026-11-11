@@ -1,0 +1,5 @@
+graph: a dependency between two modules must be an allowed dependency
+  mode: ask (an owner may approve)
+  exceptions:
+    graph pkg_tc -> pkg_container: 2026-11-01 (expired)
+      why: The move to the runner ends this.
