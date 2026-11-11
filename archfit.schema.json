@@ -2,50 +2,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.schema.json",
   "$defs": {
-    "AIConfig": {
-      "properties": {
-        "provider": {
-          "type": "string",
-          "enum": [
-            "anthropic",
-            "openai",
-            "ollama",
-            "deepseek",
-            "openai-compatible"
-          ]
-        },
-        "model": {
-          "type": "string"
-        },
-        "base_url": {
-          "type": "string"
-        },
-        "api_key_env": {
-          "type": "string"
-        },
-        "effort": {
-          "type": "string",
-          "enum": [
-            "none",
-            "minimal",
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max"
-          ]
-        },
-        "max_tokens": {
-          "type": "integer"
-        },
-        "timeout": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "AIConfig configures the off-gate LLM provider (`ai:`)."
-    },
     "Analyzer": {
       "properties": {
         "enabled": {
@@ -57,115 +13,151 @@
               "const": "auto"
             }
           ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+          "description": "Turns the analyzer on (true) or off (false). Only true turns on an analyzer that is off by default."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "Analyzer is the common enable/gate shape for analyzers with no extra knobs (`analyzers.syntax`, `analyzers.cargo_modules`)."
+      "description": "Analyzer is an optional analyzer with no settings besides enabled."
     },
-    "AnalyzersConfig": {
+    "Analyzers": {
       "properties": {
         "syntax": {
-          "$ref": "#/$defs/Analyzer"
-        },
-        "scip": {
-          "$ref": "#/$defs/TimedAnalyzer"
-        },
-        "clones": {
-          "$ref": "#/$defs/TimedAnalyzer"
+          "$ref": "#/$defs/Analyzer",
+          "description": "The ast-grep syntax pass. The report uses it for function size. Absent: off."
         },
         "cargo_modules": {
-          "$ref": "#/$defs/Analyzer"
+          "$ref": "#/$defs/Analyzer",
+          "description": "Reads the module graph inside Rust crates. It compiles the crate. Absent: off."
         },
         "roslyn": {
-          "$ref": "#/$defs/TimedAnalyzer"
+          "$ref": "#/$defs/TimedAnalyzer",
+          "description": "Reads the .NET type graph with the Roslyn helper. Absent: on where the helper is installed."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "AnalyzersConfig groups the opt-in analyzer settings (`analyzers:`)."
+      "description": "Analyzers holds the optional analyzers."
     },
-    "CouplingConfig": {
+    "Builtin": {
       "properties": {
-        "min_severity": {
-          "type": "string",
-          "description": "MinSeverity is the minimum severity for a coupling advisory to appear:\nlow | medium | high | critical (default medium). low is noisy on\nwell-designed codebases; high/critical surface only intrusive/functional\ncoupling across large boundaries."
-        },
-        "duplicated_knowledge": {
+        "graph": {
           "type": "string",
           "enum": [
-            "score",
-            "advisory"
+            "deny",
+            "ask",
+            "off"
           ],
-          "description": "DuplicatedKnowledge controls clone-only duplicated knowledge (cross-module\nclone pairs with no import edge). \"score\" (default) includes those pairs in\ncoupling_balance; \"advisory\" preserves the v4 report-only behavior."
+          "description": "A dependency between two modules must be an allowed dependency. Absent: ask.",
+          "default": "ask"
         },
-        "volatility_cascade": {
-          "type": "boolean",
-          "description": "VolatilityCascade enables the book Ch9 propagation pass: a module strongly\ncoupled to a high-effective-volatility module inherits raised effective\nvolatility. The pass runs to a deterministic fixpoint and never lowers values."
+        "coupling": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "description": "New knowledge across a module boundary needs a balance of at least min_balance. Absent: deny.",
+          "default": "deny"
         },
-        "gate": {
-          "$ref": "#/$defs/CouplingGateDef",
-          "description": "Gate configures the coupling verdict gate (`coupling.gate:`). An absent\nblock is not an absent policy: the distributed-monolith rule always runs\nand defaults to mode warn with max_new_seams 0."
+        "duplication": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "description": "Knowledge that another module already owns is not copied. Absent: ask.",
+          "default": "ask"
+        },
+        "cycle": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "description": "No new cycle between modules. Absent: deny.",
+          "default": "deny"
+        },
+        "layers": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "description": "Dependencies follow the layer order. Absent: deny.",
+          "default": "deny"
+        },
+        "unowned": {
+          "type": "string",
+          "enum": [
+            "deny",
+            "ask",
+            "off"
+          ],
+          "description": "New production code belongs to a module. Absent: deny.",
+          "default": "deny"
+        },
+        "min_balance": {
+          "type": "integer",
+          "maximum": 10,
+          "minimum": 1,
+          "description": "The lowest balance the coupling rule accepts, from 1 to 10. Absent: 7.",
+          "default": 7
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`)."
+      "description": "Builtin holds the modes of the built-in rules and the minimum balance."
     },
-    "CouplingGateDef": {
-      "properties": {
-        "distributed_monolith": {
-          "$ref": "#/$defs/DistributedMonolithDef",
-          "description": "DistributedMonolith is the v2 coupling gate: it counts logical seams, not\nimport edges, and blocks only on newly introduced qualifying seams\nagainst a comparable reference."
-        }
+    "Coverage": {
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
       },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "distributed_monolith"
-      ],
-      "description": "CouplingGateDef configures the coupling verdict gate (`coupling.gate:`)."
-    },
-    "CoverageConfig": {
+      "then": {
+        "properties": {
+          "sources": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "sources"
+        ]
+      },
       "properties": {
         "enabled": {
           "type": "boolean",
+          "description": "Makes the report read the sources. It needs at least one source. Absent: false.",
           "default": false
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "sources": {
           "items": {
             "$ref": "#/$defs/CoverageSource"
           },
-          "type": "array"
+          "type": "array",
+          "description": "The coverage files."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "CoverageConfig configures opt-in ingestion of coverage artifacts produced by the caller's CI."
+      "description": "Coverage names coverage files for the report."
     },
     "CoverageSource": {
       "properties": {
         "path": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "description": "The path of the coverage file, relative to the repository root."
         },
         "format": {
           "type": "string",
@@ -176,19 +168,24 @@
             "coverage-py-json",
             "llvm-cov-json",
             "cobertura"
-          ]
+          ],
+          "description": "The format of the file. Absent: auto, found from the content.",
+          "default": "auto"
         },
         "sidecar_path": {
-          "type": "string"
+          "type": "string",
+          "description": "The file that records the source hashes. Absent: \u003cpath\u003e.sidecar.json."
         },
         "max_bytes": {
           "type": "integer",
           "minimum": 1,
+          "description": "The largest file the report reads. Absent: 67108864 (64 MiB).",
           "default": 67108864
         },
         "max_facts": {
           "type": "integer",
           "minimum": 1,
+          "description": "The largest number of coverage facts the report keeps. Absent: 1000000.",
           "default": 1000000
         }
       },
@@ -197,27 +194,52 @@
       "required": [
         "path"
       ],
-      "description": "CoverageSource is one supplied coverage artifact."
+      "description": "CoverageSource is one coverage file."
     },
-    "DistributedMonolithDef": {
+    "Deny": {
       "properties": {
-        "mode": {
-          "type": "string",
-          "enum": [
-            "warn",
-            "fail"
+        "from": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": "array",
+              "minItems": 1
+            }
           ],
-          "description": "Mode is warn (diagnostic, the default) or fail (blocking). Fail is opt-in\nand is never inferred automatically: it stays an owner decision taken after\na report-only run against a comparable reference."
+          "description": "A module name or a path glob, or a list of them."
         },
-        "max_new_seams": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "MaxNewSeams is the tolerated number of newly introduced qualifying seams.\nUnset means 0. It applies only in fail mode and only when the comparison\nreference is comparable."
+        "to": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": "array",
+              "minItems": 1
+            }
+          ],
+          "description": "A module name or a path glob, or a list of them."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "DistributedMonolithDef configures the distributed-monolith seam rule (`coupling.gate.distributed_monolith:`)."
+      "required": [
+        "from",
+        "to"
+      ],
+      "description": "Deny names the source and the target of a forbidden dependency."
     },
     "DotNetLanguage": {
       "properties": {
@@ -230,84 +252,79 @@
               "const": "auto"
             }
           ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
         },
         "projects": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Projects are the solution (.slnx, .sln), solution filter (.slnf), or\nproject (.csproj) files to analyze, relative to the scan root. Empty =\nauto: the first .slnx or .sln at the root, else every .csproj outside\nobj/, bin/ and exclusions."
+          "description": "The .slnx, .sln, .slnf or .csproj files to read, relative to the repository root. Absent: the first .slnx or .sln at the root, else every .csproj outside obj/, bin/ and excluded paths."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "DotNetLanguage configures the .NET extractor (`languages.dotnet`)."
+      "description": "DotNetLanguage configures the .NET extractor."
     },
-    "ExternalSystemDef": {
-      "properties": {
-        "targets": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "minItems": 1,
-          "description": "Targets are glob patterns matched against the classified edge target —\nthe same node identity the language extractor emits: a Go import path\n(\"github.com/aws/aws-sdk-go-v2/**\"), a TS resolved package path\n(\"node_modules/@aws-sdk/**\") or bare specifier, a Python dotted module\n(\"boto3.**\"), or a Rust crate name (\"aws_sdk_s3\")."
+    "Exception": {
+      "if": {
+        "properties": {
+          "rule": {
+            "const": "unowned"
+          }
         },
-        "volatility": {
+        "required": [
+          "rule"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "to"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "to"
+        ]
+      },
+      "properties": {
+        "rule": {
           "type": "string",
-          "enum": [
-            "high",
-            "medium",
-            "low",
-            "frozen"
-          ],
-          "description": "Volatility of the external system: high | medium | low | frozen.\nDefault low — the book's generic-subdomain guidance (an external vendor\nsystem is a generic capability, presumed stable unless declared otherwise)."
+          "minLength": 1,
+          "description": "The id of a built-in or custom rule."
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The module the errors come from. For unowned, the glob of the code no module owns."
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The module the errors reach. Required for every rule except unowned, which has no target."
+        },
+        "expires": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "format": "date",
+          "description": "The last day the exception holds, as YYYY-MM-DD. After it, while the code still breaks the rule, every change fails. Absent: no date."
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The reason for the exception."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "targets"
+        "rule",
+        "from",
+        "why"
       ],
-      "description": "ExternalSystemDef declares one external integration seam (`external_systems:`), per book Ch10 Example 1 (cross-vendor integration)."
-    },
-    "FileClassDef": {
-      "properties": {
-        "generated_globs": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "GeneratedGlobs are glob patterns (matched against the repo-relative\nslash path) that classify a file as Generated. Supports doublestar (`**`)\nsemantics (github.com/bmatcuk/doublestar); `**` matches across path\nseparators. Example: [\"**/generated/**\", \"*.pb.go\"]"
-        },
-        "test_globs": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "TestGlobs are glob patterns that classify a file as Test.\nExample: [\"*_helpers_test.go\", \"testutil/**\"]"
-        },
-        "mock_frameworks": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "MockFrameworks contains filename prefix/suffix patterns (matched against\nthe base filename only) that identify mock files as Generated. Used for\ncustom mock code-generators not covered by built-in naming conventions.\nExample: [\"fake_\", \"_double\"]"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "FileClassDef holds optional user-supplied patterns for source-file classification."
+      "description": "Exception permits errors of one rule in one place, with a reason and usually a date."
     },
     "GoLanguage": {
       "properties": {
@@ -320,234 +337,170 @@
               "const": "auto"
             }
           ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
         },
         "modules": {
-          "$ref": "#/$defs/GoModuleFilter"
+          "$ref": "#/$defs/GoModules",
+          "description": "Selects go.work members. Absent: every member."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "GoLanguage configures the Go extractor (`languages.go`)."
+      "description": "GoLanguage configures the Go extractor."
     },
-    "GoModuleFilter": {
+    "GoModules": {
       "properties": {
         "include": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "keep only members matching these globs; empty = all"
+          "description": "Keeps only the members that match. Absent: every member."
         },
         "exclude": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "drop members matching these globs; applied after include"
+          "description": "Drops the members that match, after include. Absent: none."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "GoModuleFilter restricts Go workspace analysis to a subset of go.work members (`languages.go.modules`)."
+      "description": "GoModules selects go.work members by globs relative to the repository root."
     },
-    "LanguagesConfig": {
-      "properties": {
-        "go": {
-          "$ref": "#/$defs/GoLanguage"
-        },
-        "typescript": {
-          "$ref": "#/$defs/TypeScriptLanguage"
-        },
-        "python": {
-          "$ref": "#/$defs/PythonLanguage"
-        },
-        "rust": {
-          "$ref": "#/$defs/RustLanguage"
-        },
-        "dotnet": {
-          "$ref": "#/$defs/DotNetLanguage"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "LanguagesConfig groups the per-language extractor settings (`languages:`)."
-    },
-    "MetricEntry": {
+    "Language": {
       "properties": {
         "enabled": {
-          "type": "boolean",
-          "description": "Metrics run by default: a knob-only entry (e.g. only `gate: warn`)\nstays enabled, and only an explicit `enabled: false` disables the\nmetric. (Pointer so absent and false decode differently.)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
           ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
-        },
-        "min_delta": {
-          "type": "number"
-        },
-        "max_new": {
-          "type": "integer"
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "MetricEntry holds the settings for a single metric inside the metrics map."
+      "description": "Language is a language extractor with no settings besides enabled."
     },
-    "MetricsConfig": {
+    "Languages": {
       "properties": {
-        "function_loc_threshold": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 60
-        }
-      },
-      "patternProperties": {
-        "^(?!function_loc_threshold$).+$": {
-          "$ref": "#/$defs/MetricEntry"
+        "go": {
+          "$ref": "#/$defs/GoLanguage",
+          "description": "The Go extractor."
+        },
+        "typescript": {
+          "$ref": "#/$defs/Language",
+          "description": "The TypeScript and JavaScript extractor."
+        },
+        "python": {
+          "$ref": "#/$defs/PythonLanguage",
+          "description": "The Python extractor."
+        },
+        "rust": {
+          "$ref": "#/$defs/RustLanguage",
+          "description": "The Rust extractor."
+        },
+        "dotnet": {
+          "$ref": "#/$defs/DotNetLanguage",
+          "description": "The .NET extractor."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "MetricsConfig holds gate settings for computed metrics plus diagnostic-only complexity settings."
+      "description": "Languages holds one block per language extractor."
     },
-    "ModuleDef": {
+    "Module": {
       "properties": {
         "paths": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "minItems": 1,
+          "description": "Globs of the files that belong to the module."
         },
         "public": {
           "items": {
             "type": "string"
           },
-          "type": "array"
-        },
-        "internal": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "layer": {
-          "type": "string"
-        },
-        "subdomain": {
-          "type": "string"
+          "type": "array",
+          "minItems": 1,
+          "description": "Globs other modules may use. Absent: the whole module is public. Add public to protect its inside."
         },
         "volatility": {
-          "type": "string"
-        },
-        "owner": {
-          "type": "string"
-        },
-        "deploy_unit": {
-          "type": "string"
-        },
-        "role": {
-          "type": "string"
-        },
-        "reviewed_at": {
           "type": "string",
-          "format": "date-time"
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "How often the module is expected to change. Absent: taken from subdomain (core is high; supporting and generic are low), otherwise high."
         },
-        "reviewed_by": {
-          "type": "string"
+        "subdomain": {
+          "type": "string",
+          "enum": [
+            "core",
+            "supporting",
+            "generic"
+          ],
+          "description": "The business role of the module. It sets the volatility only when volatility is absent. Absent: no business role is recorded."
+        },
+        "layer": {
+          "type": "string",
+          "description": "A name from layers. Absent: the module has no layer."
         },
         "depends_on": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "DependsOn is the outbound allowlist: the only declared modules this\nmodule may import. Each entry is a module name or a module selector\n(\"layer:\u003cname\u003e\", \"role:\u003crole\u003e\", or a glob over module names). An absent\nkey leaves the module unconstrained; an empty list allows no first-party\nmodule. The module_dependencies rule enforces it; external targets are\nout of its scope."
-        },
-        "visible_to": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "VisibleTo is the inbound allowlist: the only declared modules that may\nimport this module, with the same entry forms as depends_on. An absent\nkey leaves the module visible to every module; an importer that no\nmodule owns is always denied."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "ModuleDef defines a module's path ownership and metadata."
-    },
-    "ModuleReviewConfig": {
-      "properties": {
-        "stale_after": {
-          "type": "string"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
-        },
-        "change_gate": {
-          "type": "string",
-          "description": "ChangeGate is the posture for production source a change adds that no\nanalysis covers (map/uncovered_change): off, warn (default), or fail.\nfail makes the change unknown, never a pass."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "ModuleReviewConfig configures the review of the module declarations: production source no module owns (map/uncovered_path, a blocker when gate is fail), module paths globs that match nothing, and modules whose `reviewed_at` is older than stale_after."
-    },
-    "OutputsConfig": {
-      "properties": {
-        "json": {
-          "type": "boolean"
-        },
-        "markdown": {
-          "type": "boolean"
-        },
-        "sarif": {
-          "type": "boolean"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "OutputsConfig controls which output formats are produced."
-    },
-    "PatternDef": {
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "lang": {
-          "type": "string"
-        },
-        "rule": {
-          "type": "string"
+          "description": "The modules this module may depend on. Absent: the module may depend on no other module."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "id",
-        "lang",
-        "rule"
+        "paths"
       ],
-      "description": "Def declares a single structural pattern rule for the pattern-search port."
+      "description": "Module is a named set of paths with a public part, a volatility and the modules it may depend on."
+    },
+    "Only": {
+      "properties": {
+        "use": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A library import path or a package set: network, process or database."
+        },
+        "in": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": "array",
+              "minItems": 1
+            }
+          ],
+          "description": "The module, or a list of modules, that may use it."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "use",
+        "in"
+      ],
+      "description": "Only names a library or package set and the modules that may use it."
     },
     "PythonLanguage": {
       "properties": {
@@ -560,112 +513,76 @@
               "const": "auto"
             }
           ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
         },
         "package": {
           "type": "string",
-          "description": "Package is the top-level importable package name passed to grimp\n(e.g. \"myapp\"). Empty = auto-detect from the project layout."
+          "description": "The top-level importable package, such as myapp. Absent: found from the layout, src first."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "PythonLanguage configures the Python extractor (`languages.python`)."
+      "description": "PythonLanguage configures the Python extractor."
     },
-    "RuleDef": {
+    "Rule": {
+      "oneOf": [
+        {
+          "required": [
+            "deny",
+            "instead"
+          ],
+          "title": "deny"
+        },
+        {
+          "required": [
+            "only"
+          ],
+          "title": "only"
+        },
+        {
+          "required": [
+            "note"
+          ],
+          "title": "note"
+        }
+      ],
       "properties": {
         "id": {
-          "type": "string"
-        },
-        "type": {
           "type": "string",
-          "enum": [
-            "cycle",
-            "forbidden_dependency",
-            "forbidden_layer_direction",
-            "forbidden_pattern",
-            "internal_api_access",
-            "module_cycle",
-            "module_dependencies",
-            "new_cross_module_dependency",
-            "public_api_change",
-            "public_api_max",
-            "public_api_only",
-            "public_api_type_leak"
-          ]
+          "minLength": 1,
+          "description": "The rule's short name, as in a linter. It appears in every error."
         },
-        "gate": {
+        "deny": {
+          "$ref": "#/$defs/Deny",
+          "description": "Forbids a dependency from these modules or paths to those. It needs instead."
+        },
+        "only": {
+          "$ref": "#/$defs/Only",
+          "description": "Keeps a library, or a named package set (network, process, database), in the listed modules."
+        },
+        "note": {
           "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+          "minLength": 1,
+          "description": "A rule nothing checks today, written down. It shows as \"not checked\"."
         },
-        "from": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
-        },
-        "max": {
-          "type": "integer",
-          "description": "public_api_max: exported-declaration ceiling per module"
-        },
-        "threshold": {
-          "type": "integer",
-          "description": "reserved: per-rule integer threshold"
-        },
-        "patterns": {
-          "items": {
-            "$ref": "#/$defs/PatternDef"
-          },
-          "type": "array"
-        },
-        "guard": {
-          "type": "boolean",
-          "description": "Guard marks an intentional guard rule whose from:/to: selector is expected\nto match nothing, such as a ban on re-introducing a deleted package. A\nguard counts as evaluated while its selector matches nothing; any other\nrule with a selector that matches nothing is reported as not evaluated."
-        },
-        "from_module": {
+        "why": {
           "type": "string",
-          "description": "FromModule selects the importing modules of a forbidden_dependency rule\ninstead of from: \"layer:\u003cname\u003e\" selects every module with that layer,\n\"role:\u003crole\u003e\" every module with that role, and any other text is a glob\nover declared module names. A module selector matches only edges between\ntwo different modules."
+          "minLength": 1,
+          "description": "The reason for the rule."
         },
-        "to_module": {
+        "instead": {
           "type": "string",
-          "description": "ToModule selects the imported modules of a forbidden_dependency rule\ninstead of to:, with the same selector forms as from_module."
-        },
-        "rationale": {
-          "type": "string",
-          "description": "Rationale says why the rule exists. It is appended to every finding's\nwhy as \" — \u003crationale\u003e\" and repeated in the repair task's constraints."
-        },
-        "alternatives": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Alternatives name what to do instead. They become the finding's\nallowed_alternatives and repair-task constraints."
-        },
-        "docs": {
-          "type": "string",
-          "description": "Docs points at the document that explains the rule, such as an ADR. It\nis appended to every finding's why and constraint as \" (see \u003cdocs\u003e)\"."
+          "minLength": 1,
+          "description": "What to do instead. Required for deny."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
         "id",
-        "type"
+        "why"
       ],
-      "description": "RuleDef declares a single architecture rule."
+      "description": "Rule is a custom rule: exactly one of deny, only or note, with its reason."
     },
     "RustLanguage": {
       "properties": {
@@ -678,36 +595,28 @@
               "const": "auto"
             }
           ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+          "description": "Turns the extractor on or off. Absent: auto, which reads the language when its files exist."
         },
         "manifest": {
           "type": "string",
-          "description": "Manifest is the path to Cargo.toml. Empty = auto (the root manifest)."
+          "description": "The path of Cargo.toml. Absent: the root manifest."
         },
         "features": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Features are the cargo features to activate for `cargo metadata`."
+          "description": "The cargo features to turn on. Absent: the default features."
         },
         "include_dev_deps": {
           "type": "boolean",
-          "description": "IncludeDevDeps adds dev-dependencies as crate edges."
+          "description": "Adds dev-dependencies as crate dependencies. Absent: false.",
+          "default": false
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "RustLanguage configures the Rust extractor (`languages.rust`)."
+      "description": "RustLanguage configures the Rust extractor."
     },
     "TimedAnalyzer": {
       "properties": {
@@ -720,169 +629,117 @@
               "const": "auto"
             }
           ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
+          "description": "Turns the analyzer on (true) or off (false)."
         },
         "timeout": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "description": "A Go duration, such as 5m. Absent or zero: the analyzer's own limit."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`, `analyzers.clones`, `analyzers.roslyn`)."
-    },
-    "TypeScriptLanguage": {
-      "properties": {
-        "enabled": {
-          "oneOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "const": "auto"
-            }
-          ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "TypeScriptLanguage configures the TypeScript extractor (`languages.typescript`)."
-    },
-    "WaiverDef": {
-      "properties": {
-        "rule": {
-          "type": "string",
-          "minLength": 1
-        },
-        "from": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
-        },
-        "reason": {
-          "type": "string",
-          "minLength": 1
-        },
-        "approved_by": {
-          "type": "string",
-          "minLength": 1
-        },
-        "expires": {
-          "type": "string",
-          "minLength": 1,
-          "format": "date"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "rule",
-        "reason",
-        "approved_by",
-        "expires"
-      ],
-      "description": "WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`)."
+      "description": "TimedAnalyzer is an optional analyzer with a time limit."
     }
   },
   "properties": {
     "version": {
       "type": "integer",
-      "enum": [
-        2
-      ]
+      "const": 3,
+      "description": "The policy schema version. Always 3."
     },
-    "target_branch": {
-      "type": "string",
-      "description": "TargetBranch names the branch changes land on. check compares a change\nwith it: --base auto is the merge-base with this branch, and the policy\nfiles on the branch are compared with this branch's tip. Empty means\norigin/HEAD, then main or master when exactly one exists."
-    },
-    "exclude": {
+    "owners": {
       "items": {
         "type": "string"
       },
-      "type": "array"
+      "type": "array",
+      "minItems": 1,
+      "description": "GitHub logins of the people who write the policy and answer requests."
     },
-    "languages": {
-      "$ref": "#/$defs/LanguagesConfig"
-    },
-    "analyzers": {
-      "$ref": "#/$defs/AnalyzersConfig"
-    },
-    "coverage": {
-      "$ref": "#/$defs/CoverageConfig"
-    },
-    "ai": {
-      "$ref": "#/$defs/AIConfig"
-    },
-    "coupling": {
-      "$ref": "#/$defs/CouplingConfig"
+    "gate": {
+      "type": "string",
+      "enum": [
+        "advisory",
+        "required"
+      ],
+      "description": "Whether the check blocks a pull request. Absent: advisory, so the check reports and does not block.",
+      "default": "advisory"
     },
     "layers": {
       "items": {
         "type": "string"
       },
-      "type": "array"
+      "type": "array",
+      "uniqueItems": true,
+      "description": "Layer names, inner first. Absent: no layer rule."
     },
     "modules": {
       "additionalProperties": {
-        "$ref": "#/$defs/ModuleDef"
-      },
-      "type": "object"
-    },
-    "external_systems": {
-      "additionalProperties": {
-        "$ref": "#/$defs/ExternalSystemDef"
+        "$ref": "#/$defs/Module"
       },
       "type": "object",
-      "description": "ExternalSystems declares external integration seams (book Ch10 Example 1)\nwhose edges enter coupling_balance scoring at declared_external (D=10)."
+      "minProperties": 1,
+      "description": "The modules: named sets of paths, keyed by module name."
+    },
+    "builtin": {
+      "$ref": "#/$defs/Builtin",
+      "description": "Changes the modes of the built-in rules. Absent: the defaults of each rule apply."
     },
     "rules": {
       "items": {
-        "$ref": "#/$defs/RuleDef"
+        "$ref": "#/$defs/Rule"
       },
-      "type": "array"
+      "type": "array",
+      "description": "The custom rules. Absent: none; the built-in rules still apply."
     },
-    "waivers": {
+    "exceptions": {
       "items": {
-        "$ref": "#/$defs/WaiverDef"
+        "$ref": "#/$defs/Exception"
       },
-      "type": "array"
+      "type": "array",
+      "description": "Permissions to break one rule in one place. Absent: none."
     },
-    "metrics": {
-      "$ref": "#/$defs/MetricsConfig"
+    "generated": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "Globs of generated code, which the rules skip. Absent: only listed paths are out; a file name that looks generated is not enough."
     },
-    "module_review": {
-      "$ref": "#/$defs/ModuleReviewConfig"
+    "tests": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "Globs of test code, which the rules skip. Absent: only listed paths are out."
     },
-    "file_class": {
-      "$ref": "#/$defs/FileClassDef"
+    "exclude": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "Globs of paths that no extractor reads, such as vendored or fixture trees. Absent: only the built-in exclusions apply."
     },
-    "outputs": {
-      "$ref": "#/$defs/OutputsConfig"
+    "languages": {
+      "$ref": "#/$defs/Languages",
+      "description": "The settings of each language extractor."
+    },
+    "analyzers": {
+      "$ref": "#/$defs/Analyzers",
+      "description": "The settings of the optional analyzers."
+    },
+    "coverage": {
+      "$ref": "#/$defs/Coverage",
+      "description": "Coverage files that your CI writes. The report reads them; Archfit never runs tests."
     }
   },
   "additionalProperties": false,
   "type": "object",
   "required": [
-    "version"
+    "version",
+    "owners",
+    "modules"
   ],
-  "description": "Config is the parsed and validated content of an archfit.yaml file."
+  "title": "Archfit policy (schema 3)",
+  "description": "The Archfit policy, .archfit.yaml: modules, allowed dependencies, rules and exceptions. Archfit 4 reads it. Archfit 3 reads version 2 and uses the schema of tag v3.4.0."
 }
