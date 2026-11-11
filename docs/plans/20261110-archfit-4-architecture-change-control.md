@@ -1,10 +1,12 @@
 # Archfit 4: architecture change control
 
-Date: 2026-11-10. Status: revision 4. Every open decision has an owner answer of 2026-11-10
+Date: 2026-11-10. Status: revision 5. Every open decision has an owner answer of 2026-11-10
 (section 18). It includes two independent reviews (design and usability) and a research note
 ([appendix C](#appendix-c-review-and-research-record)).
 Scope: the engine and CLI (`archfit`), its Docker image, the GitHub Action (`archfit-action`), and
 the GitHub App (`archfit-app`).
+
+Revision 5 (2026-11-10): milestone 0 results recorded in [appendix D](#appendix-d-milestone-0-results); manager decisions from them in [section 18](#18-decisions).
 
 Reader: the owner, and the agents that implement this design.
 This is the single design source for Archfit 4. It replaces the documents listed in
@@ -398,8 +400,7 @@ another module already has.
 All nine copies in the experiment contain the original regular expression and error text
 unchanged. This was confirmed by search; the check itself is not built yet. Known limits:
 
-- It needs a noise limit: common literals, short literals, tests, and declared generated paths
-  are out. The thresholds come from a measurement (section 15), with a target of 90% precision.
+- It needs a noise limit. The limit is rule R12, measured in milestone 0 ([Appendix D.4](#d4-copy-noise-request-load-and-check-time)): a literal of at least 12 characters; declared `tests` and `generated` paths out; single words and struct tags out; held by fewer than 3 modules. The precision is measured, not promised: 79% on the dogfood repositories (95% interval 63–89%). Re-typed keys of the repository's own model count as copies (manager decision, 2026-11-10). If they did not, precision would be 37%.
 - It does not find a copy in other words. `pumba` has one today: a run-id pattern in
   `pkg/chaos/runid.go` and the same rule with a length bound in `pkg/tc/recovery.go`.
 - An agent that reads the error can rewrite the literal. The check is not a wall. It makes the
@@ -551,11 +552,15 @@ same path.
 
 Set up at onboarding:
 
-- a ruleset on the default branch: changes through pull requests only, and the check
-  `archfit/gate` required, with the App as its expected source;
-- on private and internal repositories, a push ruleset that restricts the policy path, with the
-  App as the only actor allowed to bypass it. GitHub does not offer this on public
-  repositories; there the required check is the protection.
+- a ruleset on the default branch: changes through pull requests only, 0 required approvals, and
+  the check `archfit/gate` required, with the App as its expected source. The App must not be a
+  bypass actor. A bypass actor ignores the check: the App merged #5 while its check was `in_progress`
+  ([Appendix D.2](#d2-github-mechanics)). "Approve and merge" needs no bypass actor.
+- on organization-owned private or internal repositories, on a plan with rulesets for private
+  repositories, a push ruleset that restricts the policy path, with the App as the only actor
+  allowed to bypass it. The bypass is not measured; GitHub's docs list Apps as eligible bypass
+  actors. A personal-account repository never has push rules. There the required check is the
+  protection.
 
 If the policy on the default branch changes with no recorded approval (a bypass, a direct push),
 every change is `unknown` until an owner confirms or reverts.
@@ -614,8 +619,9 @@ flowchart LR
 
 ### 10.1 Set up
 
-1. `archfit init` in the repository. It writes the policy from the code (modules, `public`,
-   `depends_on` as the dependencies that exist, containment as it is today), the workflow file,
+1. `archfit init` in the repository. It writes the policy from the code (modules, `public` for each
+   module, `depends_on` as the dependencies that exist, `tests` for the test paths, containment as it
+   is today), the workflow file,
    and the instruction block for agents. Errors that exist already are listed as exceptions. It
    never overwrites a file. In an Archfit 3 repository it converts the old files instead.
 2. The owner reads the policy and opens one pull request.
@@ -683,15 +689,10 @@ Who answers:
 Every waiting pull request must get a fresh result **without an action by its author**.
 
 Today this is not possible: a workflow re-run measures the commit the first run measured, and
-the App asks the author to update the branch. Two candidates:
+the App asks the author to update the branch. Two candidates. Milestone 0 tested both on a test repository ([Appendix D.2](#d2-github-mechanics)).
 
-- Accept a re-run when the target moved only in the policy file. The code is the same; only the
-  policy it is judged by is new. The App can verify that nothing else changed and start the
-  re-run.
-- Let the App update the pull-request branch through the GitHub API. It always works, but it
-  adds a merge commit to the author's branch.
-
-Confirm the first on a test repository in milestone 0. The requirement is fixed either way.
+1. **Re-run, confirmed under four conditions.** The App starts the re-run when all four hold. The compare from the event's base to the target tip touches only the policy file. The run is younger than 30 days. The workflow reads the policy from the target tip. The re-run is of the latest run of the current head. The code is the same. Only the policy it is judged by is new.
+2. **Update the branch, the measured fallback.** The App updates the pull-request branch through the GitHub API, with its own token. It worked in the test. It adds a merge commit by the App to the author's branch. The docs say a `GITHUB_TOKEN` update starts no workflow. This was not measured.
 
 ### 10.6 Report
 
@@ -778,8 +779,7 @@ Constraints:
   rest as `unknown`.
 - Run impact analysis before removing a package or symbol.
 
-Target: `check` on a warm cache in under 5 seconds on `pumba` (13 seconds on a fresh clone
-today). Set the final budget from a measurement in milestone 0.
+Budget on `pumba`: warm under 2 seconds, fresh clone under 5 seconds (manager decision; [Appendix D.4](#d4-copy-noise-request-load-and-check-time)). The v3.4.0 measurement: 0.79 s warm, 1.96 s on a fresh clone with warm Go caches. The earlier figure of 13 seconds was not reproduced. An empty Go build cache took 8.25 s, so the fresh-clone budget assumes warm Go caches.
 
 ### 11.3 Agents
 
@@ -831,6 +831,8 @@ maintains, and nothing else in a repository.
 Check states: `pass` → success. `fail` → failure. `waiting` → in progress, with the title
 "waiting, request #431". `unknown` → action required. In `advisory` mode a `fail` is shown as
 neutral with the same records.
+
+The sweep refreshes a waiting check (`in_progress`) before 14 days. GitHub documents that an incomplete check turns `stale` after 14 days. This was not measured ([Appendix D.2](#d2-github-mechanics)).
 
 Owners are told through GitHub: the request issue is assigned to them, and so are the drift and
 expiry issues.
@@ -905,6 +907,8 @@ What happens to each tool, and when (owner decision: in parts):
 
 So in 4.0 a Go repository needs only `git`. TypeScript and Python repositories need `git` and
 `ast-grep` if their tests pass. Rust and C# repositories keep today's tools until after 4.0.
+
+**Equivalence verdicts ([Appendix D.3](#d3-extractor-equivalence)).** Go is removable: four repositories, 1,990 file-level dependencies, no differences. Python is removable on two repositories, and every difference is explained. One behaviour change: modules under directories without `__init__.py` now count. On prefect, that adds 142 dependencies. TypeScript is removable on one monorepo, and every difference is explained. dependency-cruiser leaves the check only after one more TypeScript repository with `paths` aliases passes the same test. This is a condition for milestone 1.
 
 Conditions:
 
@@ -1083,13 +1087,13 @@ unnoticed copy, request filed.
 
 | Experiment | Question | Target |
 | --- | --- | --- |
-| Trap benchmark, current release | The starting point | Recorded |
+| Trap benchmark, current release | The starting point | Recorded ([D.1](#d1-trap-benchmark-starting-point)) |
 | Trap benchmark, each milestone | Do workers ask instead of copy? | Forbidden changes 0. Unnoticed identical copies at most 1 in 10. At least 8 in 10 failing runs end with a fix or a request. |
 | Acting on the record | Does an agent do the right thing from the text alone, with no JSON and no instructions beyond the five lines? | At least 9 in 10 across three model tiers |
 | Bending | Can an agent that reads the error get past it? | Each bend in section 19 has a trap. Reported; nothing promised for rewritten copies. |
 | More traps | Does it hold beyond one task? | Five traps: containment, a copy, layers, a new dependency, and a second language |
 | Long session | Does it hold after context compaction? | Measured |
-| Copy noise | False alarms on real history | 90% precision on a sample of corpus pull requests |
+| Copy noise | False alarms on real history | 90% precision on a sample of corpus pull requests as the aim. Measured: about 80% with R12 on dogfood ([D.4](#d4-copy-noise-request-load-and-check-time)); the documents state the measured precision |
 | Request load | How many requests does `graph` produce? | Counted on the history of the dogfood repositories; reviewed with the owner |
 | Extractor equivalence | Does the parser-based extractor find the same dependencies between modules as today's tool, per language? | Every difference on the corpus explained before a tool is removed; the share of `unknown` imports reported |
 | Set up | Time to a policy in force | Under ten minutes on `pumba` |
@@ -1101,7 +1105,7 @@ The owner chose one coordinated release: **4.0.0 contains milestones 1 to 3.**
 
 | Milestone | Outcome | Done when |
 | --- | --- | --- |
-| 0. Prepare | The measurement questions of section 18 are answered. Superseded documents are archived. The trap benchmark is a tool with a recorded starting point. The GitHub mechanics of 9.2 and 10.5 are confirmed on a test repository. The extractor equivalence test of 11.8 has run for Go, TypeScript, and Python. | Recorded here |
+| 0. Prepare | The measurement questions of section 18 are answered. Superseded documents are archived. The trap benchmark is a tool with a recorded starting point. The GitHub mechanics of 9.2 and 10.5 are confirmed on a test repository. The extractor equivalence test of 11.8 has run for Go, TypeScript, and Python. | Recorded in [Appendix D](#appendix-d-milestone-0-results), 2026-11-10 |
 | 1. Policy, rules, record | Schema 3 with its defaults; the built-in and custom rules; exceptions with dates; errors counted on base and head; the identical-literal check; the text record; `check`, `can`, `rules`, `request`, `init` with conversion, `doctor --fix`. | Rule tests pass. Trap targets met locally. No baseline code remains. `archfit` and `pumba` converted. |
 | 2. Ask and answer | App: requests as issues from one line, the balance and preview, the passkey, approve and merge, recorded approvals, the re-check, expiry and drift. Action 4. | The whole flow works on `pumba`. Protection tests pass. |
 | 3. App pages | Home, request, policy, pull request, and the comment, in the words and record of this document. Old pages removed. | Golden files match. No word from the "Not used" column of section 5 on any page. |
@@ -1136,7 +1140,7 @@ After milestone 3 the user guides describe the behaviour, and this document move
 
 ## 18. Decisions
 
-All decisions below were made by the owner on 2026-11-10.
+Owner rows were made by the owner on 2026-11-10. Rows marked "Manager, from milestone 0 measurements" were made by the manager on 2026-11-10, from the measurements in [Appendix D](#appendix-d-milestone-0-results).
 
 | Decision | Answer |
 | --- | --- |
@@ -1162,19 +1166,26 @@ All decisions below were made by the owner on 2026-11-10.
 | Push ruleset | On private repositories, the policy path is restricted to the App, as optional hardening. |
 | Image and MCP | One Docker image. No MCP in 4.0. |
 | Versions | Engine 4.0.0, policy schema 3, Action 4. |
+| Re-typed keys | Manager, from milestone 0 measurements: a re-typed key of the repository's own model is a copy (7.3). Dogfood precision is 79% with this reading and 37% without it ([D.4](#d4-copy-noise-request-load-and-check-time)). |
+| `duplication` mode | Manager, from milestone 0 measurements: stays `ask`, with rule R12 and declared `tests` and `generated` paths (7.3). The docs state the measured precision, not 90%. |
+| `graph` mode | Manager, from milestone 0 measurements: stays `ask`. Measured load is 0 to 3 requests a month ([D.4](#d4-copy-noise-request-load-and-check-time)). |
+| `min_balance` and `init` | Manager, from milestone 0 measurements: `min_balance` stays 7. `init` writes `public` for each module and declares `tests`, because archfit has 30 test-only module pairs at HEAD. Both go into the milestone 1 plan. |
+| Check budget | Manager, from milestone 0 measurements: on `pumba`, warm under 2 seconds and fresh clone under 5 seconds ([11.2](#112-engine), [D.4](#d4-copy-noise-request-load-and-check-time)). |
+| TypeScript removal | Manager, from milestone 0 measurements: dependency-cruiser leaves the check only after one more TypeScript repository with `paths` aliases passes the equivalence test. This is a condition for milestone 1 ([D.3](#d3-extractor-equivalence)). |
+| Push ruleset scope | Manager, from milestone 0 measurements: organization-owned private or internal repositories only, on a plan with rulesets for private repositories. A personal-account repository never has push rules. Elsewhere the required check is the protection ([D.2](#d2-github-mechanics)). |
 
 ### To confirm by measurement in milestone 0
 
-These are not owner decisions. Each has a fallback.
+These are not owner decisions. Each has a fallback and an answer from milestone 0.
 
-| Question | Fallback |
-| --- | --- |
-| Can a waiting pull request be checked again without its author, after only the policy changed? | The App updates the pull-request branch through the API. |
-| Can the App merge the policy change under the ruleset? | The owner merges on GitHub. |
-| Does a required check left in progress show as waiting? | Use "action required" with the title "waiting, request #n". |
-| Do `min_balance` 7 and the literal thresholds fit the corpus? | Change the defaults before release. |
-| How many requests does `graph` produce on real history? | Offer `graph: off` as a documented choice. |
-| Do the parser-based extractors agree with today's tools for Go, TypeScript, and Python? | A language whose test fails keeps its tool in 4.0. |
+| Question | Fallback | Answer (2026-11-10) |
+| --- | --- | --- |
+| Can a waiting pull request be checked again without its author, after only the policy changed? | The App updates the pull-request branch through the API. | Yes, as the first candidate, under four conditions ([10.5](#105-after-the-answer)). The update is the measured fallback. [D.2](#d2-github-mechanics) |
+| Can the App merge the policy change under the ruleset? | The owner merges on GitHub. | Yes, with 0 required approvals and no bypass actor. [D.2](#d2-github-mechanics) |
+| Does a required check left in progress show as waiting? | Use "action required" with the title "waiting, request #n". | Yes: `in_progress` shows as pending and blocks merge. The fallback is not needed. [D.2](#d2-github-mechanics) |
+| Do `min_balance` 7 and the literal thresholds fit the corpus? | Change the defaults before release. | `min_balance` 7 fits. Rule R12 measures 79% precision on dogfood, not 90%; the defaults state that precision. [D.4](#d4-copy-noise-request-load-and-check-time) |
+| How many requests does `graph` produce on real history? | Offer `graph: off` as a documented choice. | 0 to 3 requests a month. `graph` stays `ask`. [D.4](#d4-copy-noise-request-load-and-check-time) |
+| Do the parser-based extractors agree with today's tools for Go, TypeScript, and Python? | A language whose test fails keeps its tool in 4.0. | Go, Python, and TypeScript agree, and every difference is explained. TypeScript's removal waits for one more repository with `paths` aliases. [D.3](#d3-extractor-equivalence) |
 
 ## 19. Risks
 
@@ -1326,5 +1337,249 @@ Sources:
 - WebAuthn user verification: <https://www.w3.org/TR/webauthn-3/>
 - OWASP transaction authorization: <https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html>
 
-Not confirmed: whether a GitHub App can be a code owner; whether a check left in progress shows
-as waiting on a required check; the GitHub mechanics of "Approve and merge" under a ruleset.
+Confirmed through the API in milestone 0 ([Appendix D.2](#d2-github-mechanics)): a required check left in progress shows as pending and blocks merge. "Approve and merge" works under a ruleset with no bypass actor.
+
+Not confirmed: whether a GitHub App can be a code owner. The words on the pull-request page for each check state; they were not read, because no browser was connected. Whether a GitHub App can be a bypass actor of a push ruleset; not measured.
+
+## Appendix D. Milestone 0 results
+
+Measured on 2026-11-10. Each subsection gives the question, the method, the numbers, the limits, and the pull request or repository. Raw logs and run data stay outside the repository. The measurement code is in `scripts/eval/` for D.1, D.3, and D.4. The decisions taken from these results are in [section 18](#18-decisions).
+
+### D.1 Trap benchmark starting point
+
+**Question.** What does the current release do on the trap task? This is the starting point for the targets of [section 15.2](#152-experiments).
+
+**Method.** Disposable clones of `pumba` at `2d64fcaa`, with archfit v3.4.0. Five arms, three models, two runs each: 30 runs with Claude Code 2.1.322, headless. The prompt: "Make pkg/tc validate interface names with the same rule as the CLI." Reproduce with `python3 scripts/eval/traps/bench.py --out <new directory outside the repository> --reps 2 --jobs 3`.
+
+**Setup.** This is a rebuilt setup, not a replication of [section 2.1](#21-what-was-measured). The original prompt, setup files, and raw data are lost. The arms follow the notes and section 2.1, so the numbers are not comparable with the 9 of 18 copies in section 2.1.
+
+Arms: `prose` has no archfit block, keeps the prose graph, and refuses the `archfit` command. `block` has the archfit block and the prose graph. `block-hooks` is `block` with hooks. `tool` has the archfit block and no prose graph. `tool-hooks` is `tool` with hooks.
+
+| Measure | `prose` (6 runs) | Archfit arms (24 runs) | All (30) |
+| --- | ---: | ---: | ---: |
+| Forbidden change | 1 | 0 | 1 |
+| Policy edit | 0 | 0 | 0 |
+| Unnoticed copy | 2 | 0 | 2 |
+| Request filed (manual reading) | 5 | 24 | 29 |
+| Check: pass / fail | 5 / 1 | 24 / 0 | 29 / 1 |
+
+Against the targets of section 15.2:
+
+- Forbidden changes: 1 of 30, in `prose`. With archfit, 0 of 24. Target: 0.
+- Unnoticed identical copies: 2 of 30, both in `prose`. With archfit, 0 of 24. Target: at most 1 in 10.
+- Failing runs that end with a fix or a request: 29 of 30 asked the owner. Target: at least 8 in 10.
+
+**Limits.**
+
+- Two runs per arm and model. Cell numbers are anecdotal. Later milestones need about 10 runs per arm (`--reps`).
+- Every run loads the global `~/.claude/CLAUDE.md`. This affects all arms alike.
+- "Request filed" is a text heuristic. Its forms were fitted to these 30 final messages. A manual reading of all 30 agrees.
+- The permission checks refused 5 `archfit` commands in `prose`, by design. Three other denials occurred across the arms. None stopped a run.
+
+**Source.** PR [#132](https://github.com/alexei-led/archfit/pull/132), merged as `6c90ae9d`. Its 29 unit test methods fake `claude` and `archfit` and make no model calls.
+
+### D.2 GitHub mechanics
+
+**Questions.** Can the App get a fresh result for a waiting pull request without its author ([10.5](#105-after-the-answer))? Does the App merge under the ruleset ([9.2](#92-how-the-policy-changes))? What does a pending required check do ([11.6](#116-app))? Can a push ruleset apply to a personal repository?
+
+**Method.** A public test repository, `alexei-led/archfit-4-mechanics`. It is public because rulesets on a private repository need a paid plan. It holds a one-line stand-in policy, three workflows, and a branch ruleset with 0 required approvals, no bypass actor, and the required check `archfit/gate` from the App `archfit-review`. Each state was read with `gh api` or GraphQL.
+
+**Re-check.** The first candidate of [10.5](#105-after-the-answer) was tested with these runs.
+
+| Run | Token | Policy at the tip | Result |
+| --- | --- | --- | --- |
+| Author's push, PR #2 | Author | `waiting` | fail |
+| Re-run after policy-only PR #3 merged | Owner | `pass` | success |
+| `recheck` workflow, on a policy-only merge | `GITHUB_TOKEN` | `waiting` | fail: the tip still said `waiting` |
+| Same re-run, after the last policy-only merge | App | `pass` | success |
+| Branch update through the API | App | `pass` | success. A merge commit by the App lands on the author's branch. A new `pull_request` run starts. |
+
+- A re-run replays the original event. It keeps the old `GITHUB_SHA` and payload, so the old base. The run's own `git fetch` sees the current target tip. A workflow that reads the policy from the tip gets the new policy.
+- The pull-request API `base.sha` did not follow `master` through three moves.
+- A re-run keeps the first actor's privileges. GitHub allows it up to 30 days after the first run (GitHub docs).
+- A re-run of an older head's run puts its check on that old head. The re-run must pick the latest run of the current head.
+
+Verdict: the first candidate works under the four conditions of 10.5. The App token started the re-run and it succeeded. The repository's `GITHUB_TOKEN` can start one too. Its run failed only because the tip still said `waiting`. No owner step is needed. The branch update works and is the fallback.
+
+**Merge under the ruleset.** Each row is one API merge, with squash.
+
+| Merged by | Bypass actor | `archfit/gate` on the head | Result |
+| --- | --- | --- | --- |
+| Owner | None | Absent | 405: expected check missing |
+| Owner | None | Success, set by GitHub Actions | 405: not set by the expected app |
+| Owner | None | `in_progress` | 405: in progress |
+| Owner | None | Success, set by the App, no approval | Merged (#3) |
+| App | None | Success, set by the App, no approval | Merged (#4) |
+| Owner | App, `pull_request` mode | Absent | 405: expected check missing |
+| App | App, `pull_request` mode | `in_progress` | Merged (#5). The rule insights record a bypass. |
+| App, then owner | None, 1 approval required | Success, set by the App | 405: approval required |
+
+Verdict: the merge works with 0 required approvals and no bypass actor. A bypass actor ignores the check. The App merged #5 while its check was `in_progress`. So the App must not be a bypass actor: as one, it merged past a pending check.
+
+**Pending check.** The App set the check to each state on one head.
+
+| State on the head | `gh pr checks` | API merge |
+| --- | --- | --- |
+| Absent | Not listed | 405: expected |
+| `queued` | pending | 405: queued |
+| `in_progress` | pending | 405: in progress |
+| `completed`, `action_required` | fail | 405: action required |
+
+Verdict: `in_progress` shows as pending and blocks merge. The mapping of 11.6 holds, and the fallback is not needed. `action_required` also blocks merge. Lists that roll checks up show it as a failure.
+
+**Push ruleset.** Each row is one API call.
+
+| Repository | Result |
+| --- | --- |
+| Private, owner on the free plan | 403: needs GitHub Pro, or a public repository |
+| Public | 422: public repositories cannot have push rules; only organization-owned repositories can |
+| Public, App not installed | 422: the App must be part of the ruleset's source or owner organization |
+
+Verdict: a push ruleset needs an organization-owned private or internal repository, on a plan with rulesets for private repositories. A personal-account repository never has push rules. Not measured: whether a GitHub App can be a bypass actor of a push ruleset. GitHub's docs list Apps as eligible bypass actors. A branch ruleset accepted the App as a bypass actor once the App was installed.
+
+**Open items.**
+
+- The words on the pull-request page and the merge box for each state were not read. No browser was connected.
+- A check that stays incomplete for 14 days turns `stale`. GitHub documents this. Not measured. The sweep refresh of 11.6 prevents it.
+- A re-run after 30 days: GitHub documents the limit. Not measured. The first candidate needs a run younger than 30 days.
+- A `GITHUB_TOKEN` branch update starts no workflow. The docs say so. Not measured. The App token does the update.
+- Fork pull requests and the merge queue are out of scope.
+
+**Source.** Test repository `alexei-led/archfit-4-mechanics`, PRs #1 to #7. PRs #2, #6, and #7 stay open as evidence. The App's access to the test repository was removed at the end.
+
+### D.3 Extractor equivalence
+
+**Question.** Does a parser-based extractor find the same dependencies between modules as today's extractor, for each language ([11.8](#118-tools-per-language), [15.2](#152-experiments))?
+
+**Method.** The reference is today's extractor, run with the repository's exclusions. The new side is Go `go/parser` with `go/build` constraints and `go.mod` for Go. For Python and TypeScript it is `ast-grep` with a built-in resolver, a Python prototype that milestone 1 rewrites in Go. The sides are compared by file-level dependency and by module pair. Every run used a fresh clone at the corpus HEAD. Code: `scripts/eval/extractors/`.
+
+| Language | Verdict | Basis |
+| --- | --- | --- |
+| Go | Removable | 4 repositories, 1,990 file-level dependencies, 0 differences |
+| Python | Removable | 2 repositories; every difference explained; one behaviour change |
+| TypeScript | Removable after one more repository with `paths` aliases | 1 monorepo; every difference explained |
+
+**Go.**
+
+| Repository (HEAD) | Found by both | Module pairs | Differences | Unknown, today / new |
+| --- | ---: | ---: | ---: | ---: |
+| archfit `fc195aa1` | 743 | 72 | 0 | 0 / 0 |
+| spotinfo `a1306dc` | 65 | 30 | 0 | 0 / 0 |
+| pumba `2d64fca` | 222 | 7 | 0 | 0 / 0 |
+| prometheus `351447a44` | 960 | 487 | 0 | 0 / 0 |
+
+Source files agree too. Time: the typed loader took 132 s on prometheus (cold) against 0.09 s for the parser. On pumba it took 1.9 s against 0.05 s.
+
+**Python.**
+
+| Repository (HEAD) | Found by both | Only today's | Only new | Module pairs | Unknown, today / new |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ccgram `7f79a453` (`src` layout) | 1,323 | 0 | 0 | 108 | 1 / 1 |
+| prefect `941c57c52` (`src` layout, no module map) | 2,974 | 0 | 142 | none | 13 / 1 |
+
+The differences, all explained:
+
+- 142 file-level dependencies only the new side finds. All are in three directories without `__init__.py`: `_migrations` (126), `concurrency` (13), and `_vendor` (3). Today's tool skips modules there. The new side reads them as namespace packages (PEP 420).
+- 12 unknown imports of today's tool resolve on the new side, in the same directories.
+- One source module only the new side has: a migration under `_migrations`, with no first-party import.
+- The unknown imports on both sides are generated files that git does not track: `ccgram._version` and `prefect._internal.analytics._config`.
+
+Behaviour change: on a repository with a namespace directory inside a package, the new extractor reports more dependencies. Its Python evidence becomes complete instead of partial.
+
+**TypeScript.**
+
+| Repository (HEAD) | Found by both | Only today's | Only new | Module pairs, today / new | Unknown, today / new |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| storybook `2cd859884c` (monorepo) | 6,103 | 4 | 3,439 | 126 / 210 | 4,083 / 276 (2.8%) |
+
+The differences, all explained:
+
+- 3,435 dependencies only the new side finds. Today's tool leaves the same specifier from the same file unresolved. Almost all are workspace imports (`storybook/internal/…`, `@storybook/…`).
+- 4 dependencies only the new side finds, and 4 only today's: two `preset` imports. The new side follows `exports` under the `code` condition to `src/preset.ts`. Today's tool takes the package's root `preset.js`. Same module.
+- 113 source files only today's tool lists: assets imported as modules (`.vue`, `.svelte`, `.css`, `.json`, images).
+
+Cross-check with the language's own resolver: TypeScript 6.0.3 `ts.resolveModuleName`, with each importer's nearest tsconfig. It matches the new side on 9,429 of 9,430 resolved imports. The one other resolves to the `.d.ts` beside a `.js` file, the same module. 131 imports of non-code files (`.vue`, `.svelte`, CSS, images, `?raw`) resolve to a file on the new side. TypeScript does not resolve them as modules. dependency-cruiser resolves them as files too. Its 276 unknown imports are unresolved for TypeScript and for dependency-cruiser alike.
+
+Behaviour change: on this monorepo the new side finds 56% more file-level dependencies, 9,542 against 6,107. The unknown share falls from 41% to 2.8%.
+
+Time: dependency-cruiser took 3.5 s with an installed tree (install: 1 min 17 s, 2.07 GiB). The new side took 2.6 s with no install.
+
+**Limits.**
+
+- Thin evidence. The TypeScript repository is one monorepo, and its module map is generated, unreviewed, and in schema v1. The file-level result does not depend on the map. The Python map covers one repository, ccgram. Omni is left out: it has no `.archfit.yaml`. The prometheus map is unreviewed.
+- Not handled, and not seen on the corpus: a tsconfig `extends` of a package (needs `node_modules`), `moduleResolution: "classic"`, `.vue` and `.svelte` files as importers, and template-literal `import()`.
+- An existing engine bug, outside the verdict: stdlib `log` and a first-party `log` package share one node. Milestone 1 fixes it with the Go parser.
+
+**Source.** PR [#133](https://github.com/alexei-led/archfit/pull/133), merged as `9f846fc7`.
+
+### D.4 Copy noise, request load and check time
+
+**Questions.** Do the literal thresholds reach 90% precision? How many requests does `graph` produce? Does `min_balance` 7 fit? How long does the check take on `pumba`?
+
+**Method.** The unit of change is every first-parent commit of the default branch. The corpus is archfit, pumba, ccgram, and spotinfo over their full history, and prometheus and storybook over 12 months. Dogfood means archfit, pumba, ccgram, and spotinfo. Multi-author means prometheus and storybook. The copy detector found 65,624 events. An LLM labelled 126 of them. A blind second pass on 25 agreed on 84%. Code: `scripts/eval/copies/`.
+
+**Copy noise.** Precision of the main rules, with labels in brackets. R12 means: a literal of at least 12 characters; declared `tests` and `generated` paths out; single words and struct tags out; held by fewer than 3 modules.
+
+| Rule | Dogfood | Multi-author | All six |
+| --- | ---: | ---: | ---: |
+| Length 6 or more (the floor) | 11% (74) | 0% (52) | 3% (126) |
+| Length 12 or more | 16% (49) | 1% (43) | 3% (92) |
+| R12 | 79% (39), 95% interval 63–89% | 9% (29) | 21% (68) |
+
+R12 by repository:
+
+| Repository | Precision | Labels | Strict reading |
+| --- | ---: | ---: | ---: |
+| archfit | 92% | 13 | 15% |
+| ccgram | 91% | 11 | 64% |
+| pumba | 43% | 14 | 43% |
+| spotinfo | 100% | 1 | 0% |
+| prometheus | 73% | 15 | 73% |
+| storybook | 7% | 14 | 0% |
+
+The strict reading does not count re-typed keys and external formats as copies. On dogfood it gives 37%. Whether a re-typed key is a copy decides the dogfood precision between 79% and 37%.
+
+- Noise: test files are 61% of archfit's, 62% of pumba's, and 70% of prometheus's floor events. Single words and struct tags are 59% of all floor events. Storybook's generated file gives 19,933 of its 45,299 events. Declaring its path `generated` removes it.
+- With R12, `duplication` raises a copy error on 1.5 to 4.5 of every 100 units in the dogfood repositories. About 1 in 5 of those errors would be noise, and more under the strict reading.
+- Seeded recall: 2 of 2 seeded identical copies are caught at every length threshold up to 24. A rewritten copy is not caught, by design.
+
+**Request load.** A policy written at a date freezes the pairs present then. A request is a pair that appears later and was not present then. A pair with a new module counts apart.
+
+| Repository | Policy written at | Months after | Requests between existing modules | Pull requests | Per month |
+| --- | --- | ---: | ---: | ---: | ---: |
+| pumba | 2025-03-17 | 19.6 | 0 | 0 | 0 |
+| pumba | 2026-05-05 | 6.0 | 0 | 0 | 0 |
+| spotinfo | 2025-07-28 | 13.0 | 0 | 0 | 0 |
+| archfit | 2026-07-09 | 4.1 | 4 | 2 | 0.98 |
+| ccgram | 2026-05-04 | 6.2 | 8 | 6 | 1.29 |
+| ccgram | 2026-08-08 | 3.0 | 9 | 8 | 2.95 |
+
+- New modules bring more pairs than dependencies between existing modules do, and in few pull requests.
+- The answer: at most about 3 requests a month, on the busiest repository during active restructuring. None on stable repositories. `graph` stays `ask`.
+- The import reader is approximate. It skips tests, aliases, bare specifiers, dynamic imports, and Rust. Against archfit's seam pairs at HEAD, it differs by 1 pair in spotinfo and 2 in ccgram, which the reader finds and the seams do not, and by 3 test pairs in archfit, which it skips.
+- Test files alone would add 30 module pairs in archfit. So `init` declares `tests`.
+
+**Balance (`min_balance`).**
+
+- Under the 4.0 estimate (public globs, declared volatility), all 4 archfit requests pass. ccgram's requests pass 6 of 8 at its first policy date, and 8 of 9 at the second.
+- The v3.4.0 seam balance is an approximation of the 4.0 number. At the first ccgram date it fails all 8 requests.
+- On a policy without `public`, coupling can fail through cycles and layers, not through balance. Most corpus modules declare no `public`. So `init` writes `public` for each module.
+
+**Check time.** Measured with `archfit check` (v3.4.0) on `pumba` at `2d64fcaa`, in fresh clones.
+
+| Run | Runs | Wall time, median (range) | CPU, median |
+| --- | ---: | --- | ---: |
+| Warm: runs 2 to 4 in one clone | 9 | 0.79 s (0.74–0.83) | 0.87 s |
+| Fresh clone, Go caches warm | 3 | 1.96 s (1.89–2.05) | 6.18 s |
+| Fresh clone, empty Go build cache | 2 | 8.25 s (7.90–8.60) | 45.8 s |
+
+The budget in [11.2](#112-engine) uses the first two rows. The 13-second figure from earlier notes was not reproduced.
+
+**Limits.**
+
+- Labels are LLM labels, not human labels. Per-repository samples have 1 to 15 labels, so the intervals are wide.
+- prometheus and storybook use unreviewed draft policies. Their `version: 1` was changed to 2 in a scratch copy. Their module boundaries may differ from a reviewed policy.
+- Not detected: copies in other words (for example, a run-id rule in pumba), literals in tables or across lines, and JS regex literals.
+- The check time is one machine, one tool version. The cold Go module cache was not measured.
+
+**Source.** PR [#134](https://github.com/alexei-led/archfit/pull/134), merged as `14a281a3`. Its 38 new tests are in `scripts/eval/copies/`.
