@@ -33,6 +33,11 @@ pkg/tc/internal/shape.go, pkg/tc/netem.go: module pkg_tc
 scripts/release.go: in no module
   rules that apply:
     unowned: new production code belongs to a module (deny: fix the code)
+    no-scripts-to-chaos: scripts/** must not depend on pkg_chaos
+      why: Release scripts must not start chaos.
+      instead: Call the chaos command from the release job.
+    docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime
+      why: One adapter owns the Docker API.
   exceptions:
     unowned scripts/**: no date
       why: Build scripts belong to no module.

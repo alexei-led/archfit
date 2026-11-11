@@ -11,6 +11,9 @@ pkg/chaos/run.go: module pkg_chaos
     no-chaos-to-runtime: pkg_chaos must not depend on pkg_runtime
       why: A direct import ties a chaos action to one runtime.
       instead: Add a method to container.Client.
+    no-scripts-to-chaos: scripts/** must not depend on pkg_chaos
+      why: Release scripts must not start chaos.
+      instead: Call the chaos command from the release job.
     docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime
       why: One adapter owns the Docker API.
   exceptions:

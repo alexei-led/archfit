@@ -29,12 +29,9 @@ func paths(p resolved.Policy, date time.Time, files []string) string {
 	}
 	if len(g.unowned) > 0 {
 		w.line(0, "%s: in no module", strings.Join(g.unowned, ", "))
-		if p.Builtin.Unowned != resolved.ModeOff {
-			w.line(1, "rules that apply:")
-			w.builtinLine(2, p, resolved.RuleUnowned)
-		}
+		rulesThatApply(&w, p, "", g.unowned)
 		exceptions(&w, p, date, func(e resolved.Exception) bool {
-			return e.Rule == resolved.RuleUnowned && slices.ContainsFunc(g.unowned, func(f string) bool { return p.Covers(e.From, f) })
+			return e.Rule == resolved.RuleUnowned && checked(p, e.Rule) && slices.ContainsFunc(g.unowned, func(f string) bool { return touches(p, e.From, f) })
 		})
 	}
 	if len(g.tests) > 0 {
@@ -54,7 +51,7 @@ func group(p resolved.Policy, files []string) pathGroups {
 	g := pathGroups{modules: map[string][]string{}}
 	cleaned := make([]string, 0, len(files))
 	for _, f := range files {
-		cleaned = append(cleaned, strings.TrimPrefix(path.Clean(f), "./"))
+		cleaned = append(cleaned, path.Clean(f))
 	}
 	slices.Sort(cleaned)
 	for _, f := range slices.Compact(cleaned) {
@@ -72,8 +69,8 @@ func group(p resolved.Policy, files []string) pathGroups {
 	return g
 }
 
-// moduleBlock writes a module, the built-in and custom rules that apply to
-// its files, and its exceptions.
+// moduleBlock writes a module, the rules that apply to its files, and its
+// exceptions.
 func moduleBlock(w *writer, p resolved.Policy, date time.Time, name string, files []string) {
 	m := p.Modules[name]
 	w.line(0, "%s: module %s", strings.Join(files, ", "), name)
@@ -85,28 +82,47 @@ func moduleBlock(w *writer, p resolved.Policy, date time.Time, name string, file
 	w.line(1, "volatility: %s", volatility)
 	w.line(1, "layer: %s", orNone(m.Layer))
 	w.line(1, "allowed dependencies: %s", listOrNone(m.DependsOn))
-	w.line(1, "rules that apply:")
-	for _, id := range resolved.BuiltinRules {
-		mode := builtinMode(p.Builtin, id)
-		// unowned is about code in no module; layers needs layers.
-		if mode == resolved.ModeOff || id == resolved.RuleUnowned || (id == resolved.RuleLayers && len(p.Layers) == 0) {
-			continue
-		}
-		w.builtinLine(2, p, id)
-	}
-	for _, r := range p.Rules {
-		if applies(p, r, name, files) {
-			w.customRule(2, r)
-		}
-	}
+	rulesThatApply(w, p, name, files)
 	exceptions(w, p, date, func(e resolved.Exception) bool {
-		return e.Rule != resolved.RuleUnowned && (e.From == name || e.To == name)
+		return e.Rule != resolved.RuleUnowned && checked(p, e.Rule) && (e.From == name || e.To == name)
 	})
 }
 
-// applies reports whether a deny or only rule applies to a module's files. An
-// only rule limits a library everywhere, so it applies to every module; a deny
-// rule applies to both of its sides.
+// rulesThatApply writes the built-in and custom rules that apply to files of
+// module, or to files in no module when module is "". unowned is the one
+// built-in rule about code in no module, and the only one it gets.
+func rulesThatApply(w *writer, p resolved.Policy, module string, files []string) {
+	var builtins []string
+	for _, id := range resolved.BuiltinRules {
+		if (id == resolved.RuleUnowned) == (module == "") && checked(p, id) {
+			builtins = append(builtins, id)
+		}
+	}
+	custom := slices.DeleteFunc(slices.Clone(p.Rules), func(r resolved.Rule) bool { return !applies(p, r, module, files) })
+	if len(builtins)+len(custom) == 0 {
+		return
+	}
+	w.line(1, "rules that apply:")
+	for _, id := range builtins {
+		w.builtinLine(2, p, id)
+	}
+	for _, r := range custom {
+		w.customRule(2, r)
+	}
+}
+
+// checked reports whether the check runs a rule: a built-in rule that is off,
+// or layers in a policy without layers, is never checked.
+func checked(p resolved.Policy, id string) bool {
+	if !slices.Contains(resolved.BuiltinRules, id) {
+		return true
+	}
+	return builtinMode(p.Builtin, id) != resolved.ModeOff && (id != resolved.RuleLayers || len(p.Layers) > 0)
+}
+
+// applies reports whether a deny or only rule applies to files of module
+// ("" for files in no module). An only rule limits a library everywhere, so
+// it applies to all code; a deny rule applies to both of its sides.
 func applies(p resolved.Policy, r resolved.Rule, module string, files []string) bool {
 	switch r.Form {
 	case resolved.FormOnly:
@@ -119,14 +135,21 @@ func applies(p resolved.Policy, r resolved.Rule, module string, files []string) 
 }
 
 // names reports whether a deny list names the module, or holds a path glob
-// that covers one of its files.
+// that touches one of its files.
 func names(p resolved.Policy, list []string, module string, files []string) bool {
 	return slices.ContainsFunc(list, func(entry string) bool {
 		if _, isModule := p.Modules[entry]; isModule {
 			return entry == module
 		}
-		return slices.ContainsFunc(files, func(f string) bool { return p.Covers(entry, f) })
+		return slices.ContainsFunc(files, func(f string) bool { return touches(p, entry, f) })
 	})
+}
+
+// touches reports whether a path glob covers f, or, for a directory f, starts
+// below it: pkg/tc/internal/** touches the directory pkg/tc. A glob that
+// starts with a wildcard touches only the paths it covers.
+func touches(p resolved.Policy, glob, f string) bool {
+	return p.Covers(glob, f) || strings.HasPrefix(glob, f+"/")
 }
 
 // exceptions writes the exceptions that keep returns true for, in policy

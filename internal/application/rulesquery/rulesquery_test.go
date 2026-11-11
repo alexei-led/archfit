@@ -20,6 +20,8 @@ const (
 	chaosFile = "pkg/chaos/run.go"
 	utilFile  = "pkg/util/x.go"
 	graphRule = "graph"
+	tcDir     = "pkg/tc"
+	script    = "scripts/release.go"
 )
 
 // today is ten days before the first exception expires and after the second.
@@ -75,7 +77,7 @@ func TestGoldens(t *testing.T) {
 	p := loadPolicy(t)
 	changed := []string{
 		tcFile, "pkg/tc/internal/shape.go", "pkg/chaos/netem/delay.go", "pkg/tc/netem_test.go",
-		"pkg/gen/api.go", "scripts/release.go", tcFile,
+		"pkg/gen/api.go", script, tcFile,
 	}
 	for _, tc := range []struct {
 		name string
@@ -132,12 +134,11 @@ func TestGoldensUseNoNotUsedWord(t *testing.T) {
 func TestPaths(t *testing.T) {
 	p := loadPolicy(t)
 	for _, tc := range []struct {
-		name    string
-		args    []string
-		date    time.Time
-		has     []string
-		hasNot  []string
-		changed []string
+		name   string
+		args   []string
+		date   time.Time
+		has    []string
+		hasNot []string
 	}{
 		{
 			name: "the most specific module owns a nested path",
@@ -219,9 +220,28 @@ func TestPaths(t *testing.T) {
 		},
 		{
 			name:   "an unowned exception matches by its glob",
-			args:   []string{"scripts/release.go", "other/x.go"},
+			args:   []string{script, "other/x.go"},
 			has:    []string{"other/x.go, scripts/release.go: in no module\n", "unowned scripts/**: no date\n"},
 			hasNot: []string{"layers:"},
+		},
+		{
+			name: "a path in no module gets the deny rules of its path glob and the only rules",
+			args: []string{script},
+			has: []string{
+				"    no-scripts-to-chaos: scripts/** must not depend on pkg_chaos\n",
+				"    docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime\n",
+			},
+			hasNot: []string{"no-chaos-to-runtime:"},
+		},
+		{
+			name:   "an exception of an off rule is not listed",
+			args:   []string{tcFile},
+			hasNot: []string{"cycle pkg_tc"},
+		},
+		{
+			name: "a directory gets the deny rules of path globs below it",
+			args: []string{tcDir},
+			has:  []string{"pkg/tc: module pkg_tc\n", "no-tc-internals-to-util: pkg/tc/internal/** must not depend on pkg_util\n"},
 		},
 		{
 			name:   "an unowned exception is absent when its glob covers no path",
@@ -249,7 +269,7 @@ func TestPaths(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ask(t, p, tc.changed, rulesquery.Request{Args: tc.args, Date: tc.date})
+			got := ask(t, p, nil, rulesquery.Request{Args: tc.args, Date: tc.date})
 			for _, want := range tc.has {
 				if !strings.Contains(got, want) {
 					t.Errorf("missing %q in:\n%s", want, got)
@@ -311,7 +331,7 @@ func TestErrors(t *testing.T) {
 		{
 			name: "graph with an argument",
 			svc:  rulesquery.Service{Policies: policySource{p: p}},
-			req:  rulesquery.Request{Graph: true, Args: []string{"pkg/tc"}},
+			req:  rulesquery.Request{Graph: true, Args: []string{tcDir}},
 			want: rulesquery.ErrUsage,
 		},
 		{
@@ -323,7 +343,7 @@ func TestErrors(t *testing.T) {
 		{
 			name: "the policy cannot be read",
 			svc:  rulesquery.Service{Policies: policySource{err: boom}},
-			req:  rulesquery.Request{Args: []string{"pkg/tc"}},
+			req:  rulesquery.Request{Args: []string{tcDir}},
 			want: boom,
 		},
 		{
@@ -347,7 +367,22 @@ func TestErrors(t *testing.T) {
 
 func TestOffRuleInFull(t *testing.T) {
 	got := ask(t, loadPolicy(t), nil, rulesquery.Request{Args: []string{"cycle"}})
-	if want := "cycle: no new cycle between modules\n  mode: off (not checked)\n"; got != want {
+	want := "cycle: no new cycle between modules\n  mode: off (not checked)\n" +
+		"  exceptions:\n    cycle pkg_tc -> pkg_util: 2026-12-01 (22 days)\n" +
+		"      why: The rule is off; this stays for when it is on.\n"
+	if got != want {
 		t.Errorf("cycle =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestUnownedOff(t *testing.T) {
+	p := resolved.Policy{
+		Modules:    map[string]resolved.Module{"app": {Paths: []string{"app/**"}}},
+		Builtin:    resolved.Builtin{Unowned: resolved.ModeOff},
+		Exceptions: []resolved.Exception{{Rule: resolved.RuleUnowned, From: "tools/**", Why: "w"}},
+	}.WithDefaults()
+	want := "tools/gen.go: in no module\n"
+	if got := ask(t, p, nil, rulesquery.Request{Args: []string{"tools/gen.go"}}); got != want {
+		t.Errorf("unowned off =\n%s\nwant\n%s", got, want)
 	}
 }

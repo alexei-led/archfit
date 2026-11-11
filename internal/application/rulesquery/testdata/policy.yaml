@@ -72,6 +72,10 @@ rules:
         - pkg_util
     why: The traffic shaper stays free of helpers.
     instead: Copy nothing; pass the value in.
+  - id: no-scripts-to-chaos
+    deny: { from: [scripts/**], to: [pkg_chaos] }
+    why: Release scripts must not start chaos.
+    instead: Call the chaos command from the release job.
   - id: docker-sdk-in-runtime
     only:
       use: github.com/docker/docker
@@ -96,6 +100,11 @@ exceptions:
     from: pkg_chaos
     to: pkg_runtime
     why: The old runtime goes in the next release.
+  - rule: cycle
+    from: pkg_tc
+    to: pkg_util
+    expires: 2026-12-01
+    why: The rule is off; this stays for when it is on.
   - rule: unowned
     from: scripts/**
     why: Build scripts belong to no module.
