@@ -36,9 +36,11 @@ import (
 //     (pkg/**). TypeScript and .NET file nodes match, and so do Rust crates,
 //     which bind through a file in the crate directory. A Go glob that names
 //     files (cmd/main.go) does not match a package node. Python nodes are
-//     dotted ids (myapp.chaos), which no file glob matches. The report on a
-//     Python repository therefore owns no module, and its coupling metrics are
-//     n/a, not zero. Task 41 moves the report's Python evidence to file nodes.
+//     dotted ids (myapp.chaos), which a directory glob (src/myapp/chaos/**)
+//     does not match. Only a catch-all ** claims them. The report on a Python
+//     repository therefore owns no Python node in a directory module, and its
+//     coupling metrics are n/a, not zero. Task 41 moves the report's Python
+//     evidence to file nodes.
 //   - Internal stays empty. The check scores a use past public as functional,
 //     and an Archfit 3 internal glob would force it to intrusive. With no
 //     internal glob the analyzer's own evidence decides (Go types read a call

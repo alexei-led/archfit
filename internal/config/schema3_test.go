@@ -152,25 +152,19 @@ func TestReportConfigToolKeysReachTheirViews(t *testing.T) {
 	dotnetExtract := cfg.ForExtract(config.LangDotNet)
 	coverage := cfg.SuppliedCoverageOptions()
 	tests := map[string]struct{ got, want any }{
-		"languages.go.enabled true":          {goExtract.Mode, config.ModeOn},
-		"languages.typescript.enabled false": {cfg.ForExtract(config.LangTypeScript).Mode, config.ModeOff},
-		"languages.python.enabled auto":      {pyExtract.Mode, config.ModeAuto},
-		"languages.go.modules.include":       {goExtract.GoModuleInclude, []string{"services/**"}},
-		"languages.go.modules.exclude":       {goExtract.GoModuleExclude, []string{"services/legacy"}},
-		"languages.python.package":           {pyExtract.PyPackage, "myapp"},
-		"languages.rust.manifest":            {rustExtract.CargoManifest, "Cargo.toml"},
-		"languages.rust.features":            {rustExtract.CargoFeatures, []string{"cli"}},
-		"languages.rust.include_dev_deps":    {rustExtract.IncludeDevDeps, true},
-		"languages.dotnet.projects":          {dotnetExtract.DotNetProjects, []string{"App.slnx"}},
-		"analyzers.syntax.enabled":           {cfg.SyntaxEnabled(), true},
-		"analyzers.cargo_modules.enabled":    {rustExtract.ModuleGraph, false},
-		"analyzers.roslyn.enabled":           {dotnetExtract.TypeGraphDisabled, false},
-		"analyzers.roslyn.timeout":           {dotnetExtract.TypeGraphTimeout, 90 * time.Second},
-		"exclude":                            {cfg.ForScope().Exclusions, []string{"third_party/**"}},
-		"generated":                          {cfg.ForFileClass().GeneratedGlobs, []string{"**/*.pb.go"}},
-		"tests":                              {cfg.ForFileClass().TestGlobs, []string{"**/*_test.go", "internal/testutil/**"}},
-		"layers":                             {cfg.Layers, every.Layers},
-		"coverage.enabled":                   {coverage.Enabled, true},
+		"languages.go.modules.include":    {goExtract.GoModuleInclude, []string{"services/**"}},
+		"languages.go.modules.exclude":    {goExtract.GoModuleExclude, []string{"services/legacy"}},
+		"languages.python.package":        {pyExtract.PyPackage, "myapp"},
+		"languages.rust.manifest":         {rustExtract.CargoManifest, "Cargo.toml"},
+		"languages.rust.features":         {rustExtract.CargoFeatures, []string{"cli"}},
+		"languages.rust.include_dev_deps": {rustExtract.IncludeDevDeps, true},
+		"languages.dotnet.projects":       {dotnetExtract.DotNetProjects, []string{"App.slnx"}},
+		"analyzers.roslyn.timeout":        {dotnetExtract.TypeGraphTimeout, 90 * time.Second},
+		"exclude":                         {cfg.ForScope().Exclusions, []string{"third_party/**"}},
+		"generated":                       {cfg.ForFileClass().GeneratedGlobs, []string{"**/*.pb.go"}},
+		"tests":                           {cfg.ForFileClass().TestGlobs, []string{"**/*_test.go", "internal/testutil/**"}},
+		"layers":                          {cfg.Layers, every.Layers},
+		"coverage.enabled":                {coverage.Enabled, true},
 		"coverage.sources": {coverage.Sources, []suppliedcoverage.Source{{
 			Path: "coverage.out", Format: "go-coverprofile", SidecarPath: "coverage.out.sidecar.json",
 			MaxBytes: 1048576, MaxFacts: 5000,
@@ -183,6 +177,68 @@ func TestReportConfigToolKeysReachTheirViews(t *testing.T) {
 			want, _ := yaml.Marshal(tt.want)
 			if !bytes.Equal(got, want) {
 				t.Errorf("got %s want %s", got, want)
+			}
+		})
+	}
+}
+
+// flippedSwitches sets every switch to the value every-key.yaml does not use,
+// so each switch is seen on and off across the two policies.
+const flippedSwitches = `version: 3
+owners: [octocat]
+modules:
+  app:
+    paths: [cmd/**]
+languages:
+  go: {enabled: false}
+  typescript: {enabled: true}
+  python: {enabled: true}
+  rust: {enabled: false}
+  dotnet: {enabled: true}
+analyzers:
+  syntax: {enabled: false}
+  cargo_modules: {enabled: true}
+  roslyn: {enabled: false}
+`
+
+func TestReportConfigSwitchesReachToolModes(t *testing.T) {
+	t.Parallel()
+	languages := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust, config.LangDotNet}
+	ids := append(slices.Clone(languages), config.ToolSyntax, config.ToolCargoModules, config.ToolRoslyn)
+	flipped, err := config.ReportConfig([]byte(flippedSwitches))
+	if err != nil {
+		t.Fatal(err)
+	}
+	on, off, auto := config.ModeOn, config.ModeOff, config.ModeAuto
+	tests := map[string]struct {
+		cfg  config.Config
+		want []config.ToolMode // in ids order
+	}{
+		"every-key.yaml":      {reportConfig(t, "policyfile/testdata/valid/every-key.yaml"), []config.ToolMode{on, off, auto, auto, off, on, off, on}},
+		"each switch flipped": {flipped, []config.ToolMode{off, on, on, off, on, off, on, off}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := tt.cfg
+			for i, id := range ids {
+				if got := cfg.ToolMode(id); got != tt.want[i] {
+					t.Errorf("ToolMode(%s) = %q, want %q", id, got, tt.want[i])
+				}
+			}
+			for _, lang := range languages {
+				if got := cfg.ForExtract(lang).Mode; got != cfg.ToolMode(lang) {
+					t.Errorf("ForExtract(%s).Mode = %q, want %q", lang, got, cfg.ToolMode(lang))
+				}
+			}
+			if cfg.SyntaxEnabled() != (cfg.ToolMode(config.ToolSyntax) == on) {
+				t.Errorf("syntax enabled %v with mode %q", cfg.SyntaxEnabled(), cfg.ToolMode(config.ToolSyntax))
+			}
+			if got := cfg.ForExtract(config.LangRust).ModuleGraph; got != (cfg.ToolMode(config.ToolCargoModules) == on) {
+				t.Errorf("rust module graph %v with cargo_modules %q", got, cfg.ToolMode(config.ToolCargoModules))
+			}
+			if got := cfg.ForExtract(config.LangDotNet).TypeGraphDisabled; got != (cfg.ToolMode(config.ToolRoslyn) == off) {
+				t.Errorf(".NET type graph disabled %v with roslyn %q", got, cfg.ToolMode(config.ToolRoslyn))
 			}
 		})
 	}
@@ -311,9 +367,10 @@ func TestReportPipelineRunsOnSchema3AndDoesNotGate(t *testing.T) {
 	}
 	doc := resp.Document
 
-	for _, m := range doc.Metrics {
-		if (m.Name == "cycle" || m.Name == "blast_radius") && m.Band == string(report.ScoreBandNA) {
-			t.Errorf("metric %s not measured: %+v", m.Name, m)
+	for _, name := range []string{"cycle", "blast_radius"} {
+		i := slices.IndexFunc(doc.Metrics, func(m report.MetricResult) bool { return m.Name == name })
+		if i < 0 || doc.Metrics[i].Band == string(report.ScoreBandNA) {
+			t.Errorf("metric %s missing or not measured: %+v", name, doc.Metrics)
 		}
 	}
 	balance := slices.IndexFunc(doc.Score.Dimensions, func(d report.Dimension) bool { return d.Name == report.DimCouplingBalance })
