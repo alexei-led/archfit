@@ -550,6 +550,8 @@ A pull request that changes the policy and is not the App's architecture pull re
 An owner who wants to edit the YAML does it in the App, which checks the text and puts it on the
 same path.
 
+A change to `.github/workflows/archfit.yaml` makes the check `unknown` until an owner approves it in the App with a passkey, because a pull request runs its own workflow file and could upload a forged pass. A change that only moves the Action ref to a commit the App lists is exempt.
+
 Set up at onboarding:
 
 - a ruleset on the default branch: changes through pull requests only, 0 required approvals, and
@@ -1173,6 +1175,7 @@ Owner rows were made by the owner on 2026-11-10. Rows marked "Manager, from mile
 | Check budget | Manager, from milestone 0 measurements: on `pumba`, warm under 2 seconds and fresh clone under 5 seconds ([11.2](#112-engine), [D.4](#d4-copy-noise-request-load-and-check-time)). |
 | TypeScript removal | Manager, from milestone 0 measurements: dependency-cruiser leaves the check only after one more TypeScript repository with `paths` aliases passes the equivalence test. This is a condition for milestone 1 ([D.3](#d3-extractor-equivalence)). |
 | Push ruleset scope | Manager, from milestone 0 measurements: organization-owned private or internal repositories only, on a plan with rulesets for private repositories. A personal-account repository never has push rules. Elsewhere the required check is the protection ([D.2](#d2-github-mechanics)). |
+| Workflow file | Manager, from the M2 plan review, 2026-11-11: a change to `.github/workflows/archfit.yaml` makes the check `unknown` until an owner approves it in the App with a passkey. A pull request runs its own workflow file, so without this it could upload a forged pass. A change that only moves the Action ref to a commit the App lists is exempt ([9.2](#92-how-the-policy-changes)). |
 
 ### To confirm by measurement in milestone 0
 
@@ -1194,6 +1197,7 @@ Ways to bend the system, and what holds:
 | Bend | What holds | What remains |
 | --- | --- | --- |
 | Edit the policy to pass | The policy is read from the protected branch | An administrator who removes the ruleset |
+| Edit the workflow file to upload a forged pass | A changed workflow file is `unknown` until an owner approves it with a passkey (9.2) | An owner who approves without reading |
 | Approve one's own request in the owner's browser | The passkey | An owner who approves without reading |
 | Use an old, looser approved policy | Approvals are recorded once, for one step | — |
 | Add one more use to a broken dependency | Errors are counted | — |
