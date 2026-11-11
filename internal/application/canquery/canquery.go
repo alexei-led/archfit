@@ -15,9 +15,10 @@
 //     package directory it names.
 //  4. Anything else is, for the importer, a path of a file not written yet,
 //     and, for the target, a library. A target stays a path of the tree when
-//     it is written ./path, or when its first segment, up to a / or a ., is
-//     an entry of the repository root: a mistyped pkg/utl, or a dotted
-//     Python name app.core, is then in no module, not a library.
+//     it is written ./path, or when its first segment (up to the first /, or
+//     in a name with no /, the first dot) is an entry of the repository
+//     root: a mistyped pkg/utl, or a dotted Python name app.core, is then in
+//     no module, not a library, while go.uber.org/zap stays a library.
 //
 // A path not in the tree is a file when it has an extension. A Python or
 // TypeScript module is named by its file or its directory: a dotted name is
@@ -324,14 +325,18 @@ func fileSide(p resolved.Policy, arg, file string) side {
 
 // pathOfTree reports whether a target that names nothing in the tree is a
 // path of the tree all the same: it is written ./path, it leaves the root, or
-// its first segment, up to a / or a ., is an entry of the root.
+// its first segment is an entry of the root. The first segment ends at the
+// first /, or, in a name with no /, at the first dot.
 func (s Service) pathOfTree(ctx context.Context, arg, rel string) (bool, error) {
 	if strings.HasPrefix(filepath.ToSlash(arg), "./") || path.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, "../") {
 		return true, nil
 	}
+	// A dotted Python name (app.core) has no slash. A slash path keeps its
+	// dots: a Go library starts with a domain (go.uber.org/zap), and a
+	// directory may start with one (.storybook).
 	first, _, nested := strings.Cut(rel, "/")
-	if dotted, _, ok := strings.Cut(first, "."); ok {
-		first, nested = dotted, true
+	if !nested {
+		first, _, nested = strings.Cut(rel, ".")
 	}
 	if !nested || first == "" {
 		return false, nil

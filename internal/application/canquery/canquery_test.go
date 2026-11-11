@@ -72,6 +72,7 @@ var sources = []string{
 	utilFile,
 	"web/app.ts", "web/state.py", vueFile,
 	toolFile,
+	"go/tools.go", ".storybook/main.ts",
 }
 
 // policy is the typical policy of design 6.1 with a cmd module, as check
@@ -379,6 +380,10 @@ func TestArguments(t *testing.T) {
 			result.CanAnswer{From: tc, To: "web.state", Answer: result.ReplyUnknown}},
 		{"a target written ./path", tcDir, "./missing.go",
 			result.CanAnswer{From: tc, To: "./missing.go", Answer: result.ReplyUnknown}},
+		{"a Go library whose first label names a root directory", chaosFile, "go.uber.org/zap",
+			result.CanAnswer{From: chaos, To: "go.uber.org/zap", Answer: result.ReplyYes}},
+		{"a file not written yet under a dot directory", tcDir, ".storybook/new.ts",
+			result.CanAnswer{From: tc, To: ".storybook/new.ts", Answer: result.ReplyUnknown}},
 		{"a rule to fix the code wins over one to ask", chaosDir, netemDir,
 			result.CanAnswer{From: chaos, To: tc, Answer: result.ReplyNo, Rule: resolved.RuleCoupling}},
 	}
