@@ -1,0 +1,21 @@
+pkg/chaos/run.go: module pkg_chaos
+  public: pkg/chaos, pkg/chaos/cliflags
+  volatility: high
+  layer: core
+  allowed dependencies: pkg_container, pkg_util
+  rules that apply:
+    graph: a dependency between two modules must be an allowed dependency (ask: an owner may approve)
+    coupling: new knowledge across a module boundary needs a balance of at least 8 (deny: fix the code)
+    duplication: knowledge that another module already owns is not copied (ask: an owner may approve)
+    layers: dependencies follow the layer order (deny: fix the code)
+    no-chaos-to-runtime: pkg_chaos must not depend on pkg_runtime
+      why: A direct import ties a chaos action to one runtime.
+      instead: Add a method to container.Client.
+    docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime
+      why: One adapter owns the Docker API.
+  exceptions:
+    no-chaos-to-runtime pkg_chaos -> pkg_runtime: no date
+      why: The old runtime goes in the next release.
+not checked:
+  fan-out-through-runner: Chaos actions fan out through RunOnContainers.
+    why: One place checks the target limit before injection.

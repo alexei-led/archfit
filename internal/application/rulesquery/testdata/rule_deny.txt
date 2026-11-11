@@ -1,0 +1,6 @@
+no-chaos-to-runtime: pkg_chaos must not depend on pkg_runtime
+  why: A direct import ties a chaos action to one runtime.
+  instead: Add a method to container.Client.
+  exceptions:
+    no-chaos-to-runtime pkg_chaos -> pkg_runtime: no date
+      why: The old runtime goes in the next release.
