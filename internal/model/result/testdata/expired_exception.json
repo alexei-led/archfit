@@ -1,0 +1,37 @@
+{
+  "schema": "archfit.result.v1",
+  "status": "fail",
+  "summary": "archfit: fail, 1 error (not from this change)",
+  "errors": [
+    {
+      "path": ".archfit.yaml",
+      "rule": "exception",
+      "what": "duplication pkg_tc -> pkg_util expired on 2026-11-19",
+      "why": "an exception with a date fails every change after that date",
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #431"
+      },
+      "from": "pkg_tc",
+      "to": "pkg_util",
+      "key": "exception duplication pkg_tc pkg_util",
+      "from_change": false,
+      "exception": {
+        "rule": "duplication",
+        "expires": "2026-11-19"
+      }
+    }
+  ],
+  "unknown": [],
+  "policy": {
+    "path": ".archfit.yaml",
+    "digest": "sha256:7b02700a93eb8af7192724bd1b5ff49fd340f0ef81cfee1fb0d8cdc1467fea8c",
+    "protected": true,
+    "differs": false,
+    "target": "origin/main"
+  },
+  "base": "1405df66cbe219b0bf6355bc3d60361a8376b6b4",
+  "head": "1a954628a960aaef81d7b2d4521929579f3541e6",
+  "date": "2026-11-20",
+  "engine": "4.0.0"
+}

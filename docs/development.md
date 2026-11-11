@@ -5,14 +5,14 @@ Use [Getting started](getting-started.md) to analyze an ordinary target reposito
 
 ## Generated contracts
 
-The committed configuration, state, and agent-result schemas must match the Go types.
-After a config, report, or agent-result contract changes, run:
+The committed configuration, state, agent-result, and result schemas must match the Go types.
+After a config, report, agent-result, or result contract changes, run:
 
 ```sh
 make schema
 ```
 
-The target regenerates all three schemas and checks for drift. Review the schema diff and constraints before you finish.
+The target regenerates the schemas and checks for drift. Review the schema diff and constraints before you finish.
 
 The exported `internal/model` surface is pinned by `internal/testdata/model_surface.golden`.
 After an intentional public contract change, run:

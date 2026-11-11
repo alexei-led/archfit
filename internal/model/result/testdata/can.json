@@ -1,0 +1,25 @@
+{
+  "schema": "archfit.can.v1",
+  "from": "pkg_tc",
+  "to": "pkg_util",
+  "answer": "no",
+  "rule": "graph",
+  "what": "not an allowed dependency",
+  "balance": {
+    "value": 9,
+    "min": 7
+  },
+  "next": {
+    "kind": "command",
+    "text": "archfit request -m \"<why you need it>\""
+  },
+  "policy": {
+    "path": ".archfit.yaml",
+    "digest": "sha256:7b02700a93eb8af7192724bd1b5ff49fd340f0ef81cfee1fb0d8cdc1467fea8c",
+    "protected": true,
+    "differs": false
+  },
+  "head": "1a954628a960aaef81d7b2d4521929579f3541e6",
+  "date": "2026-11-10",
+  "engine": "4.0.0"
+}
