@@ -1,0 +1,18 @@
+{
+  "schema": "archfit.result.v1",
+  "status": "pass",
+  "summary": "archfit: pass",
+  "errors": [],
+  "unknown": [],
+  "policy": {
+    "path": ".archfit.yaml",
+    "digest": "sha256:7b02700a93eb8af7192724bd1b5ff49fd340f0ef81cfee1fb0d8cdc1467fea8c",
+    "protected": true,
+    "differs": false,
+    "target": "origin/main"
+  },
+  "base": "1405df66cbe219b0bf6355bc3d60361a8376b6b4",
+  "head": "1a954628a960aaef81d7b2d4521929579f3541e6",
+  "date": "2026-11-10",
+  "engine": "4.0.0"
+}
