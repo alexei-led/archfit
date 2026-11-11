@@ -160,6 +160,49 @@ func TestSARIFMapping(t *testing.T) {
 		}
 	})
 
+	t.Run("a path is written as a relative URI reference", func(t *testing.T) {
+		for path, want := range map[string]string{
+			"pkg/tc/netem.go": "pkg/tc/netem.go",
+			policyFile:        policyFile,
+			"src/a#b.ts":      "src/a%23b.ts",
+			"docs/50%/x.go":   "docs/50%25/x.go",
+			"my dir/x.go":     "my%20dir/x.go",
+			"pkg/día.go":      "pkg/d%C3%ADa.go",
+			"c:d/x.go":        "./c:d/x.go",
+		} {
+			out, _ := renderSARIF(t, result.Result{
+				Status:  result.StatusUnknown,
+				Errors:  []result.Error{{Path: path, Line: 1, Rule: ruleGraph, What: "w", Next: result.Next{Text: fixCode}}},
+				Unknown: []result.Unknown{{Path: path, Cause: result.CauseImport, What: "w", Next: result.Next{Text: fixCode}}},
+			})
+			run := out.Runs[0]
+			if got := run.Results[0].Locations[0].PhysicalLocation.ArtifactLocation.URI; got != want {
+				t.Errorf("result uri for %q = %q, want %q", path, got, want)
+			}
+			if got := run.Invocations[0].Notifications[0].Locations[0].PhysicalLocation.ArtifactLocation.URI; got != want {
+				t.Errorf("notification uri for %q = %q, want %q", path, got, want)
+			}
+		}
+	})
+
+	t.Run("literal braces are doubled in every message", func(t *testing.T) {
+		out, _ := renderSARIF(t, result.Result{
+			Status: result.StatusUnknown,
+			Errors: []result.Error{{
+				Path: file, Line: 5, Rule: ruleGraph, What: "w{1}", Why: "y}", Instead: "Use []int{0}", Next: result.Next{Text: "n{", Note: "{x}"},
+			}},
+			Unknown: []result.Unknown{{Cause: result.CauseTool, What: "map{}", Next: result.Next{Text: fixCode}}},
+		})
+		run := out.Runs[0]
+		want := "w{{1}}\nwhy: y}}\ninstead: Use []int{{0}}\nnext: n{{     ({{x}})"
+		if got := run.Results[0].Message.Text; got != want {
+			t.Errorf("result message:\n--- got\n%s\n--- want\n%s", got, want)
+		}
+		if got, want := run.Invocations[0].Notifications[0].Message.Text, "tool: map{{}}\nnext: fix the code"; got != want {
+			t.Errorf("notification message = %q, want %q", got, want)
+		}
+	})
+
 	t.Run("an error without a key has no fingerprint", func(t *testing.T) {
 		out, raw := renderSARIF(t, result.Result{Status: result.StatusFail, Errors: []result.Error{
 			{Path: file, Line: 5, Rule: ruleGraph, What: "w", Next: result.Next{Text: fixCode}},

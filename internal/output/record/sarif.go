@@ -2,6 +2,7 @@ package record
 
 import (
 	"io"
+	"net/url"
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/model/result"
@@ -122,8 +123,12 @@ func ResultSARIF(w io.Writer, r result.Result) error {
 	return writeJSON(w, log)
 }
 
+// literalBraces doubles { and }: SARIF reads a single brace as the start of
+// a placeholder such as {0} (SARIF 3.11.5), and a record has no arguments.
+var literalBraces = strings.NewReplacer("{", "{{", "}", "}}")
+
 // messageText is the first line, then the detail lines of the text record
-// without their indent.
+// without their indent, with literal braces doubled.
 func messageText(first, why, instead string, balance *result.Balance, next *result.Next) string {
 	var b strings.Builder
 	writeDetails(&b, why, instead, balance, next)
@@ -131,11 +136,15 @@ func messageText(first, why, instead string, balance *result.Balance, next *resu
 	for line := range strings.Lines(b.String()) {
 		lines = append(lines, strings.TrimPrefix(strings.TrimSuffix(line, "\n"), "  "))
 	}
-	return strings.Join(lines, "\n")
+	return literalBraces.Replace(strings.Join(lines, "\n"))
 }
 
+// sarifLocationOf turns a repository-relative file path into a relative URI
+// reference: "#", "%", spaces and non-ASCII bytes are escaped, "/" is kept,
+// and a first segment with ":" gets "./" so it is not read as a scheme.
 func sarifLocationOf(path string, line int) sarifLocation {
-	loc := sarifLocation{PhysicalLocation: sarifPhysicalLocation{ArtifactLocation: sarifArtifactLocation{URI: path}}}
+	uri := (&url.URL{Path: path}).String()
+	loc := sarifLocation{PhysicalLocation: sarifPhysicalLocation{ArtifactLocation: sarifArtifactLocation{URI: uri}}}
 	if line > 0 {
 		loc.PhysicalLocation.Region = &sarifRegion{StartLine: line}
 	}
