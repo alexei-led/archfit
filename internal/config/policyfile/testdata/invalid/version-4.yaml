@@ -1,0 +1,5 @@
+version: 4
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]

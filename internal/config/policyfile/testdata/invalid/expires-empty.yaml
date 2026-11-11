@@ -1,0 +1,11 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+exceptions:
+  - rule: graph
+    from: app
+    to: lib
+    expires: ""
+    why: Request #431 is open.

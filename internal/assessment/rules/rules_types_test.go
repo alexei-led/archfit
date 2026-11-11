@@ -13,10 +13,9 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
-// TestRuleTypesMatchNew holds the published rule type vocabulary
-// (policy.RuleTypes, enumerated in archfit.schema.json) equal to what rules.New
-// accepts: every listed type loads, and every type the New switch handles is
-// listed. Either drift lets the schema and the engine disagree about a config.
+// TestRuleTypesMatchNew holds the version 2 rule type vocabulary
+// (policy.RuleTypes) equal to what rules.New accepts: every listed type loads,
+// and every type the New switch handles is listed.
 func TestRuleTypesMatchNew(t *testing.T) {
 	listed := policy.RuleTypes()
 	for _, typ := range listed {

@@ -1,0 +1,85 @@
+version: 3
+owners: [alexei-led, octocat]
+gate: advisory
+layers: [domain, adapter, cmd]
+modules:
+  core:
+    paths: [internal/core/**]
+    public: [internal/core]
+    subdomain: core
+    layer: domain
+    depends_on: []
+  store:
+    paths: [internal/store/**]
+    volatility: medium
+    subdomain: supporting
+    layer: adapter
+    depends_on: [core]
+  cli:
+    paths: [cmd/**]
+    layer: cmd
+    depends_on: [core, store]
+builtin:
+  graph: deny
+  coupling: ask
+  duplication: off
+  cycle: deny
+  layers: ask
+  unowned: off
+  min_balance: 8
+rules:
+  - id: no-cli-to-sql
+    deny: { from: [cli, cmd/tools/**], to: database/sql }
+    why: SQL belongs to the store.
+    instead: Call a store method.
+  - id: process-in-cli
+    only: { use: process, in: cli }
+    why: Side effects stay at the edge.
+    instead: Return a command for the CLI to run.
+exceptions:
+  - rule: graph
+    from: store
+    to: cli
+    why: Migration in progress.
+  - rule: unowned
+    from: scripts/**
+    expires: 2027-01-31
+    why: Scripts get a module next quarter.
+generated: ["**/*.pb.go"]
+tests: ["**/*_test.go", internal/testutil/**]
+exclude: [third_party/**]
+languages:
+  go:
+    enabled: true
+    modules:
+      include: [services/**]
+      exclude: [services/legacy]
+  typescript:
+    enabled: false
+  python:
+    enabled: auto
+    package: myapp
+  rust:
+    enabled: auto
+    manifest: Cargo.toml
+    features: [cli]
+    include_dev_deps: true
+  dotnet:
+    enabled: false
+    projects: [App.slnx]
+analyzers:
+  syntax:
+    enabled: true
+  cargo_modules:
+    enabled: false
+  roslyn:
+    enabled: true
+    timeout: 1m30s
+coverage:
+  enabled: true
+  sources:
+    - path: coverage.out
+      format: go-coverprofile
+      sidecar_path: coverage.out.sidecar.json
+      max_bytes: 1048576
+      max_facts: 5000
