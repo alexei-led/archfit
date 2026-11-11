@@ -9,6 +9,7 @@
 ### Changes
 
 - Build with Go 1.27.4 (CI, release image, `scip-go`). It fixes a `net/http` vulnerability, GO-2026-6859, which `govulncheck` reports for Go 1.27.3.
+- `policy can-import` answers `unconstrained` for a Go file under `testdata`, `vendor`, or a directory that starts with `.` or `_`, with the reason: the go command and the check never read it.
 - The starter `no-module-cycles` rule, and the commented `no-layer-back-edges` rule, carry a `rationale`. Since v3.3.0 a blocking rule without one is a `config lint --strict` error, so a config that `config init` had just written failed the lint.
 
 ### Upgrade

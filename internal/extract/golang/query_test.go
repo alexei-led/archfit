@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
@@ -102,6 +103,12 @@ func TestQueryEdgeDropsWhatTheExtractorDrops(t *testing.T) {
 		{name: "excluded target", from: queryImporter, target: "internal/gen"},
 		{name: "excluded importer", from: "internal/skip/s.go", target: queryTargetDir},
 		{name: "unloaded nested module", from: "nested/n/n.go", target: queryTargetDir},
+		{name: "testdata importer", from: "testdata/t/t.go", target: queryTargetDir},
+		{name: "vendor importer", from: "vendor/v/v.go", target: queryTargetDir},
+		{name: "underscore dir importer", from: "_hidden/h.go", target: queryTargetDir},
+		{name: "dot dir importer", from: ".hidden/h.go", target: queryTargetDir},
+		{name: "underscore file", from: "internal/a/_x.go", target: queryTargetDir},
+		{name: "testdata name inside a package path", from: "internal/testdatax/t.go", target: queryTargetDir, extracted: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -181,6 +188,40 @@ func TestQueryEdgeBuildEnvironment(t *testing.T) {
 			}
 			if notExtracted := errors.Is(err, evidenceports.ErrNotExtracted); notExtracted == tc.extracted || (tc.extracted && err != nil) {
 				t.Errorf("err = %v, want extracted = %v", err, tc.extracted)
+			}
+		})
+	}
+}
+
+// TestQueryEdgeCgoReasons pins the reason can-import shows for the cgo cases.
+func TestQueryEdgeCgoReasons(t *testing.T) {
+	const cgoTagged = "internal/a/tagged_cgo.go"
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		evidenceGoModFile: queryGoMod,
+		cgoTagged:         "//go:build cgo\n\npackage a\n\nimport \"C\"\n",
+		queryUsesC:        "package a\n\nimport \"C\"\n",
+	} {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name, from, cgo, want string
+	}{
+		{name: "cgo off names the C import", from: cgoTagged, cgo: "0", want: "imports \"C\" and cgo is off"},
+		{name: "unset with a cgo tag depends on cgo", from: cgoTagged, want: "depends on cgo, and CGO_ENABLED is not set"},
+		{name: "unset with only the C import names it", from: queryUsesC, want: "imports \"C\": whether the load reads it depends on whether cgo is on"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setGoEnv(t, tc.cgo)
+			_, err := QueryEdge(root, evidenceports.ExtractConfig{}, tc.from, queryTargetDir)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to contain %q", err, tc.want)
 			}
 		})
 	}
