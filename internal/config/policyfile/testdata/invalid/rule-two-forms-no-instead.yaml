@@ -1,0 +1,10 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+rules:
+  - id: two-forms
+    deny: { from: app, to: lib }
+    note: Also a note.
+    why: Both forms.

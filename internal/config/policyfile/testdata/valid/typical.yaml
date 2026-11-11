@@ -1,0 +1,37 @@
+version: 3
+owners: [alexei-led]
+gate: required              # default: advisory
+layers: [core, cmd]         # inner first
+modules:
+  pkg_chaos:
+    paths: [pkg/chaos/**]
+    public: [pkg/chaos, pkg/chaos/cliflags]
+    volatility: high
+    layer: core
+    depends_on: [pkg_container, pkg_util]
+  pkg_tc:
+    paths: [pkg/tc/**]
+    public: [pkg/tc]
+    volatility: high
+    layer: core
+  pkg_util:
+    paths: [pkg/util/**]
+    volatility: low
+    layer: core
+rules:
+  - id: no-chaos-to-runtime
+    deny: { from: pkg_chaos, to: pkg_runtime }
+    why: A direct import ties a chaos action to one runtime.
+    instead: Add a method to container.Client.
+  - id: docker-sdk-in-runtime
+    only: { use: github.com/docker/docker, in: [pkg_runtime] }
+    why: One adapter owns the Docker API.
+  - id: fan-out-through-runner
+    note: Chaos actions fan out through RunOnContainers.
+    why: One place checks the target limit before injection.
+exceptions:
+  - rule: duplication
+    from: pkg_tc
+    to: pkg_util
+    expires: 2026-11-19
+    why: "Request #431 is open."

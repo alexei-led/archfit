@@ -1,0 +1,6 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+layers: [core, cmd, core]

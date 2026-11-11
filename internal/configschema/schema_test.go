@@ -6,37 +6,37 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
-	reflectjsonschema "github.com/invopop/jsonschema"
+	"github.com/goccy/go-yaml"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
 	"github.com/alexei-led/archfit/v3/internal/configschema"
 	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
-	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
-// schemaFile is the committed schema path, relative to the repo root.
-// The test is run with cwd = internal/configschema, so ../../ reaches the root.
 const (
-	schemaFile            = "../../archfit.schema.json"
-	waiverRuleField       = "rule"
-	waiverReasonField     = "reason"
-	waiverApprovedByField = "approved_by"
-	waiverExpiresField    = "expires"
+	// schemaFile is the committed schema; tests run in internal/configschema.
+	schemaFile = "../../archfit.schema.json"
+	policyDir  = "../config/policyfile"
 )
 
-// TestSchemaNoDrift verifies that the committed archfit.schema.json is in sync
-// with what Generate produces from the current internal/config structs.
-//
-// To update the committed file: ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
-func TestSchemaNoDrift(t *testing.T) {
-	got, err := configschema.Generate("../config")
+func generate(t *testing.T) []byte {
+	t.Helper()
+	got, err := configschema.Generate(policyDir)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
+	return got
+}
 
+// TestSchemaNoDrift keeps the committed archfit.schema.json equal to Generate.
+//
+// To update the committed file: ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+func TestSchemaNoDrift(t *testing.T) {
+	got := generate(t)
 	if os.Getenv("ARCHFIT_UPDATE_SCHEMA") == "1" {
 		abs, _ := filepath.Abs(schemaFile)
 		if err := os.WriteFile(abs, got, 0o600); err != nil {
@@ -45,261 +45,224 @@ func TestSchemaNoDrift(t *testing.T) {
 		t.Logf("wrote %s (%d bytes)", abs, len(got))
 		return
 	}
-
 	want, err := os.ReadFile(schemaFile)
 	if err != nil {
 		t.Fatalf("read %s: %v — run `make schema` to generate it", schemaFile, err)
 	}
-
-	if string(got) != string(want) {
-		t.Errorf("schema drift — run `make schema` to regenerate archfit.schema.json\n"+
-			"got %d bytes, want %d bytes", len(got), len(want))
+	if !bytes.Equal(got, want) {
+		t.Errorf("schema drift — run `make schema` to regenerate archfit.schema.json\ngot %d bytes, want %d bytes", len(got), len(want))
 	}
 }
 
-func TestSchemaSuppliedCoverageContract(t *testing.T) {
-	got, err := configschema.Generate("../config")
+func compileSchema(t *testing.T) *jsonschema.Schema {
+	t.Helper()
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(generate(t)))
 	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-	var schema struct {
-		Defs map[string]struct {
-			Required   []string `json:"required"`
-			Properties map[string]struct {
-				Enum    []any `json:"enum"`
-				Default any   `json:"default"`
-			} `json:"properties"`
-		} `json:"$defs"`
-	}
-	if err := json.Unmarshal(got, &schema); err != nil {
-		t.Fatalf("unmarshal generated schema: %v", err)
-	}
-	coverageDef, ok := schema.Defs["CoverageConfig"]
-	if !ok {
-		t.Fatal("CoverageConfig definition missing from generated schema")
-	}
-	if got := coverageDef.Properties["enabled"].Default; got != false {
-		t.Errorf("CoverageConfig.enabled default = %#v, want false", got)
-	}
-	if got := coverageDef.Properties["gate"].Enum; !slices.Equal(got, []any{"off", "warn", "fail"}) {
-		t.Errorf("CoverageConfig.gate enum = %v", got)
-	}
-	coverageSourceDef, ok := schema.Defs["CoverageSource"]
-	if !ok {
-		t.Fatal("CoverageSource definition missing from generated schema")
-	}
-	if !slices.Equal(coverageSourceDef.Required, []string{"path"}) {
-		t.Errorf("CoverageSource.required = %v, want [path]", coverageSourceDef.Required)
-	}
-	wantFormats := []any{"auto", "go-coverprofile", "lcov", "coverage-py-json", "llvm-cov-json", "cobertura"}
-	if got := coverageSourceDef.Properties["format"].Enum; !slices.Equal(got, wantFormats) {
-		t.Errorf("CoverageSource.format enum = %v, want %v", got, wantFormats)
-	}
-}
-
-func TestSchemaSuppliedCoverageLimits(t *testing.T) {
-	got, err := configschema.Generate("../config")
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-	var schema struct {
-		Defs map[string]struct {
-			Properties map[string]struct {
-				Minimum json.Number `json:"minimum"`
-				Default any         `json:"default"`
-			} `json:"properties"`
-		} `json:"$defs"`
-	}
-	if err := json.Unmarshal(got, &schema); err != nil {
-		t.Fatalf("unmarshal generated schema: %v", err)
-	}
-	limits := schema.Defs["CoverageSource"].Properties
-	if maxBytes := limits["max_bytes"]; maxBytes.Minimum != "1" || maxBytes.Default != float64(suppliedcoverage.DefaultMaxBytes) {
-		t.Errorf("CoverageSource.max_bytes schema = %+v, want minimum 1/default %d", maxBytes, suppliedcoverage.DefaultMaxBytes)
-	}
-	if maxFacts := limits["max_facts"]; maxFacts.Minimum != "1" || maxFacts.Default != float64(suppliedcoverage.DefaultMaxFacts) {
-		t.Errorf("CoverageSource.max_facts schema = %+v, want minimum 1/default %d", maxFacts, suppliedcoverage.DefaultMaxFacts)
-	}
-}
-
-// TestSchemaPatchedDefinitions asserts the patchDefinitions semantics directly,
-// so a silently no-op'ed patch (typo'd definition name, library rename) fails
-// here instead of being "fixed" by regenerating the drift snapshot.
-func TestSchemaPatchedDefinitions(t *testing.T) {
-	got, err := configschema.Generate("../config")
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-	var schema struct {
-		Defs map[string]struct {
-			Required             []string                  `json:"required"`
-			AnyOf                []map[string]any          `json:"anyOf"`
-			PatternProperties    map[string]map[string]any `json:"patternProperties"`
-			AdditionalProperties any                       `json:"additionalProperties"`
-			Properties           map[string]struct {
-				Enum        []any       `json:"enum"`
-				Minimum     json.Number `json:"minimum"`
-				Default     any         `json:"default"`
-				MinLength   json.Number `json:"minLength"`
-				Format      string      `json:"format"`
-				Description string      `json:"description"`
-			} `json:"properties"`
-		} `json:"$defs"`
-		Properties map[string]struct {
-			Enum []any `json:"enum"`
-		} `json:"properties"`
-	}
-	if err := json.Unmarshal(got, &schema); err != nil {
-		t.Fatalf("unmarshal generated schema: %v", err)
-	}
-
-	if _, ok := schema.Defs["MetricEntry"]; !ok {
-		t.Fatal("MetricEntry definition missing from generated schema")
-	}
-	metricsDef, ok := schema.Defs["MetricsConfig"]
-	if !ok {
-		t.Fatal("MetricsConfig definition missing from generated schema")
-	}
-	threshold := metricsDef.Properties["function_loc_threshold"]
-	if threshold.Minimum != "1" || threshold.Default != float64(policy.DefaultFunctionLOCThreshold) {
-		t.Errorf("function_loc_threshold schema = %+v, want minimum 1 and default %d", threshold, policy.DefaultFunctionLOCThreshold)
-	}
-	ordinary, ok := metricsDef.PatternProperties[`^(?!function_loc_threshold$).+$`]
-	if !ok || ordinary["$ref"] != "#/$defs/MetricEntry" {
-		t.Errorf("MetricsConfig.patternProperties = %+v, want ordinary keys to reference MetricEntry", metricsDef.PatternProperties)
-	}
-	if metricsDef.AdditionalProperties != false {
-		t.Errorf("MetricsConfig.additionalProperties = %#v, want false", metricsDef.AdditionalProperties)
-	}
-
-	ruleDef, ok := schema.Defs["RuleDef"]
-	if !ok {
-		t.Fatal("RuleDef definition missing from generated schema")
-	}
-	if !slices.Equal(ruleDef.Required, []string{"id", "type"}) {
-		t.Errorf("RuleDef.required = %v, want [id type] (rule ids feed stable finding fingerprints)", ruleDef.Required)
-	}
-	ruleTypes := policy.RuleTypes()
-	wantRuleTypes := make([]any, 0, len(ruleTypes))
-	for _, rt := range ruleTypes {
-		wantRuleTypes = append(wantRuleTypes, rt)
-	}
-	if got := ruleDef.Properties["type"].Enum; !slices.Equal(got, wantRuleTypes) {
-		t.Errorf("RuleDef.type enum = %v, want policy.RuleTypes() %v", got, wantRuleTypes)
-	}
-
-	extDef, ok := schema.Defs["ExternalSystemDef"]
-	if !ok {
-		t.Fatal("ExternalSystemDef definition missing from generated schema")
-	}
-	if len(extDef.Required) != 1 || extDef.Required[0] != "targets" {
-		t.Errorf("ExternalSystemDef.required = %v, want [targets]", extDef.Required)
-	}
-	wantVolatilityEnum := []any{"high", "medium", "low", "frozen"}
-	if got := extDef.Properties["volatility"].Enum; !slices.Equal(got, wantVolatilityEnum) {
-		t.Errorf("ExternalSystemDef.volatility enum = %v, want %v", got, wantVolatilityEnum)
-	}
-
-	couplingDef, ok := schema.Defs["CouplingConfig"]
-	if !ok {
-		t.Fatal("CouplingConfig definition missing from generated schema")
-	}
-	wantDKEnum := []any{"score", "advisory"}
-	if got := couplingDef.Properties["duplicated_knowledge"].Enum; !slices.Equal(got, wantDKEnum) {
-		t.Errorf("CouplingConfig.duplicated_knowledge enum = %v, want %v", got, wantDKEnum)
-	}
-
-	gateDef, ok := schema.Defs["CouplingGateDef"]
-	if !ok {
-		t.Fatal("CouplingGateDef definition missing from generated schema")
-	}
-	if !slices.Equal(gateDef.Required, []string{"distributed_monolith"}) {
-		t.Errorf("CouplingGateDef.required = %v, want [distributed_monolith] — an empty gate block gates nothing",
-			gateDef.Required)
-	}
-
-	dmDef, ok := schema.Defs["DistributedMonolithDef"]
-	if !ok {
-		t.Fatal("DistributedMonolithDef definition missing from generated schema")
-	}
-	wantModeEnum := []any{"warn", "fail"}
-	if got := dmDef.Properties["mode"].Enum; !slices.Equal(got, wantModeEnum) {
-		t.Errorf("DistributedMonolithDef.mode enum = %v, want %v", got, wantModeEnum)
-	}
-	if dmDef.Properties["max_new_seams"].Minimum != "0" {
-		t.Errorf("DistributedMonolithDef.max_new_seams.minimum = %q, want %q (a tolerated count is never negative)",
-			dmDef.Properties["max_new_seams"].Minimum, "0")
-	}
-
-	if got := schema.Properties["version"].Enum; !slices.Equal(got, []any{float64(config.SchemaVersion)}) {
-		t.Errorf("version enum = %v, want [%d] — obsolete schemas must be rejected",
-			got, config.SchemaVersion)
-	}
-}
-
-func TestSchemaWaiverContract(t *testing.T) {
-	raw, err := configschema.Generate("../config")
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-	var reflected reflectjsonschema.Schema
-	if err := json.Unmarshal(raw, &reflected); err != nil {
-		t.Fatalf("decode reflected schema: %v", err)
-	}
-	waiverDef := reflected.Definitions["WaiverDef"]
-	if waiverDef == nil {
-		t.Fatal("WaiverDef definition missing from generated schema")
-	}
-	if !slices.Equal(waiverDef.Required, []string{waiverRuleField, waiverReasonField, waiverApprovedByField, waiverExpiresField}) {
-		t.Errorf("WaiverDef.required = %v, want metadata fields", waiverDef.Required)
-	}
-	expires, ok := waiverDef.Properties.Get(waiverExpiresField)
-	if !ok || expires.MinLength == nil || *expires.MinLength != 1 || expires.Format != "date" {
-		t.Errorf("WaiverDef.expires schema = %+v, want non-empty date", expires)
-	}
-	if slices.Contains(waiverDef.Required, "from") || slices.Contains(waiverDef.Required, "to") {
-		t.Errorf("WaiverDef scope fields must remain conditional: required = %v", waiverDef.Required)
-	}
-	ruleDef := reflected.Definitions["RuleDef"]
-	if ruleDef == nil {
-		t.Fatal("RuleDef definition missing from generated schema")
-	}
-	gate, ok := ruleDef.Properties.Get("gate")
-	if !ok || gate.Description != "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric" {
-		t.Errorf("RuleDef.gate description = %q", gate.Description)
-	}
-	waiverRaw, err := json.Marshal(waiverDef)
-	if err != nil {
-		t.Fatalf("marshal WaiverDef schema: %v", err)
-	}
-	waiverDoc, err := jsonschema.UnmarshalJSON(bytes.NewReader(waiverRaw))
-	if err != nil {
-		t.Fatalf("unmarshal WaiverDef schema: %v", err)
+		t.Fatalf("unmarshal schema: %v", err)
 	}
 	compiler := jsonschema.NewCompiler()
-	const resource = "waiver.schema.json"
-	if err := compiler.AddResource(resource, waiverDoc); err != nil {
+	compiler.AssertFormat()
+	const resource = "archfit.schema.json"
+	if err := compiler.AddResource(resource, doc); err != nil {
 		t.Fatalf("add schema resource: %v", err)
 	}
 	compiled, err := compiler.Compile(resource)
 	if err != nil {
 		t.Fatalf("compile schema: %v", err)
 	}
-	baseWaiver := map[string]any{
-		waiverRuleField: "map/uncovered_path", waiverReasonField: "module migration",
-		waiverApprovedByField: "@owner", waiverExpiresField: "2099-01-01",
+	return compiled
+}
+
+// schemaAccepts converts YAML to JSON as an editor does and validates it. A
+// document that does not convert, such as one with a duplicate key, is rejected.
+func schemaAccepts(compiled *jsonschema.Schema, data []byte) error {
+	converted, err := yaml.YAMLToJSON(data)
+	if err != nil {
+		return err
 	}
-	if err := compiled.Validate(baseWaiver); err != nil {
-		t.Fatalf("valid edge-less waiver rejected: %v", err)
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(converted))
+	if err != nil {
+		return err
 	}
-	for _, field := range []string{waiverRuleField, waiverReasonField, waiverApprovedByField, waiverExpiresField} {
-		candidate := map[string]any{
-			waiverRuleField: "map/uncovered_path", waiverReasonField: "module migration",
-			waiverApprovedByField: "@owner", waiverExpiresField: "2099-01-01",
+	return compiled.Validate(doc)
+}
+
+// TestSchemaAgreesWithDecoder holds the published schema and policyfile.Decode to
+// one contract: every policyfile fixture, and each edge case below, passes the
+// schema exactly when Decode accepts it.
+func TestSchemaAgreesWithDecoder(t *testing.T) {
+	compiled := compileSchema(t)
+	files, err := filepath.Glob(filepath.Join(policyDir, "testdata", "*", "*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) < 30 {
+		t.Fatalf("found %d policyfile fixtures, want the whole set", len(files))
+	}
+	cases := map[string][]byte{}
+	for _, file := range files {
+		data, err := os.ReadFile(filepath.Clean(file))
+		if err != nil {
+			t.Fatal(err)
 		}
-		delete(candidate, field)
-		if err := compiled.Validate(candidate); err == nil {
-			t.Errorf("waiver missing %q was accepted", field)
+		cases[filepath.Base(filepath.Dir(file))+"/"+filepath.Base(file)] = data
+	}
+	const head = "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+	for name, tail := range map[string]string{
+		"quoted min_balance": "builtin:\n  min_balance: \"7\"\n",
+		"number as why":      "rules:\n  - id: r\n    note: n\n    why: 12\n",
+		"null deny":          "rules:\n  - id: r\n    deny:\n    why: w\n    instead: i\n",
+		"only with one name": "rules:\n  - id: r\n    only: { use: process, in: app }\n    why: w\n",
+		"note with instead":  "rules:\n  - id: r\n    note: n\n    why: w\n    instead: i\n",
+		"empty depends_on":   "layers: []\ngenerated: []\n",
+		"enabled auto":       "analyzers:\n  roslyn:\n    enabled: auto\n",
+		"quoted true":        "analyzers:\n  roslyn:\n    enabled: \"true\"\n",
+		"coverage off":       "coverage:\n  enabled: false\n",
+		"max_facts zero":     "coverage:\n  sources:\n    - path: c.out\n      max_facts: 0\n",
+		"zero timeout":       "analyzers:\n  roslyn:\n    timeout: 0s\n",
+		"negative timeout":   "analyzers:\n  roslyn:\n    timeout: -5m\n",
+		"float min_balance":  "builtin:\n  min_balance: 7.0\n",
+		"null exclude":       "exclude:\n",
+		"date-like id":       "rules:\n  - id: 2026-11-19\n    note: n\n    why: w\n",
+		"empty note on deny": "rules:\n  - id: r\n    deny: { from: app, to: lib }\n    note: \"\"\n    why: w\n    instead: i\n",
+		"empty instead":      "rules:\n  - id: r\n    only: { use: process, in: app }\n    why: w\n    instead: \"\"\n",
+		"deny and only":      "rules:\n  - id: r\n    deny: { from: app, to: lib }\n    only: { use: process, in: app }\n    why: w\n",
+		"empty builtin mode": "builtin:\n  graph: \"\"\n",
+		"empty volatility":   "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    volatility: \"\"\n",
+		"empty layer":        "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    layer: \"\"\n",
+		"empty path":         "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [\"\"]\n",
+		"empty owner":        "version: 3\nowners: [\"\"]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+		"empty glob":         "generated: [\"\"]\n",
+		"empty format":       "coverage:\n  sources:\n    - path: c.out\n      format: \"\"\n",
+		"empty timeout":      "analyzers:\n  roslyn:\n    timeout: \"\"\n",
+		"empty enabled":      "languages:\n  go:\n    enabled: \"\"\n",
+		"version float":      "version: 3.0\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+		"version 2.0":        "version: 2.0\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+	} {
+		doc := tail
+		if !strings.HasPrefix(tail, "version:") {
+			doc = head + tail
 		}
+		cases["edge/"+name] = []byte(doc)
+	}
+
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, decodeErr := policyfile.Decode(data)
+			schemaErr := schemaAccepts(compiled, data)
+			if (decodeErr == nil) != (schemaErr == nil) {
+				t.Errorf("decoder and schema disagree:\nDecode: %v\nschema: %v", decodeErr, schemaErr)
+			}
+			if strings.HasPrefix(name, "valid/") && decodeErr != nil {
+				t.Errorf("valid fixture rejected: %v", decodeErr)
+			}
+			if strings.HasPrefix(name, "invalid/") && decodeErr == nil {
+				t.Error("invalid fixture accepted")
+			}
+		})
+	}
+}
+
+type schemaDoc struct {
+	Properties map[string]property `json:"properties"`
+	Defs       map[string]struct {
+		Properties map[string]property `json:"properties"`
+	} `json:"$defs"`
+}
+
+type property struct {
+	Description string `json:"description"`
+	Default     any    `json:"default"`
+	Enum        []any  `json:"enum"`
+	Minimum     any    `json:"minimum"`
+}
+
+func decodeSchema(t *testing.T) schemaDoc {
+	t.Helper()
+	var doc schemaDoc
+	if err := json.Unmarshal(generate(t), &doc); err != nil {
+		t.Fatalf("unmarshal schema: %v", err)
+	}
+	return doc
+}
+
+// TestSchemaDescriptionsCarryTheDefaults keeps the defaults table of design 6.1
+// in the published descriptions and default keywords.
+func TestSchemaDescriptionsCarryTheDefaults(t *testing.T) {
+	doc := decodeSchema(t)
+	ask, deny := string(policyfile.ModeAsk), string(policyfile.ModeDeny)
+	module := doc.Defs["Module"].Properties
+	builtin := doc.Defs["Builtin"].Properties
+	tests := []struct {
+		key  string
+		prop property
+		want string
+	}{
+		{"depends_on", module["depends_on"], "Absent: the module may depend on no other module."},
+		{"public", module["public"], "Absent: the whole module is public."},
+		{"volatility", module["volatility"], "Absent: taken from subdomain (core is high; supporting and generic are low), otherwise high."},
+		{"subdomain", module["subdomain"], "Absent: no business role is recorded."},
+		{"layer", module["layer"], "Absent: the module has no layer."},
+		{"layers", doc.Properties["layers"], "Absent: no layer rule."},
+		{"gate", doc.Properties["gate"], "Absent: advisory, so the check reports and does not block."},
+		{"rules", doc.Properties["rules"], "Absent: none; the built-in rules still apply."},
+		{"exceptions", doc.Properties["exceptions"], "Absent: none."},
+		{"generated", doc.Properties["generated"], "only listed paths are out; a file name that looks generated is not enough."},
+		{"tests", doc.Properties["tests"], "only listed paths are out."},
+	}
+	for _, tt := range tests {
+		if !strings.Contains(tt.prop.Description, tt.want) {
+			t.Errorf("%s description = %q, want it to contain %q", tt.key, tt.prop.Description, tt.want)
+		}
+	}
+
+	for key, want := range map[string]any{
+		"graph": ask, "coupling": deny, "duplication": ask,
+		"cycle": deny, "layers": deny, "unowned": deny, "min_balance": float64(7),
+	} {
+		if got := builtin[key].Default; got != want {
+			t.Errorf("builtin.%s default = %#v, want %#v", key, got, want)
+		}
+	}
+	if got := doc.Properties["gate"].Default; got != string(policyfile.GateAdvisory) {
+		t.Errorf("gate default = %#v, want advisory", got)
+	}
+}
+
+// TestSchemaEveryPropertyHasADescription fails when the doc comments stop
+// reaching the schema, for example after the policyfile package moves.
+func TestSchemaEveryPropertyHasADescription(t *testing.T) {
+	doc := decodeSchema(t)
+	for key, prop := range doc.Properties {
+		if prop.Description == "" {
+			t.Errorf("property %s has no description", key)
+		}
+	}
+	for name, def := range doc.Defs {
+		for key, prop := range def.Properties {
+			if prop.Description == "" {
+				t.Errorf("$defs.%s.%s has no description", name, key)
+			}
+		}
+	}
+}
+
+// TestSchemaCoverageMatchesTheParser keeps the coverage keys equal to what the
+// supplied-coverage parser accepts and defaults to.
+func TestSchemaCoverageMatchesTheParser(t *testing.T) {
+	source := decodeSchema(t).Defs["CoverageSource"].Properties
+	formats := suppliedcoverage.SupportedFormats()
+	want := make([]any, 0, len(formats))
+	for _, format := range formats {
+		want = append(want, format)
+	}
+	if got := source["format"].Enum; !slices.Equal(got, want) {
+		t.Errorf("CoverageSource.format enum = %v, want %v", got, want)
+	}
+	if got := source["max_bytes"]; got.Minimum != float64(1) || got.Default != float64(suppliedcoverage.DefaultMaxBytes) {
+		t.Errorf("CoverageSource.max_bytes = %+v, want minimum 1, default %d", got, suppliedcoverage.DefaultMaxBytes)
+	}
+	if got := source["max_facts"]; got.Minimum != float64(1) || got.Default != float64(suppliedcoverage.DefaultMaxFacts) {
+		t.Errorf("CoverageSource.max_facts = %+v, want minimum 1, default %d", got, suppliedcoverage.DefaultMaxFacts)
 	}
 }
