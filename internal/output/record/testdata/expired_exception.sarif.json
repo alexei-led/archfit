@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "archfit",
+          "version": "4.0.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "exception",
+          "level": "error",
+          "message": {
+            "text": "duplication pkg_tc -> pkg_util expired on 2026-11-19\nwhy: an exception with a date fails every change after that date\nnext: wait for an owner: #431"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".archfit.yaml"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "archfitKey/v1": "exception duplication pkg_tc pkg_util"
+          }
+        }
+      ]
+    }
+  ]
+}
