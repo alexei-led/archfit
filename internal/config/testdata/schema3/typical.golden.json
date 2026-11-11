@@ -1,0 +1,208 @@
+{
+  "Version": 3,
+  "TargetBranch": "",
+  "Exclude": null,
+  "Languages": {
+    "Go": {
+      "Enabled": "auto",
+      "Gate": "",
+      "Modules": {
+        "Include": null,
+        "Exclude": null
+      }
+    },
+    "TypeScript": {
+      "Enabled": "auto",
+      "Gate": ""
+    },
+    "Python": {
+      "Enabled": "auto",
+      "Gate": "",
+      "Package": ""
+    },
+    "Rust": {
+      "Enabled": "auto",
+      "Gate": "",
+      "Manifest": "",
+      "Features": null,
+      "IncludeDevDeps": false
+    },
+    "DotNet": {
+      "Enabled": "auto",
+      "Gate": "",
+      "Projects": null
+    }
+  },
+  "Analyzers": {
+    "Syntax": {
+      "Enabled": "auto",
+      "Gate": ""
+    },
+    "Scip": {
+      "Enabled": "off",
+      "Gate": "",
+      "Timeout": ""
+    },
+    "Clones": {
+      "Enabled": "off",
+      "Gate": "",
+      "Timeout": ""
+    },
+    "CargoModules": {
+      "Enabled": "auto",
+      "Gate": ""
+    },
+    "Roslyn": {
+      "Enabled": "auto",
+      "Gate": "",
+      "Timeout": ""
+    }
+  },
+  "Coverage": {
+    "Enabled": false,
+    "Gate": "",
+    "Sources": null
+  },
+  "AI": {
+    "Provider": "",
+    "Model": "",
+    "BaseURL": "",
+    "APIKeyEnv": "",
+    "Effort": "",
+    "MaxTokens": 0,
+    "Timeout": ""
+  },
+  "Coupling": {
+    "MinSeverity": "medium",
+    "DuplicatedKnowledge": "score",
+    "VolatilityCascade": false,
+    "Gate": null
+  },
+  "Layers": [
+    "core",
+    "cmd"
+  ],
+  "Modules": {
+    "pkg_chaos": {
+      "Paths": [
+        "pkg/chaos/**"
+      ],
+      "Public": [
+        "pkg/chaos",
+        "pkg/chaos/cliflags"
+      ],
+      "Internal": null,
+      "Layer": "core",
+      "Subdomain": "",
+      "Volatility": "high",
+      "Owner": "",
+      "DeployUnit": "",
+      "Role": "",
+      "ReviewedAt": "0001-01-01T00:00:00Z",
+      "ReviewedBy": "",
+      "DependsOn": [
+        "pkg_container",
+        "pkg_util"
+      ],
+      "VisibleTo": null
+    },
+    "pkg_container": {
+      "Paths": [
+        "pkg/container/**"
+      ],
+      "Public": [
+        "pkg/container/**"
+      ],
+      "Internal": null,
+      "Layer": "core",
+      "Subdomain": "",
+      "Volatility": "high",
+      "Owner": "",
+      "DeployUnit": "",
+      "Role": "",
+      "ReviewedAt": "0001-01-01T00:00:00Z",
+      "ReviewedBy": "",
+      "DependsOn": [],
+      "VisibleTo": null
+    },
+    "pkg_runtime": {
+      "Paths": [
+        "pkg/runtime/**"
+      ],
+      "Public": [
+        "pkg/runtime/**"
+      ],
+      "Internal": null,
+      "Layer": "cmd",
+      "Subdomain": "generic",
+      "Volatility": "low",
+      "Owner": "",
+      "DeployUnit": "",
+      "Role": "",
+      "ReviewedAt": "0001-01-01T00:00:00Z",
+      "ReviewedBy": "",
+      "DependsOn": [],
+      "VisibleTo": null
+    },
+    "pkg_tc": {
+      "Paths": [
+        "pkg/tc/**"
+      ],
+      "Public": [
+        "pkg/tc"
+      ],
+      "Internal": null,
+      "Layer": "core",
+      "Subdomain": "",
+      "Volatility": "high",
+      "Owner": "",
+      "DeployUnit": "",
+      "Role": "",
+      "ReviewedAt": "0001-01-01T00:00:00Z",
+      "ReviewedBy": "",
+      "DependsOn": [],
+      "VisibleTo": null
+    },
+    "pkg_util": {
+      "Paths": [
+        "pkg/util/**"
+      ],
+      "Public": [
+        "pkg/util/**"
+      ],
+      "Internal": null,
+      "Layer": "core",
+      "Subdomain": "",
+      "Volatility": "low",
+      "Owner": "",
+      "DeployUnit": "",
+      "Role": "",
+      "ReviewedAt": "0001-01-01T00:00:00Z",
+      "ReviewedBy": "",
+      "DependsOn": [],
+      "VisibleTo": null
+    }
+  },
+  "ExternalSystems": null,
+  "Rules": null,
+  "Waivers": null,
+  "Metrics": {
+    "FunctionLOCThreshold": null,
+    "Entries": null
+  },
+  "ModuleReview": {
+    "StaleAfter": "",
+    "Gate": "",
+    "ChangeGate": ""
+  },
+  "FileClass": {
+    "GeneratedGlobs": null,
+    "TestGlobs": null,
+    "MockFrameworks": null
+  },
+  "Outputs": {
+    "JSON": false,
+    "Markdown": false,
+    "SARIF": false
+  }
+}
