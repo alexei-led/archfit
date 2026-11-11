@@ -102,6 +102,12 @@ func TestQueryEdgeDropsWhatTheExtractorDrops(t *testing.T) {
 		{name: "excluded target", from: queryImporter, target: "internal/gen"},
 		{name: "excluded importer", from: "internal/skip/s.go", target: queryTargetDir},
 		{name: "unloaded nested module", from: "nested/n/n.go", target: queryTargetDir},
+		{name: "testdata importer", from: "testdata/t/t.go", target: queryTargetDir},
+		{name: "vendor importer", from: "vendor/v/v.go", target: queryTargetDir},
+		{name: "underscore dir importer", from: "_hidden/h.go", target: queryTargetDir},
+		{name: "dot dir importer", from: ".hidden/h.go", target: queryTargetDir},
+		{name: "underscore file", from: "internal/a/_x.go", target: queryTargetDir},
+		{name: "testdata name inside a package path", from: "internal/testdatax/t.go", target: queryTargetDir, extracted: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

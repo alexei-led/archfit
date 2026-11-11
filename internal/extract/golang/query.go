@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -23,14 +21,18 @@ import (
 // a file node to a ScanRoot-relative package node, with the same edge kind and
 // the loaded members — so the rule pass keys its findings as it does on the
 // extracted edge. target is a ScanRoot-relative package dir or an import path;
-// an import path under a member module is stripped to its dir, any other is
-// kept (an external package).
+// an import path under a member module is placed on its dir, any other is
+// kept as given (an external package, or a dir).
 //
-// It wraps evidenceports.ErrNotExtracted where the extractor emits no edge: a
-// _test.go file (the load does not include tests), a file the host build
-// context excludes, a file of no loaded member, or an excluded file or target.
-// It reads go.mod files and the importing file's build constraints; it runs no
-// Go tool.
+// It reads files and places the target with the decisions ParseImports makes
+// (fileReason, buildSelects, placeImport), so it answers for the files the
+// check reads. It wraps evidenceports.ErrNotExtracted where the extractor
+// emits no edge: a file the go command never reads (a _test.go file, a file
+// under testdata, vendor or a "." or "_" dir, a file of no loaded member), a
+// file the build context excludes, or an excluded file or target. It wraps
+// evidenceports.ErrNotDecidable when whether the load reads from depends on
+// cgo and CGO_ENABLED is not set. It reads go.mod files and the importing
+// file's build constraints; it runs no Go tool.
 func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target string) (graph.Facts, error) {
 	if !strings.HasSuffix(from, ".go") {
 		return graph.Facts{}, fmt.Errorf("go: %q is not a .go file", from)
@@ -39,18 +41,23 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 	if err != nil {
 		return graph.Facts{}, err
 	}
-	to := stripModulePath(entries, strings.TrimSuffix(target, "/"))
-	if reason := notExtracted(scanRoot, cfg, entries, from, to); reason != "" {
+	target = strings.TrimSuffix(target, "/")
+	to, firstParty := placeImport(entries, target)
+	if !firstParty {
+		to = target
+	}
+	reason := fileReason(scanRoot, cfg.Exclusions, entries, from)
+	if reason == "" && excluded(cfg.Exclusions, to) {
+		reason = to + " matches an exclude: glob"
+	}
+	if reason != "" {
 		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
 	}
-	match, decided := buildMatches(scanRoot, cfg.BuildFlags, from)
-	switch {
-	case decided && !match:
-		return graph.Facts{}, fmt.Errorf("go: %s is excluded by the build constraints: %w", from, evidenceports.ErrNotExtracted)
-	case !decided:
-		return graph.Facts{}, fmt.Errorf("go: whether the load reads %s depends on cgo, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
-	case goEnv("CGO_ENABLED") == "" && importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
-		return graph.Facts{}, fmt.Errorf("go: %s imports \"C\": whether the load reads it depends on whether cgo is on, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
+	switch sel, reason := buildSelects(scanRoot, cfg.BuildFlags, from, importsC(filepath.Join(scanRoot, filepath.FromSlash(from)))); sel {
+	case selectNo:
+		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
+	case selectUndecided:
+		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotDecidable)
 	}
 	modules := make([]graph.GoModule, 0, len(entries))
 	for _, m := range entries {
@@ -75,24 +82,6 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 	}, nil
 }
 
-// notExtracted names why the extractor would emit no edge from from to the
-// stripped target to, or "" when it would.
-func notExtracted(scanRoot string, cfg evidenceports.ExtractConfig, entries []modEntry, from, to string) string {
-	switch {
-	case strings.HasSuffix(from, "_test.go"):
-		return from + " is a test file, which the load does not read"
-	case excluded(cfg.Exclusions, from):
-		return from + " matches an exclude: glob"
-	case excluded(cfg.Exclusions, to):
-		return to + " matches an exclude: glob"
-	case !inLoadedMember(scanRoot, entries, from):
-		return from + " belongs to no loaded Go module"
-	case goEnv("CGO_ENABLED") == "0" && importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
-		return from + " imports \"C\" and cgo is off, so the load ignores it"
-	}
-	return ""
-}
-
 // excluded reports whether an exclusion glob matches p. It is the extractor's
 // one exclusion test, for files and stripped import paths alike.
 func excluded(exclusions []string, p string) bool {
@@ -102,61 +91,6 @@ func excluded(exclusions []string, p string) bool {
 		}
 	}
 	return false
-}
-
-// inLoadedMember reports whether the nearest go.mod above from is a loaded
-// member: a file of a nested module the run does not load yields no edge.
-func inLoadedMember(scanRoot string, entries []modEntry, from string) bool {
-	for dir := path.Dir(from); ; dir = path.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(scanRoot, filepath.FromSlash(dir), "go.mod")); err == nil {
-			for _, m := range entries {
-				if m.relDir == dir {
-					return true
-				}
-			}
-			return false
-		}
-		if dir == "." || dir == "/" {
-			return false
-		}
-	}
-}
-
-// buildMatches reports whether the go toolchain the run starts includes from,
-// with the context toolchainContext gives the extractor, reading the go env
-// file too (go env -w), and the CGO_ENABLED it inherits for a cgo build tag. With CGO_ENABLED
-// unset, cgo depends on a C compiler this binary cannot see: when the two
-// settings disagree about from, the answer is undecided. A file that does not
-// exist yet is judged by its name.
-func buildMatches(scanRoot string, buildFlags []string, from string) (match, decided bool) {
-	cgo := []bool{true, false}
-	switch goEnv("CGO_ENABLED") {
-	case "1":
-		cgo = []bool{true}
-	case "0":
-		cgo = []bool{false}
-	}
-	dir := filepath.Join(scanRoot, filepath.FromSlash(path.Dir(from)))
-	results := make([]bool, 0, len(cgo))
-	for _, enabled := range cgo {
-		ctxt := toolchainContext(goEnv, buildFlags)
-		ctxt.CgoEnabled = enabled
-		ctxt.OpenFile = func(p string) (io.ReadCloser, error) {
-			f, err := os.Open(p) // #nosec G304 -- the queried source file under the scan root
-			if os.IsNotExist(err) {
-				return io.NopCloser(strings.NewReader("package p\n")), nil
-			}
-			return f, err
-		}
-		ok, err := ctxt.MatchFile(dir, path.Base(from))
-		results = append(results, err != nil || ok)
-	}
-	for _, r := range results[1:] {
-		if r != results[0] {
-			return false, false
-		}
-	}
-	return results[0], true
 }
 
 // importsC reports whether the Go file at p imports "C". A file that does not
