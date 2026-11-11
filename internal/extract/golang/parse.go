@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 )
@@ -54,8 +55,9 @@ type FileUnknown struct {
 type ParsedImports struct {
 	// Sources are the files the go command reads, relative to the scan root.
 	Sources []string
-	// Imports are the import specs of Sources. An import of an excluded
-	// package dir is left out, as the typed loader leaves it out.
+	// Imports are the import specs of Sources. An import whose package dir,
+	// or external import path, an exclusion matches is left out, as the typed
+	// loader leaves it out.
 	Imports []FileImport
 	Unknown []FileUnknown
 }
@@ -96,7 +98,8 @@ func ParseImports(scanRoot string, cfg evidenceports.ExtractConfig) (ParsedImpor
 			switch {
 			case sel == selectNo:
 			case parseErr != nil:
-				out.Unknown = append(out.Unknown, FileUnknown{File: rel, Reason: "does not parse: " + parseErr.Error()})
+				reason := strings.ReplaceAll(parseErr.Error(), name, rel)
+				out.Unknown = append(out.Unknown, FileUnknown{File: rel, Reason: "does not parse: " + reason})
 			case sel == selectUndecided:
 				out.Unknown = append(out.Unknown, FileUnknown{File: rel, Reason: reason})
 			default:
@@ -124,11 +127,14 @@ func placeImports(members []modEntry, exclusions, sources []string, specs []File
 	placed := make([]FileImport, 0, len(specs))
 	for _, spec := range specs {
 		dir, firstParty := placeImport(members, spec.Path)
+		if !firstParty {
+			dir = spec.Path
+		}
 		switch {
-		case !firstParty:
-			spec.Kind = ImportExternal
 		case excluded(exclusions, dir):
 			continue
+		case !firstParty:
+			spec.Kind = ImportExternal
 		case packages[dir]:
 			spec.Package, spec.Kind = dir, ImportFirstParty
 		default:

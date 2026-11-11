@@ -15,6 +15,6 @@
 //
 // Without a Go tool the parser path cannot see whether cgo is on when
 // CGO_ENABLED is unset, so a file that only one cgo setting reads is Unknown,
-// never guessed. The check counts an unknown only where the change adds it, so
-// a cgo file present on both base and head does not block a change.
+// never guessed. How an unknown affects the result is the check's decision,
+// not this package's.
 package golang

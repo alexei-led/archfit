@@ -138,7 +138,7 @@ func goEnv(key string) string {
 }
 
 // memberModules reads the module path of every member the extractor loads,
-// with its ScanRoot-relative dir, sorted for stripModulePath.
+// with its ScanRoot-relative dir, sorted by sortModEntries for placeImport.
 func memberModules(scanRoot string, cfg evidenceports.ExtractConfig) ([]modEntry, error) {
 	members, err := AnalysableMembers(scanRoot, cfg.Exclusions, cfg.GoModuleInclude, cfg.GoModuleExclude)
 	if err != nil {
