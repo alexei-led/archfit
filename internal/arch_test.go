@@ -180,18 +180,43 @@ func TestCLIImportsNoDomainImplementation(t *testing.T) {
 // application_no_concrete_adapters gate: the use-case layer states its needs as
 // ports and lets the composition root satisfy them. A process, filesystem,
 // persistence, or rendering adapter here would pin one implementation into the
-// lifecycle.
+// lifecycle. Each entry covers its subpackages: internal/output/record is a
+// renderer as much as internal/output is.
 func TestApplicationImportsNoConcreteAdapters(t *testing.T) {
 	for _, pkg := range []string{
 		"internal/evidence/acquisition", "internal/extract", "internal/toolrun", "internal/output",
 		"internal/factcache", "internal/history", "internal/ownership", "internal/baseline",
 		"internal/labels/labelsio", "internal/llm", "internal/config",
 	} {
-		for _, file := range productionImportFiles(t, modulePrefix+pkg) {
+		for _, file := range productionImportFilesUnder(t, modulePrefix+pkg) {
 			if strings.HasPrefix(file, "internal/application/") {
 				t.Errorf("%s imports the concrete adapter %s: application owns ports, cmd owns wiring", file, pkg)
 			}
 		}
+	}
+}
+
+// TestAdapterMatchCoversSubpackages is the executable fixture behind
+// TestApplicationImportsNoConcreteAdapters: it proves the match reaches
+// subpackages, instead of passing because no application file imports one.
+func TestAdapterMatchCoversSubpackages(t *testing.T) {
+	const output = modulePrefix + "internal/output"
+	for _, tc := range []struct {
+		imp  string
+		want bool
+	}{
+		{imp: output, want: true},
+		{imp: output + "/record", want: true},
+		{imp: modulePrefix + "internal/evidence/acquisition/checkfacts", want: false},
+		{imp: output + "s", want: false},
+		{imp: modulePrefix + "internal", want: false},
+	} {
+		if got := isPackageOrBelow(tc.imp, output); got != tc.want {
+			t.Errorf("isPackageOrBelow(%q, %q) = %v, want %v", tc.imp, output, got, tc.want)
+		}
+	}
+	if !isPackageOrBelow(modulePrefix+"internal/evidence/acquisition/checkfacts", modulePrefix+"internal/evidence/acquisition") {
+		t.Error("a subpackage of internal/evidence/acquisition must match it")
 	}
 }
 
@@ -436,7 +461,27 @@ func TestDomainPackagesDoNotImportReportDTOs(t *testing.T) {
 	}
 }
 
+// productionImportFiles lists the production files that import importPath.
 func productionImportFiles(t *testing.T, importPath string) []string {
+	t.Helper()
+	return productionImportFilesMatching(t, func(imp string) bool { return imp == importPath })
+}
+
+// productionImportFilesUnder lists the production files that import pkgPath
+// or one of its subpackages.
+func productionImportFilesUnder(t *testing.T, pkgPath string) []string {
+	t.Helper()
+	return productionImportFilesMatching(t, func(imp string) bool { return isPackageOrBelow(imp, pkgPath) })
+}
+
+// isPackageOrBelow reports whether imp is pkgPath or a package below it. A
+// sibling that only shares the prefix, such as internal/outputs for
+// internal/output, is neither.
+func isPackageOrBelow(imp, pkgPath string) bool {
+	return imp == pkgPath || strings.HasPrefix(imp, pkgPath+"/")
+}
+
+func productionImportFilesMatching(t *testing.T, match func(imp string) bool) []string {
 	t.Helper()
 
 	var files []string
@@ -463,7 +508,7 @@ func productionImportFiles(t *testing.T, importPath string) []string {
 			return err
 		}
 		for _, imp := range file.Imports {
-			if strings.Trim(imp.Path.Value, "\"") == importPath {
+			if match(strings.Trim(imp.Path.Value, "\"")) {
 				files = append(files, filepath.ToSlash(strings.TrimPrefix(path, "../")))
 				break
 			}
@@ -884,8 +929,9 @@ func isReportAdapter(pkgPath string) bool {
 
 // reportAdapterForbids reports whether a report adapter importing imp would
 // breach the report boundary. Adapters render a finished contract: they may
-// reach the report DTOs and the rendering port, the shared brief view model
-// (itself a report adapter held to this rule), plus anything outside internal/
+// reach the report DTOs, the result contract of a check, the rendering port,
+// the shared brief view model (itself a report adapter held to this rule),
+// plus anything outside internal/
 // (stdlib and vendored formatters), and nothing else. Reaching into Assessment
 // or Relationship internals would let a renderer re-derive a fact instead of
 // presenting the one the pipeline decided; one format importing another would
@@ -895,7 +941,8 @@ func reportAdapterForbids(imp string) bool {
 		return false
 	}
 	switch imp {
-	case modulePrefix + "internal/model/report", modulePrefix + "internal/report/ports", modulePrefix + "internal/output/brief":
+	case modulePrefix + "internal/model/report", modulePrefix + "internal/model/result",
+		modulePrefix + "internal/report/ports", modulePrefix + "internal/output/brief":
 		return false
 	}
 	return true
@@ -914,6 +961,7 @@ func TestReportBoundaryRuleFiresOnDomainImports(t *testing.T) {
 		forbid  bool
 	}{
 		{name: "renderer reads report DTOs", pkg: modulePrefix + "internal/output/jsonout", imp: modulePrefix + "internal/model/report", adapter: true},
+		{name: "renderer reads the result contract", pkg: modulePrefix + "internal/output/record", imp: modulePrefix + "internal/model/result", adapter: true},
 		{name: "renderer reads the rendering port", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/report/ports", adapter: true},
 		{name: "renderer reads stdlib", pkg: modulePrefix + "internal/output/sarif", imp: "encoding/json", adapter: true},
 		{name: "renderer reads the shared brief", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/output/brief", adapter: true},

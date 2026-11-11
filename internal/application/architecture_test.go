@@ -81,7 +81,10 @@ func TestApplicationStageContractsHaveNoBroadTypes(t *testing.T) {
 func TestApplicationNoConcreteAdapters(t *testing.T) {
 	forbidden := []string{
 		"github.com/alexei-led/archfit/v3/internal/analysispipeline",
+		"github.com/alexei-led/archfit/v3/internal/evidence/acquisition",
 		"github.com/alexei-led/archfit/v3/internal/extract/",
+		"github.com/alexei-led/archfit/v3/internal/output",
+		"github.com/alexei-led/archfit/v3/internal/toolrun",
 		"github.com/alexei-led/archfit/v3/internal/factcache",
 		"github.com/alexei-led/archfit/v3/internal/history/",
 		"github.com/alexei-led/archfit/v3/internal/ownership",
