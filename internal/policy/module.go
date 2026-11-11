@@ -52,8 +52,6 @@ func ValidRole(r Role) bool {
 }
 
 // ModuleDef defines a module's path ownership and metadata.
-// Name kept as ModuleDef (not Def): it is the JSON-schema definition name
-// in archfit.schema.json, an external contract.
 type ModuleDef struct {
 	Paths      []string  `yaml:"paths"`
 	Public     []string  `yaml:"public"`

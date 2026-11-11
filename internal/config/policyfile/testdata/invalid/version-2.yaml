@@ -1,0 +1,6 @@
+version: 2
+modules:
+  app:
+    paths: [cmd/**]
+    owner: alexei-led
+waivers: []
