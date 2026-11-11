@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
@@ -133,14 +134,21 @@ func TestAddedLinesIgnoresDiffConfig(t *testing.T) {
 	gitIn(t, dir, "init", "-q")
 	writeIn(t, dir, "hunks.go", "a\n\nc\nd\ne\n")
 	writeIn(t, dir, "old.go", "1\n2\n3\n4\n")
+	writeIn(t, dir, "r1.go", "r1\n2\n3\n4\n5\n")
+	writeIn(t, dir, "r2.go", "r2\n2\n3\n4\n5\n")
 	gitIn(t, dir, "add", "-A")
 	gitIn(t, dir, "commit", "-qm", "base")
 	base := gitOut(t, dir, "rev-parse", "HEAD")
 	writeIn(t, dir, "hunks.go", "A\n\nc\nD\ne\n")
 	gitIn(t, dir, "mv", "old.go", "new.go")
 	writeIn(t, dir, "é.go", "x\n")
+	// Edited renames need the exhaustive rename search that diff.renameLimit caps.
+	gitIn(t, dir, "mv", "r1.go", "r1b.go")
+	writeIn(t, dir, "r1b.go", "r1\n2\n3\n4\nfive\n")
+	gitIn(t, dir, "mv", "r2.go", "r2b.go")
+	writeIn(t, dir, "r2b.go", "r2\n2\n3\n4\nfive\n")
 
-	want := evidence.AddedLines{"hunks.go": {1, 4}, "é.go": {1}}
+	want := evidence.AddedLines{"hunks.go": {1, 4}, "é.go": {1}, "r1b.go": {5}, "r2b.go": {5}}
 	runner := toolrun.New()
 	plain, err := gitpkg.AddedLines(context.Background(), dir, base, runner)
 	if err != nil || !maps.EqualFunc(plain, want, slices.Equal) {
@@ -149,7 +157,7 @@ func TestAddedLinesIgnoresDiffConfig(t *testing.T) {
 	for _, setting := range []string{
 		"diff.interHunkContext=5", "diff.suppressBlankEmpty=true", "diff.noprefix=true",
 		"diff.mnemonicPrefix=true", "diff.renames=false", "diff.algorithm=histogram",
-		"diff.external=false", "color.ui=always", "core.quotePath=false",
+		"diff.external=false", "color.ui=always", "core.quotePath=false", "diff.renameLimit=1",
 	} {
 		key, value, _ := strings.Cut(setting, "=")
 		gitIn(t, dir, "config", key, value)
@@ -157,6 +165,40 @@ func TestAddedLinesIgnoresDiffConfig(t *testing.T) {
 	got, err := gitpkg.AddedLines(context.Background(), dir, base, runner)
 	if err != nil || !maps.EqualFunc(got, want, slices.Equal) {
 		t.Errorf("AddedLines with diff config = %v, %v; want %v", got, err, want)
+	}
+}
+
+// TestAddedLinesSeesARacilyCleanRewrite: a file rewritten at the same size
+// and modification time as its index entry matches the entry's stat data; git
+// re-reads it only because the entry is not older than the index ("racily
+// clean"). The private index copy keeps the index's time, so the rewrite is
+// seen. The times are pinned, and ctime is left out, so the case is exact.
+func TestAddedLinesSeesARacilyCleanRewrite(t *testing.T) {
+	requireGit(t)
+	t.Parallel()
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q")
+	gitIn(t, dir, "config", "core.trustctime", "false")
+	stamp := time.Now().Add(-time.Hour).Truncate(time.Second)
+	file := filepath.Join(dir, "f.go")
+	writeIn(t, dir, "f.go", "aaaa\n")
+	setTime(t, file, stamp)
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-qm", "base")
+	writeIn(t, dir, "f.go", "bbbb\n") // same size, same inode
+	setTime(t, file, stamp)
+	setTime(t, filepath.Join(dir, ".git", "index"), stamp)
+
+	got, err := gitpkg.AddedLines(context.Background(), dir, "HEAD", toolrun.New())
+	if want := (evidence.AddedLines{"f.go": {1}}); err != nil || !maps.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("AddedLines = %v, %v; want %v", got, err, want)
+	}
+}
+
+func setTime(t *testing.T, path string, stamp time.Time) {
+	t.Helper()
+	if err := os.Chtimes(path, stamp, stamp); err != nil {
+		t.Fatal(err)
 	}
 }
 

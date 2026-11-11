@@ -47,12 +47,14 @@ func AddedLines(ctx context.Context, dir, base string, runner toolrun.Runner) (e
 		return nil, err
 	}
 	// Every option that git config can change in this output is pinned, so
-	// the same trees give the same lines on every machine. quotePath=true
+	// the same trees give the same lines on every machine. -l0 lifts
+	// diff.renameLimit: past it git stops pairing edited renames and shows the
+	// whole file as added. quotePath=true
 	// quotes every name with a byte git escapes, so a name arrives either
 	// plain or as a C string with octal bytes, never as raw bytes in quotes.
 	diff, err := runTree(ctx, root, runner, []string{"GIT_INDEX_FILE=" + index},
 		"-c", "core.quotePath=true", "diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv", "--text",
-		"-M", "--unified=0", "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
+		"-M", "-l0", "--unified=0", "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
 		"--src-prefix=a/", "--dst-prefix=b/", base, "--")
 	if err != nil {
 		return nil, err
@@ -72,17 +74,37 @@ func stageWorkingTree(ctx context.Context, runner toolrun.Runner, root, dir stri
 		repoIndex = filepath.Join(root, repoIndex)
 	}
 	index := filepath.Join(dir, "index")
-	data, err := os.ReadFile(repoIndex) //nolint:gosec // the repository's own index file
-	switch {
-	case err == nil:
-		if err := os.WriteFile(index, data, 0o600); err != nil { //nolint:gosec // index is a file in our own temporary directory
-			return "", fmt.Errorf("copy the index: %w", err)
-		}
-	case !errors.Is(err, fs.ErrNotExist): // no index yet: git add starts an empty one
-		return "", fmt.Errorf("copy the index: %w", err)
+	if err := copyIndex(repoIndex, index); err != nil {
+		return "", err
 	}
 	_, err = runTree(ctx, root, runner, []string{"GIT_INDEX_FILE=" + index}, "add", "--all")
 	return index, err
+}
+
+// copyIndex copies the index at from to to with its modification time. Git
+// re-reads a file whose index entry is not older than the index itself (a
+// "racily clean" entry, written in the same second); a copy with a fresh time
+// would make git trust the stat data of such an entry and keep the old blob.
+// A missing index is no error: git add starts an empty one.
+func copyIndex(from, to string) error {
+	info, err := os.Stat(from)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("copy the index: %w", err)
+	}
+	data, err := os.ReadFile(from) //nolint:gosec // the repository's own index file
+	if err != nil {
+		return fmt.Errorf("copy the index: %w", err)
+	}
+	if err := os.WriteFile(to, data, 0o600); err != nil { //nolint:gosec // a file in our own temporary directory
+		return fmt.Errorf("copy the index: %w", err)
+	}
+	if err := os.Chtimes(to, info.ModTime(), info.ModTime()); err != nil {
+		return fmt.Errorf("copy the index: %w", err)
+	}
+	return nil
 }
 
 // parseAddedLines reads the added lines of a unified diff. It counts the lines
