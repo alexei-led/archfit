@@ -38,6 +38,10 @@ type End struct {
 	// IsFile says Path is a file. A Go import names a package directory, a
 	// TypeScript or Python import a file.
 	IsFile bool
+	// Files are, for a directory, the source files directly in it, without
+	// declared tests and generated files. A glob that names files covers the
+	// directory through them: pkg/foo/*.go covers the package pkg/foo.
+	Files []string
 	// Library says Path is a library or package outside the tree.
 	Library bool
 }
@@ -93,7 +97,7 @@ func builtin(p resolved.Policy, u Use) []Error {
 		return nil
 	}
 	fromMod, toMod := p.Modules[from], p.Modules[to]
-	public := u.To.Path == "" || p.IsPublic(to, u.To.Path, u.To.IsFile)
+	public := u.To.Path == "" || isPublic(p, to, u.To)
 	value := balanceOf(public, fromMod.Volatility, toMod.Volatility)
 	bal := &result.Balance{Value: value, Min: p.Builtin.MinBalance}
 	symbol := u.To.Path
@@ -137,9 +141,27 @@ func balanceOf(public bool, from, to resolved.Volatility) int {
 		strength = relationship.StrengthContract
 	}
 	// Contract and functional always score, so the abstain flag is never false
-	// here; the balance matrix test pins every cell.
+	// here; TestJudgeCouplingMatrix reads the balance of every cell.
 	value, _ := balance.Of(strength, relationship.Volatility(from), relationship.Volatility(to))
 	return value
+}
+
+// isPublic reports whether an end is in the public part of module: its path,
+// or, for a directory, one of its files.
+func isPublic(p resolved.Policy, module string, e End) bool {
+	if p.IsPublic(module, e.Path, e.IsFile) {
+		return true
+	}
+	return slices.ContainsFunc(e.Files, func(f string) bool { return p.IsPublic(module, f, true) })
+}
+
+// covers reports whether a path glob covers an end: its path, or, for a
+// directory, one of its files.
+func covers(p resolved.Policy, glob string, e End) bool {
+	if e.Path == "" || e.Library {
+		return false
+	}
+	return p.Covers(glob, e.Path) || slices.ContainsFunc(e.Files, func(f string) bool { return p.Covers(glob, f) })
 }
 
 // inverted reports whether a module of layer from depending on a module of
@@ -161,9 +183,11 @@ func deny(p resolved.Policy, r resolved.Rule, u Use) *Error {
 	if !okFrom || !okTo {
 		return nil
 	}
+	// The key holds modules, as every key does, so exceptions match it and two
+	// modules under one path glob keep apart; the text names the rule's names.
 	return &Error{
-		Key:  Key{Rule: r.ID, From: from, To: to, Symbol: symbolOf(u.To)},
-		From: from, To: to,
+		Key:  Key{Rule: r.ID, From: u.From.Module, To: u.To.Module, Symbol: symbolOf(u.To)},
+		From: u.From.Module, To: u.To.Module,
 		What: fmt.Sprintf("%s must not depend on %s", from, to),
 		Why:  r.Why, Instead: r.Instead, Next: nextOf(resolved.ModeDeny),
 	}
@@ -178,18 +202,20 @@ func only(p resolved.Policy, r resolved.Rule, u Use) *Error {
 	if _, in := firstMatch(p, r.In, u.From); in {
 		return nil
 	}
-	from := u.From.Module
-	if from == "" {
-		from = u.From.Path
+	// An importer in no module has an empty From: its file is an unowned
+	// error of its own. The text names the file.
+	label := u.From.Module
+	if label == "" {
+		label = u.From.Path
 	}
 	used := u.To.Path
 	if used != r.Use {
 		used += " (" + r.Use + ")"
 	}
 	return &Error{
-		Key:  Key{Rule: r.ID, From: from, To: r.Use, Symbol: u.To.Path},
-		From: from, To: r.Use,
-		What: fmt.Sprintf("%s uses %s, which only %s may use", from, used, joinNames(r.In)),
+		Key:  Key{Rule: r.ID, From: u.From.Module, To: r.Use, Symbol: u.To.Path},
+		From: u.From.Module, To: r.Use,
+		What: fmt.Sprintf("%s uses %s, which only %s may use", label, used, joinNames(r.In)),
 		Why:  r.Why, Instead: r.Instead, Next: nextOf(resolved.ModeDeny),
 	}
 }
@@ -223,7 +249,7 @@ func firstMatch(p resolved.Policy, names []string, e End) (string, bool) {
 			}
 			continue
 		}
-		if e.Path != "" && !e.Library && p.Covers(name, e.Path) {
+		if covers(p, name, e) {
 			return name, true
 		}
 	}

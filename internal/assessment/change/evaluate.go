@@ -5,7 +5,6 @@ import (
 	"maps"
 	"path"
 	"slices"
-	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
@@ -65,24 +64,41 @@ func Evaluate(p resolved.Policy, facts evidence.CheckFacts) Judgment {
 type tree struct {
 	p     resolved.Policy
 	files []string
-	// isFile holds every source file.
-	isFile map[string]bool
-	// dirModule is the module of a package directory, from the files directly
-	// in it: a Go import names the directory, and the module's paths may be
-	// file globs (pkg/foo/*.go) that do not match the directory itself.
+	// isDir holds every directory that holds a source file. An import
+	// target that is one is a package directory; any other target is a
+	// file, even one that is not a source (a .vue or .json file).
+	isDir map[string]bool
+	// dirFiles are the source files directly in a directory, without
+	// declared tests and generated files.
+	dirFiles map[string][]string
+	// dirModule is the module of a package directory, from its dirFiles: a
+	// Go import names the directory, and the module's paths may be file
+	// globs (pkg/foo/*.go) that do not match the directory itself.
 	dirModule map[string]string
 }
 
 func newTree(p resolved.Policy, sources []string) tree {
-	t := tree{p: p, files: slices.Sorted(slices.Values(sources)), isFile: map[string]bool{}, dirModule: map[string]string{}}
+	t := tree{
+		p: p, files: slices.Sorted(slices.Values(sources)),
+		isDir: map[string]bool{}, dirFiles: map[string][]string{}, dirModule: map[string]string{},
+	}
 	owners := map[string]map[string]bool{}
 	for _, file := range t.files {
-		t.isFile[file] = true
+		for d := path.Dir(file); !t.isDir[d]; d = path.Dir(d) {
+			t.isDir[d] = true
+			if d == "." || d == "/" {
+				break
+			}
+		}
+		if t.excluded(file) {
+			continue
+		}
+		dir := path.Dir(file)
+		t.dirFiles[dir] = append(t.dirFiles[dir], file)
 		m, ok := p.ModuleOf(file)
 		if !ok {
 			continue
 		}
-		dir := path.Dir(file)
 		if owners[dir] == nil {
 			owners[dir] = map[string]bool{}
 		}
@@ -110,9 +126,10 @@ func (t tree) use(imp evidence.ImportFact) Use {
 		u.To = End{Path: imp.Target, Library: true}
 		return u
 	}
-	u.To = End{Path: imp.Target, IsFile: t.isFile[imp.Target]}
+	u.To = End{Path: imp.Target, IsFile: !t.isDir[imp.Target]}
 	if !u.To.IsFile {
 		u.To.Module = t.dirModule[imp.Target]
+		u.To.Files = t.dirFiles[imp.Target]
 	}
 	// Resolve both modules once, for Judge and for the module graph.
 	u.From.Module = moduleOf(t.p, u.From)
@@ -217,9 +234,11 @@ func (g moduleGraph) add(u Use, site Site) {
 	g[from][to] = append(g[from][to], site)
 }
 
-// cycles returns one error for each set of modules that depend on each other
-// (a strongly connected set of two or more), with the sites of the imports
-// inside the set.
+// cycles returns one error for each dependency inside a set of modules that
+// depend on each other (a strongly connected set of two or more), with the
+// sites of its imports. The key is the dependency, not the set: a change that
+// deletes a dependency of a cycle leaves a smaller set, and a set key would
+// make that new; a dependency key does not.
 func (g moduleGraph) cycles(mode resolved.Mode) []Error {
 	reach := map[string]map[string]bool{}
 	for m := range g {
@@ -241,17 +260,21 @@ func (g moduleGraph) cycles(mode resolved.Mode) []Error {
 			continue
 		}
 		slices.Sort(set)
-		var sites []Site
+		members := joinNames(set)
 		for _, from := range set {
 			seen[from] = true
 			for _, to := range set {
-				sites = append(sites, g[from][to]...)
+				sites := g[from][to]
+				if len(sites) == 0 {
+					continue
+				}
+				errs = append(errs, Error{
+					Key: Key{Rule: resolved.RuleCycle, From: from, To: to}, From: from, To: to,
+					What: from + " -> " + to + " is in a cycle: " + members + " depend on each other",
+					Why:  whyCycle, Next: nextOf(mode), Sites: sites,
+				})
 			}
 		}
-		errs = append(errs, Error{
-			Key:  Key{Rule: resolved.RuleCycle, Symbol: strings.Join(set, ",")},
-			What: joinNames(set) + " depend on each other", Why: whyCycle, Next: nextOf(mode), Sites: sites,
-		})
 	}
 	return errs
 }

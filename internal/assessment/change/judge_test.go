@@ -27,6 +27,12 @@ const (
 	appTS         = "src/app/main.ts"
 	containerFile = "pkg/container/container.go"
 	storeTS       = "src/ui/state/store.ts"
+	testGlob      = "**/*_test.go"
+	modApp        = "app"
+	modFoo        = "foo"
+	fooGlob       = "pkg/foo/*.go"
+	fooFile       = "pkg/foo/foo.go"
+	fooDir        = "pkg/foo"
 
 	denyRuntime = "no-chaos-to-runtime"
 	denyCmd     = "no-cmd-to-runtime"
@@ -179,12 +185,16 @@ func TestJudgeCouplingMatrix(t *testing.T) {
 				{"past", "dst/store", pastBalance[higher(source, target)]},
 			} {
 				t.Run(fmt.Sprintf("%s %s to %s", tt.name, source, target), func(t *testing.T) {
-					got, ok := byRule(change.Judge(p, fileUse("src/a.go", tt.target)), resolved.RuleCoupling)
+					_, ok := byRule(change.Judge(p, fileUse("src/a.go", tt.target)), resolved.RuleCoupling)
 					if failed := tt.want < resolved.DefaultMinBalance; ok != failed {
 						t.Fatalf("coupling error = %v, want %v (balance %d)", ok, failed, tt.want)
 					}
-					if ok && got.Balance.Value != tt.want {
-						t.Errorf("balance = %d, want %d", got.Balance.Value, tt.want)
+					// At a min of 10 every cell is an error, so its balance can be read.
+					strict := p
+					strict.Builtin.MinBalance = 10
+					got, _ := byRule(change.Judge(strict, fileUse("src/a.go", tt.target)), resolved.RuleCoupling)
+					if got.Balance == nil || got.Balance.Value != tt.want {
+						t.Errorf("balance = %+v, want %d", got.Balance, tt.want)
 					}
 				})
 			}
@@ -256,9 +266,9 @@ func TestJudgeDeny(t *testing.T) {
 			From: chaos, To: runtime,
 			What: "pkg_chaos must not depend on pkg_runtime", Why: whyRuntime, Instead: insteadClient, Next: fixStep(),
 		}},
-		{"by path", fileUse("cmd/main.go", "pkg/runtime/docker"), &change.Error{
-			Key:  change.Key{Rule: denyCmd, From: cmdGlob, To: runtimeGlob, Symbol: "pkg/runtime/docker"},
-			From: cmdGlob, To: runtimeGlob,
+		{"by path: the key holds modules, the text the rule's names", fileUse("cmd/main.go", "pkg/runtime/docker"), &change.Error{
+			Key:  change.Key{Rule: denyCmd, From: cmd, To: runtime, Symbol: "pkg/runtime/docker"},
+			From: cmd, To: runtime,
 			What: "cmd/** must not depend on pkg/runtime/**", Why: "w", Instead: "i", Next: fixStep(),
 		}},
 		{"another target", fileUse("pkg/chaos/chaos.go", "pkg/util"), nil},
@@ -310,10 +320,24 @@ func TestJudgeOnly(t *testing.T) {
 			if ok != (tt.wantWhat != "") {
 				t.Fatalf("only error = %v (%+v), want %v", ok, got, tt.wantWhat != "")
 			}
-			if ok && (got.What != tt.wantWhat || got.Next != fixStep() || got.Key.To != policyUse(tt.rule)) {
-				t.Errorf("got what %q, next %+v, key %+v; want what %q", got.What, got.Next, got.Key, tt.wantWhat)
+			// The key's From is the importer's module, empty for a file in no module.
+			wantFrom, _ := policy().ModuleOf(tt.use.From.Path)
+			if ok && (got.What != tt.wantWhat || got.Next != fixStep() || got.Key.To != policyUse(tt.rule) ||
+				got.Key.From != wantFrom || got.From != wantFrom) {
+				t.Errorf("got what %q, next %+v, key %+v, from %q; want what %q, from %q",
+					got.What, got.Next, got.Key, got.From, tt.wantWhat, wantFrom)
 			}
 		})
+	}
+}
+
+func TestJudgeDenyByPathKeepsModulesApart(t *testing.T) {
+	p := policy()
+	p.Rules = []resolved.Rule{{ID: "no-pkg-to-runtime", Form: resolved.FormDeny, From: []string{"pkg/**"}, To: []string{runtime}, Why: "w", Instead: "i"}}
+	a, okA := byRule(change.Judge(p, fileUse("pkg/chaos/chaos.go", runtimeDir)), "no-pkg-to-runtime")
+	b, okB := byRule(change.Judge(p, fileUse("pkg/tc/tc.go", runtimeDir)), "no-pkg-to-runtime")
+	if !okA || !okB || a.Key == b.Key || a.Key.From != chaos || b.Key.From != tc {
+		t.Errorf("one path glob over two modules: keys %+v and %+v, want one per module", a.Key, b.Key)
 	}
 }
 
