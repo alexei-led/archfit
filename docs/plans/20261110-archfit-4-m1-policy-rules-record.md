@@ -103,7 +103,8 @@ The manager approved these on 2026-11-10.
   pull request matches its task.
 - An application subpackage defines the ports it needs; `cmd/archfit` wires the concrete adapters.
 - A task that deletes a file, package or directory named in `internal/arch_test.go` or `.archfit.yaml` updates those
-  entries in the same pull request. A pull request that edits `.archfit.yaml` passes CI through
+  entries in the same pull request, and so does a task that breaks a test file of the root `internal` test package
+  (`internal/coverage_names_test.go` names extractors). A pull request that edits `.archfit.yaml` passes CI through
   `archfit check --policy .archfit.yaml` (task 27) and merges by the manager.
 
 ## Coverage
@@ -428,13 +429,15 @@ Design: 6.2 (`duplication` judges every copy), 6.4, 7.2, 7.3, 15.1 (copies), sta
 - [ ] key the error by (`duplication`, the sorted module pair, the literal digest); the sites are the occurrences;
   then task 14's counting makes a copy added by the change a new key, a moved literal an unchanged key, and an old
   copy under an expired exception an error of every change, as 8.1 shows
+- [ ] a `duplication` key counts as added only when one of its head sites is on an added line: R12 counts holders per
+  tree, so deleting the third holder of a literal creates a new key without adding a copy, and that change passes
 - [ ] for the record: `from` is the module whose site is on an added line (otherwise the first in order); `what`
   names the first site in the other module (`this literal already lives in pkg/util/util.go:15`); `next` names that
   module and `archfit request -m "<why a copy is needed>" --expires <date>`
 - [ ] write tests: the seeded `pumba` copy (regular expression and error text) is found and is added on head; a
   rewritten copy, a moved literal, a literal in tests or generated code, a short literal, a single word, a struct
-  tag and a literal held by three modules are not; an existing copy is not added; report precision and recall over
-  the seeded set in the test output
+  tag and a literal held by three modules are not; an existing copy is not added; deleting the third holder of a
+  literal adds nothing; report precision and recall over the seeded set in the test output
 - [ ] run `go test ./internal/assessment/copies/ ./internal/` and `make test`
 
 ### Task 14: Counting on base and head; exceptions with dates; the four statuses
@@ -444,7 +447,8 @@ Design: 6.4, 7.1, 7.2, 15.1 (added or existing, exceptions). Packages: `internal
 
 - [ ] compare base and head errors per key (tasks 12 and 13): a new key or a higher count is added by the change;
   report the head sites that are not on the base, and prefer sites on added lines
-- [ ] apply exceptions: an exception covers the errors of its rule between its `from` and `to`; on or before its
+- [ ] apply exceptions: an exception covers the errors of its rule between its `from` and `to` (for `duplication`,
+  the unordered pair, because its key is unordered); on or before its
   `expires` date it holds; after that date, while the code still breaks the rule on the head, it is an error of every
   change, marked "not from this change"
 - [ ] set the status: `fail` for an added error or an expired exception; `unknown` when base evidence is missing, when
@@ -475,7 +479,9 @@ Design: 7.1, 7.2, 9.1, 9.4, 11.1 (`check`), 14, 15.1 (policy protection). Packag
 
 - [ ] define the ports: the local policy, the policy on the target branch (from git objects), a candidate policy
   (`--policy`), check facts for head and base, the clock, and the store of the last result
-- [ ] run the flow: the target branch (`origin/HEAD`, or `--base REF`) and the merge base; when the local policy
+- [ ] run the flow: the target branch (`--base REF`, else `origin/HEAD`; neither gives `unknown` with
+  `next: pass --base <target branch>`) and the merge base; when HEAD is the target branch, the base is its first
+  parent; when the local policy
   differs from the target's, stop with `unknown` and the record that restores the file (8.1); with `--policy FILE`,
   judge with that file and skip the comparison
 - [ ] when the target has no policy, or a policy that is not schema 3 (the conversion pull request of design 14),
@@ -608,7 +614,7 @@ first: `CheckCmd`, `outcomeExitCode`.
 - [ ] rewrite the parts of `docs/commands.md` on `check`, `can` and `rules`; rewrite `docs/configuration.md` for
   schema 3; rewrite `docs/rules.md` (built-in and custom rules, exceptions) and `docs/results.md` (the record, the
   statuses, JSON, SARIF, exit codes); update `docs/ci.md` for running `archfit check` in CI without the Action
-  (`fetch-depth: 0`, so the merge base exists)
+  (`fetch-depth: 0` and `--base origin/<target branch>`: `actions/checkout` creates no `origin/HEAD`)
 - [ ] run `go test ./cmd/archfit/ ./internal/`, `make test`, `make docs`
 
 ### Task 25: Commands `request`, `init`, `report`
@@ -663,9 +669,10 @@ Design: 14, 9.2, 9.4, D4, D8. Files: `.archfit.yaml`, `AGENTS.md`, `CLAUDE.md`, 
   `cmd/archfit/config_lint_test.go` (their commands go in task 31); `make calibrate` stops working until task 31
   deletes it
 - [ ] `Makefile`: `arch-lint` and `archfit` accept exit 0 only; `archfit-report` runs `report`
-- [ ] the CI image step: checkout with `fetch-depth: 0`; when the pull request changes `.archfit.yaml`, run
-  `archfit check --policy .archfit.yaml` (the owner approves the file through `CODEOWNERS`, the branch rule of design
-  9.4); otherwise `archfit check`; accept exit 0 only; drop the comparability comment and the
+- [ ] the CI image step: checkout with `fetch-depth: 0`; pass `--base origin/${{ github.base_ref }}` on a pull
+  request and `--base ${{ github.event.before }}` on a push (`actions/checkout` creates no `origin/HEAD`); when the
+  pull request changes `.archfit.yaml`, add `--policy .archfit.yaml` (the owner approves the file through
+  `CODEOWNERS`, the branch rule of design 9.4); accept exit 0 only; drop the comparability comment and the
   `.repository.attention` query
 - [ ] `.github/workflows/archfit.yaml` keeps only `workflow_dispatch`, with a comment that milestone 2 restores the
   triggers with Action 4 (D4); `CODEOWNERS` loses the deleted files and keeps `.archfit.yaml`
@@ -811,12 +818,13 @@ manager (edits `.archfit.yaml`). Impact first: `labels.Approved`, `PinnedLabels`
 
 Design: 13 (waivers become exceptions), D2. Packages: `internal/assessment/rules`, `internal/assessment/status`,
 `internal/assessment/agenttask`, `internal/assessment/evaluation`, `internal/application` (`analysis.go`). Files:
-`internal/arch_test.go`. Depends on: 22, 35. Impact first: `rules.New`, `status.Assign`, `matchWaiver`, the agent
+`internal/arch_test.go`, `.archfit.yaml`. Depends on: 22, 35. Merge: manager (edits `.archfit.yaml`). Impact first: `rules.New`, `status.Assign`, `matchWaiver`, the agent
 task builder.
 
 - [ ] delete the version 2 rule types, their evaluation, waiver matching, and agent tasks from the report pipeline
 - [ ] the report shows the errors and the state of task 22 instead
-- [ ] remove deleted packages from `coreRingPkgs` and the other lists of `internal/arch_test.go`
+- [ ] remove deleted packages from `coreRingPkgs` and the other lists of `internal/arch_test.go`, and from the
+  `public` lists and rules of `.archfit.yaml`
 - [ ] regenerate the schemas and `model_surface.golden`; read the diff
 - [ ] run `make test`, `make lint`, `make docs`
 
@@ -826,14 +834,16 @@ Design: 8.3, 13. Packages: `internal/output/agentout`, `internal/output/console`
 `internal/output/scorecard`, `internal/output/brief`, `internal/output/sarif` (the old one), `internal/output/archmap`
 (unless `rules --graph` uses it), `internal/reportschema`, `internal/model/report`, `internal/application`
 (`report.go`), `internal/evidence/acquisition` (`semantic_overlay.go`). Files: `archfit.agent-result.schema.json`
-(deleted), `internal/arch_test.go`, `docs/results.md`, `docs/architecture.md`. Depends on: 31. Impact first: each
+(deleted), `internal/arch_test.go`, `.archfit.yaml`, `docs/results.md`, `docs/architecture.md`. Depends on: 31.
+Merge: manager (edits `.archfit.yaml`). Impact first: each
 renderer's `Render`, `SemanticStrengthOverlay`.
 
 - [ ] delete the renderers no command uses; `report` keeps its JSON (`jsonout`) and the text of task 25
 - [ ] delete the agent-result schema and its generator; rename the state schema to the report's JSON schema
 - [ ] delete the semantic strength overlay (its computation, its report field and its projection): only SCIP feeds
       it and only the Markdown renderer shows it, so task 38 does not touch the report model
-- [ ] remove the deleted renderers from the renderer rules in `internal/arch_test.go`
+- [ ] remove the deleted renderers from the renderer rules in `internal/arch_test.go` and from the `public` list of
+  `.archfit.yaml`
 - [ ] update `docs/results.md` and the layer table of `docs/architecture.md`
 - [ ] run `make test`, `make lint`, `make docs`
 
@@ -843,7 +853,7 @@ Design: 11.8, 13. Packages: `internal/extract/scip` (deleted), `internal/extract
 `internal/evidence/acquisition`, `internal/extract/registry`, `internal/relationship/classify` (hint precedence).
 Files: `.archfit.yaml`, `Dockerfile`, `tools/manifest.json`, `tools/scip-go/`, `tools/node/`, `tools/python/`,
 `scripts/provision-analyzers.sh`, `.github/workflows/ci.yaml`, `Makefile`, `internal/coverage_names_test.go`,
-`CONTRIBUTING.md`, `docs/languages.md`, `docs/development.md`. Depends on: 37, 42. Merge: manager (edits
+`CONTRIBUTING.md`, `docs/languages.md`, `docs/development.md`. Depends on: 37, 41. Merge: manager (edits
 `.archfit.yaml`). Impact first: `scip.New`, `enrichEdges`, the symbol graph consumers.
 
 - [ ] delete the SCIP adapter, the Python reader and `scip.proto`; acquisition stops filling the symbol graph;
@@ -851,7 +861,8 @@ Files: `.archfit.yaml`, `Dockerfile`, `tools/manifest.json`, `tools/scip-go/`, `
   `.archfit.yaml`), otherwise list them in the pull request; do not edit `internal/application`,
   `internal/model/report` or `internal/output`
 - [ ] remove `scip-go`, `scip-typescript`, `scip-python` and `rust-analyzer` from the manifest, the locks, the image,
-  the CI shards, `make test` and the doctor groups
+  the CI shards, `make test` and the doctor groups; remove `internal/extract/scip` from `.archfit.yaml` and from
+  `internal/coverage_names_test.go`
 - [ ] update `docs/languages.md`, `docs/development.md` and `CONTRIBUTING.md`
 - [ ] run `make test`, `make lint`, `make docs`, `make tool-locks`, `make workflows`
 
@@ -860,13 +871,15 @@ Files: `.archfit.yaml`, `Dockerfile`, `tools/manifest.json`, `tools/scip-go/`, `
 Design: 11.8 (`jscpd` leaves the check), 13, D2. Packages: `internal/extract/clones` (deleted),
 `internal/extract/acquire`, `internal/evidence/acquisition`, `internal/relationship/classify` (`clone_only.go`),
 `internal/relationship/analysis`, `internal/model/clone`, `internal/assessment/evaluation`,
-`internal/assessment/signals` (duplication signals). Files: `.archfit.yaml`, `tools/manifest.json`, `tools/node/`,
-`Dockerfile`, `docs/languages.md`, `docs/coupling.md`. Depends on: 36, 38. Merge: manager (edits `.archfit.yaml`).
+`internal/assessment/signals` (duplication signals). Files: `.archfit.yaml`, `internal/coverage_names_test.go`,
+`tools/manifest.json`, `tools/node/`, `Dockerfile`, `docs/languages.md`, `docs/coupling.md`. Depends on: 36, 42.
+Merge: manager (edits `.archfit.yaml`).
 Impact first: `clones.Run`, `clonePairs`, `DuplicationSignals`.
 
 - [ ] delete the `jscpd` adapter, clone clusters, clone-only pairs and duplication signals
 - [ ] remove `jscpd` from the manifest, the Node lock and the image
-- [ ] remove the `internal/model/clone` path glob from `.archfit.yaml`
+- [ ] remove `internal/extract/clones` and the `internal/model/clone` path glob from `.archfit.yaml`, and the clones
+  case from `internal/coverage_names_test.go`
 - [ ] regenerate `model_surface.golden`; read the diff
 - [ ] update `docs/languages.md` and `docs/coupling.md`: copies are found by the `duplication` rule
 - [ ] run `make test`, `make lint`, `make docs`, `make tool-locks`
@@ -885,12 +898,14 @@ first: `GoExtractor.Extract`, `loadPackages`, `loadMemberFacts`.
 
 ### Task 41: Remove grimp
 
-Design: 11.8, 13. Packages: `internal/extract/py` (deleted), `internal/extract/registry`. Files: `tools/python/`,
-`tools/manifest.json`, `Dockerfile`, `Makefile`, `.github/workflows/ci.yaml`, `CONTRIBUTING.md`,
-`docs/languages.md`, `docs/development.md`. Depends on: 40. Impact first: `py.New`, `provisionedPython`, the
+Design: 11.8, 13. Packages: `internal/extract/py` (deleted), `internal/extract/registry`. Files: `.archfit.yaml`,
+`internal/coverage_names_test.go`, `tools/python/`, `tools/manifest.json`, `Dockerfile`, `Makefile`,
+`.github/workflows/ci.yaml`, `CONTRIBUTING.md`, `docs/languages.md`, `docs/development.md`. Depends on: 33, 40.
+Merge: manager (edits `.archfit.yaml`). Impact first: `py.New`, `provisionedPython`, the
 `ARCHFIT_TOOL_PYTHON` readers.
 
-- [ ] the report reads Python through `pyimports`; delete the grimp helper and its runtime
+- [ ] the report reads Python through `pyimports`; delete the grimp helper and its runtime; remove
+  `internal/extract/py` from `.archfit.yaml` and from `internal/coverage_names_test.go`
 - [ ] remove grimp from the Python lock (the SCIP reader keeps `protobuf` and `grpcio-tools` until task 38), and
   `ARCHFIT_TOOL_PYTHON` from every reader except the SCIP reader
 - [ ] state the namespace-package change in `docs/languages.md` for the release notes
@@ -899,12 +914,15 @@ Design: 11.8, 13. Packages: `internal/extract/py` (deleted), `internal/extract/r
 ### Task 42: Remove dependency-cruiser
 
 Design: 11.8 (equivalence first), 13, D13. Packages: `internal/extract/ts` (deleted), `internal/extract/registry`.
-Files: `tools/node/`, `tools/manifest.json`, `Dockerfile`, `Makefile`, `.github/workflows/ci.yaml`,
-`CONTRIBUTING.md`, `docs/languages.md`. Depends on: 41. Impact first: `ts.New`, the `depcruise` probes.
+Files: `.archfit.yaml`, `internal/coverage_names_test.go`, `tools/node/`, `tools/manifest.json`, `Dockerfile`,
+`Makefile`, `.github/workflows/ci.yaml`, `CONTRIBUTING.md`, `docs/languages.md`. Depends on: 33 (it deletes
+`internal/evidence/acquisition/measurement.go`, which imports `ts`), 38. Merge: manager (edits `.archfit.yaml`).
+Impact first: `ts.New`, the `depcruise` probes.
 
 - [ ] pick one more TypeScript repository (D13), run the milestone 0 equivalence tool with the engine's `tsimports`
       as the new side, and explain every difference in the pull request; stop and report if one is not explained
-- [ ] the report reads TypeScript through `tsimports`; delete the dependency-cruiser adapter
+- [ ] the report reads TypeScript through `tsimports`; delete the dependency-cruiser adapter; remove
+  `internal/extract/ts` from `.archfit.yaml` and from `internal/coverage_names_test.go`
 - [ ] keep `@ast-grep/cli` in `tools/node`; remove dependency-cruiser and TypeScript from the tools, the image, CI and
       `make host-tools`
 - [ ] update `docs/languages.md` and `CONTRIBUTING.md`
@@ -996,7 +1014,7 @@ and versions after the status line. `can` prints one answer without a status lin
   module pair and the literal digest.
 - Count: the number of sites (file and line) with that key in a tree. Added: a key absent on the base, or a higher
   count on the head.
-- Exceptions match by rule, `from` and `to`. An expired exception: `next` is `wait for an owner: #n` when its `why`
+- Exceptions match by rule, `from` and `to`; a `duplication` exception matches the unordered module pair. An expired exception: `next` is `wait for an owner: #n` when its `why`
   names a request `#n`, otherwise `fix the code, or ask an owner to extend the exception`. This is a milestone 1
   simplification; milestone 2 may add the request to the exception.
 - `unknown`: the local policy differs from the target's; the policy is invalid; there is no merge base; base evidence
