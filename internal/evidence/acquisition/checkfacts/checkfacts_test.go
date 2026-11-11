@@ -405,3 +405,36 @@ func TestCacheFollowsTheTreesTools(t *testing.T) {
 		t.Errorf("after the fix: unknown = %+v, want none", f.Unknown)
 	}
 }
+
+// failingCheckout fails git checkout-index with the message git gives, which
+// names the snapshot directory.
+type failingCheckout struct{ toolrun.Runner }
+
+func (f failingCheckout) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+	for _, arg := range cmd.Args {
+		if prefix, ok := strings.CutPrefix(arg, "--prefix="); ok {
+			return toolrun.Output{ExitCode: 128, Stderr: []byte("fatal: unable to create file " + prefix + "main.go")}, nil
+		}
+	}
+	return f.Runner.Run(ctx, cmd)
+}
+
+// TestBaseSnapshotFailureNamesNoDirectory: a base whose files cannot be
+// written is one base item whose reason is the same on every run.
+func TestBaseSnapshotFailureNamesNoDirectory(t *testing.T) {
+	requireTool(t, "git")
+	t.Parallel()
+	root, base := repo(t, goFiles)
+	a := &checkfacts.Acquirer{Runner: failingCheckout{toolrun.New()}, Config: goConfig()}
+	reasons := make([]string, 0, 2)
+	for range 2 {
+		got, err := a.Base(context.Background(), root, base)
+		if err != nil || len(got.Unknown) != 1 || got.Unknown[0].Cause != evidence.CauseBase {
+			t.Fatalf("facts = %+v, %v; want one base item", got, err)
+		}
+		reasons = append(reasons, got.Unknown[0].Reason)
+	}
+	if strings.Contains(reasons[0], "archfit-check-tree") || reasons[0] != reasons[1] {
+		t.Errorf("reasons %q name the snapshot directory or differ between runs", reasons)
+	}
+}

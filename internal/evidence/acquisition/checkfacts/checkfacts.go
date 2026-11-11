@@ -116,7 +116,9 @@ func (a *Acquirer) tree(ctx context.Context, root, tree string) (evidence.CheckF
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	if err := git.SnapshotTree(ctx, root, tree, dir, a.Runner); err != nil {
-		return evidence.CheckFacts{}, fmt.Errorf("checkfacts: snapshot of %s: %w", tree, err)
+		// The text, not the error: git names the directory, which is gone
+		// when this returns and differs on every run.
+		return evidence.CheckFacts{}, fmt.Errorf("checkfacts: snapshot of %s: %s", tree, withoutDir(err.Error(), dir))
 	}
 	f, err := registry.ReadCheck(ctx, a.Runner, dir, registry.CheckRequest{
 		Configs: a.Config.Languages, Exclude: a.Config.Exclude, Literals: a.Config.Literals,
@@ -194,15 +196,17 @@ func (a *Acquirer) projectTools(ctx context.Context, dir string) map[string]stri
 // reasons, so a tool that prints absolute paths gives the same reason on every
 // run and names no directory that is already gone.
 func withoutSnapshotPath(f *evidence.CheckFacts, dir string) {
-	paths := []string{dir}
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
-		paths = append([]string{resolved}, paths...)
-	}
 	for i := range f.Unknown {
-		for _, p := range paths {
-			f.Unknown[i].Reason = strings.ReplaceAll(f.Unknown[i].Reason, p, ".")
-		}
+		f.Unknown[i].Reason = withoutDir(f.Unknown[i].Reason, dir)
 	}
+}
+
+// withoutDir writes dir, and the path it resolves to, as "." in text.
+func withoutDir(text, dir string) string {
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
+		text = strings.ReplaceAll(text, resolved, ".")
+	}
+	return strings.ReplaceAll(text, dir, ".")
 }
 
 // key returns the cache key of tree, or "" when the cache is off.
