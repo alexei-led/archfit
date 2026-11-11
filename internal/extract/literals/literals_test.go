@@ -144,8 +144,8 @@ func TestExtractFailures(t *testing.T) {
 			"gen/g.rs":            "fn f() {}\n",
 		})
 		got, err := Extract(context.Background(), runner, tree, Config{Exclude: []string{"gen"}})
-		if err != nil || !slices.Equal(valuesOf(got), []string{"main.go:3 a go literal"}) {
-			t.Errorf("Extract = %q, %v, want the Go literal only", valuesOf(got), err)
+		if err != nil || !slices.Equal(valuesOf(got.Literals), []string{"main.go:3 a go literal"}) {
+			t.Errorf("Extract = %q, %v, want the Go literal only", valuesOf(got.Literals), err)
 		}
 	})
 
@@ -200,15 +200,6 @@ func TestExtractFailures(t *testing.T) {
 		}
 	})
 
-	t.Run("a Go syntax error names the file", func(t *testing.T) {
-		t.Parallel()
-		tree := writeTree(t, map[string]string{"pkg/bad.go": "package bad\n\nfunc {\n"})
-		_, err := Extract(context.Background(), &toolrun.RunnerMock{}, tree, Config{})
-		if err == nil || !strings.Contains(err.Error(), "pkg/bad.go") {
-			t.Errorf("err = %v, want a parse error naming pkg/bad.go", err)
-		}
-	})
-
 	t.Run("a bad exclude glob is an error", func(t *testing.T) {
 		t.Parallel()
 		if _, err := Extract(context.Background(), &toolrun.RunnerMock{}, root, Config{Exclude: []string{"src/["}}); err == nil {
@@ -245,8 +236,55 @@ func TestExtractReadsOnlyTheTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"a.go:3 inside the tree", "keep/c_test.go:3 tests are read", "testdata/d.go:3 testdata is read"}
-	if !slices.Equal(valuesOf(got), want) {
-		t.Errorf("Extract = %q, want %q", valuesOf(got), want)
+	if !slices.Equal(valuesOf(got.Literals), want) {
+		t.Errorf("Extract = %q, want %q", valuesOf(got.Literals), want)
+	}
+}
+
+// TestExtractReadsPastAGoFileThatDoesNotParse: a Go syntax error makes that
+// file unread and hides no other literal.
+func TestExtractReadsPastAGoFileThatDoesNotParse(t *testing.T) {
+	t.Parallel()
+	root := writeTree(t, map[string]string{
+		"pkg/bad.go": "package bad\n\nfunc {\n",
+		"pkg/ok.go":  "package ok\n\nconst s = \"still read\"\n",
+	})
+	got, err := Extract(context.Background(), &toolrun.RunnerMock{}, root, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"pkg/ok.go:3 still read"}; !slices.Equal(valuesOf(got.Literals), want) {
+		t.Errorf("literals = %q, want %q", valuesOf(got.Literals), want)
+	}
+	if len(got.Unread) != 1 || got.Unread[0].File != "pkg/bad.go" ||
+		!strings.HasPrefix(got.Unread[0].Reason, "does not parse: pkg/bad.go:3:") {
+		t.Errorf("unread = %+v, want pkg/bad.go that does not parse, with its position", got.Unread)
+	}
+}
+
+// TestExtractReadsOnlyTheNamedLanguages: Languages limits the files read, so a
+// tree of Go and loose Python reads the Go only and needs no ast-grep; an
+// unknown language is an error.
+func TestExtractReadsOnlyTheNamedLanguages(t *testing.T) {
+	t.Parallel()
+	root := writeTree(t, map[string]string{
+		"main.go":         "package main\n\nconst s = \"a go literal\"\n",
+		"scripts/tool.py": "x = 'a python literal'\n",
+		"web/a.ts":        "const a = 'a ts literal';\n",
+	})
+	got, err := Extract(context.Background(), &toolrun.RunnerMock{}, root, Config{Languages: []string{"go"}})
+	if err != nil || !slices.Equal(valuesOf(got.Literals), []string{"main.go:3 a go literal"}) {
+		t.Errorf("Extract(go) = %q, %v; want the Go literal only", valuesOf(got.Literals), err)
+	}
+	runner, calls := fakeAstGrep(noMatches)
+	if _, err := Extract(context.Background(), runner, root, Config{Languages: []string{"python"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 || !slices.Equal((*calls)[0], []string{"scripts/tool.py"}) {
+		t.Errorf("ast-grep read %q, want scripts/tool.py only", *calls)
+	}
+	if _, err := Extract(context.Background(), &toolrun.RunnerMock{}, root, Config{Languages: []string{"cobol"}}); err == nil {
+		t.Error("err = nil, want an unknown language error")
 	}
 }
 

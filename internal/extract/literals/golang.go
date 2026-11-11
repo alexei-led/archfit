@@ -11,18 +11,19 @@ import (
 
 // readGo returns the string literals of one Go file. Import paths and struct
 // tags are not literals; comments are not nodes of the tree, so they are never
-// read. Lines are physical: a //line directive does not move them.
-func readGo(fsys fs.FS, file string) ([]Literal, error) {
+// read. Lines are physical: a //line directive does not move them. A file
+// that does not parse gives no literal and parseErr; err is a file it cannot
+// read.
+func readGo(fsys fs.FS, file string) (lits []Literal, parseErr, err error) {
 	src, err := fs.ReadFile(fsys, file)
 	if err != nil {
-		return nil, fmt.Errorf("literals: read %s: %w", file, err)
+		return nil, nil, fmt.Errorf("literals: read %s: %w", file, err)
 	}
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, file, src, parser.SkipObjectResolution)
-	if err != nil {
-		return nil, fmt.Errorf("literals: parse %s: %w", file, err)
+	f, parseErr := parser.ParseFile(fset, file, src, parser.SkipObjectResolution)
+	if parseErr != nil {
+		return nil, parseErr, nil
 	}
-	var lits []Literal
 	skip := map[token.Pos]bool{} // import paths and struct tags
 	ast.Inspect(f, func(n ast.Node) bool {
 		// Inspect visits a spec or field before its children, so skip is set
@@ -41,5 +42,5 @@ func readGo(fsys fs.FS, file string) ([]Literal, error) {
 		}
 		return true
 	})
-	return lits, nil
+	return lits, nil, nil
 }
