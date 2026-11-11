@@ -161,9 +161,11 @@ modules:
     role: shared_model
     paths:
       - internal/model/report/**
+      - internal/model/result/**
       - internal/report/ports/**
     public:
       - internal/model/report
+      - internal/model/result
       - internal/report/ports
     layer: model
     subdomain: supporting
