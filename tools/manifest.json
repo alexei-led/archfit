@@ -1,6 +1,6 @@
 {
   "versions": {
-    "go": "1.27.3",
+    "go": "1.27.4",
     "node": "24.22.1",
     "python": "3.14.9",
     "uv": "0.13.5",
@@ -25,8 +25,8 @@
   "artifacts": {
     "amd64": {
       "go": {
-        "url": "https://go.dev/dl/go1.27.3.linux-amd64.tar.gz",
-        "sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
+        "url": "https://go.dev/dl/go1.27.4.linux-amd64.tar.gz",
+        "sha256": "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"
       },
       "node": {
         "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz",
@@ -63,8 +63,8 @@
     },
     "arm64": {
       "go": {
-        "url": "https://go.dev/dl/go1.27.3.linux-arm64.tar.gz",
-        "sha256": "a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49"
+        "url": "https://go.dev/dl/go1.27.4.linux-arm64.tar.gz",
+        "sha256": "3392582988a273a87ab5043ee1b2c9c17a2c3c00580bf9326c47a2e0aaaeac92"
       },
       "node": {
         "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-arm64.tar.xz",

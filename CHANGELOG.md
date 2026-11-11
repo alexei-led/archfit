@@ -4,10 +4,11 @@
 
 ### Summary
 
-`config init` writes a config that passes `config lint --strict`.
+`config init` writes a config that passes `config lint --strict`. The release image uses Go 1.27.4.
 
 ### Changes
 
+- Build with Go 1.27.4 (CI, release image, `scip-go`). It fixes a `net/http` vulnerability, GO-2026-6859, which `govulncheck` reports for Go 1.27.3.
 - The starter `no-module-cycles` rule, and the commented `no-layer-back-edges` rule, carry a `rationale`. Since v3.3.0 a blocking rule without one is a `config lint --strict` error, so a config that `config init` had just written failed the lint.
 
 ### Upgrade
