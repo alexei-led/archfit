@@ -14,18 +14,24 @@ var probeExts = []string{
 	jsExt, cjsExt, mjsExt, jsxExt, tsExt, ctsExt, mtsExt, tsxExt, dtsExt, jsonExt, ".vue", ".svelte",
 }
 
-// specifierExts lists the extensions a specifier's own extension stands for,
-// in the order TypeScript tries them (tryAddingExtensions, TypeScript 6.0): a
-// JavaScript specifier names its TypeScript source first, and a ".ts" one its
-// declaration file when the source is absent. Any other extension names only
-// itself.
-var specifierExts = map[string][]string{
-	jsExt:  {tsExt, tsxExt, dtsExt, jsExt, jsxExt},
-	jsxExt: {tsxExt, tsExt, dtsExt, jsxExt, jsExt},
-	mjsExt: {mtsExt, ".d.mts", mjsExt},
-	cjsExt: {ctsExt, ".d.cts", cjsExt},
-	tsExt:  {tsExt, dtsExt},
-}
+// specifierExts lists, for a script extension, the extensions TypeScript tries
+// in its place, in order (tryAddingExtensions, TypeScript 6.0): a JavaScript
+// specifier names its TypeScript source first. A declaration path such as
+// "a.d.ts" ends in ".ts", so it names its own file first: TypeScript does that
+// for a reference path and a package.json field, and tries a.ts first only
+// for an import of the declaration. Any other extension names only itself.
+var specifierExts = func() map[string][]string {
+	ts := []string{tsExt, tsxExt, dtsExt, jsExt, jsxExt}
+	tsx := []string{tsxExt, tsExt, dtsExt, jsxExt, jsExt}
+	mts := []string{mtsExt, dmtsExt, mjsExt}
+	cts := []string{ctsExt, dctsExt, cjsExt}
+	return map[string][]string{
+		jsExt: ts, tsExt: ts,
+		jsxExt: tsx, tsxExt: tsx,
+		mjsExt: mts, mtsExt: mts,
+		cjsExt: cts, ctsExt: cts,
+	}
+}()
 
 // nodeBuiltins are the Node built-in modules a bare specifier can name:
 // module.builtinModules of Node 24.15.0 without the names that need "node:".
@@ -93,6 +99,11 @@ func (r *resolver) resolve(importer, spec string) (Kind, string) {
 		// An alias into node_modules names a dependency, installed or not.
 		if inNodeModules(target) {
 			return KindExternal, ""
+		}
+		// A target that names a file as written wins before extension
+		// substitution (tryLoadModuleUsingPaths in TypeScript).
+		if r.isFile(target) {
+			return KindFile, target
 		}
 		if found, ok := r.file(target, nil); ok {
 			return KindFile, found

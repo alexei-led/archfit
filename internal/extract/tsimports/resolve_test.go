@@ -28,6 +28,9 @@ const (
 	corePlain      = "packages/core/src/plain.ts"
 	specGone       = "./gone"
 	pkgLodash      = "lodash"
+	extMdecl       = "ext/mdecl.d.mts"
+	extBoth        = "ext/both.ts"
+	jsAliasX       = "jsalias/src/x.ts"
 )
 
 // tree builds an in-memory file tree from file names and contents.
@@ -116,16 +119,29 @@ var resolveTree = map[string]string{
 	"ext/mod.mjs":     "",
 	"ext/mod.mts":     "",
 	"ext/mdecl.mjs":   "",
-	"ext/mdecl.d.mts": "",
+	extMdecl:          "",
 	"ext/com.cjs":     "",
 	"ext/com.cts":     "",
 	"ext/view.jsx":    "",
 	"ext/view.tsx":    "",
 	"ext/decl.js":     "",
 	"ext/decl.d.ts":   "",
-	"ext/both.ts":     "",
+	extBoth:           "",
 	"ext/both.d.ts":   "",
 	"ext/jsxonly.jsx": "",
+	"ext/tsxonly.tsx": "",
+	"ext/tsonly.ts":   "",
+	"ext/cdecl.d.cts": "",
+	"ext/tx.tsx":      "",
+	"ext/tx.d.ts":     "",
+	// paths targets that name a file with a script extension.
+	"jsalias/tsconfig.json":      `{"compilerOptions": {"paths": {"foo": ["./src/foo.js"], "bar": ["./src/bar.js"]}}}`,
+	"jsalias/src/foo.js":         "",
+	"jsalias/src/foo.ts":         "",
+	"jsalias/src/bar.ts":         "",
+	"packages/decl/package.json": `{"name": "decl", "types": "./index.d.ts"}`,
+	"packages/decl/index.d.ts":   "",
+	"packages/decl/index.ts":     "",
 }
 
 func TestResolve(t *testing.T) {
@@ -197,12 +213,24 @@ func TestResolve(t *testing.T) {
 		{".js with a .ts beside it names the .ts", extMain, "./model.js", KindFile, "ext/model.ts"},
 		{".js alone names the .js", extMain, "./only.js", KindFile, "ext/only.js"},
 		{".mjs with a .mts beside it names the .mts", extMain, "./mod.mjs", KindFile, "ext/mod.mts"},
-		{".mjs with a .d.mts beside it names the .d.mts", extMain, "./mdecl.mjs", KindFile, "ext/mdecl.d.mts"},
+		{".mjs with a .d.mts beside it names the .d.mts", extMain, "./mdecl.mjs", KindFile, extMdecl},
 		{".cjs with a .cts beside it names the .cts", extMain, "./com.cjs", KindFile, "ext/com.cts"},
 		{".jsx with a .tsx beside it names the .tsx", extMain, "./view.jsx", KindFile, "ext/view.tsx"},
 		{".js with a .d.ts beside it names the .d.ts", extMain, "./decl.js", KindFile, "ext/decl.d.ts"},
 		{".js names a .jsx file when no other is there", extMain, "./jsxonly.js", KindFile, "ext/jsxonly.jsx"},
-		{".ts with a .d.ts beside it names the .ts", extMain, "./both.ts", KindFile, "ext/both.ts"},
+		{".ts with a .d.ts beside it names the .ts", extMain, "./both.ts", KindFile, extBoth},
+		{".ts names a .tsx file when no .ts is there", extMain, "./tsxonly.ts", KindFile, "ext/tsxonly.tsx"},
+		{".tsx names a .ts file when no .tsx is there", extMain, "./tsonly.tsx", KindFile, "ext/tsonly.ts"},
+		{".ts names a .tsx before a .d.ts", extMain, "./tx.ts", KindFile, "ext/tx.tsx"},
+		// TypeScript tries both.ts first for an import of a declaration, but not for a
+		// reference path or a package.json field, which reach this resolver the same way.
+		{".d.ts names itself", extMain, "./both.d.ts", KindFile, "ext/both.d.ts"},
+		{"types field names its declaration as written", srcX, "decl", KindFile, "packages/decl/index.d.ts"},
+		{".mts names its .d.mts", extMain, "./mdecl.mts", KindFile, extMdecl},
+		{".cts names its .d.cts", extMain, "./cdecl.cts", KindFile, "ext/cdecl.d.cts"},
+		{"paths target names its file as written", jsAliasX, "foo", KindFile, "jsalias/src/foo.js"},
+		{"paths target without its file names the source", jsAliasX, "bar", KindFile, "jsalias/src/bar.ts"},
+		{"a relative .js beside that alias names the source", jsAliasX, "./foo.js", KindFile, "jsalias/src/foo.ts"},
 	}
 	r := newResolver(tree(resolveTree))
 	for _, tt := range tests {
@@ -228,6 +256,9 @@ func TestTsconfigUnread(t *testing.T) {
 	}{
 		{"no tsconfig", map[string]string{}, nil},
 		{"relative extends is read", map[string]string{tsconfigJSON: extBase, base: "{}"}, nil},
+		{"empty tsconfig is read", map[string]string{tsconfigJSON: ""}, nil},
+		{"tsconfig of comments only is read", map[string]string{tsconfigJSON: "// none\n/* yet */\n"}, nil},
+		{"byte order mark is dropped", map[string]string{tsconfigJSON: "\uFEFF" + extBase, base: "\uFEFF{}"}, nil},
 		{"package", map[string]string{tsconfigJSON: extendsCompany},
 			[]UnknownItem{{tsconfigJSON, companyConfig, reasonPackage}}},
 		{"package subpath", map[string]string{tsconfigJSON: `{"extends": "@tsconfig/svelte/tsconfig.json"}`},
@@ -260,6 +291,14 @@ func TestTsconfigUnread(t *testing.T) {
 		if !slices.Equal(got, tt.want) {
 			t.Errorf("%s: unread = %+v, want %+v", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestReadJSONDropsByteOrderMark(t *testing.T) {
+	t.Parallel()
+	fsys := tree(map[string]string{pkgJSON: "\uFEFF{\"name\": \"x\"}"})
+	if got, _ := asString(readJSON(fsys, pkgJSON).get("name")); got != "x" {
+		t.Errorf("name = %q, want x", got)
 	}
 }
 
@@ -313,6 +352,7 @@ func TestReadJSONC(t *testing.T) {
 		{"comment markers inside a string stay", `{"a": "src/* // not a comment */"}`, "src/* // not a comment */"},
 		{"trailing comma before a comment", "{\"a\": \"x\", // c\n}", "x"},
 		{"trailing comma inside a string stays", `{"a": ",}"}`, ",}"},
+		{"byte order mark", "\uFEFF{\"a\": \"x\"}", "x"},
 		{"invalid JSON reads as nothing", `{"a": }`, ""},
 		{"a list reads as nothing", `["a"]`, ""},
 	}

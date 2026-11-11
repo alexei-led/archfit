@@ -4,12 +4,12 @@
 // toolrun.Runner.
 //
 // The resolver tries, in this order: relative paths (with extension and index
-// probes; as in TypeScript, a ".js" specifier names a ".ts", ".tsx" or ".d.ts"
-// file before the ".js" file, and ".jsx", ".mjs" and ".cjs" alike, and a
-// ".ts" one its ".d.ts" when the ".ts" file is absent), node: builtins,
-// package.json imports ("#x"), tsconfig paths, tsconfig baseUrl when no paths
-// pattern matched, and workspace packages (npm, Yarn and pnpm) through
-// exports, types, module or main. A query such as "?raw" is dropped. Any other
+// probes; a script or declaration extension stands for the extensions
+// TypeScript tries in its place, so "./a.js" names a.ts before a.js),
+// node: builtins, package.json imports ("#x"), tsconfig paths (a target that
+// names a file as written wins), tsconfig baseUrl when no paths pattern
+// matched, and workspace packages (npm, Yarn and pnpm) through exports,
+// types, module or main. A query such as "?raw" is dropped. Any other
 // bare specifier is a third-party package: KindExternal. A relative path, a
 // paths alias or a workspace subpath that names no file is KindUnknown; a bare
 // "*" alias alone proves nothing.

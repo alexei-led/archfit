@@ -39,6 +39,8 @@ const (
 	cjsExt      = ".cjs"
 	mtsExt      = ".mts"
 	ctsExt      = ".cts"
+	dmtsExt     = ".d.mts"
+	dctsExt     = ".d.cts"
 )
 
 // settings are the resolution settings of one tsconfig after its extends
