@@ -53,7 +53,7 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 	if reason != "" {
 		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
 	}
-	switch sel, reason := buildSelects(scanRoot, cfg.BuildFlags, from, importsC(filepath.Join(scanRoot, filepath.FromSlash(from)))); sel {
+	switch sel, reason, _ := buildSelects(scanRoot, cfg.BuildFlags, from, importsC(filepath.Join(scanRoot, filepath.FromSlash(from)))); sel {
 	case selectNo:
 		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
 	case selectUndecided:

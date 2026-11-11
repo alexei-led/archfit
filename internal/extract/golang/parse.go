@@ -94,12 +94,13 @@ func ParseImports(scanRoot string, cfg evidenceports.ExtractConfig) (ParsedImpor
 				return nil
 			}
 			imports, parseErr := parseFileImports(name, rel)
-			sel, reason := buildSelects(scanRoot, cfg.BuildFlags, rel, slices.ContainsFunc(imports, isImportC))
+			sel, reason, matchErr := buildSelects(scanRoot, cfg.BuildFlags, rel, slices.ContainsFunc(imports, isImportC))
 			switch {
 			case sel == selectNo:
 			case parseErr != nil:
-				reason := strings.ReplaceAll(parseErr.Error(), name, rel)
-				out.Unknown = append(out.Unknown, FileUnknown{File: rel, Reason: "does not parse: " + reason})
+				out.Unknown = append(out.Unknown, FileUnknown{File: rel, Reason: "does not parse: " + strings.ReplaceAll(parseErr.Error(), name, rel)})
+			case matchErr != nil:
+				out.Unknown = append(out.Unknown, FileUnknown{File: rel, Reason: "build constraints do not parse: " + strings.ReplaceAll(matchErr.Error(), name, rel)})
 			case sel == selectUndecided:
 				out.Unknown = append(out.Unknown, FileUnknown{File: rel, Reason: reason})
 			default:

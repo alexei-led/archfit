@@ -115,8 +115,9 @@ func skipDirName(name string) bool {
 // CGO_ENABLED unset, cgo depends on a C compiler this binary cannot see, so
 // both settings are tried: when they disagree the answer is undecided. A file
 // that does not exist yet is judged by its name. The reason names a no or an
-// undecided answer.
-func buildSelects(scanRoot string, buildFlags []string, rel string, importsC bool) (selection, string) {
+// undecided answer. A build constraint MatchFile cannot read counts as a match
+// and comes back as the error, for the caller to decide.
+func buildSelects(scanRoot string, buildFlags []string, rel string, importsC bool) (selection, string, error) {
 	settings := []bool{true, false}
 	switch goEnv("CGO_ENABLED") {
 	case "1":
@@ -125,28 +126,30 @@ func buildSelects(scanRoot string, buildFlags []string, rel string, importsC boo
 		settings = []bool{false}
 	}
 	dir := filepath.Join(scanRoot, filepath.FromSlash(path.Dir(rel)))
-	reads := make([]bool, 0, len(settings))
-	constrained := false
+	matches := make([]bool, 0, len(settings))
+	var matchErr error
 	for _, cgo := range settings {
 		ctxt := toolchainContext(goEnv, buildFlags)
 		ctxt.CgoEnabled = cgo
 		ctxt.OpenFile = openOrEmpty
 		ok, err := ctxt.MatchFile(dir, path.Base(rel))
-		match := err != nil || ok
-		constrained = constrained || !match
-		reads = append(reads, match && (cgo || !importsC))
+		if err != nil && matchErr == nil {
+			matchErr = err
+		}
+		matches = append(matches, err != nil || ok)
 	}
+	cgoOff := len(settings) == 1 && !settings[0]
 	switch {
-	case len(reads) == 2 && reads[0] != reads[1] && importsC:
-		return selectUndecided, rel + " imports \"C\": whether the load reads it depends on whether cgo is on, and CGO_ENABLED is not set"
-	case len(reads) == 2 && reads[0] != reads[1]:
-		return selectUndecided, fmt.Sprintf("whether the load reads %s depends on cgo, and CGO_ENABLED is not set", rel)
-	case reads[0]:
-		return selectYes, ""
-	case constrained:
-		return selectNo, rel + " is excluded by the build constraints"
+	case cgoOff && importsC:
+		return selectNo, rel + " imports \"C\" and cgo is off, so the load ignores it", nil
+	case len(matches) == 2 && matches[0] != matches[1]:
+		return selectUndecided, fmt.Sprintf("whether the load reads %s depends on cgo, and CGO_ENABLED is not set", rel), nil
+	case !matches[0]:
+		return selectNo, rel + " is excluded by the build constraints", nil
+	case len(settings) == 2 && importsC:
+		return selectUndecided, rel + " imports \"C\": whether the load reads it depends on whether cgo is on, and CGO_ENABLED is not set", nil
 	}
-	return selectNo, rel + " imports \"C\" and cgo is off, so the load ignores it"
+	return selectYes, "", matchErr
 }
 
 // openOrEmpty opens a Go source for MatchFile; a file that does not exist yet

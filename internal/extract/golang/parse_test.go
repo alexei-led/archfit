@@ -226,12 +226,34 @@ func TestParseImportsUnparsableFileIsUnknown(t *testing.T) {
 	setGoEnv(t, "0")
 	files := maps.Clone(parseFixture)
 	files[parseBroken] = "package a\n\nimport (\n\t\"fmt\"\n"
-	got := mustParse(t, writeTree(t, files), parseConfig)
+	root := writeTree(t, files)
+	got := mustParse(t, root, parseConfig)
 	if slices.Contains(got.Sources, parseBroken) {
 		t.Errorf("%s is a source", parseBroken)
 	}
 	if len(got.Unknown) != 1 || got.Unknown[0].File != parseBroken || !strings.HasPrefix(got.Unknown[0].Reason, "does not parse") {
-		t.Errorf("unknown = %v, want %s that does not parse", got.Unknown, parseBroken)
+		t.Fatalf("unknown = %v, want %s that does not parse", got.Unknown, parseBroken)
+	}
+	if strings.Contains(got.Unknown[0].Reason, root) {
+		t.Errorf("reason %q names the checkout path", got.Unknown[0].Reason)
+	}
+}
+
+func TestParseImportsUnreadableConstraintIsUnknown(t *testing.T) {
+	setGoEnv(t, "0")
+	const malformed = "internal/a/malformed.go"
+	files := maps.Clone(parseFixture)
+	files[malformed] = "//go:build (\n\npackage a\n\nimport \"fmt\"\n"
+	root := writeTree(t, files)
+	got := mustParse(t, root, parseConfig)
+	if slices.Contains(got.Sources, malformed) {
+		t.Errorf("%s is a source", malformed)
+	}
+	if len(got.Unknown) != 1 || got.Unknown[0].File != malformed || !strings.HasPrefix(got.Unknown[0].Reason, "build constraints do not parse") {
+		t.Fatalf("unknown = %v, want %s with unreadable build constraints", got.Unknown, malformed)
+	}
+	if strings.Contains(got.Unknown[0].Reason, root) {
+		t.Errorf("reason %q names the checkout path", got.Unknown[0].Reason)
 	}
 }
 
