@@ -27,9 +27,8 @@ var (
 // finds a merge base, because the base it finds may be the cut, not the fork.
 // It runs: git rev-parse --is-shallow-repository and git merge-base HEAD <target>
 func BaseCommit(ctx context.Context, dir, target string, runner toolrun.Runner) (string, error) {
-	// A leading dash makes git read the ref as an option.
-	if strings.HasPrefix(target, "-") {
-		return "", fmt.Errorf("invalid target %q: a ref may not start with '-'", target)
+	if err := checkRef("target", target); err != nil {
+		return "", err
 	}
 	out, err := run(ctx, dir, runner, "rev-parse", "--is-shallow-repository")
 	if err != nil {
@@ -55,6 +54,10 @@ func BaseCommit(ctx context.Context, dir, target string, runner toolrun.Runner) 
 // equal content, so the id keys the facts read from that tree.
 // It runs: git rev-parse <commit>^{tree}
 func TreeOf(ctx context.Context, dir, commit string, runner toolrun.Runner) (string, error) {
+	// rev-parse prints an argument it reads as an option, and exits 0.
+	if err := checkRef("commit", commit); err != nil {
+		return "", err
+	}
 	return runGitRevParse(ctx, dir, runner, []string{commit + "^{tree}"}, "rev-parse "+commit+"^{tree}")
 }
 
@@ -67,6 +70,10 @@ func TreeOf(ctx context.Context, dir, commit string, runner toolrun.Runner) (str
 // because they shape an archive, not the code.
 // It runs: git read-tree <commit> and git checkout-index --all --prefix=<dest>/
 func SnapshotTree(ctx context.Context, dir, commit, dest string, runner toolrun.Runner) error {
+	// git read-tree --empty succeeds: an option would give an empty base.
+	if err := checkRef("commit", commit); err != nil {
+		return err
+	}
 	root, err := RepoRoot(ctx, dir, runner)
 	if err != nil {
 		return err
@@ -82,9 +89,32 @@ func SnapshotTree(ctx context.Context, dir, commit, dest string, runner toolrun.
 	defer func() { _ = os.RemoveAll(tmp) }()
 
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(tmp, "index")}
-	if _, err := runGit(ctx, runner, root, env, "read-tree", commit); err != nil {
+	if _, err := runTree(ctx, root, runner, env, "read-tree", commit); err != nil {
 		return err
 	}
-	_, err = runGit(ctx, runner, root, env, "checkout-index", "--all", "--prefix="+prefix+string(filepath.Separator))
+	_, err = runTree(ctx, root, runner, env, "checkout-index", "--all", "--prefix="+prefix+string(filepath.Separator))
 	return err
+}
+
+// checkRef refuses a ref that starts with a dash: git reads it as an option.
+func checkRef(kind, ref string) error {
+	if strings.HasPrefix(ref, "-") {
+		return fmt.Errorf("invalid %s %q: a ref may not start with '-'", kind, ref)
+	}
+	return nil
+}
+
+// runTree runs a git command that reads or writes a whole tree, with env
+// appended, and returns its stdout untrimmed; a non-zero exit is an error. It
+// has no timeout of its own, as AddWorktree has none: its time grows with the
+// repository, so the caller's context bounds it.
+func runTree(ctx context.Context, dir string, runner toolrun.Runner, env []string, args ...string) ([]byte, error) {
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitTool, Args: args, Env: env, WorkDir: dir})
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	if out.ExitCode != 0 {
+		return nil, fmt.Errorf("git %s exited %d: %s", strings.Join(args, " "), out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+	}
+	return out.Stdout, nil
 }

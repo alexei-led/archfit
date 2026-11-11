@@ -35,6 +35,15 @@ func TestContentFactsKeyFollowsTheFiles(t *testing.T) {
 	if got := contentKey(t, root, "b.go", "a.go"); got != key {
 		t.Errorf("another path order gave another key")
 	}
+	for name, inputs := range map[string][2]string{
+		"a new tool version": {"v2", "settings"},
+		"new settings":       {"v1", "changed"},
+	} {
+		other, err := factcache.ContentFactsKey(inputs[0], inputs[1], root, []string{"a.go", "b.go"})
+		if err != nil || other == key {
+			t.Errorf("%s gave the same key (%v)", name, err)
+		}
+	}
 	write(t, root, "c.go", "package c\n")
 	if got := contentKey(t, root, "a.go", "b.go", "c.go"); got == key {
 		t.Errorf("a new file gave the same key")

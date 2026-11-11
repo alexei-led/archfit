@@ -1,9 +1,10 @@
 package git
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,77 +15,98 @@ import (
 )
 
 // AddedLines returns the lines the working tree adds against base, per
-// repository-relative file: the added lines of modified, staged and renamed
-// files, and every line of an untracked file git does not ignore. Renames are
-// detected, so a moved file adds only the lines it changed. A deleted file has
-// no entry. Paths are relative to the repository root, whatever dir is.
-// It runs: git diff -M --unified=0 <base> -- and git ls-files -z --others
-// --exclude-standard
+// repository-relative file. It compares base with the working tree as a commit
+// of every change would hold it: modified, deleted, renamed and untracked
+// files, staged or not, as `git add --all` stages them (ignored files stay
+// out). Renames are detected across all of them, so a moved file adds only
+// the lines it changed, whether it moved with git mv or with mv, and a file
+// that is only no longer tracked adds nothing. A deleted file has no entry.
+// Every file is read as text, including one git would show as binary. Paths
+// are relative to the repository root, whatever dir is.
+//
+// The staging happens in a private copy of the index, so the repository's
+// index, HEAD and working tree stay as they are. git add writes the blobs of
+// changed files into the object store, unreachable until git gc prunes them.
+// It runs: git add --all into the private index, then git diff --cached
+// --unified=0 -M <base>
 func AddedLines(ctx context.Context, dir, base string, runner toolrun.Runner) (evidence.AddedLines, error) {
-	if strings.HasPrefix(base, "-") {
-		return nil, fmt.Errorf("invalid base %q: a ref may not start with '-'", base)
+	if err := checkRef("base", base); err != nil {
+		return nil, err
 	}
 	root, err := RepoRoot(ctx, dir, runner)
 	if err != nil {
 		return nil, err
 	}
-	// quotePath=true quotes every name with a byte git escapes, so a name
-	// arrives either plain or as a C string with octal bytes, never as raw
-	// bytes inside quotes.
-	diff, err := runChecked(ctx, root, runner, "-c", "core.quotePath=true", "diff", "--no-color", "--no-ext-diff",
-		"--no-textconv", "-M", "--unified=0", "--src-prefix=a/", "--dst-prefix=b/", base, "--")
+	tmp, err := os.MkdirTemp("", "archfit-added-index-*")
+	if err != nil {
+		return nil, fmt.Errorf("added lines index: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	index, err := stageWorkingTree(ctx, runner, root, tmp)
 	if err != nil {
 		return nil, err
 	}
-	added, err := parseAddedLines(diff)
+	// Every option that git config can change in this output is pinned, so
+	// the same trees give the same lines on every machine. quotePath=true
+	// quotes every name with a byte git escapes, so a name arrives either
+	// plain or as a C string with octal bytes, never as raw bytes in quotes.
+	diff, err := runTree(ctx, root, runner, []string{"GIT_INDEX_FILE=" + index},
+		"-c", "core.quotePath=true", "diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv", "--text",
+		"-M", "--unified=0", "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
+		"--src-prefix=a/", "--dst-prefix=b/", base, "--")
 	if err != nil {
 		return nil, err
 	}
-	others, err := runChecked(ctx, root, runner, "ls-files", "-z", "--others", "--exclude-standard")
-	if err != nil {
-		return nil, err
-	}
-	for name := range strings.SplitSeq(string(others), "\x00") {
-		if name == "" {
-			continue
-		}
-		n, err := lineCount(filepath.Join(root, filepath.FromSlash(name)))
-		if err != nil {
-			return nil, err
-		}
-		for line := 1; line <= n; line++ {
-			added[name] = append(added[name], line)
-		}
-	}
-	return added, nil
+	return parseAddedLines(diff)
 }
 
-// runChecked runs git in dir and returns its stdout untrimmed; a non-zero exit
-// is an error.
-func runChecked(ctx context.Context, dir string, runner toolrun.Runner, args ...string) ([]byte, error) {
-	out, err := run(ctx, dir, runner, args...)
+// stageWorkingTree copies the repository's index into dir and stages every
+// change of the working tree in the copy, as git add --all does. It returns
+// the copy's path. The repository's own index is only read.
+func stageWorkingTree(ctx context.Context, runner toolrun.Runner, root, dir string) (string, error) {
+	repoIndex, err := runGit(ctx, runner, root, nil, "rev-parse", "--git-path", "index")
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	if out.ExitCode != 0 {
-		return nil, fmt.Errorf("git %s exited %d: %s", strings.Join(args, " "), out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+	if !filepath.IsAbs(repoIndex) {
+		repoIndex = filepath.Join(root, repoIndex)
 	}
-	return out.Stdout, nil
+	index := filepath.Join(dir, "index")
+	data, err := os.ReadFile(repoIndex) //nolint:gosec // the repository's own index file
+	switch {
+	case err == nil:
+		if err := os.WriteFile(index, data, 0o600); err != nil { //nolint:gosec // index is a file in our own temporary directory
+			return "", fmt.Errorf("copy the index: %w", err)
+		}
+	case !errors.Is(err, fs.ErrNotExist): // no index yet: git add starts an empty one
+		return "", fmt.Errorf("copy the index: %w", err)
+	}
+	_, err = runTree(ctx, root, runner, []string{"GIT_INDEX_FILE=" + index}, "add", "--all")
+	return index, err
 }
 
-// parseAddedLines reads the new-side line ranges of a unified diff with no
-// context lines. It counts the lines of each hunk, so an added line that reads
-// like a header ("+++ x") is never taken for one.
+// parseAddedLines reads the added lines of a unified diff. It counts the lines
+// of each hunk, so an added line that reads like a header ("+++ x") is never
+// taken for one, and it numbers new lines one by one, so a context line is
+// never taken for an added one.
 func parseAddedLines(diff []byte) (evidence.AddedLines, error) {
 	added := evidence.AddedLines{}
 	var file string
-	var oldLeft, newLeft int
+	var oldLeft, newLeft, next int
 	for line := range strings.SplitSeq(string(diff), "\n") {
 		if oldLeft > 0 || newLeft > 0 {
 			switch {
+			case strings.HasPrefix(line, "+"):
+				if file != "" {
+					added[file] = append(added[file], next)
+				}
+				next++
+				newLeft--
 			case strings.HasPrefix(line, "-"):
 				oldLeft--
-			case strings.HasPrefix(line, "+"):
+			case strings.HasPrefix(line, " "):
+				next++
+				oldLeft--
 				newLeft--
 			case strings.HasPrefix(line, `\`): // "\ No newline at end of file"
 			default:
@@ -102,15 +124,14 @@ func parseAddedLines(diff []byte) (evidence.AddedLines, error) {
 			}
 			file = name
 		case strings.HasPrefix(line, "@@ "):
-			oldCount, start, count, err := hunkRanges(line)
-			if err != nil {
+			var err error
+			if oldLeft, next, newLeft, err = hunkRanges(line); err != nil {
 				return nil, err
 			}
-			oldLeft, newLeft = oldCount, count
-			for n := start; n < start+count && file != ""; n++ {
-				added[file] = append(added[file], n)
-			}
 		}
+	}
+	if oldLeft > 0 || newLeft > 0 {
+		return nil, fmt.Errorf("git diff: the last hunk of %s is cut short", file)
 	}
 	return added, nil
 }
@@ -165,29 +186,4 @@ func lineRange(s string) (start, count int, err error) {
 	}
 	count, err = strconv.Atoi(rest)
 	return start, count, err
-}
-
-// lineCount returns the number of lines git diff would show for an untracked
-// file: the lines of a regular file, one for a symlink (its target), none for a
-// directory (an untracked nested repository). A symlink is never followed.
-func lineCount(path string) (int, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return 0, fmt.Errorf("read untracked file: %w", err)
-	}
-	switch {
-	case info.Mode()&os.ModeSymlink != 0:
-		return 1, nil
-	case !info.Mode().IsRegular():
-		return 0, nil
-	}
-	data, err := os.ReadFile(path) //nolint:gosec // an untracked file git listed under the repository root
-	if err != nil {
-		return 0, fmt.Errorf("read untracked file: %w", err)
-	}
-	n := bytes.Count(data, []byte("\n"))
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		n++
-	}
-	return n, nil
 }

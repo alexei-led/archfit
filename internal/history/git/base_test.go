@@ -17,6 +17,9 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
+// noSuchRef names no commit in any test repository.
+const noSuchRef = "no-such-commit"
+
 func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -128,8 +131,11 @@ func TestTreeOfNamesTheContent(t *testing.T) {
 	if err != nil || a != b || a == first {
 		t.Errorf("TreeOf = %q and %q (%v); want one tree id for two commits with the same files", a, b, err)
 	}
-	if _, err := gitpkg.TreeOf(context.Background(), dir, "no-such-commit", runner); err == nil {
-		t.Error("TreeOf(no-such-commit) = nil error")
+	// rev-parse echoes an argument it reads as an option and exits 0.
+	for _, commit := range []string{noSuchRef, "--all"} {
+		if got, err := gitpkg.TreeOf(context.Background(), dir, commit, runner); err == nil {
+			t.Errorf("TreeOf(%q) = %q, want an error", commit, got)
+		}
 	}
 }
 
@@ -233,13 +239,19 @@ func TestSnapshotTreeKeepsExportIgnoredFiles(t *testing.T) {
 	}
 }
 
-func TestSnapshotTreeUnknownCommit(t *testing.T) {
+// TestSnapshotTreeRefusesWhatIsNotACommit: an unknown commit is an error,
+// and so is an option, which read-tree would take (--empty gives an empty
+// base, and every head line would look added).
+func TestSnapshotTreeRefusesWhatIsNotACommit(t *testing.T) {
 	requireGit(t)
 	t.Parallel()
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q")
-	if err := gitpkg.SnapshotTree(context.Background(), dir, "no-such-commit", t.TempDir(), toolrun.New()); err == nil {
-		t.Error("SnapshotTree(no-such-commit) = nil error")
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
+	for _, commit := range []string{noSuchRef, "--empty"} {
+		if err := gitpkg.SnapshotTree(context.Background(), dir, commit, t.TempDir(), toolrun.New()); err == nil {
+			t.Errorf("SnapshotTree(%q) = nil error", commit)
+		}
 	}
 }
 
