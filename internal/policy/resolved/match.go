@@ -16,12 +16,18 @@ func (p Policy) Covers(glob, path string) bool {
 // is a file, the directory that holds it: public: [pkg/chaos] names the package
 // pkg/chaos, so the file pkg/chaos/chaos.go is public and the package
 // pkg/chaos/netem is not. A Go import names a package directory; a TypeScript
-// or Python import names a file. p has its defaults (WithDefaults), so a module
-// without public is public as a whole. False for a name that is not a module.
+// or Python import names a file. target is in module, as ModuleOf or the
+// caller decided. p has its defaults (WithDefaults): a module that names no
+// public is public as a whole, so every target in it is public, even a package
+// directory its file globs (pkg/foo/*.go) do not match. False for a name that
+// is not a module.
 func (p Policy) IsPublic(module, target string, isFile bool) bool {
 	m, ok := p.Modules[module]
 	if !ok {
 		return false
+	}
+	if wholeModule(m) {
+		return true
 	}
 	for _, glob := range m.Public {
 		if matchGlob(glob, target) || isFile && matchGlob(glob, path.Dir(target)) {
