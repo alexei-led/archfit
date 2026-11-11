@@ -358,12 +358,17 @@ drafts:
 
 ## Schema and editor support
 
-The repository ships [`archfit.schema.json`](../archfit.schema.json), generated from configuration types and comments.
-Copy the schema beside your configuration, then add this comment for YAML language-server support:
+The repository ships [`archfit.schema.json`](../archfit.schema.json), generated from the policy types and their comments.
+It describes policy version 3, which Archfit 4 reads.
+Archfit 3 reads `version: 2` files, which this schema rejects.
+An Archfit 3 repository pins the schema from tag `v3.4.0`:
+`https://raw.githubusercontent.com/alexei-led/archfit/v3.4.0/archfit.schema.json`.
+
+Copy the schema beside your policy, then add this comment for YAML language-server support:
 
 ```yaml
 # yaml-language-server: $schema=./archfit.schema.json
-version: 2
+version: 3
 ```
 
 VS Code can bind the schema in `.vscode/settings.json`:
@@ -376,15 +381,14 @@ VS Code can bind the schema in `.vscode/settings.json`:
 }
 ```
 
-The schema helps editors validate keys and closed values. It does not replace `archfit config lint` or runtime validation.
-Some conditional rules need runtime context. For example, `coverage.sources` is required only when coverage is enabled.
+The schema checks keys, types, closed values, ranges, dates, and required keys.
+It cannot check names against the rest of the file, such as a `depends_on` entry that names no module.
+It cannot check globs against the files in the repository.
 Rule selector liveness depends on the scanned repository. A dependency rule's `to:` is the target's spelling in the language graph — a file path, a Go package directory, a Python dotted module, a Rust crate, or a .NET assembly name — never a graph node ID with its `kind:` prefix, such as `external:Npgsql`.
-The schema treats module `layer`, `role`, `subdomain`, and `volatility` values as strings.
-An unknown `role` is a configuration error.
-Runtime analysis warns about unknown layer, subdomain, and volatility declarations. `config lint` reports those declarations too.
-Check the schema and runtime together when changing configuration contracts.
+In a version 2 file, an unknown module `role` is an error.
+Analysis warns about unknown layer, subdomain, and volatility values. `config lint` reports them too.
 
-The JSON schema contract is versioned independently from the Archfit release. `version: 2` is the only configuration version this release accepts. This release rejects version 1 and removed coupling gate fields. Use the migration instructions in [Migration](migration.md) for older files.
+The policy version is separate from the Archfit release version. Archfit 3 accepts only `version: 2`. It rejects version 1 and removed coupling gate fields. Use the migration instructions in [Migration](migration.md) for older files.
 
 ## Starter configurations
 
