@@ -26,6 +26,7 @@ const (
 	errorDigest = "sha256:8942c53b984b51a421d3a2e04e77de185bb0fc7c5d5953c0b13b726958663172"
 	runID       = "^[A-Za-z0-9_.-]+$"
 	mediaType   = "application/json"
+	value       = "container is not running"
 )
 
 const (
@@ -33,6 +34,7 @@ const (
 	modUtil   = "pkg_util"
 	ifaceFile = "pkg/tc/iface.go"
 	mainFile  = "cmd/main.go"
+	utilFile  = "pkg/util/a.go"
 )
 
 var expires = time.Date(2026, 12, 10, 0, 0, 0, 0, time.UTC)
@@ -41,6 +43,7 @@ func policy(mode resolved.Mode) resolved.Policy {
 	return resolved.Policy{
 		Modules: map[string]resolved.Module{
 			"cmd":       {Paths: []string{"cmd/**"}},
+			"api":       {Paths: []string{"web/api/**"}},
 			"pkg_chaos": {Paths: []string{"pkg/chaos/**"}},
 			modTC:       {Paths: []string{"pkg/tc/**"}},
 			modUtil:     {Paths: []string{"pkg/util/**"}},
@@ -313,18 +316,17 @@ func TestDeletingTheThirdHolderMakesAKeyButAddsNoCopy(t *testing.T) {
 // adds, even when that module is second in the key; the first added site
 // comes first and the others follow in file and line order.
 func TestRecordDirection(t *testing.T) {
-	const value = "container is not running"
 	p := policy(resolved.ModeAsk)
 	base := []evidence.LiteralOccurrence{lit("pkg/tc/a.go", 3, value), lit("pkg/tc/b.go", 9, value)}
-	head := with(base, lit("pkg/util/x.go", 4, value), lit("pkg/util/a.go", 7, value))
-	addedLines := evidence.AddedLines{"pkg/util/a.go": {7}, "pkg/util/x.go": {4}}
+	head := with(base, lit("pkg/util/x.go", 4, value), lit(utilFile, 7, value))
+	addedLines := evidence.AddedLines{utilFile: {7}, "pkg/util/x.go": {4}}
 	got := added(p, base, head, addedLines)
 	if len(got) != 1 {
 		t.Fatalf("added copies = %+v, want one", got)
 	}
 	e := got[0]
 	wantKey := change.Key{Rule: resolved.RuleDuplication, From: modTC, To: modUtil, Symbol: digest(value)}
-	wantSites := []change.Site{{File: "pkg/util/a.go", Line: 7}, {File: "pkg/tc/a.go", Line: 3}, {File: "pkg/tc/b.go", Line: 9}, {File: "pkg/util/x.go", Line: 4}}
+	wantSites := []change.Site{{File: utilFile, Line: 7}, {File: "pkg/tc/a.go", Line: 3}, {File: "pkg/tc/b.go", Line: 9}, {File: "pkg/util/x.go", Line: 4}}
 	if e.Key != wantKey || e.From != modUtil || e.To != modTC {
 		t.Errorf("key %+v, from %q, to %q; want key %+v, from pkg_util, to pkg_tc", e.Key, e.From, e.To, wantKey)
 	}
@@ -340,18 +342,64 @@ func TestRecordDirection(t *testing.T) {
 }
 
 // TestFindWithoutAddedLines: on the base no site is added, so the record
-// starts in the first module in order.
+// starts in the first module by name, wherever its files sort.
 func TestFindWithoutAddedLines(t *testing.T) {
-	got := copies.Find(pumba, policy(resolved.ModeAsk), nil, expires)
+	tests := []struct {
+		name     string
+		tree     []evidence.LiteralOccurrence
+		from, to string
+		first    change.Site
+		what     string
+	}{
+		{
+			name: "the first module also has the first file",
+			tree: pumba,
+			from: "cmd", to: "pkg_chaos",
+			first: change.Site{File: mainFile, Line: 3},
+			what:  "this literal already lives in pkg/chaos/http.go:3",
+		},
+		{
+			name: "the first module has the last file",
+			tree: []evidence.LiteralOccurrence{lit(utilFile, 3, value), lit("web/api/b.go", 5, value)},
+			from: "api", to: modUtil,
+			first: change.Site{File: "web/api/b.go", Line: 5},
+			what:  "this literal already lives in pkg/util/a.go:3",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := copies.Find(tt.tree, policy(resolved.ModeAsk), nil, expires)
+			if len(got) != 1 {
+				t.Fatalf("Find = %+v, want one copy", got)
+			}
+			e := got[0]
+			if e.From != tt.from || e.To != tt.to || e.Sites[0] != tt.first {
+				t.Errorf("from %q, to %q, first site %v; want %s, %s, %v", e.From, e.To, e.Sites[0], tt.from, tt.to, tt.first)
+			}
+			if e.What != tt.what {
+				t.Errorf("what = %q, want %q", e.What, tt.what)
+			}
+		})
+	}
+}
+
+// TestRecordNamesTheFirstSiteOfTheOtherModule: what points into the module
+// that already holds the literal, even when the copying module has another
+// site that sorts before it.
+func TestRecordNamesTheFirstSiteOfTheOtherModule(t *testing.T) {
+	base := []evidence.LiteralOccurrence{lit("pkg/tc/a.go", 1, value), lit(utilFile, 1, value)}
+	head := with(base, lit("pkg/tc/z.go", 1, value))
+	addedLines := evidence.AddedLines{"pkg/tc/z.go": {1}}
+	got := added(policy(resolved.ModeAsk), base, head, addedLines)
 	if len(got) != 1 {
-		t.Fatalf("Find = %+v, want the media type copy alone", got)
+		t.Fatalf("added copies = %+v, want one", got)
 	}
-	e := got[0]
-	if e.From != "cmd" || e.To != "pkg_chaos" || e.Sites[0] != (change.Site{File: mainFile, Line: 3}) {
-		t.Errorf("from %q, to %q, first site %v; want cmd, pkg_chaos, cmd/main.go:3", e.From, e.To, e.Sites[0])
+	wantSites := []change.Site{{File: "pkg/tc/z.go", Line: 1}, {File: "pkg/tc/a.go", Line: 1}, {File: utilFile, Line: 1}}
+	if !slices.Equal(got[0].Sites, wantSites) {
+		t.Errorf("sites = %v, want %v", got[0].Sites, wantSites)
 	}
-	if want := "this literal already lives in pkg/chaos/http.go:3"; e.What != want {
-		t.Errorf("what = %q, want %q", e.What, want)
+	if want := "this literal already lives in pkg/util/a.go:1"; got[0].What != want {
+		t.Errorf("what = %q, want %q", got[0].What, want)
 	}
 }
 

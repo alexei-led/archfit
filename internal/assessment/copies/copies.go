@@ -18,7 +18,11 @@
 // Added keeps the errors a change adds. R12 counts holders per tree, so a key
 // can appear without a new copy: deleting the third holder of a literal leaves
 // two. A key is added only when the head has more sites than the base and one
-// head site is on an added line.
+// head site is on an added line. Known limit: a change that deletes the third
+// holder and also edits a line of a remaining holder that holds the literal
+// reports a copy nobody made. Telling the two apart needs the base's holders
+// of literals R12 drops; until that is measured as noise, the error is
+// answered like any other.
 //
 // Not found: a copy in other words, a table of values, a literal across lines.
 package copies
