@@ -275,7 +275,7 @@ The complete release image is the simplest fixed tool environment. The tool vers
 
 | Tool | Image version |
 | --- | --- |
-| Go / Node / Python / uv | 1.27.3 / 24.22.1 / 3.14.9 / 0.13.5 |
+| Go / Node / Python / uv | 1.27.4 / 24.22.1 / 3.14.9 / 0.13.5 |
 | dependency-cruiser / TypeScript compiler | 18.7.0 / 6.0.3 |
 | .NET SDK | 10.0.402 |
 | archfit-roslyn / Microsoft.CodeAnalysis | 1.1.0 / 5.6.0 |
