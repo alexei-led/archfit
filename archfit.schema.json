@@ -48,6 +48,7 @@
             "ask",
             "off"
           ],
+          "minLength": 1,
           "description": "A dependency between two modules must be an allowed dependency. Absent: ask.",
           "default": "ask"
         },
@@ -58,6 +59,7 @@
             "ask",
             "off"
           ],
+          "minLength": 1,
           "description": "New knowledge across a module boundary needs a balance of at least min_balance. Absent: deny.",
           "default": "deny"
         },
@@ -68,6 +70,7 @@
             "ask",
             "off"
           ],
+          "minLength": 1,
           "description": "Knowledge that another module already owns is not copied. Absent: ask.",
           "default": "ask"
         },
@@ -78,6 +81,7 @@
             "ask",
             "off"
           ],
+          "minLength": 1,
           "description": "No new cycle between modules. Absent: deny.",
           "default": "deny"
         },
@@ -88,6 +92,7 @@
             "ask",
             "off"
           ],
+          "minLength": 1,
           "description": "Dependencies follow the layer order. Absent: deny.",
           "default": "deny"
         },
@@ -98,6 +103,7 @@
             "ask",
             "off"
           ],
+          "minLength": 1,
           "description": "New production code belongs to a module. Absent: deny.",
           "default": "deny"
         },
@@ -169,11 +175,13 @@
             "llvm-cov-json",
             "cobertura"
           ],
+          "minLength": 1,
           "description": "The format of the file. Absent: auto, found from the content.",
           "default": "auto"
         },
         "sidecar_path": {
           "type": "string",
+          "minLength": 1,
           "description": "The file that records the source hashes. Absent: \u003cpath\u003e.sidecar.json."
         },
         "max_bytes": {
@@ -256,7 +264,8 @@
         },
         "projects": {
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "type": "array",
           "description": "The .slnx, .sln, .slnf or .csproj files to read, relative to the repository root. Absent: the first .slnx or .sln at the root, else every .csproj outside obj/, bin/ and excluded paths."
@@ -307,6 +316,7 @@
         },
         "expires": {
           "type": "string",
+          "minLength": 1,
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
           "format": "date",
           "description": "The last day the exception holds, as YYYY-MM-DD. After it, while the code still breaks the rule, every change fails. Absent: no date."
@@ -352,14 +362,16 @@
       "properties": {
         "include": {
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "type": "array",
           "description": "Keeps only the members that match. Absent: every member."
         },
         "exclude": {
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "type": "array",
           "description": "Drops the members that match, after include. Absent: none."
@@ -418,7 +430,8 @@
       "properties": {
         "paths": {
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "type": "array",
           "minItems": 1,
@@ -426,7 +439,8 @@
         },
         "public": {
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "type": "array",
           "minItems": 1,
@@ -439,6 +453,7 @@
             "medium",
             "high"
           ],
+          "minLength": 1,
           "description": "How often the module is expected to change. Absent: taken from subdomain (core is high; supporting and generic are low), otherwise high."
         },
         "subdomain": {
@@ -448,15 +463,18 @@
             "supporting",
             "generic"
           ],
+          "minLength": 1,
           "description": "The business role of the module. It sets the volatility only when volatility is absent. Absent: no business role is recorded."
         },
         "layer": {
           "type": "string",
+          "minLength": 1,
           "description": "A name from layers. Absent: the module has no layer."
         },
         "depends_on": {
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "type": "array",
           "description": "The modules this module may depend on. Absent: the module may depend on no other module."
@@ -517,6 +535,7 @@
         },
         "package": {
           "type": "string",
+          "minLength": 1,
           "description": "The top-level importable package, such as myapp. Absent: found from the layout, src first."
         }
       },
@@ -528,8 +547,7 @@
       "oneOf": [
         {
           "required": [
-            "deny",
-            "instead"
+            "deny"
           ],
           "title": "deny"
         },
@@ -582,6 +600,11 @@
         "id",
         "why"
       ],
+      "dependentRequired": {
+        "deny": [
+          "instead"
+        ]
+      },
       "description": "Rule is a custom rule: exactly one of deny, only or note, with its reason."
     },
     "RustLanguage": {
@@ -599,11 +622,13 @@
         },
         "manifest": {
           "type": "string",
+          "minLength": 1,
           "description": "The path of Cargo.toml. Absent: the root manifest."
         },
         "features": {
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "type": "array",
           "description": "The cargo features to turn on. Absent: the default features."
@@ -633,6 +658,7 @@
         },
         "timeout": {
           "type": "string",
+          "minLength": 1,
           "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "description": "A Go duration, such as 5m. Absent or zero: the analyzer's own limit."
         }
@@ -650,7 +676,8 @@
     },
     "owners": {
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       },
       "type": "array",
       "minItems": 1,
@@ -662,12 +689,14 @@
         "advisory",
         "required"
       ],
+      "minLength": 1,
       "description": "Whether the check blocks a pull request. Absent: advisory, so the check reports and does not block.",
       "default": "advisory"
     },
     "layers": {
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       },
       "type": "array",
       "uniqueItems": true,
@@ -701,21 +730,24 @@
     },
     "generated": {
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       },
       "type": "array",
       "description": "Globs of generated code, which the rules skip. Absent: only listed paths are out; a file name that looks generated is not enough."
     },
     "tests": {
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       },
       "type": "array",
       "description": "Globs of test code, which the rules skip. Absent: only listed paths are out."
     },
     "exclude": {
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       },
       "type": "array",
       "description": "Globs of paths that no extractor reads, such as vendored or fixture trees. Absent: only the built-in exclusions apply."

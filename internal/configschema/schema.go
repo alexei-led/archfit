@@ -110,6 +110,13 @@ func one() *uint64 {
 // patch adds the constraints that struct tags cannot express. Each mirrors a
 // check in policyfile.Decode.
 func patch(schema *jsonschema.Schema) {
+	// An empty string is never a value: Decode rejects an explicit "" rather
+	// than read it as an absent key.
+	nonEmptyStrings(schema)
+	for _, def := range schema.Definitions {
+		nonEmptyStrings(def)
+	}
+
 	if version, ok := schema.Properties.Get("version"); ok {
 		version.Const = policyfile.Version
 	}
@@ -117,13 +124,11 @@ func patch(schema *jsonschema.Schema) {
 		modules.MinProperties = one()
 	}
 
-	// A deny rule also needs instead.
+	// A deny rule also needs instead. This sits beside the oneOf, not inside its
+	// deny branch: there, a rule with deny and note but no instead would fail the
+	// deny branch, match only the note branch, and pass.
 	if rule := schema.Definitions["Rule"]; rule != nil {
-		for _, branch := range rule.OneOf {
-			if branch.Title == "deny" {
-				branch.Required = append(branch.Required, "instead")
-			}
-		}
+		rule.DependentRequired = map[string][]string{"deny": {"instead"}}
 	}
 
 	// An unowned exception names a path and no target; every other exception
@@ -145,6 +150,27 @@ func patch(schema *jsonschema.Schema) {
 	if coverage := schema.Definitions["Coverage"]; coverage != nil {
 		coverage.If = requiredProperty("enabled", &jsonschema.Schema{Const: true})
 		coverage.Then = requiredProperty("sources", &jsonschema.Schema{MinItems: one()})
+	}
+}
+
+// nonEmptyStrings gives every string schema reachable from s, without following
+// $ref, a minimum length of 1.
+func nonEmptyStrings(s *jsonschema.Schema) {
+	if s == nil {
+		return
+	}
+	if s.Type == typeString && s.MinLength == nil {
+		s.MinLength = one()
+	}
+	nonEmptyStrings(s.Items)
+	nonEmptyStrings(s.AdditionalProperties)
+	for _, branch := range s.OneOf {
+		nonEmptyStrings(branch)
+	}
+	if s.Properties != nil {
+		for pair := s.Properties.Oldest(); pair != nil; pair = pair.Next() {
+			nonEmptyStrings(pair.Value)
+		}
 	}
 }
 

@@ -124,8 +124,26 @@ func TestSchemaAgreesWithDecoder(t *testing.T) {
 		"float min_balance":  "builtin:\n  min_balance: 7.0\n",
 		"null exclude":       "exclude:\n",
 		"date-like id":       "rules:\n  - id: 2026-11-19\n    note: n\n    why: w\n",
+		"empty note on deny": "rules:\n  - id: r\n    deny: { from: app, to: lib }\n    note: \"\"\n    why: w\n    instead: i\n",
+		"empty instead":      "rules:\n  - id: r\n    only: { use: process, in: app }\n    why: w\n    instead: \"\"\n",
+		"deny and only":      "rules:\n  - id: r\n    deny: { from: app, to: lib }\n    only: { use: process, in: app }\n    why: w\n",
+		"empty builtin mode": "builtin:\n  graph: \"\"\n",
+		"empty volatility":   "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    volatility: \"\"\n",
+		"empty layer":        "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    layer: \"\"\n",
+		"empty path":         "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [\"\"]\n",
+		"empty owner":        "version: 3\nowners: [\"\"]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+		"empty glob":         "generated: [\"\"]\n",
+		"empty format":       "coverage:\n  sources:\n    - path: c.out\n      format: \"\"\n",
+		"empty timeout":      "analyzers:\n  roslyn:\n    timeout: \"\"\n",
+		"empty enabled":      "languages:\n  go:\n    enabled: \"\"\n",
+		"version float":      "version: 3.0\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+		"version 2.0":        "version: 2.0\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n",
 	} {
-		cases["edge/"+name] = []byte(head + tail)
+		doc := tail
+		if !strings.HasPrefix(tail, "version:") {
+			doc = head + tail
+		}
+		cases["edge/"+name] = []byte(doc)
 	}
 
 	for name, data := range cases {

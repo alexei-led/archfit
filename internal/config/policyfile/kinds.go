@@ -32,15 +32,18 @@ func checkKinds(p *problems, v any, t reflect.Type, path string) {
 			checkKinds(p, list, reflect.TypeFor[[]string](), path)
 			return
 		}
-		expectKind(p, path, v, "a name or a list of names", isString)
+		checkString(p, path, v, "a name or a list of names")
 		return
 	case switchType:
-		expectKind(p, path, v, `true, false or "auto"`, func(v any) bool { return isString(v) || isBool(v) })
+		if isBool(v) {
+			return
+		}
+		checkString(p, path, v, `true, false or "auto"`)
 		return
 	}
 	switch t.Kind() {
 	case reflect.String:
-		expectKind(p, path, v, "a string", isString)
+		checkString(p, path, v, "a string")
 	case reflect.Int, reflect.Int64:
 		expectKind(p, path, v, "a whole number", isInteger)
 	case reflect.Bool:
@@ -85,7 +88,18 @@ func expectKind(p *problems, path string, v any, want string, ok func(any) bool)
 	}
 }
 
-func isString(v any) bool { _, ok := v.(string); return ok }
+// checkString requires a non-empty string. An empty string is never a value in
+// the policy: the schema gives every string a minimum length of 1, so an explicit
+// "" never reads as an absent key.
+func checkString(p *problems, path string, v any, want string) {
+	s, ok := v.(string)
+	switch {
+	case !ok:
+		p.add(path, "%v is not %s", yamlValue(v), want)
+	case s == "":
+		p.add(path, "empty string: give a value or remove the key")
+	}
+}
 
 func isBool(v any) bool { _, ok := v.(bool); return ok }
 

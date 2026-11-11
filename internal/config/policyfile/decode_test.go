@@ -177,15 +177,22 @@ func TestDecodeKeepsAbsentKeysZero(t *testing.T) {
 
 // invalidFixtures maps each file in testdata/invalid to the messages its error must contain.
 var invalidFixtures = map[string][]string{
-	"unknown-key":          {`unknown field "owner"`, "6:5"},
-	"version-missing":      {`version: missing: add "version: 3"`},
-	"version-2":            {`version 2 is the Archfit 3 policy format: run "archfit init" to convert it to version 3`},
-	"version-4":            {"version 4: this engine reads version 3"},
-	"version-string":       {`version "3": this engine reads version 3`},
-	"expires-shape":        {`exceptions[0].expires: "19-11-2026" is not a date: use YYYY-MM-DD`},
-	"expires-impossible":   {`exceptions[0].expires: "2026-02-30" is not a date: use YYYY-MM-DD`},
-	"rule-two-forms":       {"rules[0] (two-forms): has deny and note: a rule has exactly one of deny, only or note"},
-	"rule-no-form":         {"rules[0] (no-form): needs one of deny, only or note"},
+	"unknown-key":        {`unknown field "owner"`, "6:5"},
+	"version-missing":    {`version: missing: add "version: 3"`},
+	"version-2":          {`version 2 is the Archfit 3 policy format: run "archfit init" to convert it to version 3`},
+	"version-4":          {"version 4: this engine reads version 3"},
+	"version-string":     {`version "3": this engine reads version 3`},
+	"expires-shape":      {`exceptions[0].expires: "19-11-2026" is not a date: use YYYY-MM-DD`},
+	"expires-impossible": {`exceptions[0].expires: "2026-02-30" is not a date: use YYYY-MM-DD`},
+	"rule-two-forms":     {"rules[0] (two-forms): has deny and note: a rule has exactly one of deny, only or note"},
+	"rule-no-form":       {"rules[0] (no-form): needs one of deny, only or note"},
+	"rule-two-forms-no-instead": {
+		"rules[0] (two-forms): has deny and note",
+		"rules[0] (two-forms).instead: required with deny",
+	},
+	"gate-empty":           {"gate: empty string: give a value or remove the key"},
+	"expires-empty":        {"exceptions[0].expires: empty string: give a value or remove the key"},
+	"unowned-to-empty":     {"exceptions[0].to: empty string: give a value or remove the key"},
 	"builtin-mode-unknown": {`builtin.graph: "warn" is not one of deny, ask, off`},
 	"min-balance-low":      {"builtin.min_balance: 0 is outside 1 to 10"},
 	"min-balance-high":     {"builtin.min_balance: 11 is outside 1 to 10"},
@@ -263,6 +270,33 @@ builtin:
 	}
 }
 
+func TestDecodeVersionNumbers(t *testing.T) {
+	tests := []struct{ version, wantErr string }{
+		{version: "3"},
+		{version: "3.0"},
+		{version: "2.0", wantErr: `version 2 is the Archfit 3 policy format: run "archfit init"`},
+		{version: "3.5", wantErr: "version 3.5: this engine reads version 3"},
+		{version: "-3", wantErr: "version -3: this engine reads version 3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			got, err := policyfile.Decode([]byte("version: " + tt.version + "\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n"))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if got.Version != policyfile.Version {
+				t.Errorf("Version = %d, want %d", got.Version, policyfile.Version)
+			}
+		})
+	}
+}
+
 func TestDecodeSwitchForms(t *testing.T) {
 	tests := []struct {
 		enabled, wantErr string
@@ -274,6 +308,7 @@ func TestDecodeSwitchForms(t *testing.T) {
 		{enabled: `"true"`, wantErr: `languages.go.enabled: "true" is not true, false or "auto"`},
 		{enabled: "1", wantErr: `languages.go.enabled: 1 is not true, false or "auto"`},
 		{enabled: "[true]", wantErr: `enabled takes true, false or "auto"`},
+		{enabled: `""`, wantErr: "languages.go.enabled: empty string: give a value or remove the key"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.enabled, func(t *testing.T) {
@@ -303,8 +338,8 @@ func TestDecodeNamesForms(t *testing.T) {
 		{name: "absent", entry: "", wantErr: "rules[0] (r).deny.from: required: name a module or a path glob"},
 		{name: "one name", entry: "from: app", want: policyfile.Names{"app"}},
 		{name: "a list", entry: "from: [app, cmd/**]", want: policyfile.Names{"app", "cmd/**"}},
-		{name: "empty string", entry: `from: ""`, wantErr: "rules[0] (r).deny.from: has an empty name"},
-		{name: "empty name in a list", entry: `from: [app, ""]`, wantErr: "rules[0] (r).deny.from: has an empty name"},
+		{name: "empty string", entry: `from: ""`, wantErr: "rules[0].deny.from: empty string: give a value or remove the key"},
+		{name: "empty name in a list", entry: `from: [app, ""]`, wantErr: "rules[0].deny.from[1]: empty string: give a value or remove the key"},
 		{name: "null", entry: "from: ", wantErr: "rules[0].deny.from: empty value: give a value or remove the key"},
 		{name: "a map", entry: "from: {a: b}", wantErr: "want one name or a list of names"},
 	}

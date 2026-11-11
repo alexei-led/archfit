@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"reflect"
 	"regexp"
 	"slices"
@@ -61,7 +62,12 @@ func checkVersion(data []byte) error {
 	if err := yaml.Unmarshal(data, &header); err != nil {
 		return err
 	}
-	switch v := header.Version.(type) {
+	version := header.Version
+	// As in JSON Schema, a number with no fraction is an integer: 3.0 is 3.
+	if f, ok := version.(float64); ok && f >= 0 && f == math.Trunc(f) {
+		version = uint64(f)
+	}
+	switch v := version.(type) {
 	case nil:
 		return errors.New(`version: missing: add "version: 3"`)
 	case uint64:
@@ -262,15 +268,13 @@ func (f File) checkSwitches(p *problems) {
 	}
 }
 
-// checkNames requires a set, non-empty list without empty names.
+// checkNames requires a set, non-empty list. checkKinds already rejected empty names.
 func checkNames(p *problems, path string, n Names, hint string) {
 	switch {
 	case n == nil:
 		p.add(path, "required: %s", hint)
 	case len(n) == 0:
 		p.add(path, "empty: %s", hint)
-	case slices.Contains(n, ""):
-		p.add(path, "has an empty name")
 	}
 }
 
