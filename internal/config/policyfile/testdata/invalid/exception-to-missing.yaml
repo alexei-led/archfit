@@ -1,0 +1,9 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+exceptions:
+  - rule: graph
+    from: app
+    why: No target.

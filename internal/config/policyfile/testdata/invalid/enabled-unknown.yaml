@@ -1,0 +1,8 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+languages:
+  go:
+    enabled: on

@@ -1,233 +1,182 @@
-// Package configschema generates a JSON Schema for archfit's .archfit.yaml configuration file.
-// The schema is derived from the Go structs in internal/config, using yaml struct tags as keys.
+// Package configschema generates archfit.schema.json, the JSON Schema of the
+// Archfit policy file (.archfit.yaml, schema 3). The schema is reflected from the
+// types in internal/config/policyfile, with their doc comments as descriptions.
 //
-// Use Generate to produce the schema bytes; the repo-committed schema at
-// archfit.schema.json must stay in sync — enforced by the no-drift test and
-// the `make schema` target.
+// The committed archfit.schema.json must match Generate: the no-drift test and
+// the `make schema` target enforce it. The schema states exactly what
+// policyfile.Decode accepts; a test runs every policyfile fixture through both.
 package configschema
 
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"reflect"
 
 	"github.com/invopop/jsonschema"
 
-	"github.com/alexei-led/archfit/v3/internal/config"
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
 )
 
 const (
-	schemaID    = "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.schema.json"
-	schemaDraft = "https://json-schema.org/draft/2020-12/schema"
-	typeString  = "string" // JSON Schema scalar type, reused across patches
+	schemaID          = "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.schema.json"
+	schemaDraft       = "https://json-schema.org/draft/2020-12/schema"
+	schemaTitle       = "Archfit policy (schema 3)"
+	schemaDescription = "The Archfit policy, .archfit.yaml: modules, allowed dependencies, rules and exceptions. Archfit 4 reads it. Archfit 3 reads version 2 and uses the schema of tag v3.4.0."
 
-	patternPkgPath = "github.com/alexei-led/archfit/v3/internal/model/pattern"
+	// commentBase is this package's import path. AddGoComments keys comments by
+	// path.Join(base, walked directory), so joining "../config/policyfile" onto it
+	// gives the policyfile import path the reflected types carry.
+	commentBase = "github.com/alexei-led/archfit/v3/internal/configschema"
+
+	typeString = "string"
 )
 
-// toolModeSchema is the union that replaces the inlined {type: string} for any
-// struct field named "enabled" that carries ToolMode. It mirrors what the YAML
-// config actually accepts: a native boolean (true/false) or the string "auto".
-// The legacy "on"/"off" spellings are rejected by evidenceports.ToolMode.UnmarshalYAML.
-var toolModeSchema = &jsonschema.Schema{
-	Description: "Enable state: true | false | \"auto\" (on/off are not accepted)",
-	OneOf: []*jsonschema.Schema{
-		{Type: "boolean"},
-		{Const: "auto"},
-	},
-}
-
-// gateModeSchema tightens the inlined {type: string} for the "gate" field to
-// only the three accepted values.
-var gateModeSchema = &jsonschema.Schema{
-	Type:        typeString,
-	Enum:        []any{"off", "warn", "fail"},
-	Description: "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric",
-}
-
-// schemaDefinitionName maps a Go type to its published $defs key. pattern.Def is
-// the neutral kernel spelling of what .archfit.yaml calls a pattern definition;
-// the schema has always published it as "PatternDef" and must keep doing so.
-func schemaDefinitionName(t reflect.Type) string {
-	if t.PkgPath() == patternPkgPath && t.Name() == "Def" {
-		return "PatternDef"
-	}
-	return t.Name()
-}
-
-// Generate produces the JSON Schema bytes for config.Config.
+// Generate produces the JSON Schema bytes for policyfile.File.
 //
-// srcDir is the filesystem path to internal/config (the package directory)
-// so that AddGoComments can parse doc-comments into schema descriptions.
-// Callers in tests pass "../config"; cmd-level callers pass the absolute path.
-//
-// The output is deterministically formatted with 2-space indentation.
+// srcDir is the path of internal/config/policyfile relative to this package
+// (tests pass "../config/policyfile"), so its doc comments become descriptions.
+// The output uses 2-space indentation and ends with a newline.
 func Generate(srcDir string) ([]byte, error) {
 	r := &jsonschema.Reflector{
-		// Use yaml struct tags as property names instead of json tags.
+		// Property names are the YAML keys.
 		FieldNameTag: "yaml",
-		// Inline Config's own fields into the root schema object rather than
-		// wrapping them in a $ref, so editors see properties at the top level.
+		// The root properties sit at the top level, not behind a $ref.
 		ExpandedStruct: true,
-		// Almost every key in .archfit.yaml is optional — validate() enforces
-		// enums and ranges only when a key is present. Without this flag the
-		// reflector marks every field lacking a yaml `omitempty` as required,
-		// so valid configs (knob-only metric entries, rules without both
-		// module and layer selectors) fail schema validation in editors. Only
-		// fields tagged `jsonschema:"required"` (Config.Version) are required.
+		// Only fields tagged `jsonschema:"required"` are required.
 		RequiredFromJSONSchemaTags: true,
-		// The published $defs keys are part of the schema contract: editors and
-		// validators reference them, and patchDefinitions keys its enum/required
-		// tightening off the same names. Go type names may move between packages
-		// during refactors, so pin the one name whose Go identifier no longer
-		// matches its schema identity instead of silently renaming a $def.
-		Namer: schemaDefinitionName,
+		Mapper:                     mapType,
 	}
-
-	// Pull doc-comments from the source so each property gets a description.
-	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/config", srcDir); err != nil {
+	if err := r.AddGoComments(commentBase, srcDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments: %w", err)
 	}
-	// Policy declarations (ModuleDef, RuleDef, WaiverDef, MetricEntry,
-	// ExternalSystemDef, …) live in internal/policy, so their doc-comments become
-	// property descriptions. AddGoComments keys the map by
-	// Join(base, relativeWalkDir); with policyDir == srcDir/../policy the walk dir
-	// is "../policy", so joining it onto the config import path resolves to
-	// internal/policy. Same join trick for the acquisition port types (ToolMode)
-	// and the neutral pattern definition.
-	policyDir := filepath.Join(srcDir, "..", "policy")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/config", policyDir); err != nil {
-		return nil, fmt.Errorf("configschema: AddGoComments(policy): %w", err)
-	}
-	portsDir := filepath.Join(srcDir, "..", "evidence", "ports")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/config", portsDir); err != nil {
-		return nil, fmt.Errorf("configschema: AddGoComments(ports): %w", err)
-	}
-	patternDir := filepath.Join(srcDir, "..", "model", "pattern")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/model", patternDir); err != nil {
-		return nil, fmt.Errorf("configschema: AddGoComments(pattern): %w", err)
-	}
 
-	schema := r.Reflect(&config.Config{})
-	// MetricsConfig's ordinary entries are decoded through its custom mixed-map
-	// contract, so no Go field directly references MetricEntry for reflection.
-	// Publish that definition explicitly before the mixed-map patch points at it.
-	metricEntry := r.Reflect(&policy.MetricEntry{})
-	metricEntry.Version, metricEntry.ID = "", ""
-	schema.Definitions["MetricEntry"] = metricEntry
-
-	// Stable identity headers.
+	schema := r.Reflect(&policyfile.File{})
 	schema.ID = jsonschema.ID(schemaID)
 	schema.Version = schemaDraft
+	schema.Title = schemaTitle
+	schema.Description = schemaDescription
+	patch(schema)
 
-	// Post-process: ToolMode and GateMode are inlined by invopop as {type: string}
-	// because they are named string types. Patch every struct definition to replace
-	// the inlined schemas with the correct union/enum shapes.
-	patchDefinitions(schema)
-
-	// Marshal with stable 2-space indentation.
 	buf, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("configschema: marshal: %w", err)
 	}
-
-	// Append a trailing newline for POSIX-correct text files.
-	buf = append(buf, '\n')
-	return buf, nil
+	return append(buf, '\n'), nil
 }
 
-// patchDefinitions walks all named definitions in the schema and replaces
-// inlined ToolMode ("enabled" property, {type:string}) and GateMode
-// ("gate" property, {type:string}) with the correct union/enum schemas, and
-// tightens CouplingGateDef to mirror validateCouplingGate.
-func patchDefinitions(schema *jsonschema.Schema) {
-	for name, def := range schema.Definitions {
-		if def.Properties == nil {
-			continue
-		}
-		if enabled, ok := def.Properties.Get("enabled"); ok {
-			if enabled.Type == typeString {
-				// Replace in place: copy the union schema's fields.
-				*enabled = *toolModeSchema
-			}
-		}
-		if gate, ok := def.Properties.Get("gate"); ok {
-			if gate.Type == typeString && gate.Enum == nil {
-				*gate = *gateModeSchema
-			}
-		}
-		if name == "MetricsConfig" {
-			// Metrics is a mixed public map: one reserved diagnostic integer and
-			// every other key an ordinary object-shaped MetricEntry. A negative
-			// lookahead keeps the generic object schema from also applying to the
-			// reserved scalar.
-			def.PatternProperties = map[string]*jsonschema.Schema{
-				`^(?!function_loc_threshold$).+$`: {Ref: "#/$defs/MetricEntry"},
-			}
-			def.AdditionalProperties = jsonschema.FalseSchema
-		}
-		if name == "CouplingConfig" {
-			// Mirror validate(): clone-only duplicated knowledge has exactly two
-			// policies. Empty/unset defaults to score in Config.ForClassify.
-			if dk, ok := def.Properties.Get("duplicated_knowledge"); ok && dk.Type == typeString {
-				dk.Enum = []any{"score", "advisory"}
-			}
-		}
-		if name == "ExternalSystemDef" {
-			// Mirror validateExternalSystem (internal/config): at least one
-			// targets glob (an empty entry declares nothing) and a real
-			// volatility level when one is set.
-			if targets, ok := def.Properties.Get("targets"); ok {
-				one := uint64(1)
-				targets.MinItems = &one
-			}
-			if vol, ok := def.Properties.Get("volatility"); ok && vol.Type == typeString {
-				vol.Enum = []any{"high", "medium", "low", "frozen"}
-			}
-			def.Required = []string{"targets"}
-		}
-		if name == "RuleDef" {
-			// Mirror validateRules/rules.New: every rule needs a stable id for
-			// finding fingerprints/baseline matching, and an empty or
-			// unrecognized `type` is a hard load error. Enumerating the types
-			// lets an editor flag a typo before the engine rejects it.
-			def.Required = []string{"id", "type"}
-			if typ, ok := def.Properties.Get("type"); ok && typ.Type == typeString && typ.Enum == nil {
-				for _, rt := range policy.RuleTypes() {
-					typ.Enum = append(typ.Enum, rt)
-				}
-			}
-		}
-		if name == "PatternDef" {
-			// Mirror validateRules (internal/config): ast-grep runs
-			// `sg --lang <lang> --pattern <rule>` and keys findings by id, so
-			// a partial pattern entry is a hard load error.
-			def.Required = []string{"id", "lang", "rule"}
-		}
-		if name == "CouplingGateDef" {
-			// Mirror validateCouplingGate (internal/config): an empty gate block
-			// gates nothing, so the distributed-monolith stanza is required when
-			// the block is present.
-			def.Required = []string{"distributed_monolith"}
-		}
-		if name == "DistributedMonolithDef" {
-			// Mirror validateCouplingGate: two modes, and a tolerated new-seam
-			// count is never negative.
-			if mode, ok := def.Properties.Get("mode"); ok && mode.Type == typeString {
-				mode.Enum = []any{"warn", "fail"}
-			}
-			if maxNew, ok := def.Properties.Get("max_new_seams"); ok {
-				maxNew.Minimum = "0"
-			}
+// mapType publishes the closed value lists and the two YAML unions of
+// policyfile. Each call returns a new schema, because the reflector writes the
+// field's description and default into it.
+func mapType(t reflect.Type) *jsonschema.Schema {
+	switch t {
+	case reflect.TypeFor[policyfile.Gate]():
+		return enum(policyfile.Gates)
+	case reflect.TypeFor[policyfile.Mode]():
+		return enum(policyfile.Modes)
+	case reflect.TypeFor[policyfile.Volatility]():
+		return enum(policyfile.Volatilities)
+	case reflect.TypeFor[policyfile.Subdomain]():
+		return enum(policyfile.Subdomains)
+	case reflect.TypeFor[policyfile.CoverageFormat]():
+		return enum(policyfile.CoverageFormats)
+	case reflect.TypeFor[policyfile.Switch]():
+		return &jsonschema.Schema{OneOf: []*jsonschema.Schema{
+			{Type: "boolean"},
+			{Const: string(policyfile.SwitchAuto)},
+		}}
+	case reflect.TypeFor[policyfile.Names]():
+		name := func() *jsonschema.Schema { return &jsonschema.Schema{Type: typeString, MinLength: one()} }
+		return &jsonschema.Schema{OneOf: []*jsonschema.Schema{
+			name(),
+			{Type: "array", Items: name(), MinItems: one()},
+		}}
+	}
+	return nil
+}
+
+func enum[T ~string](values []T) *jsonschema.Schema {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = string(v)
+	}
+	return &jsonschema.Schema{Type: typeString, Enum: out}
+}
+
+func one() *uint64 {
+	n := uint64(1)
+	return &n
+}
+
+// patch adds the constraints that struct tags cannot express. Each mirrors a
+// check in policyfile.Decode.
+func patch(schema *jsonschema.Schema) {
+	// An empty string is never a value: Decode rejects an explicit "" rather
+	// than read it as an absent key.
+	nonEmptyStrings(schema)
+	for _, def := range schema.Definitions {
+		nonEmptyStrings(def)
+	}
+
+	if version, ok := schema.Properties.Get("version"); ok {
+		version.Const = policyfile.Version
+	}
+	if modules, ok := schema.Properties.Get("modules"); ok {
+		modules.MinProperties = one()
+	}
+
+	// A deny rule also needs instead. This sits beside the oneOf, not inside its
+	// deny branch: there, a rule with deny and note but no instead would fail the
+	// deny branch, match only the note branch, and pass.
+	if rule := schema.Definitions["Rule"]; rule != nil {
+		rule.DependentRequired = map[string][]string{"deny": {"instead"}}
+	}
+
+	// An unowned exception names a path and no target; every other exception
+	// names the target module.
+	if exception := schema.Definitions["Exception"]; exception != nil {
+		exception.If = requiredProperty("rule", &jsonschema.Schema{Const: policyfile.RuleUnowned})
+		exception.Then = &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"to"}}}
+		exception.Else = &jsonschema.Schema{Required: []string{"to"}}
+	}
+
+	// A timeout is a Go duration without a sign.
+	if analyzer := schema.Definitions["TimedAnalyzer"]; analyzer != nil {
+		if timeout, ok := analyzer.Properties.Get("timeout"); ok {
+			timeout.Pattern = policyfile.DurationPattern
 		}
 	}
-	// The schema version is the only accepted analysis schema. Older files are
-	// rejected, so an editor must not show them green. The root Config is inlined
-	// rather than named, so it is patched here instead of in the loop above.
-	if schema.Properties != nil {
-		if version, ok := schema.Properties.Get("version"); ok {
-			version.Enum = []any{config.SchemaVersion}
+
+	// Enabled coverage needs at least one source.
+	if coverage := schema.Definitions["Coverage"]; coverage != nil {
+		coverage.If = requiredProperty("enabled", &jsonschema.Schema{Const: true})
+		coverage.Then = requiredProperty("sources", &jsonschema.Schema{MinItems: one()})
+	}
+}
+
+// nonEmptyStrings gives every string schema reachable from s, without following
+// $ref, a minimum length of 1.
+func nonEmptyStrings(s *jsonschema.Schema) {
+	if s == nil {
+		return
+	}
+	if s.Type == typeString && s.MinLength == nil {
+		s.MinLength = one()
+	}
+	nonEmptyStrings(s.Items)
+	nonEmptyStrings(s.AdditionalProperties)
+	for _, branch := range s.OneOf {
+		nonEmptyStrings(branch)
+	}
+	if s.Properties != nil {
+		for pair := s.Properties.Oldest(); pair != nil; pair = pair.Next() {
+			nonEmptyStrings(pair.Value)
 		}
 	}
+}
+
+// requiredProperty is a schema that requires key and constrains its value.
+func requiredProperty(key string, value *jsonschema.Schema) *jsonschema.Schema {
+	s := &jsonschema.Schema{Properties: jsonschema.NewProperties(), Required: []string{key}}
+	s.Properties.Set(key, value)
+	return s
 }
