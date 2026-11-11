@@ -8,6 +8,10 @@ type CheckFacts struct {
 	Imports  []ImportFact        `json:"imports,omitempty"`
 	Literals []LiteralOccurrence `json:"literals,omitempty"`
 	Unknown  []UnknownItem       `json:"unknown,omitempty"`
+	// Sources are the source files of the tree the extractors read, test and
+	// generated files included: the unowned rule finds production code in no
+	// module among them, and an import target that is one of them is a file.
+	Sources []string `json:"sources,omitempty"`
 }
 
 // ImportFact is one import of a file. Target is the repository-relative path a
@@ -25,7 +29,24 @@ type LiteralOccurrence struct {
 	File  string `json:"file"`
 	Line  int    `json:"line"`
 	Value string `json:"value"`
+	// Shape is what the literal looks like, for the copy noise limit. Empty
+	// when the extractor did not say.
+	Shape LiteralShape `json:"shape,omitempty"`
 }
+
+// LiteralShape is what a literal looks like. The duplication rule never
+// counts a single word or a struct tag as a copy.
+type LiteralShape string
+
+// The shapes of a literal.
+const (
+	// ShapeOther is any literal that is not a single word or a struct tag.
+	ShapeOther LiteralShape = "other"
+	// ShapeWord is a single word, such as an identifier or a key.
+	ShapeWord LiteralShape = "word"
+	// ShapeTag is a Go struct tag, such as `json:"name"`.
+	ShapeTag LiteralShape = "tag"
+)
 
 // UnknownItem is something in a file the check needs and cannot read: an
 // import it cannot resolve, or a file it cannot parse. Line is zero when the
