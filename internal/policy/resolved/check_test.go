@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v3/internal/testutil"
 )
 
 const (
@@ -134,6 +135,9 @@ func TestCheckMessages(t *testing.T) {
 			if err.Error() != tt.want {
 				t.Errorf("Check:\n got %q\nwant %q", err, tt.want)
 			}
+			if words := testutil.NotUsedIn(err.Error()); len(words) > 0 {
+				t.Errorf("message uses %v, words design section 5 does not use", words)
+			}
 		})
 	}
 }
@@ -236,6 +240,9 @@ func TestCheckTreeMessages(t *testing.T) {
 			}
 			if err.Error() != tt.want {
 				t.Errorf("CheckTree:\n got %q\nwant %q", err, tt.want)
+			}
+			if words := testutil.NotUsedIn(err.Error()); len(words) > 0 {
+				t.Errorf("message uses %v, words design section 5 does not use", words)
 			}
 		})
 	}
