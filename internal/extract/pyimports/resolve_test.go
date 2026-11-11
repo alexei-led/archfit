@@ -20,6 +20,7 @@ const (
 	fileSubC   = "src/app/sub/c.py"
 	fileInnerM = "src/app/ns/inner/m.py"
 	flatInit   = "app/__init__.py"
+	legacyInit = "src/app/legacy/__init__.py"
 	pkgLib     = "lib"
 )
 
@@ -134,12 +135,13 @@ func TestLayout(t *testing.T) {
 		}
 	})
 
-	t.Run("namespace directory inside a package holds modules", func(t *testing.T) {
+	t.Run("namespace directory inside a package holds modules; a package wins over a same-named module", func(t *testing.T) {
 		t.Parallel()
 		fsys := tree(map[string]string{
 			flatInit:                   "",
 			"app/ns/inner/__init__.py": "",
 			"app/ns/inner/m.py":        "",
+			"app/ns/inner.py":          "",
 			"app/not-id/x.py":          "",
 			"app/.hidden.py":           "",
 			"app/a.b.py":               "",
@@ -190,7 +192,7 @@ func TestExcludedSource(t *testing.T) {
 		file string
 		want bool
 	}{
-		{"src/app/legacy/__init__.py", true},
+		{legacyInit, true},
 		{"src/app/legacy/deep/m.py", true},
 		{"src/app/legacy.py", false},
 		{"src/app/a.py", false},

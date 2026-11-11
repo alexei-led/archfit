@@ -98,7 +98,13 @@ func sourceFiles(fsys fs.FS, pkg string) (map[string]string, error) {
 		if parts[len(parts)-1] == "__init__" {
 			parts = parts[:len(parts)-1]
 		}
-		modules[strings.Join(append([]string{pkg}, parts...), ".")] = name
+		mod := strings.Join(append([]string{pkg}, parts...), ".")
+		// A package's __init__.py wins over a same-named module file beside
+		// it, as in CPython and the prototype, whatever order the walk takes.
+		if _, taken := modules[mod]; taken && file != initFile {
+			return nil
+		}
+		modules[mod] = name
 		return nil
 	})
 	return modules, err

@@ -195,10 +195,10 @@ func TestExtractWithAstGrep(t *testing.T) {
 			"from ... import above\n",
 		"src/app/sub/__init__.py":      "",
 		fileSubB:                       "from ..a import f\n",
-		fileSubC:                       "",
+		fileSubC:                       "import app.legacy\n",
 		"src/app/ns/inner/__init__.py": "",
 		fileInnerM:                     "",
-		"src/app/legacy/__init__.py":   "import app.a\n",
+		legacyInit:                     "import app.a\n",
 	})
 	got, err := Extract(context.Background(), runner, root, Config{Exclude: []string{"src/app/legacy/**"}})
 	if err != nil {
@@ -221,6 +221,7 @@ func TestExtractWithAstGrep(t *testing.T) {
 		{File: srcA, Line: 14, Module: "app.ns.inner.m", Kind: KindFile, Target: fileInnerM},
 		{File: srcA, Line: 15, Module: "...", Kind: KindUnknown},
 		{File: fileSubB, Line: 1, Module: modA, Kind: KindFile, Target: srcA},
+		{File: fileSubC, Line: 1, Module: "app.legacy", Kind: KindFile, Target: legacyInit},
 	}
 	if !slices.Equal(got.Imports, want) {
 		t.Errorf("imports =\n%+v\nwant\n%+v", got.Imports, want)
