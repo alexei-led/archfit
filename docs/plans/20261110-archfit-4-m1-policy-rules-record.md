@@ -28,13 +28,18 @@ Facts from the code at `6c90ae9d` that shape the plan:
 - The Archfit 3 features of design section 13 are entangled across layers. The stored baseline alone reaches
   `cmd/archfit`, `internal/application`, `internal/assessment/status`, `internal/output/sarif`, `internal/model/report`
   and three JSON schemas. Measurement profiles are built on every acquisition run.
-- `.archfit.yaml` (schema 2, 18 modules, 41 rules) is read by `internal/selfmodel_test.go` and by
-  `TestCompositionFanoutRatchet` through the v2 loader. `TestSelfModelCoversEveryGoPackage` needs every new package to
-  sit under a module path glob; `TestSelfModelPublicSurfacesAreRealAndOwned` needs every `public` entry to exist.
-- `internal/arch_test.go` checks imports by path prefix. New subpackages inherit the rules of their parent. The
-  application layer may not import `internal/evidence/acquisition`, `internal/extract`, `internal/toolrun` or
-  `internal/output`; it uses ports. Assessment consumes only the public `internal/relationship` contract. Renderers
-  have an import allowlist.
+- `.archfit.yaml` (schema 2, 18 modules, 41 rules) is read through the version 2 loader by
+  `internal/selfmodel_test.go`, `TestCompositionFanoutRatchet`, three self-config tests in
+  `internal/config/config_test.go`, `cmd/archfit/agentsmd_test.go`, `cmd/archfit/config_lint_test.go` and
+  `cmd/calibrate`. `TestSelfModelCoversEveryGoPackage` needs every new package to sit under a module path glob;
+  `TestSelfModelPublicSurfacesAreRealAndOwned` needs every `public` entry to exist; a path glob that matches nothing
+  is an error from task 4 on.
+- `internal/arch_test.go` checks imports. Most checks match a path prefix, so new subpackages inherit their parent's
+  rules; `TestApplicationImportsNoConcreteAdapters` matches exact paths until task 3. Several checks name files and
+  packages (`coreRingPkgs`, `cmdDomainAdapterFiles`, `score/gate.go`, `analyze.go`), so a task that deletes one
+  updates the test. `TestTransitionalContractSurfaceRatchet` caps the exported names of `internal/policy` (40) and
+  `internal/relationship` (55 plus 28 `Seam*`); both are at their caps, and caps may only fall. Assessment consumes
+  only the public `internal/relationship` contract. Renderers have an import allowlist.
 - `internal/testdata/model_surface.golden` covers `internal/model/...`, so every task that changes a model package
   regenerates it.
 - Go has two extraction paths today: the typed loader (`go/packages`) for the check and the standard parser for
@@ -97,6 +102,9 @@ The manager approved these on 2026-11-10.
 - "Merge: manager" marks a contract or protection change. Other tasks merge by the worker when CI is green and the
   pull request matches its task.
 - An application subpackage defines the ports it needs; `cmd/archfit` wires the concrete adapters.
+- A task that deletes a file, package or directory named in `internal/arch_test.go` or `.archfit.yaml` updates those
+  entries in the same pull request. A pull request that edits `.archfit.yaml` passes CI through
+  `archfit check --policy .archfit.yaml` (task 27) and merges by the manager.
 
 ## Coverage
 
@@ -140,7 +148,7 @@ The manager approved these on 2026-11-10.
 | Exit code 2 and "attention needed" on a pass | 24 | no |
 | The `"log"` node collision | 6 | yes (`stripModulePath`) |
 | Finding origin and `--base` comparison | 33 | yes |
-| The v2 loader and v2 policy types | 43 | yes |
+| The version 2 file format and rule types | 43 | yes |
 
 ### Section 15.1 tests
 
@@ -231,55 +239,69 @@ Depends on: none. Merge: manager (contract).
 ### Task 3: Text record contract and the "Not used" words test
 
 Design: 5, 8, 8.1, 8.2, 15.1 (the record). Packages: `internal/output/record` (new), `internal/testutil`.
-Files: `internal/arch_test.go`. Depends on: 2. Merge: manager (contract).
+Files: `internal/arch_test.go`, `internal/application/architecture_test.go`. Depends on: 2. Merge: manager
+(contract).
 
 - [ ] add `internal/output/record` with the text renderer of a result and of a `can` answer; write the grammar of the
-      Technical Details in the package documentation
+  Technical Details in the package documentation
 - [ ] add golden files under `internal/output/record/testdata/` for every example of design 8.1: pass, a `deny`
-      rule, `graph` with its balance, a copy with `--expires`, no verdict (the policy differs), an expired exception from
-      another change, and `can`
+  rule, `graph` with its balance, a copy with `--expires`, no verdict (the policy differs), an expired exception from
+  another change, and `can`
 - [ ] add the "Not used" word list of the Technical Details to `internal/testutil` and a test that fails when any
-      golden of this package uses one of the words
+  golden of this package uses one of the words
 - [ ] allow renderers to import `internal/model/result` in the renderer allowlist of `internal/arch_test.go`
+- [ ] make `TestApplicationImportsNoConcreteAdapters` match subpackages too (today it matches the exact import path,
+  so `internal/output/record` or `internal/evidence/acquisition/checkfacts` would pass); if an application file
+  imports such a subpackage today, list it in the pull request and ask the manager before changing it
 - [ ] write tests for line order, the `--verbose` lines (digest, engine version), dates with days left, and
-      `balance: n/10 (min m)`
-- [ ] run `go test ./internal/output/record/ ./internal/` and `make test`
+  `balance: n/10 (min m)`
+- [ ] run `go test ./internal/output/record/ ./internal/ ./internal/application/` and `make test`
 
 ### Task 4: Policy model: defaults, validation, digest, loosen or tighten
 
-Design: 6.1 to 6.4, 11.2 (policy), 15.1 (policy defaults). Packages: `internal/policy` (new files only),
+Design: 6.1 to 6.4, 11.2 (policy), 15.1 (policy defaults). Packages: `internal/policy/resolved` (new),
 `internal/config/policyfile` (projection). Depends on: 1. Merge: manager (policy semantics the App uses).
 
-- [ ] add the resolved policy model in new files of `internal/policy`: modules with the defaults of 6.1 (`public` is
-      the whole module; `volatility` from `subdomain`, else `high`), the built-in modes and `min_balance` 7, custom
-      `deny`, `only` and `note` rules, exceptions, `generated` and `tests`
-- [ ] project `policyfile` into the model inside `internal/config/policyfile`; `internal/policy` must not import
-      config (`TestPolicyDoesNotImportConfig`)
+- [ ] put the resolved policy model in the new package `internal/policy/resolved`, not in `internal/policy`:
+  `TestTransitionalContractSurfaceRatchet` caps the exported names of `internal/policy` at 40, it is at the cap, and
+  the cap may only fall
+- [ ] the model: modules with the defaults of 6.1 (`public` is the whole module; `volatility` from `subdomain`, else
+  `high`), the built-in modes and `min_balance` 7, custom `deny`, `only` and `note` rules, exceptions, `generated` and
+  `tests`; the package imports no config package
+- [ ] project `policyfile` into the model inside `internal/config/policyfile`
 - [ ] add the shipped package sets for `only` (`network`, `process`, `database`) for Go, Python and TypeScript, and
-      best effort for Rust and C#
+  best effort for Rust and C#
 - [ ] add validation with plain messages: an unknown module with a suggestion, a file in two modules, a missing
-      `why` or `instead`, a `layer` not in `layers`, an exception for an unknown rule, and a path glob that matches no
-      file (a function that takes the tree's file list; task 16 calls it)
+  `why` or `instead`, a `layer` not in `layers`, an exception for an unknown rule, and a path glob that matches no
+  file (a function that takes the tree's file list; task 16 calls it)
 - [ ] add the digest (`sha256:` of the file bytes) and the comparison of two policies: loosens, tightens or neither,
-      with the list of changes (rules in the Technical Details)
+  with the list of changes (rules in the Technical Details); `decision.ComparePolicies` in
+  `internal/assessment/decision/policy_change.go` compares version 2 policies, is not reused, and goes in task 33
 - [ ] write table tests: one per row of the 6.1 defaults table, each validation message, each loosen or tighten case,
-      and a stable digest
-- [ ] run `go test ./internal/policy/ ./internal/config/... ./internal/` and `make test`
+  and a stable digest
+- [ ] run `go test ./internal/policy/... ./internal/config/... ./internal/` and `make test`
 
 ### Task 5: Balance of a dependency that does not exist yet
 
 Design: 4 (`bc_score.v7` verbatim), 6.2 (`coupling`), 11.2 (relationship), appendix A, 15.1 (matrix). Packages:
-`internal/relationship` (public contract), `internal/relationship/scoring`. Depends on: none.
+`internal/relationship/balance` (new). Depends on: none.
 
-- [ ] add an exported function in the public `internal/relationship` contract: the balance of a use of the public
-      part, a use past the public part, or a copy, between two modules, from their declared volatilities, with
-      `BookScorer` and the cross-module distance; no volatility cascade
+- [ ] add the new package `internal/relationship/balance`, which imports `internal/relationship/coupling` and
+  `internal/relationship/scoring`; the function cannot live in `internal/relationship` itself, because
+  `scoring` imports `coupling` and `coupling` imports `internal/relationship` (a cycle), and the export ratchet of
+  `internal/relationship` is at its cap
+- [ ] one exported function: the balance of a use of the public part, a use past the public part, or a copy, between
+  two modules, from their declared volatilities, with `scoring.BookScorer` and the cross-module distance; no
+  volatility cascade; the formula is never copied
 - [ ] the volatility that applies is the target's for a use of the public part, and the higher of the two for a use
-      past it and for a copy; a use of the public part is `contract` strength, a use past it `functional`, a copy
-      `symmetric`
+  past it and for a copy; a use of the public part is `contract` strength, a use past it `functional`, a copy
+  `symmetric`
+- [ ] assessment may import `balance`: it is not in the package list of
+  `TestAssessmentConsumesOnlyThePublicRelationshipContract` or of the `assessment_no_relationship_internals` rule; do
+  not add it there, and say so in the package documentation
 - [ ] write the matrix test: strengths `contract`, `model`, `functional`, `symmetric`, `intrusive` × volatilities
-      `low`, `medium`, `high` × both directions, including a volatile source into a stable target; assert every cell of
-      the 6.2 table and appendix A (9 and 1)
+  `low`, `medium`, `high` × both directions, including a volatile source into a stable target; assert every cell of
+  the 6.2 table and appendix A (9 and 1)
 - [ ] add the `coupling` rule's numbers to `docs/coupling.md`: declared volatility, no cascade, `public` globs decide
 - [ ] run `go test ./internal/relationship/... ./internal/` and `make test`
 
@@ -397,19 +419,22 @@ Design: 6.2, 6.3, 7.3 (the noise limit belongs to task 13), 8.1, 15.1 (rules). P
 
 ### Task 13: The `duplication` rule
 
-Design: 6.2 (`duplication` judges every copy), 7.3, 15.1 (copies), status.md (R12). Packages:
+Design: 6.2 (`duplication` judges every copy), 6.4, 7.2, 7.3, 15.1 (copies), status.md (R12). Packages:
 `internal/assessment/copies` (new). Depends on: 4, 10.
 
-- [ ] an error when a change adds, in production code of module M, a literal whose identical value production code
-      of another module O already has on the base and still has on the head; a moved literal is not a copy
-- [ ] apply R12: length at least 12; declared `tests` and `generated` out; single words and struct tags out; held by
-      fewer than 3 modules on the head
-- [ ] key the error by (`duplication`, M, O, literal digest); `what` names the first site in O
-      (`this literal already lives in pkg/util/util.go:15`); `next` names the owner module and
-      `archfit request -m "<why a copy is needed>" --expires <date>`
-- [ ] write tests: the seeded `pumba` copy (regular expression and error text) is found; a rewritten copy, a moved
-      literal, a literal in tests or generated code, a short literal, a single word, a struct tag and a literal held by
-      three modules are not; report precision and recall over the seeded set in the test name or output
+- [ ] evaluate one tree, as task 12 does: an error for each literal that production code of two or more modules
+  holds, after R12 (length at least 12; declared `tests` and `generated` out; single words and struct tags out; held
+  by fewer than 3 modules)
+- [ ] key the error by (`duplication`, the sorted module pair, the literal digest); the sites are the occurrences;
+  then task 14's counting makes a copy added by the change a new key, a moved literal an unchanged key, and an old
+  copy under an expired exception an error of every change, as 8.1 shows
+- [ ] for the record: `from` is the module whose site is on an added line (otherwise the first in order); `what`
+  names the first site in the other module (`this literal already lives in pkg/util/util.go:15`); `next` names that
+  module and `archfit request -m "<why a copy is needed>" --expires <date>`
+- [ ] write tests: the seeded `pumba` copy (regular expression and error text) is found and is added on head; a
+  rewritten copy, a moved literal, a literal in tests or generated code, a short literal, a single word, a struct
+  tag and a literal held by three modules are not; an existing copy is not added; report precision and recall over
+  the seeded set in the test output
 - [ ] run `go test ./internal/assessment/copies/ ./internal/` and `make test`
 
 ### Task 14: Counting on base and head; exceptions with dates; the four statuses
@@ -417,16 +442,19 @@ Design: 6.2 (`duplication` judges every copy), 7.3, 15.1 (copies), status.md (R1
 Design: 6.4, 7.1, 7.2, 15.1 (added or existing, exceptions). Packages: `internal/assessment/change`. Depends on:
 12, 13.
 
-- [ ] compare base and head errors per key: a new key or a higher count is added by the change; report the head
-      sites that are not on the base, and prefer sites on added lines
+- [ ] compare base and head errors per key (tasks 12 and 13): a new key or a higher count is added by the change;
+  report the head sites that are not on the base, and prefer sites on added lines
 - [ ] apply exceptions: an exception covers the errors of its rule between its `from` and `to`; on or before its
-      `expires` date it holds; after that date, while the code still breaks the rule, it is an error of every change,
-      marked "not from this change"
-- [ ] set the status: `fail` for an added error or an expired exception; `unknown` when base evidence is missing or
-      an `unknown` item touches a changed file; `pass` otherwise; the engine never sets `waiting`
+  `expires` date it holds; after that date, while the code still breaks the rule on the head, it is an error of every
+  change, marked "not from this change"
+- [ ] set the status: `fail` for an added error or an expired exception; `unknown` when base evidence is missing, when
+  an `unknown` item touches a changed file, or when an `unknown` item exists on the head that the base does not have
+  (an unchanged file whose import no longer resolves, for example after a change to `tsconfig` `paths`); `pass`
+  otherwise; the engine never sets `waiting`
 - [ ] write the tests of 15.1: moved code, a renamed file, one more use of a broken dependency, missing base evidence,
-      an exception that matches and one that does not, the date boundary, an expired exception seen by an unrelated
-      change, existing drift that the change does not touch
+  a new `unknown` item in an unchanged file, an exception that matches and one that does not, the date boundary, an
+  expired exception seen by an unrelated change (including an old copy), existing drift that the change does not
+  touch
 - [ ] run `go test ./internal/assessment/... ./internal/` and `make test`
 
 ### Task 15: JSON and SARIF from the result
@@ -442,35 +470,42 @@ Design: 8.3, 11.2 (output). Packages: `internal/output/record`. Depends on: 2, 3
 
 ### Task 16: The check workflow
 
-Design: 7.1, 7.2, 9.1, 9.4, 11.1 (`check`), 15.1 (policy protection). Packages: `internal/application/changecheck`
-(new). Depends on: 2, 11, 14. Merge: manager (policy protection).
+Design: 7.1, 7.2, 9.1, 9.4, 11.1 (`check`), 14, 15.1 (policy protection). Packages:
+`internal/application/changecheck` (new). Depends on: 2, 11, 14. Merge: manager (policy protection).
 
 - [ ] define the ports: the local policy, the policy on the target branch (from git objects), a candidate policy
-      (`--policy`), check facts for head and base, the clock, and the store of the last result
+  (`--policy`), check facts for head and base, the clock, and the store of the last result
 - [ ] run the flow: the target branch (`origin/HEAD`, or `--base REF`) and the merge base; when the local policy
-      differs from the target's, stop with `unknown` and the record that restores the file (8.1); with `--policy FILE`,
-      judge with that file and skip the comparison; with no policy on the target, judge with the local one and say so
+  differs from the target's, stop with `unknown` and the record that restores the file (8.1); with `--policy FILE`,
+  judge with that file and skip the comparison
+- [ ] when the target has no policy, or a policy that is not schema 3 (the conversion pull request of design 14),
+  judge with the local policy and print one line that says so
 - [ ] validate the policy against the tree (the task 4 checks, including a path that matches nothing); an invalid
-      policy gives `unknown` with the message
+  policy gives `unknown` with the message
 - [ ] assess head and base (tasks 12 to 14), project into `internal/model/result` in one projector file (date,
-      digest, engine version, `policy: not protected` per D6), and save the result for `request`
-- [ ] write tests: a code change that also edits the policy is `unknown`; `--policy` previews; no target policy;
-      an invalid policy; the date as an input gives the same output twice
+  digest, engine version, `policy: not protected` per D6), and save the result for `request`
+- [ ] write tests: a code change that also edits the policy is `unknown`; `--policy` previews; no target policy; a
+  version 2 target policy; an invalid policy; a shallow clone without a merge base is `unknown` and names the fetch;
+  the date as an input gives the same output twice
 - [ ] update `docs/architecture.md`: the run flow of `check` and the new packages
 - [ ] run `go test ./internal/application/... ./internal/` and `make test`
 
 ### Task 17: The `can` query
 
-Design: 8.1 (`can`), 10.2, 11.1 (`can`). Packages: `internal/application/canquery` (new). Depends on: 4, 5.
+Design: 6.2 (`coupling`), 8.1 (`can`), 10.2, 11.1 (`can`). Packages: `internal/application/canquery` (new).
+Depends on: 4, 5.
 
 - [ ] answer `can <from> <to>` where each side is a file, a directory, a module name, a Go import path (mapped
-      through `go.mod` by a port), or, for `to`, a library
-- [ ] check `graph`, `layers`, custom `deny` and `only`, and give the balance for a pair of modules (a use inside or
-      past the target's `public`)
+  through `go.mod` by a port), or, for `to`, a library
+- [ ] apply the same rules `check` applies to one new dependency: `graph`, `coupling`, `layers`, custom `deny` and
+  `only`; for `coupling`, a target inside the target module's `public` globs is a use of the public part, a target past
+  them is a use past it, and a module-name target means its public part; a balance below `min_balance` is a no
 - [ ] answer yes (exit 0 in task 24), no with the rule, `why`, `instead`, the balance and `next` (exit 1), or
-      `unknown` for a path in no module (exit 2)
-- [ ] write tests: the 8.1 example; an allowed dependency with its balance; a `deny` rule with `instead`; a library
-      outside its `only` modules; a layer inversion; a path in no module
+  `unknown` for a path in no module (exit 2)
+- [ ] write tests: the 8.1 example; an allowed dependency with its balance; an allowed dependency past the `public`
+  globs of a `high` module (no, `coupling`, 2/10); a `deny` rule with `instead`; a library outside its `only`
+  modules; a layer inversion; a path in no module; for each case, the `can` answer agrees with task 12 on the same
+  import
 - [ ] run `go test ./internal/application/canquery/ ./internal/` and `make test`
 
 ### Task 18: The `rules` query
@@ -555,23 +590,25 @@ Design: 6.1, D2. Packages: `internal/config` (new files). Depends on: 4.
 
 ### Task 24: Commands `check`, `can`, `rules`
 
-Design: 7.1, 8, 11.1, D1, D6, 15.1 (the record). Packages: `cmd/archfit`. Files: `scripts/bench-gate.sh`,
-`scripts/tests/cli_exit_contract_test.sh`, `docs/commands.md`, `docs/configuration.md`, `docs/rules.md`,
-`docs/results.md`, `docs/ci.md`. Depends on: 3, 15, 16, 17, 18. Impact first: `CheckCmd`, `outcomeExitCode`, the
-kong exit handling in `main.go`.
+Design: 7.1, 8, 11.1, D1, D6, 15.1 (the record). Packages: `cmd/archfit`. Files: `docs/commands.md`,
+`docs/configuration.md`, `docs/rules.md`, `docs/results.md`, `docs/ci.md`. Depends on: 3, 15, 16, 17, 18. Impact
+first: `CheckCmd`, `outcomeExitCode`.
 
-- [ ] `check` dispatches on the policy `version` (D1): version 3 runs `changecheck`, version 2 the old path
+- [ ] `check` dispatches on the policy `version` (D1): version 3 runs `changecheck`, version 2 the old path with its
+  exit codes unchanged (0, 1, 2, 3), so `make arch-lint`, the CI image step and `scripts/eval/corpus_sweep.py` keep
+  their meaning until tasks 27, 30 and 31
 - [ ] wire `check`, `can` and `rules` with the flags of 11.1 (`--base`, `--policy`, `--format json` or `sarif`,
-      `--verbose`, `-C DIR`); the record goes to stdout, progress to stderr
-- [ ] exit codes for the whole binary: 0 pass or yes; 1 fail or no; 2 `unknown`, wrong usage or a tool error (a
-      kong parse error moves from 3 to 2); update `bench-gate.sh` and the exit contract test
+  `--verbose`, `-C DIR`); the record goes to stdout, progress to stderr
+- [ ] exit codes of the version 3 `check`, `can` and `rules`: 0 pass or yes; 1 fail or no; 2 `unknown`, wrong usage
+  or a tool error; task 31 applies them to the whole binary
 - [ ] wire the adapters: check facts, the git policy source, the last-result store under `.archfit-cache/`, the
-      clock, and the D6 detection
+  clock, and the D6 detection
 - [ ] write golden CLI tests for every example of design 8.1 and the `rules` forms, and extend the "Not used" words
-      test to these goldens and to the `--help` text of the three commands
+  test to these goldens and to the `--help` text of the three commands
 - [ ] rewrite the parts of `docs/commands.md` on `check`, `can` and `rules`; rewrite `docs/configuration.md` for
-      schema 3; rewrite `docs/rules.md` (built-in and custom rules, exceptions) and `docs/results.md` (the record, the
-      statuses, JSON, SARIF, exit codes); update `docs/ci.md` for running `archfit check` in CI without the Action
+  schema 3; rewrite `docs/rules.md` (built-in and custom rules, exceptions) and `docs/results.md` (the record, the
+  statuses, JSON, SARIF, exit codes); update `docs/ci.md` for running `archfit check` in CI without the Action
+  (`fetch-depth: 0`, so the merge base exists)
 - [ ] run `go test ./cmd/archfit/ ./internal/`, `make test`, `make docs`
 
 ### Task 25: Commands `request`, `init`, `report`
@@ -594,39 +631,48 @@ Design: 10.1, 10.3, 10.6, 11.1, D2, D5, D11. Packages: `cmd/archfit`, `internal/
 
 Design: 10.1, 10.2, 11.3, 11.8 (`doctor` groups), 8.2 (hooks). Packages: `cmd/archfit`, `internal/extract/registry`.
 Files: `docs/agents.md`, `docs/commands.md`, `skills/archfit/SKILL.md`. Depends on: 25. Impact first: `HookCmd`,
-`hook_install`, the doctor probes.
+`HookInstallCmd`, `DoctorCmd`.
 
 - [ ] move the tool lists into `internal/extract/registry` as two groups per language: needed for the check (`git`;
-      `ast-grep` for TypeScript, JavaScript and Python; today's tools for Rust and C#) and optional for the report
+  `ast-grep` for TypeScript, JavaScript and Python; today's tools for Rust and C#) and optional for the report
 - [ ] `doctor` checks and shows the two groups; `doctor --fix` installs the hooks of the detected harness (Claude
-      Code, Codex, git) and warns when `.gitignore` ignores the harness settings directory
+  Code, Codex, git) and warns when `.gitignore` ignores the harness settings directory
 - [ ] rewrite the hidden hook entry points: after an edit, `can` on the imports it added, with the record as
-      feedback; at stop, `check`, blocking once per identical error set; a git pre-commit hook runs `check` on the
-      staged tree; a hook that fails for its own reasons reports and does not block
+  feedback; at stop, `check`, blocking once per identical error set; a git pre-commit hook runs `check` on the
+  staged tree; a hook that fails for its own reasons reports and does not block
 - [ ] write tests: tool groups per language, harness detection, the ignored-directory warning, each hook event with a
-      pass, a fail and a hook error, and the "Not used" words test on hook feedback
+  pass, a fail and a hook error, and the "Not used" words test on hook feedback
 - [ ] rewrite `docs/agents.md` and `skills/archfit/SKILL.md` (the five lines, the hooks, `doctor --fix`); update the
-      `doctor` part of `docs/commands.md`
+  `doctor` part of `docs/commands.md`
 - [ ] run `go test ./cmd/archfit/ ./internal/extract/registry/`, `make test`, `make docs`
 
 ### Task 27: Convert `archfit`
 
-Design: 14, 9.2, D4, D8. Files: `.archfit.yaml`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `Makefile`,
+Design: 14, 9.2, 9.4, D4, D8. Files: `.archfit.yaml`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `Makefile`,
 `.github/workflows/ci.yaml`, `.github/workflows/archfit.yaml`, `.github/CODEOWNERS`, `internal/selfmodel_test.go`,
-`internal/selfmodel_allowlist_test.go`, `internal/arch_test.go`. Deletes: `.archfit-baseline.json`,
-`.archfit-labels.yaml`, `.archfit-app.yaml`. Depends on: 24, 25. Merge: manager (the protected policy and CI).
+`internal/selfmodel_allowlist_test.go`, `internal/arch_test.go`, `internal/config/config_test.go`,
+`cmd/archfit/agentsmd_test.go`, `cmd/archfit/config_lint_test.go`. Deletes: `.archfit-baseline.json`,
+`.archfit-labels.yaml`, `.archfit-app.yaml`. Depends on: 24, 25, 26. Merge: manager (the protected policy and CI).
 
-- [ ] run `archfit init` on the repository and review the converted policy; write `public` as directory globs where a
-      module exposes all its child packages (D8); keep the exceptions for errors that exist, with reasons
-- [ ] make the self-model tests and `TestCompositionFanoutRatchet` read the schema 3 policy
-- [ ] `Makefile`: `arch-lint` and `archfit` accept exit 0 only; `archfit-report` runs `report`; the CI image step
-      checks the record and exit 0 and drops the comparability comment and the `.repository.attention` query
+- [ ] run `archfit init` on the repository and review the converted policy; write `public` (D8) and, where a module
+  owns all of a parent directory, `paths` as directory globs, so later package deletions do not leave dead globs;
+  keep the exceptions for errors that exist, with reasons
+- [ ] move every test that reads the self-policy to schema 3: the self-model tests, `TestCompositionFanoutRatchet`,
+  and `TestLoad_SelfConfig`, `TestSelfConfig_CapabilityModuleMap` and `TestSelfConfig_RoleLayerConformance` in
+  `internal/config/config_test.go`; delete the self-policy cases of `cmd/archfit/agentsmd_test.go` and
+  `cmd/archfit/config_lint_test.go` (their commands go in task 31); `make calibrate` stops working until task 31
+  deletes it
+- [ ] `Makefile`: `arch-lint` and `archfit` accept exit 0 only; `archfit-report` runs `report`
+- [ ] the CI image step: checkout with `fetch-depth: 0`; when the pull request changes `.archfit.yaml`, run
+  `archfit check --policy .archfit.yaml` (the owner approves the file through `CODEOWNERS`, the branch rule of design
+  9.4); otherwise `archfit check`; accept exit 0 only; drop the comparability comment and the
+  `.repository.attention` query
 - [ ] `.github/workflows/archfit.yaml` keeps only `workflow_dispatch`, with a comment that milestone 2 restores the
-      triggers with Action 4 (D4); `CODEOWNERS` loses the deleted files
+  triggers with Action 4 (D4); `CODEOWNERS` loses the deleted files and keeps `.archfit.yaml`
 - [ ] replace the archfit block of `AGENTS.md` with the five lines; update the repository rules in `CLAUDE.md` and
-      the architecture-check lines of `CONTRIBUTING.md` (`archfit can`, `archfit check`, exit 0)
-- [ ] verify: `make arch-lint`, `make test`, `make docs`; `archfit check` passes on main and fails on a seeded
-      forbidden import and on a seeded copy
+  the architecture-check lines of `CONTRIBUTING.md` (`archfit can`, `archfit check`, exit 0)
+- [ ] verify: `make arch-lint`, `make test`, `make docs`; this pull request passes the CI step through
+  `--policy`; `archfit check` passes on main and fails on a seeded forbidden import and on a seeded copy
 
 ### Task 28: Convert `pumba` (pull request in `pumba`)
 
@@ -668,35 +714,46 @@ Depends on: 24.
 
 ### Task 31: Remove the retired commands
 
-Design: 11.1 (what each replaces), 13, D1. Packages: `cmd/archfit`, `internal/application` (the services only these
-commands use). Files: `skills/skills.go`, `skills/archfit-eval/`, `scripts/image_contracts.py`,
-`scripts/eval/gap-closure.sh`, `docs/commands.md`, `docs/troubleshooting.md`. Depends on: 26, 27, 30. Impact
-first: each command type and `ExplainService`, `ConfigUpdateService`, `ConfigLintService`, `CompareService`,
-`PolicyQueryService`.
+Design: 11.1 (what each replaces), 13, D1. Packages: `cmd/archfit`, `cmd/calibrate` (deleted),
+`internal/calibrate` (deleted), `internal/application` (the services only these commands use). Files:
+`internal/arch_test.go`, `.archfit.yaml`, `Makefile`, `scripts/calibrate.sh`, `scripts/bench-gate.sh`,
+`scripts/tests/cli_exit_contract_test.sh`, `scripts/eval/corpus_sweep.py`, `skills/skills.go`,
+`skills/archfit-eval/`, `scripts/image_contracts.py`, `scripts/eval/gap-closure.sh`, `docs/commands.md`,
+`docs/troubleshooting.md`. Depends on: 27, 30. Merge: manager (edits `.archfit.yaml`). Impact first: each command
+type and `ExplainService`, `ConfigUpdateService`, `ConfigLintService`, `CompareService`, `PolicyQueryService`.
 
 - [ ] delete `analyze`, `baseline`, `explain`, `policy`, `map`, `config` (`init`, `update`, `lint`, `compare`,
-      `enrich`), `agents-md`, `skill`, `hook install`, and the version 2 branch of `check`, with their tests and testdata
+  `enrich`), `agents-md`, `skill`, `hook install`, and the version 2 branch of `check`, with their tests and testdata
 - [ ] delete the application services only these commands used (`explain`, `config_update`, `config_lint`,
-      `compare`, the version 2 `policy_query`); leave the rest to their feature tasks
+  `compare`, the version 2 `policy_query`); leave the rest to their feature tasks
+- [ ] delete the scorer comparison tool (`cmd/calibrate`, `internal/calibrate`, `scripts/calibrate.sh`, the
+  `calibrate` targets of the `Makefile`): it reads version 2 policies and compares scorers 4.0 does not have; remove
+  its module paths from `.archfit.yaml`
+- [ ] apply the exit codes 0, 1, 2 to the whole binary (a kong parse error moves from 3 to 2); update
+  `scripts/bench-gate.sh`, the exit contract test and the verdict exits of `scripts/eval/corpus_sweep.py`
+- [ ] update `internal/arch_test.go` where it names deleted files: `TestAnalyzeCheckSourceFilesDoNotImportDomainInternals`
+  and the deleted entries of `cmdDomainAdapterFiles`
 - [ ] delete the skill embed and its install command; keep `skills/archfit/SKILL.md` as a document
 - [ ] rewrite `scripts/image_contracts.py` for the 4.0 commands; update or delete scripts and the eval skill that call
-      a retired command
+  a retired command
 - [ ] remove the retired commands from `docs/commands.md`; rewrite `docs/troubleshooting.md`
 - [ ] run `make test`, `make lint`, `make docs`, `make workflows`
 
 ### Task 32: Remove the stored baseline and re-anchor
 
 Design: 13, 7.2. Packages: `internal/baseline` (deleted), `internal/application`, `internal/assessment/status`,
-`internal/assessment/evaluation`, `internal/model/report`, `cmd/archfit` (wiring only). Files: the state and
-agent-result schemas (generated), `docs/ci.md`, `docs/metrics.md`. Depends on: 31, 37. Impact first: `Baseline`,
+`internal/assessment/evaluation`, `internal/model/report`, `cmd/archfit` (wiring only). Files:
+`internal/arch_test.go`, `.archfit.yaml`, the state and agent-result schemas (generated), `docs/ci.md`,
+`docs/metrics.md`. Depends on: 31, 37. Merge: manager (edits `.archfit.yaml`). Impact first: `Baseline`,
 `BaselineLoader`, `loadBaseline`, `storedComparison`, `seamAnchor`, `AcceptedSet`, `BaselineAnchor`.
 
 - [ ] delete `internal/baseline`, `application/baseline.go`, `application/reanchor.go` and their tests
 - [ ] remove the baseline from `application/analysis.go`, the accepted-set path of `assessment/status`, the anchor
-      of `assessment/evaluation`, and the baseline fields of `internal/model/report`
+  of `assessment/evaluation`, and the baseline fields of `internal/model/report`
+- [ ] remove `internal/baseline` from `internal/arch_test.go` and its path glob and rules from `.archfit.yaml`
 - [ ] regenerate the schemas and `model_surface.golden`; read the diff
 - [ ] verify that no baseline symbol or `.archfit-baseline.json` reference remains outside `docs/archived/` and the
-      conversion decoder of task 21
+  conversion decoder of task 21
 - [ ] update `docs/ci.md` and `docs/metrics.md`
 - [ ] run `make test`, `make lint`, `make docs`
 
@@ -705,12 +762,13 @@ agent-result schemas (generated), `docs/ci.md`, `docs/metrics.md`. Depends on: 3
 Design: 13, 7.2. Packages: `internal/assessment/decision`, `internal/assessment/evaluation` (origin),
 `internal/evidence/acquisition` (`measurement.go`), `internal/model/evidence` (`measurement.go`),
 `internal/model/report`, `internal/application` (`base_compare.go`, `analysis.go`, `report.go`). Files:
-`docs/evidence.md`. Depends on: 32. Impact first: `MeasurementProfile`, `CompareFingerprints`,
-`ClassifyOrigins`, `attachBaseComparison`.
+`internal/arch_test.go`, `docs/evidence.md`. Depends on: 32. Impact first: `MeasurementProfile`,
+`CompareFingerprints`, `ClassifyOrigins`, `ComparePolicies`, `attachBaseComparison`.
 
-- [ ] delete the measurement profile, the comparability engine (`state_comparison.go`), finding origin, config
-      comparison in `decision`, and the `--base` analysis of the report pipeline
+- [ ] delete the measurement profile, the comparability engine (`state_comparison.go`), finding origin, the version 2
+  policy and config comparison in `decision`, and the `--base` analysis of the report pipeline
 - [ ] stop building the profile in acquisition
+- [ ] update `internal/arch_test.go` for each deleted package or file it names
 - [ ] regenerate the schemas and `model_surface.golden`; read the diff
 - [ ] update `docs/evidence.md`
 - [ ] run `make test`, `make lint`, `make docs`
@@ -718,13 +776,15 @@ Design: 13, 7.2. Packages: `internal/assessment/decision`, `internal/assessment/
 ### Task 34: Remove metric ratchets and the seam check against a baseline
 
 Design: 13 (replaced by the `coupling` rule). Packages: `internal/assessment/evaluation` (`ratchet.go`),
-`internal/assessment/score` (`gate.go`), `internal/application` (`analysis.go`). Files: `docs/coupling.md`,
-`docs/metrics.md`. Depends on: 33. Impact first: `EvaluateSeamGate`, `ratchetFindings`, `RatchetReference`.
+`internal/assessment/score` (`gate.go`), `internal/application` (`analysis.go`). Files: `internal/arch_test.go`,
+`docs/coupling.md`, `docs/metrics.md`. Depends on: 33. Impact first: `EvaluateSeamGate`, `ratchetFindings`,
+`RatchetReference`.
 
 - [ ] delete the metric ratchets, the seam gate and their wiring; the report keeps the metrics and the seams as
-      measurements
+  measurements
 - [ ] delete their tests (`ratchet_test.go`, `gate_test.go`, `coupling_gate_test.go`, the seam-gate part of
-      `cmd/archfit/couplinggate_test.go`)
+  `cmd/archfit/couplinggate_test.go`) and `TestSeamGateIsScoreBlind` in `internal/arch_test.go`, which reads
+  `score/gate.go`
 - [ ] update `docs/coupling.md` and `docs/metrics.md`: measurements for the report, no check against a stored value
 - [ ] run `make test`, `make lint`, `make docs`
 
@@ -733,13 +793,16 @@ Design: 13 (replaced by the `coupling` rule). Packages: `internal/assessment/eva
 Design: 13, D10. Packages: `internal/labels`, `internal/relationship/labels`, `internal/relationship/analysis`,
 `internal/evidence/acquisition` (labels, volatility corroboration), `internal/history/git` (`module_touches.go`),
 `internal/llm`, `internal/initcfg` (`subdomains*`, `value_*`), `internal/application` (`enrich*`,
-`config_enrich.go`, `analysis.go`), `cmd/archfit` (wiring only). Files: `docs/ai.md` (archived),
-`docs/configuration.md`, `docs/coupling.md`, `docs/evidence.md`. Depends on: 34. Impact first: `labels.Approved`,
-`PinnedLabels`, `LabelsHash`, `loadLabels`, `TouchCounts`, the `internal/llm` entry points.
+`config_enrich.go`, `analysis.go`), `cmd/archfit` (wiring only). Files: `internal/arch_test.go`, `.archfit.yaml`,
+`docs/ai.md` (archived), `docs/configuration.md`, `docs/coupling.md`, `docs/evidence.md`. Depends on: 34. Merge:
+manager (edits `.archfit.yaml`). Impact first: `labels.Approved`, `PinnedLabels`, `LabelsHash`, `loadLabels`,
+`TouchCounts`, the `internal/llm` entry points.
 
 - [ ] delete the labels packages, the value draft and apply code, module touch counts, and `internal/llm`
 - [ ] remove the labels from classification, acquisition and the report pipeline; `volatility` and `subdomain` come
-      from the policy
+  from the policy
+- [ ] update the `internal/llm` and `labelsio` checks of `internal/arch_test.go`; remove the emptied path globs, the
+  emptied module and their rules from `.archfit.yaml`
 - [ ] move `docs/ai.md` to `docs/archived/` with `git mv` and `git add -f` (D10); update the other documents
 - [ ] regenerate the schemas and `model_surface.golden`; read the diff
 - [ ] run `make test`, `make lint`, `make docs`
@@ -747,11 +810,13 @@ Design: 13, D10. Packages: `internal/labels`, `internal/relationship/labels`, `i
 ### Task 36: Remove waivers and the version 2 rule evaluation
 
 Design: 13 (waivers become exceptions), D2. Packages: `internal/assessment/rules`, `internal/assessment/status`,
-`internal/assessment/agenttask`, `internal/assessment/evaluation`, `internal/application` (`analysis.go`). Depends on:
-22, 35. Impact first: `rules.New`, `status.Assign`, `matchWaiver`, the agent task builder.
+`internal/assessment/agenttask`, `internal/assessment/evaluation`, `internal/application` (`analysis.go`). Files:
+`internal/arch_test.go`. Depends on: 22, 35. Impact first: `rules.New`, `status.Assign`, `matchWaiver`, the agent
+task builder.
 
 - [ ] delete the version 2 rule types, their evaluation, waiver matching, and agent tasks from the report pipeline
 - [ ] the report shows the errors and the state of task 22 instead
+- [ ] remove deleted packages from `coreRingPkgs` and the other lists of `internal/arch_test.go`
 - [ ] regenerate the schemas and `model_surface.golden`; read the diff
 - [ ] run `make test`, `make lint`, `make docs`
 
@@ -776,16 +841,17 @@ renderer's `Render`, `SemanticStrengthOverlay`.
 
 Design: 11.8, 13. Packages: `internal/extract/scip` (deleted), `internal/extract/acquire`,
 `internal/evidence/acquisition`, `internal/extract/registry`, `internal/relationship/classify` (hint precedence).
-Files: `Dockerfile`, `tools/manifest.json`, `tools/scip-go/`, `tools/node/`, `tools/python/`,
+Files: `.archfit.yaml`, `Dockerfile`, `tools/manifest.json`, `tools/scip-go/`, `tools/node/`, `tools/python/`,
 `scripts/provision-analyzers.sh`, `.github/workflows/ci.yaml`, `Makefile`, `internal/coverage_names_test.go`,
-`CONTRIBUTING.md`, `docs/languages.md`, `docs/development.md`. Depends on: 31, 37. Impact first: `scip.New`,
-`enrichEdges`, the symbol graph consumers.
+`CONTRIBUTING.md`, `docs/languages.md`, `docs/development.md`. Depends on: 37, 42. Merge: manager (edits
+`.archfit.yaml`). Impact first: `scip.New`, `enrichEdges`, the symbol graph consumers.
 
 - [ ] delete the SCIP adapter, the Python reader and `scip.proto`; acquisition stops filling the symbol graph;
-      delete `internal/model/symbol` and its readers if no other consumer remains, otherwise list them in the pull
-      request; do not edit `internal/application`, `internal/model/report` or `internal/output`
+  delete `internal/model/symbol` and its readers if no other consumer remains (then remove its path glob from
+  `.archfit.yaml`), otherwise list them in the pull request; do not edit `internal/application`,
+  `internal/model/report` or `internal/output`
 - [ ] remove `scip-go`, `scip-typescript`, `scip-python` and `rust-analyzer` from the manifest, the locks, the image,
-      the CI shards, `make test` and the doctor groups
+  the CI shards, `make test` and the doctor groups
 - [ ] update `docs/languages.md`, `docs/development.md` and `CONTRIBUTING.md`
 - [ ] run `make test`, `make lint`, `make docs`, `make tool-locks`, `make workflows`
 
@@ -793,12 +859,14 @@ Files: `Dockerfile`, `tools/manifest.json`, `tools/scip-go/`, `tools/node/`, `to
 
 Design: 11.8 (`jscpd` leaves the check), 13, D2. Packages: `internal/extract/clones` (deleted),
 `internal/extract/acquire`, `internal/evidence/acquisition`, `internal/relationship/classify` (`clone_only.go`),
-`internal/relationship/analysis`, `internal/model/clone`, `internal/assessment/evaluation` (duplication signals).
-Files: `tools/manifest.json`, `tools/node/`, `Dockerfile`, `docs/languages.md`, `docs/coupling.md`. Depends on: 35,
-36, 42. Impact first: `clones.Run`, `clonePairs`, `DuplicationSignals`.
+`internal/relationship/analysis`, `internal/model/clone`, `internal/assessment/evaluation`,
+`internal/assessment/signals` (duplication signals). Files: `.archfit.yaml`, `tools/manifest.json`, `tools/node/`,
+`Dockerfile`, `docs/languages.md`, `docs/coupling.md`. Depends on: 36, 38. Merge: manager (edits `.archfit.yaml`).
+Impact first: `clones.Run`, `clonePairs`, `DuplicationSignals`.
 
 - [ ] delete the `jscpd` adapter, clone clusters, clone-only pairs and duplication signals
 - [ ] remove `jscpd` from the manifest, the Node lock and the image
+- [ ] remove the `internal/model/clone` path glob from `.archfit.yaml`
 - [ ] regenerate `model_surface.golden`; read the diff
 - [ ] update `docs/languages.md` and `docs/coupling.md`: copies are found by the `duplication` rule
 - [ ] run `make test`, `make lint`, `make docs`, `make tool-locks`
@@ -819,11 +887,12 @@ first: `GoExtractor.Extract`, `loadPackages`, `loadMemberFacts`.
 
 Design: 11.8, 13. Packages: `internal/extract/py` (deleted), `internal/extract/registry`. Files: `tools/python/`,
 `tools/manifest.json`, `Dockerfile`, `Makefile`, `.github/workflows/ci.yaml`, `CONTRIBUTING.md`,
-`docs/languages.md`, `docs/development.md`. Depends on: 38, 40. Impact first: `py.New`, `provisionedPython`, the
+`docs/languages.md`, `docs/development.md`. Depends on: 40. Impact first: `py.New`, `provisionedPython`, the
 `ARCHFIT_TOOL_PYTHON` readers.
 
 - [ ] the report reads Python through `pyimports`; delete the grimp helper and its runtime
-- [ ] remove grimp, `ARCHFIT_TOOL_PYTHON` and the analyzer Python from the tools, the image, CI and `make host-tools`
+- [ ] remove grimp from the Python lock (the SCIP reader keeps `protobuf` and `grpcio-tools` until task 38), and
+  `ARCHFIT_TOOL_PYTHON` from every reader except the SCIP reader
 - [ ] state the namespace-package change in `docs/languages.md` for the release notes
 - [ ] run `make test`, `make lint`, `make docs`, `make tool-locks`, `make workflows`
 
@@ -841,17 +910,21 @@ Files: `tools/node/`, `tools/manifest.json`, `Dockerfile`, `Makefile`, `.github/
 - [ ] update `docs/languages.md` and `CONTRIBUTING.md`
 - [ ] run `make test`, `make lint`, `make docs`, `make tool-locks`, `make workflows`
 
-### Task 43: Remove the version 2 loader from the engine
+### Task 43: Remove the version 2 file format from the engine
 
-Design: 11.7 (no old contracts side by side), 14. Packages: `internal/config`, `internal/policy` (the version 2
-types), `internal/initcfg` (the version 2 writer and editor). Files: `docs/configuration.md`, `docs/migration.md`.
-Depends on: 32, 33, 34, 35, 36, 37, 39. Impact first: `config.Load`, `config.Config`, the version 2 views,
-`ModuleDef`, `RuleDef`, `WaiverDef`.
+Design: 11.7 (no old contracts side by side), 14. Packages: `internal/config`, `internal/policy` (the version 2 rule
+and waiver types), `internal/initcfg` (the version 2 writer and editor). Files: `scripts/eval/extractors/gofacts/`,
+`docs/configuration.md`, `docs/migration.md`. Depends on: 36, 39. Impact first: `config.Load`, `config.Config`,
+`RuleDef`, `WaiverDef`.
 
 - [ ] move a minimal version 2 decoder into `internal/initcfg/policy3` for conversion only
-- [ ] delete the version 2 loader, its views and projection, the version 2 policy types, and the version 2
-      `initcfg` writer, updater and YAML editor; the report reads only schema 3
-- [ ] verify that no engine path accepts `version: 2` except `init` conversion
+- [ ] delete the version 2 file decoder and file structs, the version 2 rule and waiver types, and the version 2
+  `initcfg` writer, updater and YAML editor
+- [ ] keep `policy.ModuleDef`, `policy.ModuleMap` and the views the report pipeline reads: task 23 fills them from
+  schema 3; delete only what no remaining caller uses
+- [ ] move `scripts/eval/extractors/gofacts` to the schema 3 loader, and delete its `reference` mode for languages
+  whose reference extractor is gone
+- [ ] verify that no engine path accepts `version: 2` except `init` conversion; `go build ./...` covers every tool
 - [ ] update `docs/configuration.md` and `docs/migration.md`
 - [ ] run `make test`, `make lint`, `make docs`
 
@@ -919,16 +992,18 @@ and versions after the status line. `can` prints one answer without a status lin
 ### Errors, counting and `unknown` (tasks 12 to 16)
 
 - Key: the rule id, the from module, the to module, and the symbol: the imported package or library for dependency
-  rules, the file for `unowned`, the sorted module set for `cycle`, the literal digest for `duplication`.
+  rules, the file for `unowned`, the sorted module set for `cycle`. For `duplication` the key is the rule, the sorted
+  module pair and the literal digest.
 - Count: the number of sites (file and line) with that key in a tree. Added: a key absent on the base, or a higher
   count on the head.
 - Exceptions match by rule, `from` and `to`. An expired exception: `next` is `wait for an owner: #n` when its `why`
   names a request `#n`, otherwise `fix the code, or ask an owner to extend the exception`. This is a milestone 1
   simplification; milestone 2 may add the request to the exception.
 - `unknown`: the local policy differs from the target's; the policy is invalid; there is no merge base; base evidence
-  is missing; a needed tool is missing; a first-party import in a changed file cannot be resolved.
+  is missing; a needed tool is missing; a first-party import in a changed file cannot be resolved; an unresolved
+  import exists on the head that the base does not have.
 
-### Exit codes (task 24)
+### Exit codes (task 24 for the new commands, task 31 for the whole binary)
 
 | Command | 0 | 1 | 2 |
 | --- | --- | --- | --- |
@@ -976,12 +1051,14 @@ and section 8 names the output a record.
 ### New packages and the self-policy
 
 Every new package sits under a module path glob of today's `.archfit.yaml`, except `internal/model/result` (task 2
-adds it). The new packages: `internal/config/policyfile`, `internal/model/result`, `internal/output/record`,
-`internal/output/reporttext`, `internal/extract/tsimports`, `internal/extract/pyimports`,
-`internal/extract/literals`, `internal/evidence/acquisition/checkfacts`, `internal/assessment/change`,
-`internal/assessment/copies`, `internal/application/changecheck`, `internal/application/canquery`,
-`internal/application/rulesquery`, `internal/application/request`, `internal/application/repostate`,
-`internal/initcfg/policy3`. A worker may rename a package in its task; the pull request says so.
+adds it). The new packages: `internal/config/policyfile`, `internal/policy/resolved`, `internal/relationship/balance`,
+`internal/model/result`, `internal/output/record`, `internal/output/reporttext`, `internal/extract/tsimports`,
+`internal/extract/pyimports`, `internal/extract/literals`, `internal/evidence/acquisition/checkfacts`,
+`internal/assessment/change`, `internal/assessment/copies`, `internal/application/changecheck`,
+`internal/application/canquery`, `internal/application/rulesquery`, `internal/application/request`,
+`internal/application/repostate`, `internal/initcfg/policy3`. A worker may rename a package in its task; the pull
+request says so. New packages under `internal/policy` and `internal/relationship` keep the export ratchets of those
+two packages where they are.
 
 ## Post-Completion
 
