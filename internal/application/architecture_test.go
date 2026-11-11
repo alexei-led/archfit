@@ -82,11 +82,11 @@ func TestApplicationNoConcreteAdapters(t *testing.T) {
 	forbidden := []string{
 		"github.com/alexei-led/archfit/v3/internal/analysispipeline",
 		"github.com/alexei-led/archfit/v3/internal/evidence/acquisition",
-		"github.com/alexei-led/archfit/v3/internal/extract/",
+		"github.com/alexei-led/archfit/v3/internal/extract",
 		"github.com/alexei-led/archfit/v3/internal/output",
 		"github.com/alexei-led/archfit/v3/internal/toolrun",
 		"github.com/alexei-led/archfit/v3/internal/factcache",
-		"github.com/alexei-led/archfit/v3/internal/history/",
+		"github.com/alexei-led/archfit/v3/internal/history",
 		"github.com/alexei-led/archfit/v3/internal/ownership",
 		"github.com/alexei-led/archfit/v3/internal/labels/labelsio",
 		"github.com/alexei-led/archfit/v3/internal/baseline",
@@ -110,8 +110,10 @@ func TestApplicationNoConcreteAdapters(t *testing.T) {
 		}
 		for _, imp := range tree.Imports {
 			name := strings.Trim(imp.Path.Value, `"`)
-			for _, prefix := range forbidden {
-				if name == prefix || strings.HasPrefix(name, prefix) {
+			for _, pkg := range forbidden {
+				// A package or one below it; a sibling that only shares the
+				// prefix, such as internal/configschema, is not the adapter.
+				if name == pkg || strings.HasPrefix(name, pkg+"/") {
 					t.Errorf("%s imports concrete adapter %s", path, name)
 				}
 			}

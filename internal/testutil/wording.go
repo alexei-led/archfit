@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-// NotUsedWords are the words of the "Not used" column of design section 5.
+// notUsedWords are the words of the "Not used" column of design section 5.
 // Archfit output names each thing with one word; these are the other words.
 // "record" is not listed: section 5 forbids it only as the verb for an
 // owner's answer, and section 8 names the output a record.
-var NotUsedWords = []string{
+var notUsedWords = []string{
 	"config", "architecture file", "classification", "component", "surface",
 	"approved pair", "edge", "relation", "law", "intent", "decision", "guardrail",
 	"waiver", "baseline entry", "debt", "temporary decision", "finding", "violation",
@@ -23,7 +23,7 @@ var NotUsedWords = []string{
 // name and the policy key.
 var gateNames = regexp.MustCompile(`(?i)archfit/gate|\bgate:`)
 
-var notUsedPatterns = compileNotUsed(NotUsedWords)
+var notUsedPatterns = compileNotUsed(notUsedWords)
 
 func compileNotUsed(words []string) []*regexp.Regexp {
 	patterns := make([]*regexp.Regexp, len(words))
@@ -34,14 +34,15 @@ func compileNotUsed(words []string) []*regexp.Regexp {
 	return patterns
 }
 
-// NotUsedIn returns the words of NotUsedWords that text uses, as whole words
-// and in any case, in list order. A phrase matches across any whitespace.
+// NotUsedIn returns the words of the Not used column that text uses, as
+// whole words and in any case, in list order. A phrase matches across any
+// whitespace.
 func NotUsedIn(text string) []string {
 	text = gateNames.ReplaceAllString(text, " ")
 	var found []string
 	for i, pattern := range notUsedPatterns {
 		if pattern.MatchString(text) {
-			found = append(found, NotUsedWords[i])
+			found = append(found, notUsedWords[i])
 		}
 	}
 	return found
