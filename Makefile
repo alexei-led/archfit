@@ -126,11 +126,12 @@ archfit-report: build ## write .archfit-cache/reports/archfit-report.md for huma
 lint: ## run golangci-lint
 	golangci-lint run -c .golangci.yaml ./...
 
-## workflows: lint GitHub Actions workflow files
+## workflows: lint GitHub Actions workflow files and test the release tag rule
 .PHONY: workflows
-workflows: ## lint .github/workflows with actionlint and zizmor
+workflows: ## lint .github/workflows with actionlint and zizmor; test the release tag rule
 	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION) .github/workflows/*.yaml
 	uvx zizmor==$(ZIZMOR_VERSION) --format plain .github/workflows
+	bash scripts/tests/release_channel_test.sh
 
 ## docs: validate documentation and render Mermaid diagrams
 .PHONY: docs
