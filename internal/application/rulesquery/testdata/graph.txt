@@ -1,0 +1,12 @@
+layers: core, cmd (inner first)
+core:
+  pkg_chaos -> pkg_container, pkg_util
+  pkg_chaos_netem -> pkg_chaos
+  pkg_container -> none
+  pkg_runtime -> none
+  pkg_tc -> none
+  pkg_util -> none
+cmd:
+  cmd_pumba -> pkg_chaos
+no layer:
+  tools -> none

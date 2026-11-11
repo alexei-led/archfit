@@ -1,0 +1,3 @@
+coupling: new knowledge across a module boundary needs a balance of at least 8
+  mode: deny (fix the code)
+  in words: a module may use the public part of a module it is allowed to depend on; it may reach past the public part only into a module declared low
