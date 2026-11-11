@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "archfit",
+          "version": "4.0.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "graph",
+          "level": "error",
+          "message": {
+            "text": "pkg_tc -> pkg_util is not an allowed dependency\nwhy: a new dependency between modules needs an owner\nbalance: 9/10 (min 7)\nnext: archfit request -m \"<why you need it>\"     (do not copy the code)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "pkg/tc/netem.go"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "archfitKey/v1": "graph pkg_tc pkg_util github.com/alexei-led/pumba/pkg/util"
+          }
+        }
+      ]
+    }
+  ]
+}
