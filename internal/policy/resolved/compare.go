@@ -76,9 +76,9 @@ func Compare(before, after Policy) Comparison {
 	d.builtin(before.Builtin, after.Builtin)
 	d.rules(before.Rules, after.Rules)
 	d.exceptions(before.Exceptions, after.Exceptions)
-	d.globs("generated", before.Generated, after.Generated, Loosens, Tightens)
-	d.globs("tests", before.Tests, after.Tests, Loosens, Tightens)
-	d.globs("exclude", before.Exclude, after.Exclude, Loosens, Tightens)
+	d.globs("generated", before.Generated, after.Generated, Tightens)
+	d.globs("tests", before.Tests, after.Tests, Tightens)
+	d.globs("exclude", before.Exclude, after.Exclude, Tightens)
 	d.settings(before.Settings, after.Settings)
 
 	c := Comparison{Direction: Neither, Changes: d.changes}
@@ -127,11 +127,11 @@ func (d *diff) modules(before, after map[string]Module) {
 func (d *diff) module(key string, b, a Module) {
 	// A path dropped from a module goes to no module or to an enclosing one,
 	// and leaves every deny rule that names the module: both can loosen.
-	d.globs(key+".paths", b.Paths, a.Paths, Loosens, Loosens)
+	d.globs(key+".paths", b.Paths, a.Paths, Loosens)
 	// A public that is the whole module on both sides follows paths; the paths
 	// change already says it.
 	if !wholeModule(b) || !wholeModule(a) {
-		d.globs(key+".public", b.Public, a.Public, Loosens, Tightens)
+		d.globs(key+".public", b.Public, a.Public, Tightens)
 	}
 	if b.Volatility != a.Volatility {
 		dir := Loosens
@@ -335,9 +335,9 @@ func asItems(list []string, isGlob func(string) bool) []item {
 	return items
 }
 
-// globs diffs two lists of path globs.
-func (d *diff) globs(key string, before, after []string, added, removed Direction) {
-	d.list(key, asGlobs(before), asGlobs(after), added, removed)
+// globs diffs two lists of path globs whose added entries loosen.
+func (d *diff) globs(key string, before, after []string, removed Direction) {
+	d.list(key, asGlobs(before), asGlobs(after), Loosens, removed)
 }
 
 // list reports the items after has that no item of before covers (added) and

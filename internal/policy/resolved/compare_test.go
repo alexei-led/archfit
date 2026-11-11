@@ -11,6 +11,7 @@ import (
 const (
 	on         = "true"
 	owner2     = "octocat"
+	denyFrom   = "rules.deny-r.deny.from"
 	dupExpires = "exceptions (duplication pkg_tc → pkg_util).expires"
 )
 
@@ -110,11 +111,11 @@ func TestCompare(t *testing.T) {
 		{"deny from a module to a directory of its name", func(p *resolved.Policy) {
 			p.Rules[0].From = []string{modChaos}
 		}, []resolved.Change{
-			{ti, "rules.deny-r.deny.from", `adds "pkg_chaos"`},
-			{lo, "rules.deny-r.deny.from", `removes "pkg/chaos/**"`},
+			{ti, denyFrom, `adds "pkg_chaos"`},
+			{lo, denyFrom, `removes "pkg/chaos/**"`},
 		}},
 		{"deny from wider", func(p *resolved.Policy) { p.Rules[0].From = []string{"pkg/**"} }, []resolved.Change{
-			{ti, "rules.deny-r.deny.from", `adds "pkg/**"`},
+			{ti, denyFrom, `adds "pkg/**"`},
 		}},
 		{"deny to narrower", func(p *resolved.Policy) { p.Rules[0].To = []string{"pkg/tc/x/**"} }, []resolved.Change{
 			{ti, "rules.deny-r.deny.to", `adds "pkg/tc/x/**"`},
