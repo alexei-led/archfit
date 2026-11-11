@@ -45,6 +45,9 @@ func TestIsPublic(t *testing.T) {
 	chaos.Public = append(chaos.Public, "pkg/chaos/cliflags")
 	p.Modules[modChaos] = chaos
 	p.Modules[modUI] = resolved.Module{Paths: []string{"src/ui/**"}, Public: []string{"src/ui/api/**"}}
+	p.Modules["files"] = resolved.Module{Paths: []string{"pkg/foo/*.go"}}
+	p.Modules["filepub"] = resolved.Module{Paths: []string{"pkg/bar/*.go"}, Public: []string{"pkg/bar/api.go"}}
+	p = p.WithDefaults()
 	tests := []struct {
 		name, module, target string
 		isFile               bool
@@ -58,6 +61,10 @@ func TestIsPublic(t *testing.T) {
 		{"a file under a public tree", modUI, "src/ui/api/client/index.ts", true, true},
 		{"a file past a public tree", modUI, "src/ui/state/store.ts", true, false},
 		{"no public: the whole module", modUtil, "pkg/util/deep/x", false, true},
+		{"no public, file-glob paths: the package", "files", "pkg/foo", false, true},
+		{"no public, file-glob paths: a file", "files", "pkg/foo/foo.go", true, true},
+		{"a public file", "filepub", "pkg/bar/api.go", true, true},
+		{"a file next to a public file", "filepub", "pkg/bar/impl.go", true, false},
 		{"not a module", "missing", chaosDir, false, false},
 	}
 	for _, tt := range tests {
@@ -108,6 +115,7 @@ func TestFormatExpires(t *testing.T) {
 		{"today read in UTC", day(19), time.Date(2026, 11, 20, 0, 30, 0, 0, time.FixedZone("CET", 3600)), lastDayLeft},
 		{"the day after", day(19), day(20), "2026-11-19 (expired)"},
 		{"long past", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), day(20), "2026-01-01 (expired)"},
+		{"a date past the time.Duration range", time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC), day(11), "9999-12-31 (2912128 days)"},
 		{"no date", time.Time{}, day(19), ""},
 	}
 	for _, tt := range tests {
