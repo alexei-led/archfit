@@ -69,6 +69,12 @@ var languageCases = []struct {
 		want: []string{"9 " + pumbaRegex, "17 ", "18 " + pumbaError, "20 a\\\"b", "20 raw\\d", "24 first element of a table"},
 	},
 	{
+		name:   "Go with a line directive",
+		file:   "gen/parser.go",
+		source: "package gen\n\n//line grammar.y:1000\nconst s = \"physical line three\"\n",
+		want:   []string{"4 physical line three"},
+	},
+	{
 		name: "Python",
 		file: "pkg/util.py",
 		source: "\"\"\"Module docstring is prose.\"\"\"\n" +
@@ -84,12 +90,15 @@ var languageCases = []struct {
 			"\n" +
 			"class Rule:\n" +
 			"    'class docstring is prose'\n" +
+			"    ('parenthesised docstring')\n" +
+			"    'split' ' docstring'\n" +
+			"    kept = ('parenthesised value', 'split' ' value')\n" +
 			"    pattern = '" + pumbaRegex + "'\n" +
 			"\n" +
 			"m = importlib.import_module(\"a.b\")\n" +
 			"multi = \"\"\"line one\n" +
 			"line two\"\"\"\n",
-		want: []string{"5 \\d+", "5 w", "6 one line", "10 " + pumbaError, "14 " + pumbaRegex, "16 a.b"},
+		want: []string{"5 \\d+", "5 w", "6 one line", "10 " + pumbaError, "16  value", "16 parenthesised value", "16 split", "17 " + pumbaRegex, "19 a.b"},
 	},
 	{
 		name: "TypeScript",
@@ -101,13 +110,14 @@ var languageCases = []struct {
 			"import eq = require('./eq');\n" +
 			"const d = import('./dyn');\n" +
 			"const r = require('./req');\n" +
+			"const dt = import(`./dyn/template`), rt = require(`./req/template`);\n" +
 			"// const c = \"commented\";\n" +
 			"const re = /" + pumbaRegex + "/;\n" +
 			"const e = \"" + pumbaError + "\";\n" +
 			"const t = `plain template`, u = `with ${e}`, q = 'q';\n" +
 			"/* \"block\" */ const multi = `line one\n" +
 			"line two`;\n",
-		want: []string{"10 " + pumbaError, "11 plain template", "11 q"},
+		want: []string{"11 " + pumbaError, "12 plain template", "12 q"},
 	},
 	{
 		name:   "TSX",
@@ -146,9 +156,10 @@ var languageCases = []struct {
 			"    string v = @\"a \"\"b\"\"\";\n" +
 			"    string i = $\"x {s}\", j = $@\"y {s}\";\n" +
 			"    byte[] u = \"bytes\"u8;\n" +
+			"    string r = \"\"\"raw \"quoted\" text\"\"\", ir = $\"\"\"x {s}\"\"\";\n" +
 			"    char c = 'x';\n" +
 			"}\n",
-		want: []string{"4 " + pumbaError, "5 a \"\"b\"\""},
+		want: []string{"4 " + pumbaError, "5 a \"\"b\"\"", "8 raw \"quoted\" text"},
 	},
 }
 
@@ -209,15 +220,15 @@ func TestIndexOfFixtureTreeIsStable(t *testing.T) {
 		}
 		return out
 	}
-	wantError := []string{"pkg/util.py:10", "pkg/util/util.go:18", "src/Rule.cs:4", "src/lib.rs:6", "src/util.ts:10"}
+	wantError := []string{"pkg/util.py:10", "pkg/util/util.go:18", "src/Rule.cs:4", "src/lib.rs:6", "src/util.ts:11"}
 	if got := sites(pumbaError); !slices.Equal(got, wantError) {
 		t.Errorf("index[%q] = %q, want %q", pumbaError, got, wantError)
 	}
-	if got := sites(pumbaRegex); !slices.Equal(got, []string{"pkg/util.py:14", "pkg/util/util.go:9"}) {
+	if got := sites(pumbaRegex); !slices.Equal(got, []string{"pkg/util.py:17", "pkg/util/util.go:9"}) {
 		t.Errorf("index[%q] = %q, want the Go and Python sites", pumbaRegex, got)
 	}
 	keys := slices.Sorted(maps.Keys(idx))
-	wantKeys := []string{pumbaRegex, pumbaError, "first element of a table", "plain template"}
+	wantKeys := []string{pumbaRegex, pumbaError, "first element of a table", "parenthesised value", "physical line three", "plain template", `raw "quoted" text`}
 	slices.Sort(wantKeys)
 	if !slices.Equal(keys, wantKeys) {
 		t.Errorf("index keys = %q, want %q", keys, wantKeys)

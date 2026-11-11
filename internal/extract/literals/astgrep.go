@@ -31,6 +31,7 @@ const (
 	ruleRsString   = "rs-string"   // "…", or raw r"…" with any number of #
 	ruleCSQuoted   = "cs-quoted"   // "…"
 	ruleCSVerbatim = "cs-verbatim" // @"…"
+	ruleCSRaw      = "cs-raw"      // """…""", three or more quotes
 )
 
 //go:embed rules/literals.yml
@@ -103,17 +104,17 @@ func readAstGrep(ctx context.Context, runner toolrun.Runner, root string, files 
 // Rust byte or C string, a C# "…"u8 string. An error is a match the rule id
 // cannot read.
 func value(rule, text string) (string, bool, error) {
-	bad := fmt.Errorf("rule %s matched %q, which is not a string it reads", rule, text)
+	bad := func() error { return fmt.Errorf("rule %s matched %q, which is not a string it reads", rule, text) }
 	switch rule {
 	case ruleJSQuoted:
 		if len(text) < 2 || !strings.ContainsRune(`'"`+"`", rune(text[0])) || text[len(text)-1] != text[0] {
-			return "", false, bad
+			return "", false, bad()
 		}
 		return text[1 : len(text)-1], true, nil
 	case rulePyString:
 		q := strings.IndexAny(text, `'"`)
 		if q < 0 {
-			return "", false, bad
+			return "", false, bad()
 		}
 		if strings.ContainsAny(strings.ToLower(text[:q]), "fbt") {
 			return "", false, nil
@@ -124,13 +125,13 @@ func value(rule, text string) (string, bool, error) {
 		}
 		body := text[q+len(quote):]
 		if !strings.HasSuffix(body, quote) {
-			return "", false, bad
+			return "", false, bad()
 		}
 		return strings.TrimSuffix(body, quote), true, nil
 	case ruleRsString:
 		q := strings.IndexByte(text, '"')
 		if q < 0 {
-			return "", false, bad
+			return "", false, bad()
 		}
 		prefix := text[:q]
 		hashes := strings.TrimPrefix(prefix, "r")
@@ -139,7 +140,7 @@ func value(rule, text string) (string, bool, error) {
 		}
 		end := `"` + hashes
 		if len(text)-q < 1+len(end) || !strings.HasSuffix(text, end) {
-			return "", false, bad
+			return "", false, bad()
 		}
 		return text[q+1 : len(text)-len(end)], true, nil
 	case ruleCSQuoted, ruleCSVerbatim:
@@ -148,12 +149,19 @@ func value(rule, text string) (string, bool, error) {
 			start = `@"`
 		}
 		if !strings.HasPrefix(text, start) {
-			return "", false, bad
+			return "", false, bad()
 		}
 		if len(text) < len(start)+1 || !strings.HasSuffix(text, `"`) {
 			return "", false, nil // "…"u8 is UTF-8 bytes, not a string
 		}
 		return text[len(start) : len(text)-1], true, nil
+	case ruleCSRaw:
+		quotes := len(text) - len(strings.TrimLeft(text, `"`))
+		end := strings.Repeat(`"`, quotes)
+		if quotes < 3 || len(text) < 2*quotes || !strings.HasSuffix(text, end) {
+			return "", false, bad()
+		}
+		return text[quotes : len(text)-quotes], true, nil
 	}
 	return "", false, fmt.Errorf("unknown rule %q", rule)
 }

@@ -11,7 +11,7 @@ import (
 
 // readGo returns the string literals of one Go file. Import paths and struct
 // tags are not literals; comments are not nodes of the tree, so they are never
-// read.
+// read. Lines are physical: a //line directive does not move them.
 func readGo(fsys fs.FS, file string) ([]Literal, error) {
 	src, err := fs.ReadFile(fsys, file)
 	if err != nil {
@@ -36,7 +36,7 @@ func readGo(fsys fs.FS, file string) ([]Literal, error) {
 			}
 		case *ast.BasicLit:
 			if n.Kind == token.STRING && !skip[n.ValuePos] && !strings.Contains(n.Value, "\n") {
-				lits = append(lits, Literal{File: file, Line: fset.Position(n.ValuePos).Line, Value: n.Value[1 : len(n.Value)-1]})
+				lits = append(lits, Literal{File: file, Line: fset.PositionFor(n.ValuePos, false).Line, Value: n.Value[1 : len(n.Value)-1]})
 			}
 		}
 		return true

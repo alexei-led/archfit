@@ -300,6 +300,10 @@ func TestValue(t *testing.T) {
 		{ruleCSQuoted, `"utf8"u8`, "", false, false},
 		{ruleCSVerbatim, `@"a ""b"""`, `a ""b""`, true, false},
 		{ruleCSVerbatim, `"not verbatim"`, "", false, true},
+		{ruleCSRaw, `"""raw "q" text"""`, `raw "q" text`, true, false},
+		{ruleCSRaw, `""""four """ quotes""""`, `four """ quotes`, true, false},
+		{ruleCSRaw, `""x""`, "", false, true},
+		{ruleCSRaw, `"""open""`, "", false, true},
 		{"other-rule", `"x"`, "", false, true},
 	}
 	for _, tt := range tests {

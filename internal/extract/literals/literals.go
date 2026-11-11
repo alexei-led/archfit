@@ -7,8 +7,9 @@
 // dropped and escapes kept as written: "abc" and `abc` are the same value.
 // Not literals: Go import paths and struct tags; TypeScript and JavaScript
 // import and export sources and the specifiers of require() and import();
-// Python docstrings (any bare string statement). Text in comments is never
-// read. Strings that are not plain text are skipped: template strings with
+// Python docstrings (any bare string statement, parenthesised or split into
+// adjacent strings too). Text in comments is never read. Strings that are not
+// plain text are skipped: template strings with
 // ${…}, Python f-, t- and b-strings, Rust byte and C strings, C# interpolated and
 // "…"u8 strings.
 //
