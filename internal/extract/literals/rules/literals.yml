@@ -1,0 +1,95 @@
+# String literals for internal/extract/literals. One rule id per way the
+# adapter reads a value (astgrep.go). Comments are never matched. Not matched:
+# TypeScript and JavaScript import and export sources and the specifiers of
+# require() and import() (the selectors of tsimports/rules/typescript.yml),
+# template strings with ${…}, and Python bare string statements (docstrings).
+# Prefixes the grammar gives the same kind (Python f and b, Rust b and c, C#
+# "…"u8) are skipped in astgrep.go. Probed with ast-grep 0.51.
+id: js-quoted
+language: TypeScript
+rule:
+  kind: string
+  not:
+    any:
+      - inside: {kind: import_statement, field: source}
+      - inside: {kind: export_statement, field: source}
+      - inside: {kind: import_require_clause}
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            has: {field: function, regex: '^(require|import)$'}
+---
+id: js-quoted
+language: Tsx
+rule:
+  kind: string
+  not:
+    any:
+      - inside: {kind: import_statement, field: source}
+      - inside: {kind: export_statement, field: source}
+      - inside: {kind: import_require_clause}
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            has: {field: function, regex: '^(require|import)$'}
+---
+id: js-quoted
+language: JavaScript
+rule:
+  kind: string
+  not:
+    any:
+      - inside: {kind: import_statement, field: source}
+      - inside: {kind: export_statement, field: source}
+      - inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            has: {field: function, regex: '^(require|import)$'}
+---
+id: js-quoted
+language: TypeScript
+rule:
+  kind: template_string
+  not:
+    has: {kind: template_substitution}
+---
+id: js-quoted
+language: Tsx
+rule:
+  kind: template_string
+  not:
+    has: {kind: template_substitution}
+---
+id: js-quoted
+language: JavaScript
+rule:
+  kind: template_string
+  not:
+    has: {kind: template_substitution}
+---
+id: py-string
+language: Python
+rule:
+  kind: string
+  not:
+    inside: {kind: expression_statement, stopBy: neighbor}
+---
+id: rs-string
+language: Rust
+rule:
+  any:
+    - kind: string_literal
+    - kind: raw_string_literal
+---
+id: cs-quoted
+language: CSharp
+rule:
+  kind: string_literal
+---
+id: cs-verbatim
+language: CSharp
+rule:
+  kind: verbatim_string_literal
