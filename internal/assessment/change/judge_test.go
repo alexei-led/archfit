@@ -28,6 +28,7 @@ const (
 	containerFile = "pkg/container/container.go"
 	storeTS       = "src/ui/state/store.ts"
 	testGlob      = "**/*_test.go"
+	pbGlob        = "**/*.pb.go"
 	modApp        = "app"
 	modFoo        = "foo"
 	fooGlob       = "pkg/foo/*.go"
@@ -72,7 +73,7 @@ func policy() resolved.Policy {
 			{ID: noteFanOut, Form: resolved.FormNote, Note: "Chaos actions fan out through RunOnContainers.", Why: "One place checks the limit."},
 		},
 		Tests:     []string{"**/*_test.go"},
-		Generated: []string{"**/*.pb.go"},
+		Generated: []string{pbGlob},
 	}.WithDefaults()
 }
 
@@ -108,7 +109,8 @@ func TestJudgeGraphExample(t *testing.T) {
 	want := []change.Error{{
 		Key:  change.Key{Rule: resolved.RuleGraph, From: tc, To: util, Symbol: "pkg/util"},
 		From: tc, To: util,
-		What: "pkg_tc -> pkg_util is not an allowed dependency", Why: "a new dependency between modules needs an owner",
+		What: "pkg_tc -> pkg_util is not an allowed dependency", Phrase: "not an allowed dependency",
+		Why:     "a new dependency between modules needs an owner",
 		Balance: &result.Balance{Value: 9, Min: 7}, Next: requestStep(),
 	}}
 	if !reflect.DeepEqual(got, want) {
@@ -209,7 +211,8 @@ func TestJudgeCouplingText(t *testing.T) {
 	want := change.Error{
 		Key:  change.Key{Rule: resolved.RuleCoupling, From: cmd, To: tc, Symbol: "pkg/tc/netem"},
 		From: cmd, To: tc,
-		What: "cmd -> pkg_tc reaches past the public part of pkg_tc", Why: "new knowledge across a module boundary needs a balance of at least 7",
+		What: "cmd -> pkg_tc reaches past the public part of pkg_tc", Phrase: "reaches past the public part",
+		Why:     "new knowledge across a module boundary needs a balance of at least 7",
 		Balance: &result.Balance{Value: 2, Min: 7}, Next: fixStep(),
 	}
 	if !ok || !reflect.DeepEqual(got, want) {
@@ -218,8 +221,8 @@ func TestJudgeCouplingText(t *testing.T) {
 	p := policy()
 	p.Builtin.MinBalance = 10
 	got, _ = byRule(change.Judge(p, fileUse("cmd/main.go", "pkg/tc")), resolved.RuleCoupling)
-	if got.What != "cmd -> pkg_tc uses the public part of pkg_tc" {
-		t.Errorf("a public use below a min of 10: what = %q", got.What)
+	if got.What != "cmd -> pkg_tc uses the public part of pkg_tc" || got.Phrase != "uses the public part" {
+		t.Errorf("a public use below a min of 10: what = %q, phrase = %q", got.What, got.Phrase)
 	}
 }
 
@@ -243,8 +246,9 @@ func TestJudgeLayers(t *testing.T) {
 			if ok != tt.want {
 				t.Fatalf("layers error = %v, want %v", ok, tt.want)
 			}
-			if ok && got.What != "pkg_util (core) -> cmd (cmd) goes against the layer order" {
-				t.Errorf("what = %q", got.What)
+			if ok && (got.What != "pkg_util (core) -> cmd (cmd) goes against the layer order" ||
+				got.Phrase != "layer core -> layer cmd goes against the layer order") {
+				t.Errorf("what = %q, phrase = %q", got.What, got.Phrase)
 			}
 		})
 	}
@@ -266,12 +270,14 @@ func TestJudgeDeny(t *testing.T) {
 		{"by module, the 8.1 example", fileUse("pkg/chaos/netem/netem.go", runtimeDir), &change.Error{
 			Key:  change.Key{Rule: denyRuntime, From: chaos, To: runtime, Symbol: runtimeDir},
 			From: chaos, To: runtime,
-			What: "pkg_chaos must not depend on pkg_runtime", Why: whyRuntime, Instead: insteadClient, Next: fixStep(),
+			What: "pkg_chaos must not depend on pkg_runtime", Phrase: "pkg_chaos must not depend on pkg_runtime",
+			Why: whyRuntime, Instead: insteadClient, Next: fixStep(),
 		}},
 		{"by path: the key holds modules, the text the rule's names", fileUse("cmd/main.go", "pkg/runtime/docker"), &change.Error{
 			Key:  change.Key{Rule: denyCmd, From: cmd, To: runtime, Symbol: "pkg/runtime/docker"},
 			From: cmd, To: runtime,
-			What: "cmd/** must not depend on pkg/runtime/**", Why: "w", Instead: "i", Next: fixStep(),
+			What: "cmd/** must not depend on pkg/runtime/**", Phrase: "cmd/** must not depend on pkg/runtime/**",
+			Why: "w", Instead: "i", Next: fixStep(),
 		}},
 		{"another target", fileUse("pkg/chaos/chaos.go", "pkg/util"), nil},
 	}
@@ -316,6 +322,11 @@ func TestJudgeOnly(t *testing.T) {
 		{"an importer in no module", onlyProcess, libraryUse("tools/gen.go", "os/exec", resolved.LanguageGo),
 			"tools/gen.go uses os/exec (process), which only pkg_runtime and scripts/** may use"},
 	}
+	// The phrase `archfit can` prints states the rule; the importer is in its head.
+	wantPhrase := map[string]string{
+		onlyDocker:  "only pkg_runtime may use github.com/docker/docker",
+		onlyProcess: "only pkg_runtime and scripts/** may use process",
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := byRule(change.Judge(policy(), tt.use), tt.rule)
@@ -324,10 +335,10 @@ func TestJudgeOnly(t *testing.T) {
 			}
 			// The key's From is the importer's module, empty for a file in no module.
 			wantFrom, _ := policy().ModuleOf(tt.use.From.Path)
-			if ok && (got.What != tt.wantWhat || got.Next != fixStep() || got.Key.To != policyUse(tt.rule) ||
-				got.Key.From != wantFrom || got.From != wantFrom) {
-				t.Errorf("got what %q, next %+v, key %+v, from %q; want what %q, from %q",
-					got.What, got.Next, got.Key, got.From, tt.wantWhat, wantFrom)
+			if ok && (got.What != tt.wantWhat || got.Phrase != wantPhrase[tt.rule] || got.Next != fixStep() ||
+				got.Key.To != policyUse(tt.rule) || got.Key.From != wantFrom || got.From != wantFrom) {
+				t.Errorf("got what %q, phrase %q, next %+v, key %+v, from %q; want what %q, phrase %q, from %q",
+					got.What, got.Phrase, got.Next, got.Key, got.From, tt.wantWhat, wantPhrase[tt.rule], wantFrom)
 			}
 		})
 	}
@@ -388,11 +399,46 @@ func TestJudgeTextsUseOnlyDesignWords(t *testing.T) {
 	p.Builtin.Graph = resolved.ModeAsk
 	for _, use := range uses {
 		for _, e := range change.Judge(p, use) {
-			for _, text := range []string{e.What, e.Why, e.Next.Text, e.Next.Note} {
+			for _, text := range []string{e.What, e.Phrase, e.Why, e.Next.Text, e.Next.Note} {
 				if words := testutil.NotUsedIn(text); len(words) > 0 {
 					t.Errorf("%s: %q uses %q", e.Key.Rule, text, words)
 				}
 			}
 		}
+	}
+}
+
+// BalanceOf is the balance Judge puts on graph and coupling errors, and the
+// balance `archfit can` shows for an allowed dependency.
+func TestBalanceOf(t *testing.T) {
+	tests := []struct {
+		name string
+		use  change.Use
+		want *result.Balance
+	}{
+		{"a use of the public part of a low module", fileUse("pkg/chaos/chaos.go", "pkg/util"), &result.Balance{Value: 9, Min: 7}},
+		{"a use past the public part of a high module", fileUse("cmd/main.go", "pkg/tc/netem"), &result.Balance{Value: 2, Min: 7}},
+		{"a module named on its own means its public part",
+			change.Use{From: change.End{Module: cmd}, To: change.End{Module: tc}}, &result.Balance{Value: 9, Min: 7}},
+		{"one module", fileUse("pkg/tc/tc.go", "pkg/tc/netem"), nil},
+		{"an importer in no module", fileUse("tools/gen.go", "pkg/util"), nil},
+		{"a target in no module", fileUse("pkg/tc/tc.go", "vendor/x"), nil},
+		{"a library", libraryUse("pkg/chaos/chaos.go", dockerSDK, resolved.LanguageGo), nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := change.BalanceOf(policy(), tt.use); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("BalanceOf = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+	p := policy()
+	p.Builtin.MinBalance = 8
+	if got := change.BalanceOf(p, fileUse("pkg/chaos/chaos.go", "pkg/util")); got == nil || got.Min != 8 {
+		t.Errorf("min = %+v, want the policy's min_balance 8", got)
+	}
+	graph, _ := byRule(change.Judge(policy(), fileUse("pkg/tc/netem.go", "pkg/util")), resolved.RuleGraph)
+	if want := change.BalanceOf(policy(), fileUse("pkg/tc/netem.go", "pkg/util")); !reflect.DeepEqual(graph.Balance, want) {
+		t.Errorf("the graph error carries %+v, BalanceOf gives %+v", graph.Balance, want)
 	}
 }
