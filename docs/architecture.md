@@ -85,12 +85,12 @@ Update the matching tests when a contract changes.
 
 | Contract | Owner and check |
 |---|---|
-| Policy purity | `internal/policy` owns policy contracts. It may use the model kernel and the approved pure matcher. The `policy_owns_domain_contracts` subtest in `TestArchImports` checks its imports. |
+| Policy purity | `internal/policy` owns policy contracts. It may use the model kernel and the approved pure matcher. The `policy_owns_domain_contracts` subtest in `TestArchImports` checks its imports. `internal/policy/resolved` holds the schema 3 policy model; `internal/config/policyfile` projects the file into it. It imports no config package; `TestImportsNoConfig` checks this. |
 | Projected configuration | Stages receive their own option contracts. They do not receive `internal/config`. `internal/config` projects options for each consumer. `TestPolicyDoesNotImportConfig` and module rules enforce the boundary. |
 | Relationship and assessment | `internal/relationship` owns classification and coupling. Assessment consumes its public contract. `TestAssessmentConsumesOnlyThePublicRelationshipContract` checks this rule. |
 | Report projection | `internal/application` maps results to report DTOs. The projector does not import relationship or evidence internals. `TestReportProjectionHasOneOwner` checks this rule. |
 | Model surface | `internal/model` is a published contract. `TestModelSurfaceNoDrift` checks `internal/testdata/model_surface.golden`. See [development](development.md) before changing it. |
-| Tool boundaries | Go, Rust, and .NET tools run through adapters and `toolrun.Runner`. Core code does not start subprocesses. `TestArchImports` checks the import boundary. `TestExtractorsRunToolsOnlyThroughToolrun` keeps `internal/extract/dotnet` and `internal/extract/tsimports` free of `os/exec` and concrete adapters. |
+| Tool boundaries | Go, Rust, and .NET tools run through adapters and `toolrun.Runner`. Core code does not start subprocesses. `TestArchImports` checks the import boundary. `TestExtractorsRunToolsOnlyThroughToolrun` keeps `internal/extract/dotnet`, `internal/extract/tsimports`, `internal/extract/pyimports`, and `internal/extract/literals` free of `os/exec` and concrete adapters. |
 
 The .NET Roslyn helper is an adapter artifact built from `tools/dotnet/archfit-roslyn`. The Go side starts it through `toolrun.Runner` and reads its JSON. It is not a core dependency. `internal/extract/dotnet` emits strength hints only; `internal/relationship` classifies.
 
