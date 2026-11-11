@@ -700,6 +700,8 @@ func TestCouplingContractDoesNotImportGraph(t *testing.T) {
 const (
 	dotnetExtractorPkg    = modulePrefix + "internal/extract/dotnet"
 	tsImportsExtractorPkg = modulePrefix + "internal/extract/tsimports"
+	pyImportsExtractorPkg = modulePrefix + "internal/extract/pyimports"
+	literalsExtractorPkg  = modulePrefix + "internal/extract/literals"
 	toolrunPkg            = modulePrefix + "internal/toolrun"
 	osExecPkg             = "os/exec"
 )
@@ -746,12 +748,12 @@ func TestExtractorBoundaryViolations(t *testing.T) {
 	}
 }
 
-// TestExtractorsRunToolsOnlyThroughToolrun keeps the .NET and TypeScript
-// import extractors adapters that cannot start a process themselves and cannot
-// reach a sibling adapter.
+// TestExtractorsRunToolsOnlyThroughToolrun keeps the .NET, TypeScript and
+// Python import extractors and the literal extractor adapters that cannot
+// start a process themselves and cannot reach a sibling adapter.
 func TestExtractorsRunToolsOnlyThroughToolrun(t *testing.T) {
 	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedImports, Dir: "."}
-	for _, pkgPath := range []string{dotnetExtractorPkg, tsImportsExtractorPkg} {
+	for _, pkgPath := range []string{dotnetExtractorPkg, tsImportsExtractorPkg, pyImportsExtractorPkg, literalsExtractorPkg} {
 		pkgs, err := packages.Load(cfg, pkgPath)
 		if err != nil {
 			t.Fatalf("packages.Load: %v", err)

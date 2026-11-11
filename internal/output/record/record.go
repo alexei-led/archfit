@@ -23,6 +23,10 @@
 // result's summary, and dates, counts and steps are already in the text. It
 // decides nothing, so the JSON and the text of one result cannot disagree.
 // Digests and the engine version appear only with Options.Verbose (design 5).
+//
+// The same result has two more forms (design 8.3): ResultJSON and AnswerJSON
+// write the documents of archfit.result.schema.json, and ResultSARIF writes a
+// SARIF 2.1.0 log for code scanning whose messages hold the record's lines.
 package record
 
 import (
