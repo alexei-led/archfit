@@ -18,10 +18,20 @@ jobs:
       go: ${{ steps.pins.outputs.go }}
       python: ${{ steps.pins.outputs.python }}
       uv: ${{ steps.pins.outputs.uv }}
+      # final (vX.Y.Z) or prerelease (vX.Y.Z-rc.N). Every publishing step below
+      # reads this one answer; any other tag shape fails here, before a publish.
+      channel: ${{ steps.channel.outputs.channel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Classify the release tag
+        id: channel
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          channel="$(sh scripts/release-channel.sh "$TAG")"
+          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
       - name: Verify locks and read runtime pins
         id: pins
         run: |
@@ -164,7 +174,9 @@ jobs:
     name: Merge Docker manifest
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: build-docker
+    needs:
+      - tools
+      - build-docker
     permissions:
       packages: write # assemble and publish the multi-architecture GHCR manifest
     steps:
@@ -186,13 +198,16 @@ jobs:
         env:
           IMAGE: ghcr.io/${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          CHANNEL: ${{ needs.tools.outputs.channel }}
         run: |
           mapfile -t DIGESTS < <(find /tmp/digests -maxdepth 1 -type f -printf "%f\n" | sed "s|^|${IMAGE}@sha256:|")
 
-          docker buildx imagetools create \
-            --tag "${IMAGE}:${TAG}" \
-            --tag "${IMAGE}:latest" \
-            "${DIGESTS[@]}"
+          # Only a final tag moves "latest"; a prerelease gets its own tag only.
+          tags=(--tag "${IMAGE}:${TAG}")
+          if [[ "$CHANNEL" == final ]]; then
+            tags+=(--tag "${IMAGE}:latest")
+          fi
+          docker buildx imagetools create "${tags[@]}" "${DIGESTS[@]}"
       # The App's locked manifest pins the engine by per-platform digest. Read
       # them back from the published index so the release carries the exact
       # values instead of someone copying them by hand.
@@ -231,6 +246,7 @@ jobs:
     timeout-minutes: 15
     # Release waits for binaries and the multi-arch image so both publish together.
     needs:
+      - tools
       - build-binaries
       - merge-docker
     permissions:
@@ -273,25 +289,17 @@ jobs:
               git log --oneline > RELEASE_NOTES.md
             fi
           fi
-      - name: Detect pre-release
-        id: prerelease
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          if echo "$TAG" | grep -qE '\-rc\.'; then
-            echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
-          else
-            echo "flag=" >> "$GITHUB_OUTPUT"
-          fi
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRERELEASE_FLAG: ${{ steps.prerelease.outputs.flag }}
+          CHANNEL: ${{ needs.tools.outputs.channel }}
           TAG: ${{ github.ref_name }}
         run: |
+          # A prerelease is never the latest release; say so instead of relying
+          # on GitHub's default.
           args=()
-          if [[ -n "$PRERELEASE_FLAG" ]]; then
-            args+=("$PRERELEASE_FLAG")
+          if [[ "$CHANNEL" == prerelease ]]; then
+            args+=(--prerelease --latest=false)
           fi
           gh release create "$TAG" \
             --title "$TAG" \
@@ -303,8 +311,10 @@ jobs:
     runs-on: ubuntu-24.04
     # Isolated from the release job: the GitHub release, binaries, and image are
     # already published by the time this runs. Skipped for pre-releases.
-    needs: release
-    if: ${{ !contains(github.ref_name, '-rc.') }}
+    needs:
+      - tools
+      - release
+    if: ${{ needs.tools.outputs.channel == 'final' }}
     permissions:
       contents: read
     steps:
