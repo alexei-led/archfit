@@ -140,7 +140,8 @@ formula above at D=9 and is shown as `9/10 (min 7)`.
   analysis.
 
 In words: a module may use the public part of a module it is allowed to depend
-on. It may reach past the public part only when both modules are declared `low`.
+on. It may reach past the public part only when neither module is more volatile
+than `low`.
 
 ## Distributed-monolith seam gate
 

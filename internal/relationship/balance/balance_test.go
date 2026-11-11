@@ -83,6 +83,26 @@ func TestOfUnknownStrengthHasNoBalance(t *testing.T) {
 	}
 }
 
+func TestOfFrozen(t *testing.T) {
+	frozen := relationship.VolatilityFrozen
+	tests := []struct {
+		name           string
+		source, target relationship.Volatility
+		want           int
+	}{
+		{"frozen source into low target", frozen, low, 8},
+		{"low source into frozen target", low, frozen, 8},
+		{"both frozen", frozen, frozen, 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, ok := balance.Of(relationship.StrengthFunctional, tt.source, tt.target); !ok || got != tt.want {
+				t.Errorf("got %d, %t; want %d, true", got, ok, tt.want)
+			}
+		})
+	}
+}
+
 func TestOfUndeclaredVolatilityScoresAsHigh(t *testing.T) {
 	tests := []struct {
 		name           string
