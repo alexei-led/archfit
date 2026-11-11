@@ -198,6 +198,12 @@ func (m Module) withDefaults() Module {
 	return m
 }
 
+// wholeModule reports whether the public part of m is the whole module, as
+// it is when the file names no public.
+func wholeModule(m Module) bool {
+	return slices.Equal(slices.Sorted(slices.Values(m.Public)), slices.Sorted(slices.Values(m.Paths)))
+}
+
 // volatilityOf is the volatility a subdomain implies; no subdomain is high.
 func volatilityOf(s Subdomain) Volatility {
 	switch s {

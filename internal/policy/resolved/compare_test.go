@@ -54,13 +54,13 @@ func TestCompare(t *testing.T) {
 			{lo, "modules.pkg_tc.paths", `adds "pkg/net/**"`},
 		}},
 		{"removed module path", func(p *resolved.Policy) { setPaths(p, modChaos, "pkg/chaos/core/**") }, []resolved.Change{
-			{ti, "modules.pkg_chaos.paths", `removes "pkg/chaos/**"`},
+			{lo, "modules.pkg_chaos.paths", `removes "pkg/chaos/**"`},
 		}},
 		{"added module", func(p *resolved.Policy) {
 			p.Modules["cli"] = resolved.Module{Paths: []string{cmdGlob}}
 		}, []resolved.Change{{lo, "modules.cli", "adds the module"}}},
 		{"removed module", func(p *resolved.Policy) { delete(p.Modules, modTC) }, []resolved.Change{
-			{ti, "modules.pkg_tc", "removes the module"},
+			{lo, "modules.pkg_tc", "removes the module"},
 		}},
 		{"wider public", func(p *resolved.Policy) { setPublic(p, modChaos, "pkg/chaos", "pkg/chaos/cli") }, []resolved.Change{
 			{lo, "modules.pkg_chaos.public", `adds "pkg/chaos/cli"`},
@@ -107,6 +107,12 @@ func TestCompare(t *testing.T) {
 		{"added rule", func(p *resolved.Policy) {
 			p.Rules = append(p.Rules, resolved.Rule{ID: "new", Form: resolved.FormNote, Note: "m", Why: why})
 		}, []resolved.Change{{ti, "rules.new", "adds a note rule"}}},
+		{"deny from a module to a directory of its name", func(p *resolved.Policy) {
+			p.Rules[0].From = []string{modChaos}
+		}, []resolved.Change{
+			{ti, "rules.deny-r.deny.from", `adds "pkg_chaos"`},
+			{lo, "rules.deny-r.deny.from", `removes "pkg/chaos/**"`},
+		}},
 		{"deny from wider", func(p *resolved.Policy) { p.Rules[0].From = []string{"pkg/**"} }, []resolved.Change{
 			{ti, "rules.deny-r.deny.from", `adds "pkg/**"`},
 		}},
@@ -171,7 +177,6 @@ func TestCompare(t *testing.T) {
 			{lo, "owners", "[alexei-led, octocat] → [octocat]"},
 		}},
 		{"owners in another order", func(p *resolved.Policy) { p.Owners = []string{owner2, owner} }, nil},
-		{"gate to advisory", func(p *resolved.Policy) { p.Gate = resolved.GateAdvisory }, nil},
 		{"gate to required", func(p *resolved.Policy) { p.Gate = resolved.GateRequired }, []resolved.Change{
 			{ti, "gate", "advisory → required"},
 		}},
@@ -242,6 +247,29 @@ func TestCompareDirection(t *testing.T) {
 				t.Errorf("Direction = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCompareGate(t *testing.T) {
+	required, advisory := comparePolicy(), comparePolicy()
+	required.Gate = resolved.GateRequired
+	if c := resolved.Compare(required, advisory); c.Direction != resolved.Loosens ||
+		!reflect.DeepEqual(c.Changes, []resolved.Change{{resolved.Loosens, "gate", "required → advisory"}}) {
+		t.Errorf("required → advisory = %+v, want loosens", c)
+	}
+	if c := resolved.Compare(advisory, required); c.Direction != resolved.Tightens {
+		t.Errorf("advisory → required = %+v, want tightens", c)
+	}
+}
+
+func TestCompareModuleNameIsNotADirectory(t *testing.T) {
+	before, after := comparePolicy(), comparePolicy()
+	before.Modules["app"] = resolved.Module{Paths: []string{"src/**"}}
+	after.Modules["app"] = resolved.Module{Paths: []string{"src/**"}}
+	before.Rules[0].From = []string{"app"}
+	after.Rules[0].From = []string{"app/**"}
+	if c := resolved.Compare(before, after); c.Direction != resolved.Loosens {
+		t.Errorf("deny from module app to path app/** = %+v, want loosens", c)
 	}
 }
 

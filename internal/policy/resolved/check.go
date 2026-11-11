@@ -149,14 +149,16 @@ func editDistance(a, b string) int {
 }
 
 // CheckTree checks the policy against the files of a tree: every path glob
-// must match a file or a directory that holds one, and no file may be owned by
-// two modules at the same specificity. files are repository-relative and
+// must match a file, and no file may be owned by two modules at the same
+// specificity. A public glob may also match a directory that holds a file:
+// public: [pkg/chaos] names a package directory. Every other glob is matched
+// against files, as ModuleOf matches them. files are repository-relative and
 // slash-separated. The error lists every message, one per line.
 func (p Policy) CheckTree(files []string) error {
 	var m messages
-	tree := newTree(files)
+	dirs := directories(files)
 	for _, g := range p.pathGlobs() {
-		if !tree.matches(g.glob) {
+		if !matchesAny(g.glob, files) && (!g.dirs || !matchesAny(g.glob, dirs)) {
 			m.add(g.key, "%q matches no file", g.glob)
 		}
 	}
@@ -170,7 +172,7 @@ func (p Policy) CheckTree(files []string) error {
 		if len(owners) < 2 {
 			continue
 		}
-		pair := strings.Join(owners, " and ")
+		pair := strings.Join(owners[:len(owners)-1], ", ") + " and " + owners[len(owners)-1]
 		if o, ok := overlaps[pair]; ok {
 			o.more++
 		} else {
@@ -179,31 +181,39 @@ func (p Policy) CheckTree(files []string) error {
 	}
 	for _, pair := range slices.Sorted(maps.Keys(overlaps)) {
 		o := overlaps[pair]
-		more := ""
+		count := ""
 		if o.more > 0 {
-			more = fmt.Sprintf(" and %d more file", o.more)
-			if o.more > 1 {
-				more += "s"
-			}
+			count = fmt.Sprintf(" (%d files in all)", o.more+1)
 		}
-		m.add("modules", "%s both own %s%s: make their paths not overlap", pair, o.first, more)
+		m.add("modules", "%s own the same files, such as %s%s: make their paths not overlap", pair, o.first, count)
 	}
 	return m.err()
 }
 
-type keyedGlob struct{ key, glob string }
+// keyedGlob is a path glob of the policy with its key. dirs: it may match a
+// directory.
+type keyedGlob struct {
+	key, glob string
+	dirs      bool
+}
 
 // pathGlobs lists every path glob of the policy with its key, in policy order.
 func (p Policy) pathGlobs() []keyedGlob {
 	var globs []keyedGlob
 	add := func(key string, list []string) {
 		for _, g := range list {
-			globs = append(globs, keyedGlob{key, g})
+			globs = append(globs, keyedGlob{key: key, glob: g})
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Modules)) {
-		add("modules."+name+".paths", p.Modules[name].Paths)
-		add("modules."+name+".public", p.Modules[name].Public)
+		m := p.Modules[name]
+		add("modules."+name+".paths", m.Paths)
+		// A public the file does not name is the paths, checked above.
+		if !wholeModule(m) {
+			for _, g := range m.Public {
+				globs = append(globs, keyedGlob{key: "modules." + name + ".public", glob: g, dirs: true})
+			}
+		}
 	}
 	for i, r := range p.Rules {
 		key := ruleKey(i, r)
@@ -223,23 +233,19 @@ func (p Policy) pathGlobs() []keyedGlob {
 
 func (p Policy) isModuleName(name string) bool { return !p.isPathGlob(name) }
 
-// tree is the file list and every directory that holds a file.
-type tree struct{ paths []string }
-
-func newTree(files []string) tree {
+// directories lists every directory that holds a file.
+func directories(files []string) []string {
 	seen := map[string]bool{}
-	paths := make([]string, 0, len(files))
+	var dirs []string
 	for _, f := range files {
-		for p := f; p != "." && p != "/" && p != "" && !seen[p]; p = path.Dir(p) {
-			seen[p] = true
-			paths = append(paths, p)
+		for d := path.Dir(f); d != "." && d != "/" && !seen[d]; d = path.Dir(d) {
+			seen[d] = true
+			dirs = append(dirs, d)
 		}
 	}
-	return tree{paths: paths}
+	return dirs
 }
 
-// matches reports whether glob matches a file of the tree or a directory that
-// holds one: public: [pkg/chaos] names a package directory.
-func (t tree) matches(glob string) bool {
-	return slices.ContainsFunc(t.paths, func(p string) bool { return matchGlob(glob, p) })
+func matchesAny(glob string, paths []string) bool {
+	return slices.ContainsFunc(paths, func(p string) bool { return matchGlob(glob, p) })
 }

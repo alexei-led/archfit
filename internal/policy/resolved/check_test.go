@@ -164,7 +164,7 @@ func TestCheckTreeValid(t *testing.T) {
 	p := base()
 	p.Rules = []resolved.Rule{{ID: "r", Form: resolved.FormDeny, From: []string{cmdGlob}, To: []string{modTC}, Why: why}}
 	p.Exceptions = []resolved.Exception{{Rule: resolved.RuleUnowned, From: "scripts/**", Why: why}}
-	p.Tests = []string{"**/*_test.go", "pkg/chaos/cli"}
+	p.Tests = []string{"**/*_test.go", "pkg/chaos/cli/**"}
 	// public: [pkg/chaos] names the package directory, which holds a file.
 	if err := p.CheckTree(append(tree, "pkg/util/util_test.go")); err != nil {
 		t.Fatalf("CheckTree: %v", err)
@@ -190,6 +190,11 @@ func TestCheckTreeMessages(t *testing.T) {
 				p.Modules[modChaos] = m
 			},
 			`modules.pkg_chaos.public: "pkg/chaos/api" matches no file`,
+		},
+		{
+			"a directory as a module path owns no file",
+			func(p *resolved.Policy) { setPaths(p, modTC, "pkg/tc") },
+			`modules.pkg_tc.paths: "pkg/tc" matches no file`,
 		},
 		{
 			"generated glob matches no file",
@@ -218,7 +223,7 @@ func TestCheckTreeMessages(t *testing.T) {
 		{
 			"file in two modules",
 			func(p *resolved.Policy) { setPaths(p, modTC, "pkg/tc/**", "pkg/chaos/**") },
-			`modules: pkg_chaos and pkg_tc both own pkg/chaos/chaos.go and 1 more file: make their paths not overlap`,
+			`modules: pkg_chaos and pkg_tc own the same files, such as pkg/chaos/chaos.go (2 files in all): make their paths not overlap`,
 		},
 	}
 	for _, tt := range tests {

@@ -40,8 +40,10 @@ type Comparison struct {
 // lists every change. A loosening needs an owner (design 9.2), so a change the
 // comparison cannot prove tighter counts as loosening:
 //
-//   - loosens: an added depends_on entry, module or module path; a wider public;
-//     a mode moved toward off; a lower min_balance; a removed rule; an added
+//   - loosens: an added depends_on entry; an added or removed module or
+//     module path (a removed one can hand files to a nested module's parent or
+//     take them out of a deny rule that names the module); a wider public; a
+//     mode moved toward off; a lower min_balance; a removed rule; an added
 //     exception, a later expires or a removed one; an added generated, tests or
 //     exclude glob; a lower volatility; any change to owners; gate required to
 //     advisory; a removed or changed module layer; any change to layers; any
@@ -50,12 +52,15 @@ type Comparison struct {
 //   - neither: the text of why, instead and note; a subdomain that leaves the
 //     volatility as it was; coverage settings, which only the report reads.
 //
-// A rule whose body changes counts its old part as removed (loosens) and its
-// new part as added (tightens). Globs compare by cover: "pkg/**" covers
-// "pkg/chaos/**", so replacing the second by the first only adds.
+// A rule whose body changes counts each part it adds or drops by what that
+// part does: a deny entry added tightens and one dropped loosens; an only.in
+// entry added loosens and one dropped tightens; a changed only.use loosens; a
+// changed form loosens, unless a note becomes a check. Path globs compare by
+// cover: "pkg/**" covers "pkg/chaos/**", so replacing the second by the first
+// only adds. A module name covers only itself, never a directory of that name.
 // Both policies must have their defaults applied.
 func Compare(before, after Policy) Comparison {
-	var d diff
+	d := diff{before: before, after: after}
 	d.owners(before.Owners, after.Owners)
 	if before.Gate != after.Gate {
 		dir := Loosens
@@ -88,7 +93,10 @@ func Compare(before, after Policy) Comparison {
 	return c
 }
 
-type diff struct{ changes []Change }
+type diff struct {
+	before, after Policy
+	changes       []Change
+}
 
 func (d *diff) add(dir Direction, key, format string, args ...any) {
 	d.changes = append(d.changes, Change{Direction: dir, Key: key, Text: fmt.Sprintf(format, args...)})
@@ -107,7 +115,7 @@ func (d *diff) modules(before, after map[string]Module) {
 		key := "modules." + name
 		switch {
 		case !inAfter:
-			d.add(Tightens, key, "removes the module")
+			d.add(Loosens, key, "removes the module")
 		case !inBefore:
 			d.add(Loosens, key, "adds the module")
 		default:
@@ -117,7 +125,9 @@ func (d *diff) modules(before, after map[string]Module) {
 }
 
 func (d *diff) module(key string, b, a Module) {
-	d.globs(key+".paths", b.Paths, a.Paths, Loosens, Tightens)
+	// A path dropped from a module goes to no module or to an enclosing one,
+	// and leaves every deny rule that names the module: both can loosen.
+	d.globs(key+".paths", b.Paths, a.Paths, Loosens, Loosens)
 	// A public that is the whole module on both sides follows paths; the paths
 	// change already says it.
 	if !wholeModule(b) || !wholeModule(a) {
@@ -140,11 +150,7 @@ func (d *diff) module(key string, b, a Module) {
 		}
 		d.add(dir, key+".layer", "%s → %s", orAbsent(b.Layer), orAbsent(a.Layer))
 	}
-	d.globs(key+".depends_on", b.DependsOn, a.DependsOn, Loosens, Tightens)
-}
-
-func wholeModule(m Module) bool {
-	return slices.Equal(slices.Sorted(slices.Values(m.Public)), slices.Sorted(slices.Values(m.Paths)))
+	d.list(key+".depends_on", asNames(b.DependsOn), asNames(a.DependsOn), Loosens, Tightens)
 }
 
 var (
@@ -222,13 +228,13 @@ func (d *diff) rule(key string, b, a Rule) {
 		}
 		d.add(dir, key, "%s → %s", b.Form, a.Form)
 	case a.Form == FormDeny:
-		d.globs(key+".deny.from", b.From, a.From, Tightens, Loosens)
-		d.globs(key+".deny.to", b.To, a.To, Tightens, Loosens)
+		d.list(key+".deny.from", d.before.selectors(b.From), d.after.selectors(a.From), Tightens, Loosens)
+		d.list(key+".deny.to", d.before.selectors(b.To), d.after.selectors(a.To), Tightens, Loosens)
 	case a.Form == FormOnly:
 		if b.Use != a.Use {
 			d.add(Loosens, key+".only.use", "%q → %q", b.Use, a.Use)
 		}
-		d.globs(key+".only.in", b.In, a.In, Loosens, Tightens)
+		d.list(key+".only.in", d.before.selectors(b.In), d.after.selectors(a.In), Loosens, Tightens)
 	}
 	d.text(key+".note", b.Note, a.Note)
 	d.text(key+".why", b.Why, a.Why)
@@ -307,23 +313,58 @@ func (d *diff) expires(key string, b, a time.Time) {
 
 func date(t time.Time) string { return t.Format(time.DateOnly) }
 
-// globs lists the globs or names after has that no glob of before covers
-// (added) and the ones before has that no glob of after covers (removed).
+// item is one entry of a list Compare diffs: a path glob, or a module name,
+// which covers only itself.
+type item struct {
+	text string
+	glob bool
+}
+
+func asGlobs(list []string) []item { return asItems(list, func(string) bool { return true }) }
+
+func asNames(list []string) []item { return asItems(list, func(string) bool { return false }) }
+
+// selectors reads deny and only entries as p does: module names or path globs.
+func (p Policy) selectors(list []string) []item { return asItems(list, p.isPathGlob) }
+
+func asItems(list []string, isGlob func(string) bool) []item {
+	items := make([]item, len(list))
+	for i, s := range list {
+		items[i] = item{text: s, glob: isGlob(s)}
+	}
+	return items
+}
+
+// globs diffs two lists of path globs.
 func (d *diff) globs(key string, before, after []string, added, removed Direction) {
+	d.list(key, asGlobs(before), asGlobs(after), added, removed)
+}
+
+// list reports the items after has that no item of before covers (added) and
+// the ones before has that no item of after covers (removed).
+func (d *diff) list(key string, before, after []item, added, removed Direction) {
 	for _, g := range after {
 		if !coveredBy(g, before) {
-			d.add(added, key, "adds %q", g)
+			d.add(added, key, "adds %q", g.text)
 		}
 	}
 	for _, g := range before {
 		if !coveredBy(g, after) {
-			d.add(removed, key, "removes %q", g)
+			d.add(removed, key, "removes %q", g.text)
 		}
 	}
 }
 
-func coveredBy(g string, list []string) bool {
-	return slices.ContainsFunc(list, func(c string) bool { return covers(c, g) })
+func coveredBy(g item, list []item) bool {
+	return slices.ContainsFunc(list, func(c item) bool {
+		if c.glob != g.glob {
+			return false
+		}
+		if !g.glob {
+			return c.text == g.text
+		}
+		return covers(c.text, g.text)
+	})
 }
 
 // covers reports whether every path glob g matches is one that c matches, as
