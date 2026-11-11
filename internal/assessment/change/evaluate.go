@@ -68,8 +68,10 @@ type tree struct {
 	// target that is one is a package directory; any other target is a
 	// file, even one that is not a source (a .vue or .json file).
 	isDir map[string]bool
-	// dirFiles are the source files directly in a directory, without
-	// declared tests and generated files.
+	// dirFiles are the source files directly in a directory: its production
+	// files, or, when it has only declared tests and generated files (a
+	// protobuf package), those. A generated file imports nothing the rules
+	// judge, but a production import of its package is a dependency.
 	dirFiles map[string][]string
 	// dirModule is the module of a package directory, from its dirFiles: a
 	// Go import names the directory, and the module's paths may be file
@@ -82,7 +84,7 @@ func newTree(p resolved.Policy, sources []string) tree {
 		p: p, files: slices.Sorted(slices.Values(sources)),
 		isDir: map[string]bool{}, dirFiles: map[string][]string{}, dirModule: map[string]string{},
 	}
-	owners := map[string]map[string]bool{}
+	production, excluded := map[string][]string{}, map[string][]string{}
 	for _, file := range t.files {
 		for d := path.Dir(file); !t.isDir[d]; d = path.Dir(d) {
 			t.isDir[d] = true
@@ -90,23 +92,28 @@ func newTree(p resolved.Policy, sources []string) tree {
 				break
 			}
 		}
-		if t.excluded(file) {
-			continue
-		}
 		dir := path.Dir(file)
-		t.dirFiles[dir] = append(t.dirFiles[dir], file)
-		m, ok := p.ModuleOf(file)
-		if !ok {
-			continue
+		if t.excluded(file) {
+			excluded[dir] = append(excluded[dir], file)
+		} else {
+			production[dir] = append(production[dir], file)
 		}
-		if owners[dir] == nil {
-			owners[dir] = map[string]bool{}
-		}
-		owners[dir][m] = true
 	}
-	for dir, ms := range owners {
-		if len(ms) == 1 {
-			for m := range ms {
+	for dir, files := range excluded {
+		if _, ok := production[dir]; !ok {
+			production[dir] = files
+		}
+	}
+	for dir, files := range production {
+		t.dirFiles[dir] = files
+		owners := map[string]bool{}
+		for _, file := range files {
+			if m, ok := p.ModuleOf(file); ok {
+				owners[m] = true
+			}
+		}
+		if len(owners) == 1 {
+			for m := range owners {
 				t.dirModule[dir] = m
 			}
 		}

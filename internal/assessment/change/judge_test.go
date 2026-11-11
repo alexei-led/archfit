@@ -33,6 +33,8 @@ const (
 	fooGlob       = "pkg/foo/*.go"
 	fooFile       = "pkg/foo/foo.go"
 	fooDir        = "pkg/foo"
+	appGlob       = "app/**"
+	appMain       = "app/main.go"
 
 	denyRuntime = "no-chaos-to-runtime"
 	denyCmd     = "no-cmd-to-runtime"

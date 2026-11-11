@@ -277,13 +277,13 @@ func TestEvaluateNotesAndEmptyFacts(t *testing.T) {
 func TestEvaluateFileGlobsCoverAPackage(t *testing.T) {
 	p := resolved.Policy{
 		Modules: map[string]resolved.Module{
-			modApp: {Paths: []string{"app/**"}, DependsOn: []string{modFoo, "rt"}},
+			modApp: {Paths: []string{appGlob}, DependsOn: []string{modFoo, "rt"}},
 			modFoo: {Paths: []string{fooGlob, "pkg/foo/internal/**"}, Public: []string{fooGlob}, Volatility: resolved.VolatilityHigh},
 			"rt":   {Paths: []string{"pkg/rt/**"}},
 		},
 		Rules: []resolved.Rule{{ID: "no-rt-files", Form: resolved.FormDeny, From: []string{modApp}, To: []string{"pkg/rt/*.go"}, Why: "w", Instead: "i"}},
 	}.WithDefaults()
-	src := []string{"app/main.go", fooFile, "pkg/foo/internal/x.go", "pkg/rt/rt.go"}
+	src := []string{appMain, fooFile, "pkg/foo/internal/x.go", "pkg/rt/rt.go"}
 	tests := []struct {
 		name, target string
 		want         []change.Key
@@ -296,7 +296,7 @@ func TestEvaluateFileGlobsCoverAPackage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			facts := evidence.CheckFacts{Sources: src, Imports: []evidence.ImportFact{imp("app/main.go", 1, tt.target)}}
+			facts := evidence.CheckFacts{Sources: src, Imports: []evidence.ImportFact{imp(appMain, 1, tt.target)}}
 			if got := keys(change.Evaluate(p, facts).Errors); !reflect.DeepEqual(got, append([]change.Key{}, tt.want...)) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
@@ -307,18 +307,38 @@ func TestEvaluateFileGlobsCoverAPackage(t *testing.T) {
 func TestEvaluateExcludedFilesDoNotDecideADirectory(t *testing.T) {
 	p := resolved.Policy{
 		Modules: map[string]resolved.Module{
-			modApp:     {Paths: []string{"app/**"}},
+			modApp:     {Paths: []string{appGlob}},
 			modFoo:     {Paths: []string{fooGlob}},
 			"fixtures": {Paths: []string{"pkg/foo/foo_test.go"}},
 		},
 		Tests: []string{testGlob},
 	}.WithDefaults()
 	facts := evidence.CheckFacts{
-		Sources: []string{"app/main.go", fooFile, "pkg/foo/foo_test.go"},
-		Imports: []evidence.ImportFact{imp("app/main.go", 1, fooDir)},
+		Sources: []string{appMain, fooFile, "pkg/foo/foo_test.go"},
+		Imports: []evidence.ImportFact{imp(appMain, 1, fooDir)},
 	}
 	want := []change.Key{{Rule: resolved.RuleGraph, From: modApp, To: modFoo, Symbol: fooDir}}
 	if got := keys(change.Evaluate(p, facts).Errors); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v: a test file of another module must not hide the package's module", got, want)
+	}
+}
+
+// A package of generated files only (a protobuf package) keeps its module: a
+// production import of it is a dependency like any other.
+func TestEvaluateGeneratedOnlyPackageKeepsItsModule(t *testing.T) {
+	p := resolved.Policy{
+		Modules: map[string]resolved.Module{
+			modApp: {Paths: []string{appGlob}},
+			"api":  {Paths: []string{"pkg/api/*.go"}},
+		},
+		Generated: []string{"**/*.pb.go"},
+	}.WithDefaults()
+	facts := evidence.CheckFacts{
+		Sources: []string{appMain, "pkg/api/api.pb.go"},
+		Imports: []evidence.ImportFact{imp(appMain, 1, "pkg/api")},
+	}
+	want := []change.Key{{Rule: resolved.RuleGraph, From: modApp, To: "api", Symbol: "pkg/api"}}
+	if got := keys(change.Evaluate(p, facts).Errors); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
