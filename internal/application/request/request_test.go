@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/v3/internal/application/request"
 	"github.com/alexei-led/archfit/v3/internal/model/result"
@@ -23,6 +24,8 @@ const (
 	treeAtCheck = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 	reasonGraph = "netem needs the shared retry helper"
 	reasonCopy  = "tc parses the interface name before pkg_util is loaded"
+	// laterDay is a day after the check, on an unchanged tree.
+	laterDay = "2026-11-14"
 )
 
 // TestRequestsOfTheDesignExamples builds the request of the 8.1 graph error,
@@ -78,7 +81,8 @@ func TestAskRefuses(t *testing.T) {
 		now     request.Checkout
 		in      request.Input
 		typed   *string
-		noTTY   bool // no terminal: Reason is nil
+		noTTY   bool   // no terminal: Reason is nil
+		today   string // the clock; the check's date when empty
 		want    error
 		asked   bool
 		wantErr string
@@ -97,17 +101,20 @@ func TestAskRefuses(t *testing.T) {
 		{name: "can answered yes", store: stored(canYes), want: request.ErrNothingToAsk},
 		{name: "can answered unknown", store: stored(canUnknown), want: request.ErrNoVerdict},
 		{name: "can says fix the code", store: stored(canFix), want: request.ErrNothingToAsk},
-		{name: "a date that is not valid", store: stored(badDate), in: request.Input{Reason: "x", Expires: "2026-12-10"}, want: request.ErrNoLastResult},
-		{name: "expires on the check's date", store: stored(mixed), in: request.Input{Reason: "x", Expires: "2026-11-10"}, want: request.ErrExpires},
-		{name: "expires before the check's date", store: stored(mixed), in: request.Input{Reason: "x", Expires: "2026-11-09"}, want: request.ErrExpires},
-		{name: "expires not ISO", store: stored(mixed), in: request.Input{Reason: "x", Expires: "10/12/2026"}, want: request.ErrExpires},
-		{name: "expires not a day", store: stored(mixed), in: request.Input{Reason: "x", Expires: "2026-02-30"}, want: request.ErrExpires},
+		// The expiry cases give no reason: the terminal must not be asked.
+		{name: "a date that is not valid", store: stored(badDate), in: request.Input{Expires: "2026-12-10"}, want: request.ErrNoLastResult},
+		{name: "expires on the check's date", store: stored(mixed), in: request.Input{Expires: "2026-11-10"}, want: request.ErrExpires},
+		{name: "expires before the check's date", store: stored(mixed), in: request.Input{Expires: "2026-11-09"}, want: request.ErrExpires},
+		{name: "expires after the check but not after today", store: stored(mixed), today: laterDay, in: request.Input{Expires: "2026-11-12"}, want: request.ErrExpires, wantErr: "--expires is not a later date: want a date after 2026-11-14, got 2026-11-12"},
+		{name: "expires today", store: stored(mixed), today: laterDay, in: request.Input{Expires: laterDay}, want: request.ErrExpires},
+		{name: "expires not ISO", store: stored(mixed), in: request.Input{Expires: "10/12/2026"}, want: request.ErrExpires},
+		{name: "expires not a day", store: stored(mixed), in: request.Input{Expires: "2026-02-30"}, want: request.ErrExpires},
 		{name: "no reason and no terminal", store: stored(mixed), noTTY: true, want: request.ErrNoReason, wantErr: `a reason is required: archfit request -m "<why>"`},
 		{name: "a blank reason and no terminal", store: stored(mixed), in: request.Input{Reason: " \t\n"}, noTTY: true, want: request.ErrNoReason},
 		{name: "the terminal gives no reason", store: stored(mixed), typed: new("  \n"), want: request.ErrNoReason, asked: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := request.Service{Last: tc.store, Checkout: fixedCheckout{now: orDefault(tc.now)}}
+			s := request.Service{Last: tc.store, Checkout: fixedCheckout{now: orDefault(tc.now)}, Clock: on(t, tc.today)}
 			terminal := &reasonReader{}
 			if tc.typed != nil {
 				terminal.text = *tc.typed
@@ -187,10 +194,10 @@ func TestPortErrors(t *testing.T) {
 		name string
 		s    request.Service
 	}{
-		{name: "store", s: request.Service{Last: lastStore{err: boom}, Checkout: fixedCheckout{}}},
-		{name: "checkout", s: request.Service{Last: stored(checked(t, "graph")), Checkout: fixedCheckout{err: boom}}},
-		{name: "terminal", s: request.Service{Last: stored(checked(t, "graph")), Checkout: fixedCheckout{now: orDefault(request.Checkout{})}, Reason: &reasonReader{err: boom}}},
-		{name: "sender", s: request.Service{Last: stored(checked(t, "graph")), Checkout: fixedCheckout{now: orDefault(request.Checkout{})}, Sender: &fakeSender{err: boom}}},
+		{name: "store", s: request.Service{Last: lastStore{err: boom}, Checkout: fixedCheckout{}, Clock: on(t, "")}},
+		{name: "checkout", s: request.Service{Last: stored(checked(t, "graph")), Checkout: fixedCheckout{err: boom}, Clock: on(t, "")}},
+		{name: "terminal", s: request.Service{Last: stored(checked(t, "graph")), Checkout: fixedCheckout{now: orDefault(request.Checkout{})}, Clock: on(t, ""), Reason: &reasonReader{err: boom}}},
+		{name: "sender", s: request.Service{Last: stored(checked(t, "graph")), Checkout: fixedCheckout{now: orDefault(request.Checkout{})}, Clock: on(t, ""), Sender: &fakeSender{err: boom}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := request.Input{Reason: "x"}
@@ -221,8 +228,29 @@ func TestGoldensUseNoNotUsedWord(t *testing.T) {
 }
 
 func service(last request.Last) request.Service {
-	return request.Service{Last: stored(last), Checkout: fixedCheckout{now: orDefault(request.Checkout{})}}
+	return request.Service{Last: stored(last), Checkout: fixedCheckout{now: orDefault(request.Checkout{})}, Clock: fixedClock(checkDate)}
 }
+
+// on is the clock at day, or on the check's date when day is empty, late in
+// the day so only the date counts.
+func on(t *testing.T, day string) fixedClock {
+	t.Helper()
+	if day == "" {
+		return fixedClock(checkDate)
+	}
+	at, err := time.Parse(time.DateOnly, day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fixedClock(at.Add(23 * time.Hour))
+}
+
+// checkDate is the date of every design example, at 23:00.
+var checkDate = time.Date(2026, 11, 10, 23, 0, 0, 0, time.UTC)
+
+type fixedClock time.Time
+
+func (c fixedClock) Now() time.Time { return time.Time(c) }
 
 func checked(t *testing.T, name string) request.Last {
 	t.Helper()

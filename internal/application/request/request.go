@@ -67,8 +67,8 @@ var (
 	ErrNothingToAsk = errors.New("nothing to ask")
 	// ErrNoReason: no reason was given, and none was typed. A usage error.
 	ErrNoReason = errors.New("a reason is required")
-	// ErrExpires: --expires is not a date after the output's date. A usage
-	// error.
+	// ErrExpires: --expires is not a date after both the output's date and
+	// today. A usage error.
 	ErrExpires = errors.New("--expires is not a later date")
 )
 
@@ -139,11 +139,18 @@ type Sender interface {
 	Send(ctx context.Context, r Request) (int, error)
 }
 
-// Service is the `archfit request` use case. Last and Checkout are required;
-// Reason and Sender may be nil.
+// Clock gives today's date for --expires. The stored output can be days
+// old on an unchanged tree, so its date alone would accept a past date.
+type Clock interface {
+	Now() time.Time
+}
+
+// Service is the `archfit request` use case. Last, Checkout and Clock are
+// required; Reason and Sender may be nil.
 type Service struct {
 	Last     LastStore
 	Checkout CheckoutReader
+	Clock    Clock
 	Reason   ReasonReader
 	Sender   Sender
 }
@@ -167,7 +174,7 @@ func (s Service) Ask(ctx context.Context, in Input) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	if req.Expires, err = expires(in.Expires, date); err != nil {
+	if req.Expires, err = s.expires(in.Expires, date); err != nil {
 		return Outcome{}, err
 	}
 	if req.Reason, err = s.reason(ctx, in.Reason); err != nil {
@@ -248,21 +255,26 @@ func nothingToAsk(status result.Status) error {
 	return fmt.Errorf("%w: do what each next step says", ErrNothingToAsk)
 }
 
-// expires checks that value, when given, is a date after the output's date.
-func expires(value, date string) (string, error) {
+// expires checks that value, when given, is a date after both the output's
+// date and today.
+func (s Service) expires(value, date string) (string, error) {
 	if value == "" {
 		return "", nil
-	}
-	day, err := time.Parse(time.DateOnly, value)
-	if err != nil {
-		return "", fmt.Errorf("%w: want a date after %s as YYYY-MM-DD, got %q", ErrExpires, date, value)
 	}
 	from, err := time.Parse(time.DateOnly, date)
 	if err != nil {
 		return "", fmt.Errorf("%w: its date %q is not valid: run archfit check again", ErrNoLastResult, date)
 	}
+	if today, _ := time.Parse(time.DateOnly, s.Clock.Now().Format(time.DateOnly)); today.After(from) {
+		from = today
+	}
+	after := from.Format(time.DateOnly)
+	day, err := time.Parse(time.DateOnly, value)
+	if err != nil {
+		return "", fmt.Errorf("%w: want a date after %s as YYYY-MM-DD, got %q", ErrExpires, after, value)
+	}
 	if !day.After(from) {
-		return "", fmt.Errorf("%w: want a date after %s, got %s", ErrExpires, date, value)
+		return "", fmt.Errorf("%w: want a date after %s, got %s", ErrExpires, after, value)
 	}
 	return value, nil
 }
