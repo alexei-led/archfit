@@ -39,7 +39,7 @@ import (
 
 // factsFormat is part of every cache key. Change it whenever what a tree's
 // facts hold changes without an engine version change.
-const factsFormat = "checkfacts.v1"
+const factsFormat = "checkfacts.v2"
 
 // fixFetch is the fix of a base that cannot be read.
 const fixFetch = "run git fetch, then archfit check again"
@@ -60,6 +60,8 @@ type Acquirer struct {
 	keyOnce     sync.Once
 	keyTools    string // the tool part of every key
 	keySettings string // the settings part of every key; "" turns the cache off
+	// versions holds the version toolVersion found for each tool.
+	versions map[string]string
 }
 
 // Head returns the facts of the working tree of the repository at root, as a
@@ -104,14 +106,9 @@ func (a *Acquirer) Base(ctx context.Context, root, commit string) (evidence.Chec
 // tree returns the facts of the git tree id tree: from the cache, else read
 // from a snapshot of its files and stored.
 func (a *Acquirer) tree(ctx context.Context, root, tree string) (evidence.CheckFacts, error) {
-	key := a.key(ctx, root, tree)
-	if key != "" {
-		if data, ok := a.Store.Get(factcache.CheckFactsAnalyzer, key); ok {
-			var f evidence.CheckFacts
-			if json.Unmarshal(data, &f) == nil {
-				return f, nil
-			}
-		}
+	key := a.key(ctx, tree)
+	if f, ok := a.cached(ctx, key); ok {
+		return f, nil
 	}
 	dir, err := os.MkdirTemp("", "archfit-check-tree-*")
 	if err != nil {
@@ -127,20 +124,93 @@ func (a *Acquirer) tree(ctx context.Context, root, tree string) (evidence.CheckF
 	if err != nil {
 		return evidence.CheckFacts{}, err
 	}
-	if key != "" {
-		if data, err := json.Marshal(f); err == nil {
+	withoutSnapshotPath(&f, dir)
+	if key != "" && cacheable(f) {
+		entry := cacheEntry{Tools: a.projectTools(ctx, dir), Facts: f}
+		if data, err := json.Marshal(entry); err == nil {
 			a.Store.Put(factcache.CheckFactsAnalyzer, key, data)
 		}
 	}
 	return f, nil
 }
 
+// cacheEntry is a tree's facts with the version of each project tool that read
+// them: cargo and dotnet run only where their language has a project, so their
+// versions are checked against the tree the facts came from, not keyed from
+// the working tree.
+type cacheEntry struct {
+	Tools map[string]string   `json:"tools,omitempty"`
+	Facts evidence.CheckFacts `json:"facts"`
+}
+
+// cached returns the facts stored under key when every project tool that read
+// them still has the same version.
+func (a *Acquirer) cached(ctx context.Context, key string) (evidence.CheckFacts, bool) {
+	if key == "" {
+		return evidence.CheckFacts{}, false
+	}
+	data, ok := a.Store.Get(factcache.CheckFactsAnalyzer, key)
+	if !ok {
+		return evidence.CheckFacts{}, false
+	}
+	var entry cacheEntry
+	if json.Unmarshal(data, &entry) != nil {
+		return evidence.CheckFacts{}, false
+	}
+	for tool, version := range entry.Tools {
+		if a.toolVersion(ctx, tool) != version {
+			return evidence.CheckFacts{}, false
+		}
+	}
+	return entry.Facts, true
+}
+
+// cacheable reports whether facts may be stored: a tool that is missing or
+// failed, and a base that cannot be read, can be fixed without changing the
+// tree, so facts that hold such an item are read again on the next run.
+func cacheable(f evidence.CheckFacts) bool {
+	for _, u := range f.Unknown {
+		if u.Cause == evidence.CauseTool || u.Cause == evidence.CauseBase {
+			return false
+		}
+	}
+	return true
+}
+
+// projectTools returns the version of cargo and dotnet for each of their
+// languages that has a project in the snapshot dir.
+func (a *Acquirer) projectTools(ctx context.Context, dir string) map[string]string {
+	tools := map[string]string{}
+	for _, probe := range []struct{ lang, tool string }{{"rust", registry.ToolCargo}, {"dotnet", "dotnet"}} {
+		cfg, ok := a.Config.Languages[probe.lang]
+		if ok && cfg.Mode != evidenceports.ModeOff && registry.ProjectPresent(probe.lang, dir, cfg) {
+			tools[probe.tool] = a.toolVersion(ctx, probe.tool)
+		}
+	}
+	return tools
+}
+
+// withoutSnapshotPath writes the snapshot directory as "." in the unknown
+// reasons, so a tool that prints absolute paths gives the same reason on every
+// run and names no directory that is already gone.
+func withoutSnapshotPath(f *evidence.CheckFacts, dir string) {
+	paths := []string{dir}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
+		paths = append([]string{resolved}, paths...)
+	}
+	for i := range f.Unknown {
+		for _, p := range paths {
+			f.Unknown[i].Reason = strings.ReplaceAll(f.Unknown[i].Reason, p, ".")
+		}
+	}
+}
+
 // key returns the cache key of tree, or "" when the cache is off.
-func (a *Acquirer) key(ctx context.Context, root, tree string) string {
+func (a *Acquirer) key(ctx context.Context, tree string) string {
 	if a.Store == nil || a.Version == "" {
 		return ""
 	}
-	a.keyOnce.Do(func() { a.keyTools, a.keySettings = a.keyParts(ctx, root) })
+	a.keyOnce.Do(func() { a.keyTools, a.keySettings = a.keyParts(ctx) })
 	if a.keySettings == "" {
 		return ""
 	}
@@ -148,17 +218,12 @@ func (a *Acquirer) key(ctx context.Context, root, tree string) string {
 }
 
 // keyParts returns the tool part and the settings part of the cache key. The
-// tools: the engine version, the facts format, and the version of each tool
-// the facts depend on. The settings: a hash of the Config and of the Go build
-// context the parser reads; "" when it cannot be hashed.
-func (a *Acquirer) keyParts(ctx context.Context, root string) (tools, settings string) {
+// tools: the engine version, the facts format, and the version of ast-grep,
+// which any tree with TypeScript, Python or non-Go literals needs. The
+// settings: a hash of the Config and of the Go build context the parser reads;
+// "" when it cannot be hashed.
+func (a *Acquirer) keyParts(ctx context.Context) (tools, settings string) {
 	parts := []string{a.Version, factsFormat, "ast-grep=" + a.toolVersion(ctx, registry.ToolAstGrep)}
-	for _, probe := range []struct{ lang, tool string }{{"rust", registry.ToolCargo}, {"dotnet", "dotnet"}} {
-		cfg, ok := a.Config.Languages[probe.lang]
-		if ok && cfg.Mode != evidenceports.ModeOff && registry.ProjectPresent(probe.lang, root, cfg) {
-			parts = append(parts, probe.tool+"="+a.toolVersion(ctx, probe.tool))
-		}
-	}
 	settings, err := factcache.HashJSON(struct {
 		Config Config
 		GoEnv  map[string]string
@@ -170,17 +235,24 @@ func (a *Acquirer) keyParts(ctx context.Context, root string) (tools, settings s
 }
 
 // toolVersion returns the last line `tool --version` prints, or "" when the
-// tool is not on PATH or fails.
+// tool is not on PATH or fails. Each tool is probed once per Acquirer.
 func (a *Acquirer) toolVersion(ctx context.Context, tool string) string {
-	if _, ok := a.Runner.Detect(ctx, tool); !ok {
-		return ""
+	if v, ok := a.versions[tool]; ok {
+		return v
 	}
-	out, err := a.Runner.Run(ctx, toolrun.ToolCmd{Name: tool, Args: []string{"--version"}, Timeout: versionTimeout})
-	if err != nil || out.ExitCode != 0 {
-		return ""
+	v := ""
+	if _, ok := a.Runner.Detect(ctx, tool); ok {
+		out, err := a.Runner.Run(ctx, toolrun.ToolCmd{Name: tool, Args: []string{"--version"}, Timeout: versionTimeout})
+		if err == nil && out.ExitCode == 0 {
+			lines := strings.Split(strings.TrimSpace(string(out.Stdout)), "\n")
+			v = strings.TrimSpace(lines[len(lines)-1])
+		}
 	}
-	lines := strings.Split(strings.TrimSpace(string(out.Stdout)), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
+	if a.versions == nil {
+		a.versions = map[string]string{}
+	}
+	a.versions[tool] = v
+	return v
 }
 
 // goBuildContext returns what the Go parser reads to pick the files the go

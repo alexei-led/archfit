@@ -307,3 +307,101 @@ func TestConfigFromReadsTheLanguagesAndNoAnalyzer(t *testing.T) {
 		t.Error("duplication off still reads literals")
 	}
 }
+
+// cargoStub answers cargo over a real runner: --version with version, and
+// metadata for the root crate of the tree it runs in, or, when failing, an
+// error that names the manifest by its absolute path, as cargo does.
+type cargoStub struct {
+	toolrun.Runner
+	mu      sync.Mutex
+	version string
+	failing bool
+}
+
+func (c *cargoStub) set(version string, failing bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.version, c.failing = version, failing
+}
+
+func (c *cargoStub) Detect(ctx context.Context, tool string) (toolrun.ToolInfo, bool) {
+	if tool == registry.ToolCargo {
+		return toolrun.ToolInfo{Name: tool}, true
+	}
+	return c.Runner.Detect(ctx, tool)
+}
+
+func (c *cargoStub) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+	if cmd.Name != registry.ToolCargo {
+		return c.Runner.Run(ctx, cmd)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if slices.Contains(cmd.Args, "--version") {
+		return toolrun.Output{Stdout: []byte(c.version + "\n")}, nil
+	}
+	dir, err := filepath.EvalSymlinks(cmd.WorkDir)
+	if err != nil {
+		return toolrun.Output{}, err
+	}
+	manifest := filepath.Join(dir, "Cargo.toml")
+	if c.failing {
+		return toolrun.Output{ExitCode: 101, Stderr: []byte("error: failed to parse manifest at `" + manifest + "`")}, nil
+	}
+	id := "path+file://" + dir + "#app"
+	metadata := `{"packages":[{"id":"` + id + `","name":"app","manifest_path":"` + manifest + `","dependencies":[],"targets":[{"name":"app","kind":["bin"]}]}],"workspace_members":["` + id + `"],"workspace_root":"` + dir + `"}`
+	return toolrun.Output{Stdout: []byte(metadata)}, nil
+}
+
+// TestCacheFollowsTheTreesTools: facts read by cargo are served only while
+// cargo has the version that read them; facts with a tool that failed are not
+// cached, so the next run reads again; a failure's reason names no snapshot
+// directory.
+func TestCacheFollowsTheTreesTools(t *testing.T) {
+	requireTool(t, "git")
+	t.Parallel()
+	root, _ := repo(t, map[string]string{"Cargo.toml": "[package]\nname = \"app\"\n", "src/main.rs": "fn main() {}\n"})
+	ctx := context.Background()
+	cargo := &cargoStub{Runner: toolrun.New(), version: "cargo 1.0"}
+	rec := &recorder{Runner: cargo}
+	store := factcache.NewStore(t.TempDir())
+	cfg := checkfacts.Config{Languages: registry.Configs{"rust": {Src: ".", Mode: evidenceports.ModeAuto}}}
+	head := func() evidence.CheckFacts {
+		t.Helper()
+		f, err := (&checkfacts.Acquirer{Runner: rec, Store: store, Version: "v-test", Config: cfg}).Head(ctx, root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+
+	if f := head(); !slices.Equal(f.Sources, []string{"src/main.rs"}) || len(f.Unknown) != 0 {
+		t.Fatalf("facts = %+v, want src/main.rs and no unknown", f)
+	}
+	head()
+	if got := rec.snapshots(); got != 1 {
+		t.Errorf("same cargo: %d snapshots, want 1 (cached)", got)
+	}
+	cargo.set("cargo 2.0", false)
+	head()
+	if got := rec.snapshots(); got != 2 {
+		t.Errorf("new cargo: %d snapshots, want 2 (read again)", got)
+	}
+
+	cargo.set("cargo 3.0", true)
+	failed := head()
+	if len(failed.Unknown) != 1 || failed.Unknown[0].Cause != evidence.CauseTool {
+		t.Fatalf("unknown = %+v, want one tool item", failed.Unknown)
+	}
+	if reason := failed.Unknown[0].Reason; strings.Contains(reason, "archfit-check-tree") || !strings.Contains(reason, "./Cargo.toml") {
+		t.Errorf("reason %q names the snapshot directory, want ./Cargo.toml", reason)
+	}
+	head()
+	if got := rec.snapshots(); got != 4 {
+		t.Errorf("after a failed tool: %d snapshots, want 4 (a failure is never cached)", got)
+	}
+	cargo.set("cargo 3.0", false)
+	if f := head(); len(f.Unknown) != 0 {
+		t.Errorf("after the fix: unknown = %+v, want none", f.Unknown)
+	}
+}

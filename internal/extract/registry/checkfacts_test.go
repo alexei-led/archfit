@@ -74,20 +74,25 @@ func requireAstGrep(t *testing.T) {
 	}
 }
 
+// noPackageName is a Go file whose header does not parse.
+const noPackageName = "package\n"
+
 // goTree is a Go module with a first-party, a standard library and an
 // unresolved import, a test file and testdata (imports not read, literals
 // read), a file whose header does not parse, and excluded code.
 var goTree = map[string]string{
-	fileGoMod:           goModule,
-	fileMainGo:          "package main\n\nimport (\n\t\"fmt\"\n\n\t\"example.com/m/gone\"\n\t\"example.com/m/pkg/a\"\n)\n\nconst s = \"a long literal value\"\n\nfunc main() { fmt.Println(a.X, gone.Y, s) }\n",
-	filePkgA:            "package a\n\nconst X = \"word\"\n",
-	"pkg/a/a_test.go":   "package a\n\nimport \"testing\"\n\nfunc TestX(*testing.T) { _ = `json:\"x\"` }\n",
-	"testdata/t.go":     "package t\n\nimport \"example.com/m/pkg/a\"\n\nvar _ = \"from testdata\"\n",
-	"bad.go":            "package\n",
-	"gen/g.go":          "package gen\n\nimport \"example.com/m/pkg/a\"\n\nvar _ = \"generated text\" + a.X\n",
-	"vendor/v/v.go":     "package v\n\nvar _ = \"vendored text\"\n",
-	"web/vendor/x.go":   "package x\n",
-	"node_modules/n.go": "package n\n",
+	fileGoMod:            goModule,
+	fileMainGo:           "package main\n\nimport (\n\t\"fmt\"\n\n\t\"example.com/m/gone\"\n\t\"example.com/m/pkg/a\"\n)\n\nconst s = \"a long literal value\"\n\nfunc main() { fmt.Println(a.X, gone.Y, s) }\n",
+	filePkgA:             "package a\n\nconst X = \"word\"\n",
+	"pkg/a/a_test.go":    "package a\n\nimport \"testing\"\n\nfunc TestX(*testing.T) { _ = `json:\"x\"` }\n",
+	"testdata/t.go":      "package t\n\nimport \"example.com/m/pkg/a\"\n\nvar _ = \"from testdata\"\n",
+	"bad.go":             noPackageName,
+	"testdata/broken.go": noPackageName,
+	"_tools/broken.go":   noPackageName,
+	"gen/g.go":           "package gen\n\nimport \"example.com/m/pkg/a\"\n\nvar _ = \"generated text\" + a.X\n",
+	"vendor/v/v.go":      "package v\n\nvar _ = \"vendored text\"\n",
+	"web/vendor/x.go":    "package x\n",
+	"node_modules/n.go":  "package n\n",
 }
 
 func TestReadCheckGo(t *testing.T) {
@@ -239,6 +244,28 @@ func TestReadCheckWithoutAstGrep(t *testing.T) {
 	}
 	if !slices.Equal(got.Sources, []string{fileMainGo}) || len(got.Literals) != 1 || got.Literals[0].Value != "a go literal" {
 		t.Errorf("Go facts = %q, %+v; want main.go and its literal", got.Sources, got.Literals)
+	}
+}
+
+// TestReadCheckExcludedScriptsNeedNoAstGrep: TypeScript and JavaScript only
+// under vendor/ or a policy exclude are not read, so a Go repository needs no
+// ast-grep and has no unknown item.
+func TestReadCheckExcludedScriptsNeedNoAstGrep(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		fileGoMod:             goModule,
+		fileMainGo:            "package main\n",
+		"vendor/lib/x.min.js": "var a='b';\n",
+		"web/app.ts":          "import x from './y';\n",
+	})
+	runner := withoutTool{Runner: toolrun.New(), hidden: []string{registry.ToolAstGrep}}
+	got, err := registry.ReadCheck(context.Background(), runner, root, registry.CheckRequest{
+		Configs: auto("go", "typescript", "python"), Exclude: []string{"web/**"}, Literals: true,
+	})
+	want := evidence.CheckFacts{Sources: []string{fileMainGo}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("facts = %s, %v; want main.go only and no unknown", jsonOf(got), err)
 	}
 }
 

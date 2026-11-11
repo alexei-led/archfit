@@ -43,6 +43,13 @@ const (
 	fixRetry   = "fix the error, then run archfit check again"
 )
 
+// scriptExts are the extensions of the TypeScript and JavaScript files
+// tsimports reads.
+var scriptExts = []string{".js", ".cjs", ".mjs", ".jsx", ".ts", ".cts", ".mts", ".tsx"}
+
+// goFileExt is the extension of a Go source file.
+const goFileExt = ".go"
+
 // builtinExclusions are the directories no extractor of the check reads, at
 // any depth, besides the policy's exclude: version control, installed
 // packages and vendored code.
@@ -93,6 +100,7 @@ func ReadCheck(ctx context.Context, runner toolrun.Runner, root string, req Chec
 				Reason: lang.ID + " facts not read: " + err.Error(), Cause: evidence.CauseTool, Fix: fixRetry,
 			}}}
 		}
+		f = withoutExcluded(f, exclusions)
 		if len(f.Sources) > 0 || len(f.Unknown) > 0 {
 			present = append(present, lang.ID)
 		}
@@ -153,9 +161,28 @@ func readLiterals(ctx context.Context, runner toolrun.Runner, root string, exclu
 		out.Literals = append(out.Literals, evidence.LiteralOccurrence{File: l.File, Line: l.Line, Value: l.Value, Shape: shapeOf(l)})
 	}
 	for _, u := range facts.Unread {
+		if goNeverBuilds(u.File) {
+			continue
+		}
 		out.Unknown = append(out.Unknown, evidence.UnknownItem{File: u.File, Reason: u.Reason, Cause: evidence.CauseImport, Fix: fixSyntax})
 	}
 	return out
+}
+
+// goNeverBuilds reports whether the go command never builds the Go file: it is
+// under testdata, or a directory or file name starts with "_" or ".". Such a
+// file may be broken on purpose (a parser's fixture), so a file of it that does
+// not parse is no unknown; its literals are read when it parses.
+func goNeverBuilds(file string) bool {
+	if path.Ext(file) != goFileExt {
+		return false
+	}
+	for _, segment := range strings.Split(file, "/") {
+		if segment == "testdata" || strings.HasPrefix(segment, "_") || strings.HasPrefix(segment, ".") {
+			return true
+		}
+	}
+	return false
 }
 
 func detected(ctx context.Context, runner toolrun.Runner, tool string) bool {
@@ -174,15 +201,21 @@ func shapeOf(l literals.Literal) evidence.LiteralShape {
 	}
 }
 
+// withoutExcluded drops the facts of the files the exclusions match. An item
+// about the whole tree has no file and stays.
+func withoutExcluded(f evidence.CheckFacts, exclusions []string) evidence.CheckFacts {
+	out := func(file string) bool { return excludedPath(exclusions, file) }
+	f.Sources = slices.DeleteFunc(f.Sources, out)
+	f.Imports = slices.DeleteFunc(f.Imports, func(i evidence.ImportFact) bool { return out(i.File) })
+	f.Literals = slices.DeleteFunc(f.Literals, func(l evidence.LiteralOccurrence) bool { return out(l.File) })
+	f.Unknown = slices.DeleteFunc(f.Unknown, func(u evidence.UnknownItem) bool { return u.File != "" && out(u.File) })
+	return f
+}
+
 // tidy drops the facts of excluded files, sorts every list, removes
 // duplicates, and keeps one whole-file "does not parse" item per file.
 func tidy(f evidence.CheckFacts, exclusions []string) evidence.CheckFacts {
-	keep := func(file string) bool { return !excludedPath(exclusions, file) }
-	f.Sources = slices.DeleteFunc(f.Sources, func(s string) bool { return !keep(s) })
-	f.Imports = slices.DeleteFunc(f.Imports, func(i evidence.ImportFact) bool { return !keep(i.File) })
-	f.Literals = slices.DeleteFunc(f.Literals, func(l evidence.LiteralOccurrence) bool { return !keep(l.File) })
-	f.Unknown = slices.DeleteFunc(f.Unknown, func(u evidence.UnknownItem) bool { return u.File != "" && !keep(u.File) })
-
+	f = withoutExcluded(f, exclusions)
 	slices.Sort(f.Sources)
 	f.Sources = slices.Compact(f.Sources)
 	slices.SortFunc(f.Imports, func(a, b evidence.ImportFact) int {
@@ -272,9 +305,14 @@ func dirOrDot(dir string) string {
 }
 
 // tsCheckFacts reads TypeScript and JavaScript through ast-grep and the
-// built-in resolver. tsimports takes no exclusions, so ReadCheck drops the
-// facts of excluded files after it.
-func tsCheckFacts(ctx context.Context, runner toolrun.Runner, root string, _ evidenceports.ExtractConfig) (evidence.CheckFacts, error) {
+// built-in resolver. tsimports takes no exclusions: a tree whose script files
+// are all excluded is not read at all, so it needs no ast-grep, and ReadCheck
+// drops the facts of excluded files after it.
+func tsCheckFacts(ctx context.Context, runner toolrun.Runner, root string, cfg evidenceports.ExtractConfig) (evidence.CheckFacts, error) {
+	kept, err := walkSources(root, scriptExts, cfg.Exclusions)
+	if err != nil || len(kept) == 0 {
+		return evidence.CheckFacts{}, err
+	}
 	facts, err := tsimports.Extract(ctx, runner, root)
 	if errors.Is(err, tsimports.ErrNoAstGrep) {
 		return noAstGrep("TypeScript and JavaScript imports"), nil
@@ -347,7 +385,7 @@ func rustCheckFacts(ctx context.Context, runner toolrun.Runner, root string, cfg
 	if !rust.Applicable(root, cfg.CargoManifest) {
 		return evidence.CheckFacts{}, nil
 	}
-	sources, err := walkSources(root, ".rs", cfg.Exclusions)
+	sources, err := walkSources(root, []string{".rs"}, cfg.Exclusions)
 	if err != nil {
 		return evidence.CheckFacts{}, err
 	}
@@ -388,7 +426,7 @@ func dotnetCheckFacts(ctx context.Context, runner toolrun.Runner, root string, c
 	if !dotnet.Applicable(root, cfg.Exclusions, cfg.DotNetProjects) {
 		return evidence.CheckFacts{}, nil
 	}
-	sources, err := walkSources(root, ".cs", cfg.Exclusions)
+	sources, err := walkSources(root, []string{".cs"}, cfg.Exclusions)
 	if err != nil {
 		return evidence.CheckFacts{}, err
 	}
@@ -437,9 +475,9 @@ func edgeImports(edges []graph.Edge, target func(id string) (string, bool), file
 	return out
 }
 
-// walkSources lists the repository-relative files under root with the
-// extension ext, outside the exclusions, sorted.
-func walkSources(root, ext string, exclusions []string) ([]string, error) {
+// walkSources lists the repository-relative files under root with one of the
+// extensions exts, outside the exclusions, sorted.
+func walkSources(root string, exts, exclusions []string) ([]string, error) {
 	var files []string
 	err := fs.WalkDir(os.DirFS(root), ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -454,7 +492,7 @@ func walkSources(root, ext string, exclusions []string) ([]string, error) {
 			}
 			return nil
 		}
-		if d.Type().IsRegular() && path.Ext(name) == ext {
+		if d.Type().IsRegular() && slices.Contains(exts, path.Ext(name)) {
 			files = append(files, name)
 		}
 		return nil
