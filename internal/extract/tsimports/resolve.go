@@ -11,19 +11,42 @@ import (
 // probeExts are the extensions a specifier without one may omit, in
 // resolution order. The first eight are the script files parsedExts reads.
 var probeExts = []string{
-	".js", ".cjs", ".mjs", ".jsx", tsExt, ".cts", ".mts", tsxExt, dtsExt, jsonExt, ".vue", ".svelte",
+	jsExt, cjsExt, mjsExt, jsxExt, tsExt, ctsExt, mtsExt, tsxExt, dtsExt, jsonExt, ".vue", ".svelte",
 }
 
-// jsToTS lists what a specifier extension may name instead: a ".js" specifier
-// may name a TypeScript file (TypeScript's ESM convention), and a ".ts" one
-// its declaration file.
-var jsToTS = map[string][]string{
-	".js":  {tsExt, tsxExt, dtsExt},
-	tsExt:  {dtsExt},
-	".jsx": {tsxExt},
-	".mjs": {".mts"},
-	".cjs": {".cts"},
-}
+// specifierExts lists, for a script extension, the extensions TypeScript tries
+// in its place, in order (tryAddingExtensions, TypeScript 6.0): a JavaScript
+// specifier names its TypeScript source first. A declaration path such as
+// "a.d.ts" ends in ".ts", so it names its own file first: TypeScript does that
+// for a reference path and a package.json field, and tries a.ts first only
+// for an import of the declaration. Any other extension names only itself.
+var specifierExts = func() map[string][]string {
+	ts := []string{tsExt, tsxExt, dtsExt, jsExt, jsxExt}
+	tsx := []string{tsxExt, tsExt, dtsExt, jsxExt, jsExt}
+	mts := []string{mtsExt, dmtsExt, mjsExt}
+	cts := []string{ctsExt, dctsExt, cjsExt}
+	return map[string][]string{
+		jsExt: ts, tsExt: ts,
+		jsxExt: tsx, tsxExt: tsx,
+		mjsExt: mts, mtsExt: mts,
+		cjsExt: cts, ctsExt: cts,
+	}
+}()
+
+// nodeBuiltins are the Node built-in modules a bare specifier can name:
+// module.builtinModules of Node 24.15.0 without the names that need "node:".
+var nodeBuiltins = strings.Fields(`_http_agent _http_client _http_common _http_incoming
+	_http_outgoing _http_server _stream_duplex _stream_passthrough _stream_readable
+	_stream_transform _stream_wrap _stream_writable _tls_common _tls_wrap assert
+	assert/strict async_hooks buffer child_process cluster console constants crypto dgram
+	diagnostics_channel dns dns/promises domain events fs fs/promises http http2 https
+	inspector inspector/promises module net os path path/posix path/win32 perf_hooks
+	process punycode querystring readline readline/promises repl stream stream/consumers
+	stream/promises stream/web string_decoder sys timers timers/promises tls trace_events
+	tty url util util/types v8 vm wasi worker_threads zlib`)
+
+// dependencyFields are the package.json fields that declare a package.
+var dependencyFields = []string{"dependencies", "devDependencies", "peerDependencies", "optionalDependencies"}
 
 // resolver places specifiers on root-relative files without node_modules.
 // It is not safe for concurrent use.
@@ -32,6 +55,7 @@ type resolver struct {
 	packages map[string]string // workspace package name to its directory
 	names    []string          // package names, longest first
 	configs  map[string]settings
+	declared map[string][]string // directory to the packages its package.json declares
 }
 
 func newResolver(fsys fs.FS) *resolver {
@@ -43,7 +67,10 @@ func newResolver(fsys fs.FS) *resolver {
 	slices.SortFunc(names, func(a, b string) int {
 		return cmp.Or(cmp.Compare(len(b), len(a)), cmp.Compare(a, b))
 	})
-	return &resolver{fsys: fsys, packages: packages, names: names, configs: map[string]settings{}}
+	return &resolver{
+		fsys: fsys, packages: packages, names: names,
+		configs: map[string]settings{}, declared: map[string][]string{},
+	}
 }
 
 // resolve places the specifier spec of the root-relative file importer. It
@@ -73,6 +100,11 @@ func (r *resolver) resolve(importer, spec string) (Kind, string) {
 		if inNodeModules(target) {
 			return KindExternal, ""
 		}
+		// A target that names a file as written wins before extension
+		// substitution (tryLoadModuleUsingPaths in TypeScript).
+		if r.isFile(target) {
+			return KindFile, target
+		}
 		if found, ok := r.file(target, nil); ok {
 			return KindFile, found
 		}
@@ -91,7 +123,51 @@ func (r *resolver) resolve(importer, spec string) (Kind, string) {
 	if matched && pattern != "*" {
 		return KindUnknown, ""
 	}
+	// A tsconfig not read may map spec to first-party code with paths, so only
+	// a name known as third-party stays external.
+	if len(config.unread) > 0 && !r.thirdParty(importer, spec) {
+		return KindUnknown, ""
+	}
 	return KindExternal, ""
+}
+
+// thirdParty reports whether a bare specifier names a Node built-in, or a
+// package that a package.json at or above the importer declares, itself or
+// through its @types package. Node looks for node_modules in every directory
+// up to the root, so a root manifest declares for the whole tree.
+func (r *resolver) thirdParty(importer, spec string) bool {
+	if slices.Contains(nodeBuiltins, spec) {
+		return true
+	}
+	name := packageName(spec)
+	types := "@types/" + strings.Replace(strings.TrimPrefix(name, "@"), "/", "__", 1)
+	for dir := path.Dir(importer); ; dir = path.Dir(dir) {
+		declared, ok := r.declared[dir]
+		if !ok {
+			manifest := readJSON(r.fsys, path.Join(dir, "package.json"))
+			for _, field := range dependencyFields {
+				declared = append(declared, keys(asObject(manifest.get(field)))...)
+			}
+			r.declared[dir] = declared
+		}
+		if slices.Contains(declared, name) || slices.Contains(declared, types) {
+			return true
+		}
+		if dir == "." {
+			return false
+		}
+	}
+}
+
+// packageName returns the package a bare specifier names: "a" of "a/b", and
+// "@s/a" of "@s/a/b".
+func packageName(spec string) string {
+	n := 1
+	if strings.HasPrefix(spec, "@") {
+		n = 2
+	}
+	parts := strings.SplitN(spec, "/", n+1)
+	return strings.Join(parts[:min(n, len(parts))], "/")
 }
 
 func (r *resolver) placed(file string, ok bool) (Kind, string) {
@@ -111,12 +187,13 @@ func (r *resolver) file(base string, seen []string) (string, bool) {
 	if !fs.ValidPath(base) || inNodeModules(base) || slices.Contains(seen, base) {
 		return "", false
 	}
-	if r.isFile(base) {
-		return base, true
-	}
 	ext := path.Ext(base)
 	stem := strings.TrimSuffix(base, ext)
-	for _, alt := range jsToTS[ext] {
+	alts, ok := specifierExts[ext]
+	if !ok {
+		alts = []string{ext}
+	}
+	for _, alt := range alts {
 		if r.isFile(stem + alt) {
 			return stem + alt, true
 		}

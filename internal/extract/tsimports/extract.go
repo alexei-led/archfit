@@ -4,20 +4,30 @@
 // toolrun.Runner.
 //
 // The resolver tries, in this order: relative paths (with extension and index
-// probes, a ".js" specifier naming a ".ts" file and a ".ts" one its ".d.ts"),
-// node: builtins, package.json imports ("#x"), tsconfig paths, tsconfig
-// baseUrl when no paths pattern matched, and workspace packages (npm, Yarn and
-// pnpm) through exports, types, module or main. A query such as "?raw" is
-// dropped. Any other bare specifier is a third-party package: KindExternal.
-// A relative path, a paths alias or a workspace subpath that names no file is
-// KindUnknown; a bare "*" alias alone proves nothing. No answer depends on
-// installed dependencies: a path or alias under node_modules is KindExternal,
-// and a tsconfig extends into node_modules is not followed.
+// probes; a script or declaration extension stands for the extensions
+// TypeScript tries in its place, so "./a.js" names a.ts before a.js),
+// node: builtins, package.json imports ("#x"), tsconfig paths (a target that
+// names a file as written wins), tsconfig baseUrl when no paths pattern
+// matched, and workspace packages (npm, Yarn and pnpm) through exports,
+// types, module or main. A query such as "?raw" is dropped. Any other
+// bare specifier is a third-party package: KindExternal. A relative path, a
+// paths alias or a workspace subpath that names no file is KindUnknown; a bare
+// "*" alias alone proves nothing.
+//
+// No answer depends on installed dependencies: a path or alias under
+// node_modules is KindExternal. A tsconfig extends that is not read (a
+// package, a file in node_modules or outside the root, a missing file, more
+// than 10 nested) is an UnknownItem, and so is a tsconfig that does not parse.
+// The paths such a config may set are unknown, so under it a bare specifier
+// that nothing places is KindExternal only for a Node built-in or a package
+// that a package.json at or above the importer declares; else KindUnknown.
 //
 // It is a port of scripts/eval/extractors/ts_imports.py, the prototype that
-// the extractor-equivalence test measured. Not handled, as there: a tsconfig
-// extends of a package (it needs node_modules), moduleResolution "classic",
-// .vue and .svelte files as importers, and template-literal import().
+// the extractor-equivalence test measured. Unlike it, nothing here reads
+// node_modules or a path outside the root, and a config it cannot read is
+// reported, not ignored. Not handled: an extends of a workspace package (it
+// is reported as not read), moduleResolution "classic", .vue and .svelte files
+// as importers, and template-literal import().
 package tsimports
 
 import (
@@ -59,10 +69,21 @@ type Import struct {
 	Target    string // the root-relative file, for KindFile only
 }
 
+// UnknownItem is a tsconfig the resolver does not read: File is the tsconfig
+// that names it, or that does not parse; Specifier is the extends value, empty
+// for a tsconfig that does not parse.
+type UnknownItem struct {
+	File      string
+	Specifier string
+	Reason    string
+}
+
 // Facts are the imports of a tree.
 type Facts struct {
 	Sources []string // every parsed file outside node_modules and .git, sorted
 	Imports []Import // sorted by file, line and specifier
+	// Unknown lists the unread tsconfigs that govern a source file, sorted.
+	Unknown []UnknownItem
 }
 
 // ErrNoAstGrep reports that the tree has TypeScript or JavaScript files but
@@ -125,7 +146,17 @@ func Extract(ctx context.Context, runner toolrun.Runner, root string) (Facts, er
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line),
 			cmp.Compare(a.Specifier, b.Specifier))
 	})
-	return Facts{Sources: files, Imports: slices.Compact(imports)}, nil
+	// Every source file's tsconfig, not only those a bare specifier reads, so
+	// the items do not depend on what a file imports.
+	var unknown []UnknownItem
+	for _, f := range files {
+		unknown = append(unknown, r.tsconfig(path.Dir(f)).unread...)
+	}
+	slices.SortFunc(unknown, func(a, b UnknownItem) int {
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Specifier, b.Specifier),
+			cmp.Compare(a.Reason, b.Reason))
+	})
+	return Facts{Sources: files, Imports: slices.Compact(imports), Unknown: slices.Compact(unknown)}, nil
 }
 
 // sourceFiles lists the root-relative files to parse, sorted.
