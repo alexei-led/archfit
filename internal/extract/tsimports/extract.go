@@ -4,15 +4,17 @@
 // toolrun.Runner.
 //
 // The resolver tries, in this order: relative paths (with extension and index
-// probes, a ".js" specifier naming a ".ts" file and a ".ts" one its ".d.ts"),
-// node: builtins, package.json imports ("#x"), tsconfig paths, tsconfig
-// baseUrl when no paths pattern matched, and workspace packages (npm, Yarn and
-// pnpm) through exports, types, module or main. A query such as "?raw" is
-// dropped. Any other bare specifier is a third-party package: KindExternal.
-// A relative path, a paths alias or a workspace subpath that names no file is
-// KindUnknown; a bare "*" alias alone proves nothing. No answer depends on
-// installed dependencies: a path or alias under node_modules is KindExternal,
-// and a tsconfig extends into node_modules is not followed.
+// probes; as in TypeScript, a ".js" specifier names a ".ts", ".tsx" or ".d.ts"
+// file before the ".js" file, and ".jsx", ".mjs" and ".cjs" alike, and a
+// ".ts" one its ".d.ts" when the ".ts" file is absent), node: builtins,
+// package.json imports ("#x"), tsconfig paths, tsconfig baseUrl when no paths
+// pattern matched, and workspace packages (npm, Yarn and pnpm) through
+// exports, types, module or main. A query such as "?raw" is dropped. Any other
+// bare specifier is a third-party package: KindExternal. A relative path, a
+// paths alias or a workspace subpath that names no file is KindUnknown; a bare
+// "*" alias alone proves nothing. No answer depends on installed dependencies:
+// a path or alias under node_modules is KindExternal, and a tsconfig extends
+// into node_modules is not followed.
 //
 // It is a port of scripts/eval/extractors/ts_imports.py, the prototype that
 // the extractor-equivalence test measured. Not handled, as there: a tsconfig

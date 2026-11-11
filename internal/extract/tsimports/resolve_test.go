@@ -16,6 +16,7 @@ const (
 
 	pnpmWorkspace = "pnpm-workspace.yaml"
 	depsA         = "deps/a.ts"
+	extMain       = "ext/main.ts"
 )
 
 // tree builds an in-memory file tree from file names and contents.
@@ -87,6 +88,23 @@ var resolveTree = map[string]string{
 	"deps/node_modules/@tsconfig/base/tsconfig.json": `{"compilerOptions": {"baseUrl": "../../.."}}`,
 	"deps/node_modules/x/index.js":                   "",
 	"deps/lib.ts":                                    "",
+	// A specifier extension and the files TypeScript tries in its place.
+	"ext/model.js":    "",
+	"ext/model.ts":    "",
+	"ext/only.js":     "",
+	"ext/mod.mjs":     "",
+	"ext/mod.mts":     "",
+	"ext/mdecl.mjs":   "",
+	"ext/mdecl.d.mts": "",
+	"ext/com.cjs":     "",
+	"ext/com.cts":     "",
+	"ext/view.jsx":    "",
+	"ext/view.tsx":    "",
+	"ext/decl.js":     "",
+	"ext/decl.d.ts":   "",
+	"ext/both.ts":     "",
+	"ext/both.d.ts":   "",
+	"ext/jsxonly.jsx": "",
 }
 
 func TestResolve(t *testing.T) {
@@ -135,6 +153,16 @@ func TestResolve(t *testing.T) {
 		{"extends into node_modules is not read", depsA, "lib", KindExternal, ""},
 		{"third-party package", srcX, pkgReact, KindExternal, ""},
 		{"node builtin", srcX, "node:fs", KindExternal, ""},
+
+		{".js with a .ts beside it names the .ts", extMain, "./model.js", KindFile, "ext/model.ts"},
+		{".js alone names the .js", extMain, "./only.js", KindFile, "ext/only.js"},
+		{".mjs with a .mts beside it names the .mts", extMain, "./mod.mjs", KindFile, "ext/mod.mts"},
+		{".mjs with a .d.mts beside it names the .d.mts", extMain, "./mdecl.mjs", KindFile, "ext/mdecl.d.mts"},
+		{".cjs with a .cts beside it names the .cts", extMain, "./com.cjs", KindFile, "ext/com.cts"},
+		{".jsx with a .tsx beside it names the .tsx", extMain, "./view.jsx", KindFile, "ext/view.tsx"},
+		{".js with a .d.ts beside it names the .d.ts", extMain, "./decl.js", KindFile, "ext/decl.d.ts"},
+		{".js names a .jsx file when no other is there", extMain, "./jsxonly.js", KindFile, "ext/jsxonly.jsx"},
+		{".ts with a .d.ts beside it names the .ts", extMain, "./both.ts", KindFile, "ext/both.ts"},
 	}
 	r := newResolver(tree(resolveTree))
 	for _, tt := range tests {

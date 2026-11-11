@@ -11,18 +11,20 @@ import (
 // probeExts are the extensions a specifier without one may omit, in
 // resolution order. The first eight are the script files parsedExts reads.
 var probeExts = []string{
-	".js", ".cjs", ".mjs", ".jsx", tsExt, ".cts", ".mts", tsxExt, dtsExt, jsonExt, ".vue", ".svelte",
+	jsExt, cjsExt, mjsExt, jsxExt, tsExt, ctsExt, mtsExt, tsxExt, dtsExt, jsonExt, ".vue", ".svelte",
 }
 
-// jsToTS lists what a specifier extension may name instead: a ".js" specifier
-// may name a TypeScript file (TypeScript's ESM convention), and a ".ts" one
-// its declaration file.
-var jsToTS = map[string][]string{
-	".js":  {tsExt, tsxExt, dtsExt},
-	tsExt:  {dtsExt},
-	".jsx": {tsxExt},
-	".mjs": {".mts"},
-	".cjs": {".cts"},
+// specifierExts lists the extensions a specifier's own extension stands for,
+// in the order TypeScript tries them (tryAddingExtensions, TypeScript 6.0): a
+// JavaScript specifier names its TypeScript source first, and a ".ts" one its
+// declaration file when the source is absent. Any other extension names only
+// itself.
+var specifierExts = map[string][]string{
+	jsExt:  {tsExt, tsxExt, dtsExt, jsExt, jsxExt},
+	jsxExt: {tsxExt, tsExt, dtsExt, jsxExt, jsExt},
+	mjsExt: {mtsExt, ".d.mts", mjsExt},
+	cjsExt: {ctsExt, ".d.cts", cjsExt},
+	tsExt:  {tsExt, dtsExt},
 }
 
 // resolver places specifiers on root-relative files without node_modules.
@@ -111,12 +113,13 @@ func (r *resolver) file(base string, seen []string) (string, bool) {
 	if !fs.ValidPath(base) || inNodeModules(base) || slices.Contains(seen, base) {
 		return "", false
 	}
-	if r.isFile(base) {
-		return base, true
-	}
 	ext := path.Ext(base)
 	stem := strings.TrimSuffix(base, ext)
-	for _, alt := range jsToTS[ext] {
+	alts, ok := specifierExts[ext]
+	if !ok {
+		alts = []string{ext}
+	}
+	for _, alt := range alts {
 		if r.isFile(stem + alt) {
 			return stem + alt, true
 		}

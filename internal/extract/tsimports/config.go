@@ -23,6 +23,12 @@ const (
 	dtsExt      = ".d.ts"
 	tsExt       = ".ts"
 	tsxExt      = ".tsx"
+	jsExt       = ".js"
+	jsxExt      = ".jsx"
+	mjsExt      = ".mjs"
+	cjsExt      = ".cjs"
+	mtsExt      = ".mts"
+	ctsExt      = ".cts"
 )
 
 // settings are the resolution settings of one tsconfig after its extends
