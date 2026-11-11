@@ -53,16 +53,24 @@ const (
 	utilFile       = "pkg/util/util.go"
 	osExec         = "os/exec"
 	web            = "web"
+	cmdRoot        = "cmd/root.go"
+	vueFile        = "web/view.vue"
+	tcTest         = "pkg/tc/tc_test.go"
+	databaseSQL    = "database/sql"
+	cobra          = "github.com/spf13/cobra"
+	onlySQL        = "sql-in-runtime"
+	subprocess     = "subprocess"
+	runtimeGlob    = "pkg/runtime/**"
 )
 
 // sources is the tree of the tests: pumba's shape.
 var sources = []string{
-	cmdFile,
+	cmdFile, cmdRoot,
 	chaosFile, chaosNetemFile,
 	"pkg/runtime/docker.go",
 	"pkg/tc/netem.go", "pkg/tc/tc.go", "pkg/tc/tc_test.go", "pkg/tc/netem/netem.go",
 	utilFile,
-	"web/app.ts", "web/state.py",
+	"web/app.ts", "web/state.py", vueFile,
 	toolFile,
 }
 
@@ -79,7 +87,7 @@ func policy() resolved.Policy {
 			},
 			tc:      {Paths: []string{"pkg/tc/**"}, Public: []string{tcDir}, Volatility: resolved.VolatilityHigh, Layer: core},
 			util:    {Paths: []string{"pkg/util/**"}, Volatility: resolved.VolatilityLow, Layer: core},
-			runtime: {Paths: []string{"pkg/runtime/**"}, Volatility: resolved.VolatilityMedium, Layer: core},
+			runtime: {Paths: []string{runtimeGlob}, Volatility: resolved.VolatilityMedium, Layer: core},
 			cmd:     {Paths: []string{"cmd/**"}, Layer: cmd, DependsOn: []string{chaos, tc, util, runtime}},
 			web:     {Paths: []string{"web/**"}},
 		},
@@ -88,9 +96,11 @@ func policy() resolved.Policy {
 				ID: denyChaos, Form: resolved.FormDeny, From: []string{chaos}, To: []string{runtime},
 				Why: "A direct import ties a chaos action to one runtime.", Instead: "Add a method to container.Client.",
 			},
-			{ID: denyCmd, Form: resolved.FormDeny, From: []string{"cmd/**"}, To: []string{"pkg/runtime/**"}, Why: "w", Instead: "i"},
+			{ID: denyCmd, Form: resolved.FormDeny, From: []string{"cmd/**"}, To: []string{runtimeGlob}, Why: "w", Instead: "i"},
 			{ID: onlyDocker, Form: resolved.FormOnly, Use: dockerSDK, In: []string{runtime}, Why: "One adapter owns the Docker API."},
 			{ID: onlyExec, Form: resolved.FormOnly, Use: resolved.SetProcess, In: []string{runtime}, Why: "Side effects stay in adapters."},
+			{ID: onlySQL, Form: resolved.FormOnly, Use: databaseSQL, In: []string{runtimeGlob}, Why: "One adapter owns the store."},
+			{ID: "cobra-in-root", Form: resolved.FormOnly, Use: cobra, In: []string{cmdRoot}, Why: "One file builds the commands."},
 		},
 		Tests: []string{"**/*_test.go"},
 	}.WithDefaults()
@@ -201,6 +211,12 @@ func cases() []tcase {
 		{"a layer inversion", withLayerInversion, utilFile, "cmd/main.go",
 			"pkg_util -> cmd: layers: layer core -> layer cmd goes against the layer order\n" + nextFix,
 			&evidence.ImportFact{File: utilFile, Target: cmdFile}},
+		{"a declared test importer is out of every rule", policy, tcTest, utilDir,
+			"pkg_tc -> pkg_util: yes\n", &evidence.ImportFact{File: tcTest, Target: utilDir}},
+		{"a file of no known language reads the sets of every language", policy, vueFile, subprocess,
+			"web -> subprocess: process-in-runtime: only pkg_runtime may use process\n" +
+				"  why: Side effects stay in adapters.\n" + nextFix,
+			&evidence.ImportFact{File: vueFile, Target: subprocess, External: true}},
 		{"a path in no module", policy, toolFile, utilDir,
 			"tools/gen.go -> pkg_util: unknown: tools/gen.go is in no module\n  next: archfit rules tools/gen.go\n", nil},
 	}
@@ -337,16 +353,32 @@ func TestArguments(t *testing.T) {
 			result.CanAnswer{From: chaos, To: osExec, Answer: result.ReplyNo, Rule: onlyExec}},
 		{"a package set from a module: its language is unknown", chaos, osExec,
 			result.CanAnswer{From: chaos, To: osExec, Answer: result.ReplyUnknown}},
-		{"a package set from a directory of two languages", web, "subprocess",
-			result.CanAnswer{From: web, To: "subprocess", Answer: result.ReplyUnknown}},
+		{"a package set from a directory of two languages", web, subprocess,
+			result.CanAnswer{From: web, To: subprocess, Answer: result.ReplyUnknown}},
 		{"the library of a rule from a module needs no language", chaos, dockerSDK,
 			result.CanAnswer{From: chaos, To: dockerSDK, Answer: result.ReplyNo, Rule: onlyDocker}},
 		{"a path below a library from a module depends on the language", chaos, dockerSDK + "/client",
 			result.CanAnswer{From: chaos, To: dockerSDK + "/client", Answer: result.ReplyUnknown}},
-		{"a module name does not match a path-glob deny", cmd, runtime,
-			result.CanAnswer{From: cmd, To: runtime, Answer: result.ReplyYes}},
-		{"a file does", cmdFile, runtimeDir,
+		{"a path-glob deny over an importer module name", cmd, runtime,
+			result.CanAnswer{From: cmd, To: runtime, Answer: result.ReplyUnknown}},
+		{"a path-glob deny over a target module name", cmdFile, runtime,
+			result.CanAnswer{From: cmd, To: runtime, Answer: result.ReplyUnknown}},
+		{"a path-glob deny over a file and a directory", cmdFile, runtimeDir,
 			result.CanAnswer{From: cmd, To: runtime, Answer: result.ReplyNo, Rule: denyCmd}},
+		{"a path-glob in that may cover a module name", runtime, databaseSQL,
+			result.CanAnswer{From: runtime, To: databaseSQL, Answer: result.ReplyUnknown}},
+		{"a path-glob in that cannot cover a module name", chaos, databaseSQL,
+			result.CanAnswer{From: chaos, To: databaseSQL, Answer: result.ReplyNo, Rule: onlySQL}},
+		{"a file inside a path-glob in", "pkg/runtime/docker.go", databaseSQL,
+			result.CanAnswer{From: runtime, To: databaseSQL, Answer: result.ReplyYes}},
+		{"a declared test file not written yet", "pkg/tc/new_test.go", utilDir,
+			result.CanAnswer{From: tc, To: util, Answer: result.ReplyYes}},
+		{"the files of a directory answer differently", "./cmd", cobra,
+			result.CanAnswer{From: cmd, To: cobra, Answer: result.ReplyUnknown}},
+		{"a dotted name whose first part is a root directory", tcDir, "web.state",
+			result.CanAnswer{From: tc, To: "web.state", Answer: result.ReplyUnknown}},
+		{"a target written ./path", tcDir, "./missing.go",
+			result.CanAnswer{From: tc, To: "./missing.go", Answer: result.ReplyUnknown}},
 		{"a rule to fix the code wins over one to ask", chaosDir, netemDir,
 			result.CanAnswer{From: chaos, To: tc, Answer: result.ReplyNo, Rule: resolved.RuleCoupling}},
 	}
@@ -361,12 +393,26 @@ func TestArguments(t *testing.T) {
 	}
 }
 
+// unknownQuestions are the questions an argument cannot answer, each with
+// the record that names the file to ask about instead.
+var unknownQuestions = []struct{ from, to, want string }{
+	{chaos, osExec, "pkg_chaos -> os/exec: unknown: rule process-in-runtime reads os/exec by the language of the importer, " +
+		"and pkg_chaos has none\n  next: archfit can <a file of pkg_chaos> os/exec\n"},
+	{cmd, runtime, "cmd -> pkg_runtime: unknown: rule no-cmd-to-runtime names paths, and cmd is a module\n" +
+		"  next: archfit can <a file of cmd> pkg_runtime\n"},
+	{cmdFile, runtime, "cmd -> pkg_runtime: unknown: rule no-cmd-to-runtime names paths, and pkg_runtime is a module\n" +
+		"  next: archfit can cmd/main.go <a file of pkg_runtime>\n"},
+	{runtime, databaseSQL, "pkg_runtime -> database/sql: unknown: rule sql-in-runtime names paths, and pkg_runtime is a module\n" +
+		"  next: archfit can <a file of pkg_runtime> database/sql\n"},
+	{"./cmd", cobra, "cmd -> github.com/spf13/cobra: unknown: the files of ./cmd answer differently\n" +
+		"  next: archfit can <a file of ./cmd> github.com/spf13/cobra\n"},
+}
+
 func TestUnknownNamesTheStep(t *testing.T) {
-	a := ask(t, policy(), chaos, osExec)
-	want := "pkg_chaos -> os/exec: unknown: rule process-in-runtime reads os/exec by the language of the importer: " +
-		"name a file of pkg_chaos\n  next: archfit can <a file of pkg_chaos> os/exec\n"
-	if got := render(t, a); got != want {
-		t.Errorf("record:\n--- got\n%s--- want\n%s", got, want)
+	for _, q := range unknownQuestions {
+		if got := render(t, ask(t, policy(), q.from, q.to)); got != q.want {
+			t.Errorf("record:\n--- got\n%s--- want\n%s", got, q.want)
+		}
 	}
 }
 
@@ -420,7 +466,9 @@ func TestAnswersUseOnlyDesignWords(t *testing.T) {
 			t.Errorf("%s uses %q", tt.name, words)
 		}
 	}
-	if words := testutil.NotUsedIn(render(t, ask(t, policy(), chaos, osExec))); len(words) > 0 {
-		t.Errorf("the language unknown uses %q", words)
+	for _, q := range unknownQuestions {
+		if words := testutil.NotUsedIn(q.want); len(words) > 0 {
+			t.Errorf("can %s %s uses %q", q.from, q.to, words)
+		}
 	}
 }
