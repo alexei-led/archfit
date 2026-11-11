@@ -55,6 +55,9 @@ func (r *resolver) resolve(importer, spec string) (Kind, string) {
 		if !path.IsAbs(spec) {
 			base = path.Join(path.Dir(importer), spec)
 		}
+		if inNodeModules(base) {
+			return KindExternal, ""
+		}
 		return r.placed(r.file(base, nil))
 	}
 	if strings.HasPrefix(spec, "node:") {
@@ -66,6 +69,10 @@ func (r *resolver) resolve(importer, spec string) (Kind, string) {
 	}
 	pattern, matched, targets := aliasTargets(config, spec)
 	for _, target := range targets {
+		// An alias into node_modules names a dependency, installed or not.
+		if inNodeModules(target) {
+			return KindExternal, ""
+		}
 		if found, ok := r.file(target, nil); ok {
 			return KindFile, found
 		}
@@ -95,11 +102,13 @@ func (r *resolver) placed(file string, ok bool) (Kind, string) {
 }
 
 // file probes a root-relative base path as a file, with extensions, then as
-// a directory with a package.json entry or an index file. seen stops a
-// package.json entry that names its own directory.
+// a directory with a package.json entry or an index file. It never answers
+// with a file under node_modules, so the answer does not depend on whether
+// dependencies are installed. seen stops a package.json entry that names its
+// own directory.
 func (r *resolver) file(base string, seen []string) (string, bool) {
 	base = path.Clean(base)
-	if !fs.ValidPath(base) || slices.Contains(seen, base) {
+	if !fs.ValidPath(base) || inNodeModules(base) || slices.Contains(seen, base) {
 		return "", false
 	}
 	if r.isFile(base) {
@@ -134,6 +143,11 @@ func (r *resolver) file(base string, seen []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// inNodeModules reports whether a root-relative path has a node_modules segment.
+func inNodeModules(name string) bool {
+	return slices.Contains(strings.Split(path.Clean(name), "/"), nodeModules)
 }
 
 func (r *resolver) isFile(name string) bool {

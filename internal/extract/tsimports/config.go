@@ -18,10 +18,11 @@ var defaultConditions = []string{"types", "import", "require", "node", "default"
 const maxExtendsDepth = 10
 
 const (
-	jsonExt = ".json"
-	dtsExt  = ".d.ts"
-	tsExt   = ".ts"
-	tsxExt  = ".tsx"
+	jsonExt     = ".json"
+	nodeModules = "node_modules"
+	dtsExt      = ".d.ts"
+	tsExt       = ".ts"
+	tsxExt      = ".tsx"
 )
 
 // settings are the resolution settings of one tsconfig after its extends
@@ -101,8 +102,8 @@ func (r *resolver) tsconfig(dir string) settings {
 }
 
 // tsconfigOptions returns the options a tsconfig sets, merged over its parents
-// in extends order. Only relative extends inside the root are followed: a
-// package extends would need node_modules.
+// in extends order. Only relative extends inside the root and outside
+// node_modules are followed: a dependency's config depends on the install.
 func (r *resolver) tsconfigOptions(name string, depth int) tsOptions {
 	data := readJSONC(r.fsys, name)
 	var merged tsOptions
@@ -111,8 +112,8 @@ func (r *resolver) tsconfigOptions(name string, depth int) tsOptions {
 			continue
 		}
 		target := path.Join(path.Dir(name), parent)
-		if !fs.ValidPath(target) {
-			continue // outside the root
+		if !fs.ValidPath(target) || inNodeModules(target) {
+			continue // outside the root, or a dependency's config
 		}
 		if r.isDir(target) {
 			target = path.Join(target, "tsconfig.json")
@@ -189,14 +190,19 @@ func workspacePackages(fsys fs.FS) map[string]string {
 	}
 	packages := map[string]string{}
 	for _, pattern := range includes {
-		matches, err := doublestar.Glob(fsys, pattern)
+		// Like pathlib, the walk does not follow symlinks: pnpm links packages
+		// into each other's node_modules, and following them can loop.
+		matches, err := doublestar.Glob(fsys, pattern, doublestar.WithNoFollow())
 		if err != nil {
 			continue
 		}
 		slices.Sort(matches)
 		for _, dir := range matches {
+			if inNodeModules(dir) || excluded(excludes, dir) {
+				continue
+			}
 			name, ok := asString(readJSON(fsys, path.Join(dir, "package.json")).get("name"))
-			if !ok || slices.Contains(strings.Split(dir, "/"), "node_modules") || excluded(excludes, dir) {
+			if !ok {
 				continue
 			}
 			packages[name] = dir

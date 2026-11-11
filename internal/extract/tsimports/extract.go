@@ -10,7 +10,9 @@
 // pnpm) through exports, types, module or main. A query such as "?raw" is
 // dropped. Any other bare specifier is a third-party package: KindExternal.
 // A relative path, a paths alias or a workspace subpath that names no file is
-// KindUnknown; a bare "*" alias alone proves nothing.
+// KindUnknown; a bare "*" alias alone proves nothing. No answer depends on
+// installed dependencies: a path or alias under node_modules is KindExternal,
+// and a tsconfig extends into node_modules is not followed.
 //
 // It is a port of scripts/eval/extractors/ts_imports.py, the prototype that
 // the extractor-equivalence test measured. Not handled, as there: a tsconfig
@@ -73,8 +75,10 @@ const astGrep = "ast-grep"
 // line short on large trees.
 const batchSize = 500
 
-// sgFailed is the lowest ast-grep exit code that means a failed run.
-const sgFailed = 2
+// sgNoMatch is the exit code ast-grep gives a scan that matched nothing.
+// Any code other than it and 0, including -1 for a process a signal ended,
+// is a failed run whose output may be cut short.
+const sgNoMatch = 1
 
 //go:embed rules/typescript.yml
 var rules string
@@ -132,7 +136,7 @@ func sourceFiles(fsys fs.FS) ([]string, error) {
 			return fmt.Errorf("tsimports: walk %s: %w", name, err)
 		}
 		if d.IsDir() {
-			if name != "." && (d.Name() == "node_modules" || d.Name() == ".git") {
+			if name != "." && (d.Name() == nodeModules || d.Name() == ".git") {
 				return fs.SkipDir
 			}
 			return nil
@@ -168,7 +172,7 @@ func parse(ctx context.Context, runner toolrun.Runner, root string, files []stri
 		if err != nil {
 			return nil, fmt.Errorf("tsimports: run ast-grep: %w", err)
 		}
-		if out.ExitCode >= sgFailed {
+		if out.ExitCode != 0 && out.ExitCode != sgNoMatch {
 			return nil, fmt.Errorf("tsimports: ast-grep exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 		}
 		for line := range bytes.SplitSeq(out.Stdout, []byte("\n")) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -76,6 +77,16 @@ func TestExtractFailures(t *testing.T) {
 		_, err := Extract(context.Background(), runner, root)
 		if err == nil || !strings.Contains(err.Error(), "exited 2: bad rule") {
 			t.Errorf("err = %v, want the exit code and stderr", err)
+		}
+	})
+
+	t.Run("a run a signal ended is an error, whatever it printed", func(t *testing.T) {
+		t.Parallel()
+		runner, _ := fakeAstGrep(func([]string) (toolrun.Output, error) {
+			return toolrun.Output{ExitCode: -1, Stdout: []byte(`{"text":"'./a'","file":"src/x.ts","ruleId":"ts-source"}` + "\n")}, nil
+		})
+		if _, err := Extract(context.Background(), runner, root); err == nil || !strings.Contains(err.Error(), "exited -1") {
+			t.Errorf("err = %v, want exited -1", err)
 		}
 	})
 
@@ -222,4 +233,28 @@ func specsOf(f Facts, file string) []string {
 		}
 	}
 	return out
+}
+
+func TestWorkspacePackagesDoNotFollowSymlinks(t *testing.T) {
+	t.Parallel()
+	root := writeTree(t, map[string]string{
+		pnpmWorkspace:              "packages:\n  - 'libs/**'\n  - 'linked/*'\n",
+		"libs/a/package.json":      `{"name": "@org/a"}`,
+		"elsewhere/b/package.json": `{"name": "@org/b"}`,
+	})
+	// A loop like the links pnpm makes between workspace packages.
+	if err := os.Symlink("..", filepath.Join(root, "libs", "a", "loop")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "linked"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "elsewhere", "b"), filepath.Join(root, "linked", "b")); err != nil {
+		t.Fatal(err)
+	}
+	got := workspacePackages(os.DirFS(root))
+	want := map[string]string{"@org/a": "libs/a", "@org/b": "linked/b"}
+	if !maps.Equal(got, want) {
+		t.Errorf("workspacePackages = %v, want %v", got, want)
+	}
 }

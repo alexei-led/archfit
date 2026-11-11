@@ -13,6 +13,9 @@ const (
 	specA    = "./a"
 	pkgJSON  = "package.json"
 	pkgReact = "react"
+
+	pnpmWorkspace = "pnpm-workspace.yaml"
+	depsA         = "deps/a.ts"
 )
 
 // tree builds an in-memory file tree from file names and contents.
@@ -78,6 +81,12 @@ var resolveTree = map[string]string{
 	"packages/order/package.json": `{"name": "order", "exports": {"import": "./b.ts", "default": "./a.ts"}}`,
 	"packages/order/a.ts":         "",
 	"packages/order/b.ts":         "",
+	// An installed dependency: no answer may depend on it being there.
+	"deps/tsconfig.json":                             `{"extends": "./node_modules/@tsconfig/base/tsconfig.json", "compilerOptions": {"paths": {"react": ["node_modules/@types/react/index.d.ts"]}}}`,
+	"deps/node_modules/@types/react/index.d.ts":      "",
+	"deps/node_modules/@tsconfig/base/tsconfig.json": `{"compilerOptions": {"baseUrl": "../../.."}}`,
+	"deps/node_modules/x/index.js":                   "",
+	"deps/lib.ts":                                    "",
 }
 
 func TestResolve(t *testing.T) {
@@ -121,6 +130,9 @@ func TestResolve(t *testing.T) {
 		{"subpath without exports", srcX, "old/lib/extra", KindFile, "packages/old/lib/extra.js"},
 		{"node10 ignores exports", "packages/node10/use.js", "@acme/core/preview", KindFile, "packages/core/preview.js"},
 		{"exports conditions in document order", srcX, "order", KindFile, "packages/order/b.ts"},
+		{"paths alias into node_modules is external", depsA, pkgReact, KindExternal, ""},
+		{"relative path into node_modules is external", depsA, "./node_modules/x", KindExternal, ""},
+		{"extends into node_modules is not read", depsA, "lib", KindExternal, ""},
 		{"third-party package", srcX, pkgReact, KindExternal, ""},
 		{"node builtin", srcX, "node:fs", KindExternal, ""},
 	}
@@ -138,7 +150,7 @@ func TestWorkspacePackages(t *testing.T) {
 	t.Parallel()
 	fsys := tree(map[string]string{
 		pkgJSON:                      "{}",
-		"pnpm-workspace.yaml":        "# workspace\npackages:\n  - 'libs/*'\n  - \"!libs/skip\"\ncatalog:\n  - x\n",
+		pnpmWorkspace:                "# workspace\npackages:\n  - 'libs/*'\n  - \"!libs/skip\"\ncatalog:\n  - x\n",
 		"libs/a/package.json":        `{"name": "@org/a"}`,
 		"libs/skip/package.json":     `{"name": "@org/skip"}`,
 		"libs/nameless/package.json": `{}`,
@@ -152,7 +164,7 @@ func TestWorkspacePackages(t *testing.T) {
 func TestPnpmPatterns(t *testing.T) {
 	t.Parallel()
 	fsys := tree(map[string]string{
-		"pnpm-workspace.yaml": "packages:\n- libs/*\nonlyBuiltDependencies:\n- esbuild\n",
+		pnpmWorkspace: "packages:\n- libs/*\nonlyBuiltDependencies:\n- esbuild\n",
 	})
 	got := pnpmPatterns(fsys)
 	if len(got) != 1 || got[0] != "libs/*" {
