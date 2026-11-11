@@ -85,8 +85,8 @@ organization-owned private or internal repository.
 
 ## Decisions
 
-The manager reviewed every row on 2026-11-11. D1 and D9 changed in that review. D22 and D23 wait for one owner
-answer each.
+The manager reviewed every row on 2026-11-11. D1 and D9 changed in that review. The owner answered D22 and D23 the
+same day.
 
 | Id | Decision | Status |
 | --- | --- | --- |
@@ -98,7 +98,7 @@ answer each.
 | D6 | The App stores no result bytes. Per pull-request head it keeps the run id and attempt, the payload digest, the status, and the error keys. It reads the result back from the run's `archfit-result` artifact and checks the digest when a request or a preview needs it. | Approved 2026-11-11, manager. |
 | D7 | New App state lives under a `v4/` key prefix with JSON values that carry a `schema` field. Archfit 3 keys stay untouched and unread, so the previous revision stays deployable. They are deleted 30 days after the release, after a Firestore export (post-completion). | Approved 2026-11-11, manager. |
 | D8 | Approvals follow the state machine and recovery table of "Approval records" in the Technical Details. | Approved 2026-11-11, manager. |
-| D9 | The passkey uses `github.com/go-webauthn/webauthn`: attestation `none`; ES256, RS256 and Ed25519; user verification required. A hand-written WebAuthn, CBOR and COSE verifier would be security code the App owns forever. Task 18 adds the module to `docs/tech-stack.md`. A second passkey needs an existing one. Losing every passkey means reinstalling the App. | Changed and approved 2026-11-11, manager. |
+| D9 | The passkey uses `github.com/go-webauthn/webauthn`: attestation `none`; ES256, RS256 and Ed25519; user verification required. A hand-written WebAuthn, CBOR and COSE verifier would be security code the App owns forever. Task 18 adds the module to `docs/tech-stack.md`. A second passkey needs an existing one. Credentials live under the installation tenant, so losing every passkey means reinstalling the App, which deletes them. | Changed and approved 2026-11-11, manager. |
 | D10 | In milestone 2 the App decides "loosens" by the answer: approve and approve-until loosen; reject tightens; confirming a policy changed outside the flow loosens. The App gets a general policy comparison only with the YAML editor in milestone 3. | Approved 2026-11-11, manager. |
 | D11 | The App writes an answer into the policy with the YAML node API of `go.yaml.in/yaml/v3`, keeping comments and order. | Approved 2026-11-11, manager. |
 | D12 | Pages: milestone 2 adds the request page and the passkey page, and removes the Decisions page, the policy editor and its AI assist, and the owner actions of the Pull page. Other pages stay as they are until milestone 3. The check (title, summary, annotations) and the comment show the record in milestone 2. Milestone 3 rewrites the pages and the comment layout and adds their goldens. | Approved 2026-11-11, manager. |
@@ -111,8 +111,8 @@ answer each.
 | D19 | The App opens one issue per exception 7 days before `expires`, assigned to the owners. On the date it fails the check of every open pull request with the expired-exception record. The record matches the engine golden for that case. | Approved 2026-11-11, manager. |
 | D20 | The sweep replaces a `waiting` check run older than 10 days with a fresh `in_progress` run on the same head. The 14-day `stale` rule stays unmeasured (design D.2). | Approved 2026-11-11, manager. |
 | D21 | A request comment counts when its author wrote the pull request or has write permission. A request issue counts when its author has write permission. | Approved 2026-11-11, manager. |
-| D22 | A rehearsal of the whole flow runs on `alexei-led/archfit-4-mechanics` before the release (task 28), in one of two variants. (a) A development GitHub App exists: the App runs locally with the Firestore emulator against it. (b) None exists: a no-traffic Cloud Run revision would be needed, and `deploy.yaml` cannot make one today (see task 28), so (a) is required unless the owner approves a new deploy mode. The end-to-end test on `pumba` runs in the release window with the production App (task 32). The owner performs every passkey step. | Approved 2026-11-11, manager; the variant waits for the owner. |
-| D23 | The release window freezes merges in `pumba`, `archfit` and `coupling-dev/pumba-pilot` except the release pull requests. For `pumba-pilot` the owner decides in the window preparation (release step R0): convert it in the window, or remove it from the installation. | Approved 2026-11-11, manager; `pumba-pilot` waits for the owner. |
+| D22 | No development App and no special revision. Before the window the App is tested only in CI, with fakes and the Firestore emulator. The rehearsal runs in the release window, right after the App deploy, with the production App on `alexei-led/archfit-4-mechanics` (task 28); then the end-to-end test on `pumba` (task 32). The owner performs every passkey step. Rollback with `deploy.yaml` `traffic` mode is the safety net. | Owner answer 2026-11-11 (the owner accepts the risk). |
+| D23 | The release window freezes merges in `pumba` and `archfit` except the release pull requests. `coupling-dev/pumba-pilot` is removed from the App installation before the window (release step R0), by the owner or the manager; it is not converted. | Owner answer 2026-11-11. |
 
 ## Development approach
 
@@ -121,9 +121,12 @@ answer each.
 - Run impact analysis before you change or delete a symbol. In archfit use GitNexus. In archfit-app and
   archfit-action use GitNexus where the repository is indexed. Otherwise list the callers (`go list`, `grep`) in the
   pull-request description. A task marked **impact first** names the symbols.
-- archfit-app: new packages sit under existing prefixes (`internal/wire`, `internal/gate`, `internal/control`), so
-  `internal/imports_test.go` changes only in the removal tasks 25 and 26. A task that still needs a new row there
-  says so in its pull request, and the manager merges it.
+- archfit-app: new packages sit under existing prefixes (`internal/wire`, `internal/gate`, `internal/control`) and
+  follow `internal/imports_test.go`: `gate` never imports `control`; `control` reaches gate data only through the
+  `internal/gate` façade. Each task that needs the façade adds its own new file there (named in the task) and edits
+  no other task's façade file. `internal/gate/events.go` (event dispatch) is edited by tasks 16 and 20 only.
+- archfit-app: `internal/imports_test.go` changes in tasks 3 (`go.yaml.in/yaml/v3` in `wire/policy3`), 18
+  (`go-webauthn` in `control/passkey`), 25 and 26. No two of them share a wave.
 - archfit-app: every pull request targets the integration branch `archfit-4` (D1), never `main`. The manager merges
   `main` into `archfit-4` after each v3 hotfix.
 - archfit-app: new code goes into new packages or files beside the Archfit 3 path. The Archfit 3 path is deleted in
@@ -148,12 +151,12 @@ answer each.
 | Requests as issues from one line | 2, 6, 16 |
 | The balance and the preview | 4, 17 |
 | The passkey | 18, 24 |
-| Approve and merge | 3, 13, 19, 23 |
-| Recorded approvals | 12, 19, 20 |
+| Approve and merge | 3, 13, 19, 23 (the first approval) |
+| Recorded approvals | 12, 19, 20, 23 |
 | The re-check | 10, 21 |
 | Expiry and drift | 5, 22 |
 | Action 4 | 1, 10, 11, 30, 33 (the engine prerelease it pins) |
-| The whole flow works on `pumba` | 28 (rehearsal), 32 |
+| The whole flow works on `pumba` | 28 (rehearsal in the window), 32 |
 | Protection tests pass | 19, 20, 28 |
 
 ### Section 11.6, App
@@ -202,7 +205,7 @@ answer each.
 | `archfit` | `docs/agents.md`, `skills/archfit/SKILL.md` (the user-level plugin) | 8 |
 | `archfit` | `README.md`, `docs/getting-started.md` (install path `/v4`) | 9 |
 | `archfit-app` | `docs/architecture.md`, `docs/user-guide.md` | 27 |
-| `archfit-app` | each touched package's `module.md`, `docs/tech-stack.md` (task 18 if a library is chosen) | each task |
+| `archfit-app` | each touched package's `module.md`, `docs/tech-stack.md` (task 18: `go-webauthn`) | each task |
 | `archfit-action` | `README.md`, `schema/`, `CHANGELOG.md` | 10, 11, 30 |
 
 ### Milestone 1 follow-ups closed here
@@ -216,7 +219,7 @@ answer each.
 | M1 D12: the user-level Claude Code plugin (release-blocking) | 8 |
 | The App user guide advises a required review, which blocks "Approve and merge" | 27 |
 | The sweep refreshes `in_progress` before 14 days | 22 |
-| The `pumba` conversion (M1 task 28) merges with the Action 4 pin | release step R6 |
+| The `pumba` conversion (M1 task 28) merges with the Action 4 pin | release step R7 |
 
 ## Implementation Steps
 
@@ -328,8 +331,11 @@ M1: 16, 20, 25. Merge: manager (protection).
       default branch, `merge_group`; `permissions: contents: read, id-token: write`; the step
       `alexei-led/archfit-action@v4` with the App endpoint and audience (D15); it never overwrites the file
 - [ ] M1 D6: a result says `policy: protected` when `.github/workflows/archfit.yaml` on the target branch uses
-      `alexei-led/archfit-action` at `v4` or a commit, and `policy: not protected` otherwise
-- [ ] write golden tests for the workflow file, the no-overwrite rule, and each D6 case
+      `alexei-led/archfit-action` at a `v4` or `v4.x.y` tag, or at a commit whose trailing comment names `v4.`; every
+      other case, including an Action v3 commit, is `policy: not protected` (Action v3 reads the policy from the
+      head, design 9.1)
+- [ ] write golden tests for the workflow file, the no-overwrite rule, and each D6 case, including archfit's and
+      `pumba`'s Action v3 commit pins
 - [ ] rewrite the Action and App parts of `docs/ci.md` for Action 4 (the workflow, the ruleset with 0 required
       approvals and no bypass actor, the request and the answer); add the workflow step to
       `docs/getting-started.md`
@@ -400,14 +406,18 @@ Repository: archfit-action. Design: 11.4, 13, 17. Files: `action.yml`, `scripts/
 ### Task 12: App storage for milestone 2
 
 Repository: archfit-app. Design: 4 (GitHub is the database), 9.2, 11.6, D6, D7. Packages: `internal/store`,
-`internal/gate/records` (new; the key and value types). Files: `internal/store/module.md`, `infra/data/firestore.tf` only if
-a query needs an index. Depends on: none. M1: none. Merge: manager (storage).
+`internal/gate/records` (new; the key and value types). Files: `internal/store/module.md`. Depends on: none. M1:
+none. Merge: manager (storage).
 
-- [ ] add the `v4/` keys of "App keys" with JSON values that carry `schema`; correct the decision-key tenant in
-      `module.md`
-- [ ] a one-use consume: a CompareAndSwap from one state to the next that fails when the record moved
+- [ ] add the `v4/` keys of "App keys", including the index keys, with JSON values that carry `schema`; the store
+      has no list or query, so every lookup of "App keys" goes through an index key, never a scan; correct the
+      decision-key tenant in `module.md`
+- [ ] helpers that update a record and its index key together with `CompareAndSwapAll` (at most 10 keys)
+- [ ] a one-use consume: a CompareAndSwap from one state to the next that records the consuming commit and fails
+      when the record moved; the same commit consuming again is a no-op success
 - [ ] write tests on the in-memory store and the Firestore emulator: round trips; a consume that wins once under two
-      concurrent callers; v3 keys are neither read nor written
+      concurrent callers; the same commit twice; an index that stays in step with its records under concurrent
+      writers; v3 keys are neither read nor written
 - [ ] run `make all` and the emulator tests
 
 ### Task 13: GitHub API additions
@@ -426,8 +436,9 @@ worker.
 
 ### Task 14: Ingest of envelope 2
 
-Repository: archfit-app. Design: 9.1, 11.6, 11.7, D15. Packages: `internal/gate/ingest`, `internal/gate` (the upload
-handler, new file), `internal/wire/manifest`. Depends on: 1, 3, 4, 12. M1: 2. Merge: manager (trust).
+Repository: archfit-app. Design: 9.1, 9.2, 11.6, 11.7, 14, D15. Packages: `internal/gate/ingest`, `internal/gate`
+(the upload handler, new file `upload4.go`), `internal/wire/manifest`. Depends on: 1, 3, 4, 12. M1: 2. Merge:
+manager (trust).
 
 - [ ] decode envelope 2 and the result (tasks 1 and 4); verify the OIDC token and the repository as today; the
       workflow path is `.github/workflows/archfit.yaml` (D15)
@@ -436,10 +447,18 @@ handler, new file), `internal/wire/manifest`. Depends on: 1, 3, 4, 12. M1: 2. Me
 - [ ] the policy (design 9.1): read `.archfit.yaml` at `target_sha` and at the current target tip, compute both
       digests (task 3), and require both to equal the envelope's and the result's `policy.digest`; a policy that
       changed since the run gives `unknown` with `next:` saying the check runs again
+- [ ] the first policy (design 9.2, 14): when the target branch has no schema 3 policy, the pull request that adds
+      one is an onboarding pull request; store its result, and set its check to `action_required` with a record
+      that asks an administrator for the first approval (task 23)
+- [ ] the workflow file: when `.github/workflows/archfit.yaml` at the run's commit differs from the target's, the
+      check is `unknown` until an owner approves that change (task 23); a change that only moves the Action ref to a
+      commit in the manifest needs no approval. Archfit 3 protected this file as an owner-approved input; tasks 25
+      and 26 remove that path, so this replaces it
 - [ ] store the pull record of D6 under its `v4/` key; accept the upload only for the latest attempt of the latest
       run of the head
 - [ ] write tests: each accepted event; a wrong policy digest; a policy from the head; an unknown engine; an older
-      attempt; a payload digest mismatch
+      attempt; a payload digest mismatch; an onboarding pull request; a pull request that edits the workflow and
+      uploads a forged `pass`; a ref-only Action bump
 - [ ] run `make all`
 
 ### Task 15: The check carries the record
@@ -447,8 +466,9 @@ handler, new file), `internal/wire/manifest`. Depends on: 1, 3, 4, 12. M1: 2. Me
 Repository: archfit-app. Design: 7.1, 8.2, 11.6, 12.5, D12. Packages: `internal/gate/feedback`. Depends on: 4, 14.
 M1: none. Merge: manager (the required check). Impact first: the publisher of `archfit/state`.
 
-- [ ] `archfit/gate` from the result: `pass` → success; `fail` → failure, or neutral when `gate` is `advisory`;
-      `waiting` → `in_progress` with the title `waiting, request #n`; `unknown` → `action_required`
+- [ ] `archfit/gate` from the status the App gives a result: `pass` → success; `fail` → failure, or neutral when
+      `gate` is `advisory`; `waiting` → `in_progress` with the title `waiting, request #n`; `unknown` →
+      `action_required`. The engine never emits `waiting`; task 16 derives it
 - [ ] the title is the status line; the summary is the record of task 4; one annotation per error on its line
 - [ ] the comment, edited in place: the status line as the heading, the records, one line for the author and one for
       the owner (12.5); no JSON block
@@ -459,9 +479,10 @@ M1: none. Merge: manager (the required check). Impact first: the publisher of `a
 
 ### Task 16: Requests as issues
 
-Repository: archfit-app. Design: 10.3, 11.6, 6.3 (an answer that already exists), D2, D21. Packages:
-`internal/gate/requests` (new), `internal/github/webhook`. Depends on: 2, 3, 12, 13, 14, 15. M1: none. Merge:
-manager (it sets the required check to `waiting`).
+Repository: archfit-app. Design: 7.1, 10.3, 11.6, 6.3 (an answer that already exists), D2, D21. Packages:
+`internal/gate/requests` (new), `internal/gate` (`events.go` dispatch; new façade file `requests.go`; the status
+step in `upload4.go`), `internal/github/webhook`. Depends on: 2, 3, 12, 13, 14, 15. M1: none. Merge: manager (it
+sets the required check to `waiting`).
 
 - [ ] parse request lines in `issue_comment` events on pull requests and in `issues` events (task 2); authorize the
       author (D21)
@@ -471,16 +492,20 @@ manager (it sets the required check to `waiting`).
 - [ ] match the key: an open request with the same key gets a comment and the pull request joins it; a key a `deny`
       rule already answers gets a reply with that rule's `instead`, and a request issue opened by the CLI is closed
 - [ ] otherwise open the issue (task 2 body), label `archfit-request`, assign the owners of the target policy, link
-      the pull request, store the request, and set the pull request's check to `waiting`
+      the pull request, store the request and its index entries, and set the pull request's check to `waiting`
+- [ ] on every verified upload, derive the status again: a `fail` whose errors are all `ask` errors whose keys match
+      open requests is `waiting`, naming the request (design 7.1); a later push, a moved target or a re-run keeps a
+      covered pull request `waiting`, and a new uncovered error makes it `fail`
 - [ ] write tests: comment and issue paths; joined; already answered; an author without permission; a deny-mode error;
-      no result yet; an edited comment is ignored; one request per comment
+      no result yet; an edited comment is ignored; one request per comment; a new push of a covered pull request stays
+      `waiting`; a new push that adds an uncovered error is `fail`
 - [ ] run `make all`
 
 ### Task 17: Balance and preview
 
 Repository: archfit-app. Design: 10.4, 12.3, 19 (a persuasive request). Packages: `internal/gate/requests`
-(`preview.go`), `internal/control/ui` (a read API file and its routes in `ui.go`). Depends on: 3, 16. M1: none. Merge:
-worker.
+(`preview.go`), `internal/gate` (new façade file `preview.go`), `internal/control/ui` (a read API file and its routes
+in `ui.go`). Depends on: 3, 16. M1: none. Merge: worker.
 
 - [ ] the request data: the reason, the record with its balance (verified, or "as reported"), the two modules and
       their current dependencies, and the earlier answers about the same modules (closed requests and `deny` rules)
@@ -493,11 +518,14 @@ worker.
 ### Task 18: The passkey
 
 Repository: archfit-app. Design: 9.2, 9.5, 10.4, 19, D9. Packages: `internal/control/passkey` (new),
-`internal/control/ui/session`, routes in `internal/control/ui/ui.go`. Files: `docs/tech-stack.md` if a library is
-chosen. Depends on: 12. M1: none. Merge: manager (authentication).
+`internal/control/ui/session`, routes in `internal/control/ui/ui.go`. Files: `go.mod`, `docs/tech-stack.md`,
+`internal/imports_test.go`. Depends on: 12. M1: none. Merge: manager (authentication).
 
-- [ ] registration and assertion ceremonies with the parameters of "Passkey"; challenges stored with a 5-minute
-      expiry and consumed once
+- [ ] add `github.com/go-webauthn/webauthn` (D9) and its row in `docs/tech-stack.md`; allow it in
+      `control/passkey` only, in `internal/imports_test.go`; do not write a WebAuthn, CBOR or COSE parser
+- [ ] registration and assertion ceremonies with the parameters of "Passkey"; credentials and challenges under the
+      installation tenant (see "App keys"), so an uninstall deletes them; challenges expire after 5 minutes and are
+      consumed once
 - [ ] who registers: an owner named in the target policy, or a repository administrator before the first policy; a
       second passkey needs an assertion with an existing one; every registration opens an issue assigned to the
       owners
@@ -505,40 +533,46 @@ chosen. Depends on: 12. M1: none. Merge: manager (authentication).
       digest, valid for 5 minutes
 - [ ] write tests with WebAuthn test vectors and a software authenticator: success; user verification absent; wrong
       origin or RP ID; a replayed challenge; a sign counter that goes back; a second registration without an
-      existing passkey; a token used twice
+      existing passkey; a token used twice; an uninstall removes the credentials, so a reinstall registers afresh
 - [ ] run `make all`
 
 ### Task 19: Answers: approve and merge
 
-Repository: archfit-app. Design: 9.2, 10.4, D.2, D8, D10, D13. Packages: `internal/gate/answers` (new),
-`internal/control/ui` (the answer API file and its routes). Depends on: 3, 13, 15, 16, 18. M1: none. Merge: manager
-(protection).
+Repository: archfit-app. Design: 9.2, 10.4, D.2, D8, D10, D13. Packages: `internal/control/answers` (new), `internal/gate`
+(new façade file `answers.go`: approval and proposal records, the D13 check), `internal/control/ui` (the answer API
+file and its routes). Depends on: 3, 13, 15, 16, 18. M1: none. Merge: manager (protection).
 
 - [ ] the answers: approve, approve until a date, reject with `instead`; approve and approve-until need the passkey
       token of task 18 (D10); any owner of the target policy may answer, including the one who filed it
-- [ ] write the policy change on the target tip (task 3), record the approval (`issued`), and open or update the
-      architecture pull request on `archfit/policy`
-- [ ] set `archfit/gate` on it (D13), then merge it with the expected head SHA ("Approve and merge", the default);
-      "merge later" leaves it open and the next answers join it
+- [ ] record the approval, add it to the open proposal of `archfit/policy` or open one ("Approval records"), and
+      write the policy from the target tip by applying the proposal's changes in order (task 3)
+- [ ] when the target moves before the merge, rewrite the branch from the new tip with the same changes and update
+      the proposal's expected digest; a change that no longer applies voids its approval and reopens its request
+- [ ] set `archfit/gate` on the proposal's pull request (D13), then merge it with the expected head SHA ("Approve
+      and merge", the default); "merge later" leaves it open and the next answers join it, up to the proposal limit
 - [ ] close the request issue with the answer; for reject, the new `deny` rule answers later requests
 - [ ] write tests: each answer; no passkey token; a reused token; an answer by a non-owner; a merge refused by the
-      ruleset (405) keeps the record `proposed` for the sweep; two answers that join one pull request
+      ruleset (405) keeps the proposal open for the sweep; two answers that join one pull request; a target that moves
+      between two joined answers; a change that no longer applies
 - [ ] run `make all`
 
 ### Task 20: Recorded approvals and a policy changed outside the flow
 
 Repository: archfit-app. Design: 7.1 ("policy changed outside the flow"), 9.2, 19, D8. Packages:
-`internal/gate/approvals` (new), `internal/github/webhook` (push events). Depends on: 12, 14, 15, 19. M1: none.
-Merge: manager (protection).
+`internal/gate/approvals` (new), `internal/gate` (`events.go` push dispatch; new façade file `approvals.go`),
+`internal/github/webhook` (push events). Depends on: 12, 14, 15, 19. M1: none. Merge: manager (protection).
 
-- [ ] on each push to the default branch that changes `.archfit.yaml`: consume the approval whose step matches the
-      old and new digest (D8); without one, set the repository to "policy changed outside the flow"
-- [ ] in that state every upload's check is `unknown` with a record that names the issue; open one issue to the
-      owners; the state ends when an owner confirms with a passkey (loosens, D10) or the App reverts to the last
-      approved policy through `archfit/policy`
-- [ ] write the protection tests: a code pull request that edits the policy is `unknown` (from the engine result); an
-      approval used for a second step is refused; an older approved policy pushed again is outside the flow; a direct
-      push is outside the flow; confirm and revert each end the state
+- [ ] on each push to the default branch that changes `.archfit.yaml`: consume the proposal whose pull request's
+      merge commit is the pushed commit and whose expected digest is the new digest, with all its approvals at once
+      ("Approval records"); a redelivered or retried push of the same commit is a no-op
+- [ ] any other push that changes the policy sets the repository to "policy changed outside the flow": every
+      upload's check is `unknown` with a record that names the issue; open one issue to the owners; the state ends
+      with an owner's confirm or revert (task 23)
+- [ ] when a proposal is consumed, hand every request in it to the re-check (task 21)
+- [ ] write the protection tests: a code pull request that edits the policy is `unknown` (from the engine result); a
+      proposal of two joined answers is consumed by one push; a re-applied proposal is consumed; the same push
+      delivered twice; an approval used for a second step is refused; an older approved policy pushed again is outside
+      the flow; a direct push is outside the flow
 - [ ] run `make all`
 
 ### Task 21: The re-check after an answer
@@ -547,8 +581,8 @@ Repository: archfit-app. Design: 10.5, 11.6, D.2. Packages: `internal/gate/sweep
 `rules.go`). Depends on: 13, 16, 19, 20. M1: none. Merge: manager (the required check). Impact first: `Rerun` and
 its callers (rules 0b, 0c, 5b, 6b, 7c).
 
-- [ ] when an approval is consumed (task 20: the App merged, or the owner merged later), for each pull request
-      waiting on that request: re-run when all four conditions of 10.5
+- [ ] when a proposal is consumed (task 20: the App merged, or the owner merged later), for each pull request
+      waiting on any request in it: re-run when all four conditions of 10.5
       hold; otherwise update the branch with the App token and the expected head SHA
 - [ ] apply the four conditions to every existing caller of `Rerun`
 - [ ] record which path ran in the pull record and the request issue
@@ -559,8 +593,10 @@ its callers (rules 0b, 0c, 5b, 6b, 7c).
 ### Task 22: Expiry and drift with the sweep
 
 Repository: archfit-app. Design: 6.4, 7.1, 7.2, 11.6, D18, D19, D20. Packages: `internal/gate/sweep`,
-`internal/gate/expiry` (new). Depends on: 4, 5, 12, 15, 20, 21. M1: none. Merge: manager (the required check).
+`internal/gate/expiry` (new), `internal/wire/result` (the re-vendor). Depends on: 4, 5, 12, 15, 20, 21. M1: none. Merge: manager (the required check).
 
+- [ ] first re-vendor the result schema, the goldens, `SCHEMA_SOURCE` and the Go type of task 4 at the engine commit
+      that merged task 5, so the strict decoder accepts the `repository` block (D4)
 - [ ] expiry: one issue per exception 7 days before its date; on the date, every open pull request's check fails with
       the expired-exception record; a later approval or a code fix clears it
 - [ ] drift: from the `repository` block of a push run (task 5), one open issue per repository, updated in place,
@@ -571,18 +607,28 @@ Repository: archfit-app. Design: 6.4, 7.1, 7.2, 11.6, D18, D19, D20. Packages: `
       closed; a 10-day-old waiting check is replaced and a 9-day-old one is not
 - [ ] run `make all`
 
-### Task 23: Onboarding for 4.0
+### Task 23: Onboarding and owner actions outside requests
 
-Repository: archfit-app. Design: 9.2 (set up), 10.1, 14, D15. Packages: `internal/control/onboarding`,
-`internal/control/ui` (`status.go`). Depends on: 3, 18, 19. M1: none. Merge: manager (protection).
+Repository: archfit-app. Design: 9.2 (set up), 7.1, 10.1, 14, D15. Packages: `internal/control/onboarding`,
+`internal/control/answers` (owner actions), `internal/control/ui` (`status.go`, routes in `ui.go`), `internal/gate`
+(new façade file `owner.go`). Depends on: 3, 14, 18, 19, 20. M1: none. Merge: manager (protection).
 
 - [ ] admit a repository from its default branch: `.archfit.yaml` schema 3 and the workflow of D15; no
       `.archfit-app.yaml`, no generated workflow
-- [ ] the first policy: a repository administrator approves it with a passkey; this records the first approval
+- [ ] the first approval (design 9.2): on an onboarding pull request (task 14), a repository administrator approves
+      the head policy with a passkey; the approval is bound to the head SHA and the policy digest, the App then sets
+      `archfit/gate` from the stored result, and the merge push consumes it. A repository whose default branch already
+      has a schema 3 policy and no record (archfit at the release) gets the same approval of its current digest
+- [ ] a workflow change (task 14): an owner approves the changed `.github/workflows/archfit.yaml` with a passkey,
+      bound to the head SHA and the file digest; the merge push consumes it
+- [ ] "policy changed outside the flow" (task 20): an owner confirms the current policy with a passkey (loosens,
+      D10), or reverts it: a revert is a proposal on `archfit/policy` that restores the last approved bytes
 - [ ] show the ruleset settings to turn on: pull requests only, 0 required approvals, `archfit/gate` required from the
-      App, no bypass actor; the push ruleset only on an organization-owned private or internal repository
-- [ ] read the rulesets and say what is missing, and warn when the App is a bypass actor or approvals are required
-- [ ] write tests for each ruleset case and the first approval
+      App, the App not a bypass actor; the push ruleset only on an organization-owned private or internal repository
+- [ ] read the rulesets and say what is missing; warn when the App is a bypass actor or approvals are required; name
+      an administrator bypass as the emergency path of design 10.8
+- [ ] write tests for each ruleset case, the first approval (new and already-converted repository), a workflow
+      approval, confirm, and revert
 - [ ] run `make all`
 
 ### Task 24: Request and passkey pages
@@ -637,25 +683,19 @@ Repository: archfit-app. Design: 5, 9, 10, 17. Files: `docs/architecture.md`, `d
 - [ ] fix the broken link in `docs/design/cloud/operations.md` to `architecture.md#state`
 - [ ] run the App's documentation checks and `make all`
 
-### Task 28: Rehearsal on the mechanics repository
+### Task 28: Rehearsal on the mechanics repository, in the window
 
-Repository: none (results in `archfit-4-team/reports/`). Design: 15.1, 16 (milestone 2 "Done when"), D22. Depends on:
-1 to 27. M1: all, and an engine prerelease with tasks 5 to 7. Merge: none.
+Repository: `alexei-led/archfit-4-mechanics` (results in `archfit-4-team/reports/`). Design: 15.1, 16 (milestone 2
+"Done when"), D22. Depends on: release step R5 (the App is deployed). M1: all. Merge: none.
 
-- [ ] variant (a), a development GitHub App exists: run the App from `archfit-4` locally with the Firestore emulator
-      and that App against `alexei-led/archfit-4-mechanics`, with Action 4 at its `main` head and the engine
-      prerelease
-- [ ] variant (b), no development App: not possible with today's `deploy.yaml`. It has no mode that deploys a tagged
-      revision with no traffic and stops: `release` promotes the canary or removes its tag, and the Workload Identity
-      provider admits only `refs/heads/main`, so an `archfit-4` build cannot deploy. Variant (a) is required unless
-      the owner approves a new deploy mode on `main`
-- [ ] walk the flow: a forbidden dependency fails with `graph` and its balance; `archfit request` from a shell and
-      `/archfit request` from a comment; joined requests; the owner answers with a passkey; the App merges; the
-      re-check runs by re-run, then by branch update with a forced condition
+- [ ] with the production App, engine `v4.0.0` and Action `v4.0.0`: a forbidden dependency fails with `graph` and its
+      balance; `archfit request` from a shell and `/archfit request` from a comment; joined requests; the owner answers
+      with a passkey; the App merges; the re-check runs by re-run, then by branch update with a forced condition
 - [ ] walk the protection cases: a code pull request that edits the policy; an approval used twice; a direct push of
       the policy; an expired exception
 - [ ] read the pull-request page and the merge box for each check state in the browser (open item of D.2)
-- [ ] record the results, the timings and every failure with its cause; a failure goes back to its task
+- [ ] record the results, the timings and every failure with its cause; a failure that cannot be fixed in the window
+      triggers the rollback of release step R5
 
 ### Task 29: Release: App manifest and pins
 
@@ -686,10 +726,11 @@ Merge: manager (CI).
 ### Task 32: End to end on `pumba`
 
 Repository: `pumba` (results in `archfit-4-team/reports/`). Design: 15.1, 16 (milestone 2 "Done when"), A (worked
-example). Depends on: release step R6. M1: 28. Merge: none.
+example). Depends on: release step R7. M1: 28. Merge: none.
 
-- [ ] set up: the converted policy is on `master`; the ruleset has 0 required approvals, `archfit/gate` from the App,
-      and no bypass actor
+- [ ] set up: the converted policy is on `master` with its first approval (release step R7); the ruleset has 0
+      required approvals, `archfit/gate` from the App, and the App is not a bypass actor; the administrator bypass
+      stays as the emergency path (design 10.8)
 - [ ] work: a pull request where `pkg/tc` imports `pkg/util` fails with `graph` and `balance: 9/10 (min 7)`
 - [ ] ask: `archfit request -m "…"` makes the check `waiting, request #n`
 - [ ] answer: the owner approves and merges with the passkey; the App merges the architecture pull request
@@ -771,29 +812,50 @@ pull request joins. The issue number is the request id.
 
 ### Approval records
 
-| State | Meaning | Next |
-| --- | --- | --- |
-| `issued` | The owner answered; the record holds the repository, the request, the answer, the change, the old and new digests, the owner, the passkey credential and the time. | The App writes the architecture pull request: `proposed`. |
-| `proposed` | `archfit/policy` holds the change on the old digest. | The App merges, or the owner merges later: `merged`. |
-| `merged` | The default branch has the new digest. The approval is consumed. | None. |
-| `void` | The base moved and the change no longer applies, or `issued` stayed for 24 hours. | The request goes back to the owner. |
+An **approval** is one owner action with a passkey (a reject needs none): its kind (`approve`, `approve-until`,
+`reject`, `first`, `workflow`, `confirm`, `revert`), the request when there is one, the change, the owner, the
+passkey credential and the time. A **proposal** is the pull request that carries approvals to the default branch:
+`archfit/policy` for request answers and reverts, the onboarding pull request for `first`, the workflow pull request
+for `workflow`.
 
-Recovery: the sweep retries the pull request for `issued` and the merge for `proposed`. When the target moved, the App
-re-applies the change to the new tip. The approval keeps its step: the same change, consumed once. A digest that
-reaches the default branch without a matching approval is "policy changed outside the flow" (task 20).
+| Proposal state | Meaning | Next |
+| --- | --- | --- |
+| `open` | The pull request holds the approvals' changes, applied in order on the current target tip. The proposal holds the ordered approvals (at most 9), its pull request, its head SHA and the expected digest. | The App merges it, or an owner merges it on GitHub: `merged`. |
+| `merged` | A push whose commit is the pull request's merge commit and whose policy digest is the expected digest. The proposal and every approval in it are consumed at once (`CompareAndSwapAll`, 10 keys) and record that commit. | None. A redelivery of that push is a no-op. |
+| `void` | An approval no longer applies to a moved target (its request reopens), or an approval stayed 24 hours without a pull request. | The owner answers again. |
+
+- A moved target: the App rewrites the branch from the new tip with the same changes and recomputes the expected
+  digest. Each approval keeps its change and is consumed once.
+- A `confirm` changes no file: it records the current digest as approved and ends "policy changed outside the
+  flow".
+- Any push that changes `.archfit.yaml` and matches no open proposal is "policy changed outside the flow" (task 20).
 
 ### App keys
 
-Under each installation tenant: `v4/request/<repo>/<issue>`, `v4/approval/<repo>/<id>`, `v4/pull/<repo>/<pr>` (D6),
-`v4/repo/<repo>` (approved digest, outside-the-flow state, drift issue, expiry issues). Under the system tenant:
-`v4/passkey/<github-user-id>/<credential-id>`, `v4/challenge/<id>`. Each value is JSON with `schema`, for example
-`archfit-app.request.v1`.
+Under each installation tenant:
+
+| Key | Holds |
+| --- | --- |
+| `v4/repo/<repo>` | The approved digest, the outside-the-flow state, the drift issue, the expiry issues |
+| `v4/request/<repo>/<issue>` | One request: key, reason, numbers (verified or "as reported"), waiting pull requests, state |
+| `v4/request-index/<repo>` | Open requests by request key (index) |
+| `v4/approval/<repo>/<id>` | One approval |
+| `v4/proposal/<repo>/<id>` | One proposal: ordered approval ids, pull request, head SHA, expected digest, state, consuming commit |
+| `v4/proposal-index/<repo>` | Open proposals by pull request (index) |
+| `v4/pull/<repo>/<pr>` | The pull record of D6, with its error keys |
+| `v4/pull-index/<repo>` | Open pull requests (index), for the preview and the sweep |
+| `v4/repos` | The repositories of the installation (index), for the sweep |
+| `v4/passkey/<github-user-id>` | That user's credentials (task 18), deleted with the tenant on uninstall |
+| `v4/challenge/<id>` | One WebAuthn challenge, 5 minutes |
+
+Each value is JSON with `schema`, for example `archfit-app.request.v1`. A record and its index change together in one
+`CompareAndSwapAll`.
 
 ### Passkey
 
 Relying-party id: the App host. Origin: `https://` plus that host. Attestation `none`. Algorithms ES256, RS256,
 Ed25519. `userVerification: required`, and the verifier checks the UV flag. Resident keys preferred. One user handle
-per GitHub user id. The sign counter must grow when it is not zero.
+per GitHub user id. The sign counter must grow when it is not zero. Verification is `go-webauthn`'s (D9).
 
 ## Release order
 
@@ -802,19 +864,21 @@ by side.
 
 | Step | Action | Rollback |
 | --- | --- | --- |
-| R0 | Preconditions: milestone 1 done (M1 task 44); tasks 1 to 28 and 33 merged or recorded; the rehearsal passed; `main` of archfit-app merged into `archfit-4` after the last hotfix; the owner sets the window and the freeze, and decides `pumba-pilot` (D23). | — |
-| R1 | archfit: the last prerelease passed the rehearsal; `main` is green. Annotated tag `v4.0.0` from the release notes (`docs/development.md`, "Release"). The workflow builds binaries and the image and creates the release. | Tags never move. Fix and tag `v4.0.1`. No consumer pins `v4.0.0` yet. |
+| R0 | Preparation: milestone 1 done (M1 task 44); tasks 1 to 27 and 33 merged, and their CI green with fakes and the Firestore emulator; `main` of archfit-app merged into `archfit-4` after the last hotfix; `coupling-dev/pumba-pilot` removed from the App installation (D23); the owner sets the window and the freeze. | Reinstall the App on `pumba-pilot` if the window is cancelled. |
+| R1 | archfit: `main` is green. Annotated tag `v4.0.0` from the release notes (`docs/development.md`, "Release"). The workflow builds binaries and the image and creates the release. | Tags never move. Fix and tag `v4.0.1`. No consumer pins `v4.0.0` yet. |
 | R2 | archfit-action: merge task 30, then tag `v4.0.0` and `v4`. | No consumer pins `v4` yet. Fix and tag `v4.0.1`. |
 | R3 | archfit-app: merge task 29 into `archfit-4`. | Revert the pull request. Nothing deploys from `archfit-4`. |
 | R4 | **The window opens.** archfit-app: apply `infra/data` only if task 12 added an index (additive). | None needed: the previous revision ignores new indexes. |
-| R5 | archfit-app: merge the pull request `archfit-4` → `main` with a merge commit. The push to `main` releases through `deploy.yaml`: the canary passes `/ready`, then the services are promoted. Keep the release record. Archfit 3 uploads now fail. | Set `RELEASE_ON_PUSH` to `false`, then dispatch `deploy.yaml` with `mode: traffic` and the revisions from the release record. Revert the merge commit on `main` before releases resume. The previous revision reads only Archfit 3 keys, which are untouched (D7). |
-| R6 | `pumba`: merge the M1 task 28 pull request with the Action 4 pin. Its own check runs through the new App. Check the ruleset. | Revert the `pumba` pull request, then R5's rollback. |
-| R7 | archfit: merge task 31. `pumba-pilot`: as the owner decided. | Revert the pull requests. |
-| R8 | Task 32 on `pumba`. | A failure that cannot be fixed in the window: roll back R7, R6 and R5 in that order. |
-| R9 | **The window closes.** Publish the release notes. `archfit-4` is deleted after the release is confirmed. | — |
+| R5 | archfit-app: merge the pull request `archfit-4` → `main` with a merge commit. The push to `main` releases through `deploy.yaml`: the canary passes `/ready`, then the services are promoted. Keep the release record. Archfit 3 uploads now fail. | Set `RELEASE_ON_PUSH` to `false`, then dispatch `deploy.yaml` with `mode: traffic` and the revisions from the release record. The previous revision reads only Archfit 3 keys, which are untouched (D7). Fix forward on `archfit-4` and merge again; `RELEASE_ON_PUSH` stays off until then. Only when a v3 hotfix is needed meanwhile: revert the merge commit on `main`, merge `main` into `archfit-4`, and revert that revert on `archfit-4` at once, so the next `archfit-4` → `main` merge brings milestone 2 back. |
+| R6 | Task 28: the rehearsal on `archfit-4-mechanics` with the production App. | A failure that cannot be fixed in the window: R5's rollback. |
+| R7 | `pumba`: the M1 task 28 pull request with the Action 4 pin is an onboarding pull request; the owner gives the first approval with a passkey (task 23), then merges it. Check the ruleset. | R5's rollback first, then revert the `pumba` pull request through the administrator bypass (design 10.8): neither App can pass that revert's check. |
+| R8 | archfit: the owner gives the first approval of archfit's converted policy (task 23), then task 31 merges. | Revert the pull request. |
+| R9 | Task 32 on `pumba`. | A failure that cannot be fixed in the window: R5's rollback, then revert R8 and R7 (R7 through the administrator bypass). |
+| R10 | **The window closes.** Publish the release notes. `archfit-4` stays the integration branch for milestone 3 (D1) and is deleted after the milestone 3 release. | — |
 
-The window is R4 to R9. Target: under 2 hours. During it, every Archfit 3 check on an installed repository fails,
-which is why D23 freezes merges.
+The window is R4 to R10. Target: under 2 hours. During it, every Archfit 3 check on an installed repository fails,
+which is why D23 freezes merges. No milestone 2 App build talks to GitHub before R5 (D22). The rollback of R5,
+`deploy.yaml` in `traffic` mode, is the safety net for everything after it.
 
 ## Post-Completion
 
