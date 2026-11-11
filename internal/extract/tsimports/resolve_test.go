@@ -2,6 +2,7 @@ package tsimports
 
 import (
 	"maps"
+	"slices"
 	"testing"
 	"testing/fstest"
 )
@@ -16,7 +17,17 @@ const (
 
 	pnpmWorkspace = "pnpm-workspace.yaml"
 	depsA         = "deps/a.ts"
-	extMain       = "ext/main.ts"
+
+	tsconfigJSON   = "tsconfig.json"
+	companyConfig  = "@company/tsconfig"
+	pkgExtX        = "pkgext/src/x.ts"
+	extMain        = "ext/main.ts"
+	internalFoo    = "@internal/foo"
+	extendsCompany = `{"extends": "@company/tsconfig"}`
+	chainX         = "chain/src/x.ts"
+	corePlain      = "packages/core/src/plain.ts"
+	specGone       = "./gone"
+	pkgLodash      = "lodash"
 )
 
 // tree builds an in-memory file tree from file names and contents.
@@ -30,7 +41,7 @@ func tree(files map[string]string) fstest.MapFS {
 
 // resolveTree is the fixture tree of scripts/eval/extractors/ts_imports_test.py.
 var resolveTree = map[string]string{
-	pkgJSON: `{"workspaces": {"packages": ["packages/*"]}}`,
+	pkgJSON: `{"workspaces": {"packages": ["packages/*"]}, "devDependencies": {"vitest": "3"}}`,
 	"tsconfig.json": "{\n  // JSONC: comments and trailing commas\n" +
 		`  "compilerOptions": {"baseUrl": ".", "paths": {"@app/*": ["src/*"], "@lib": ["src/lib/index.ts"],},},` + "\n}\n",
 	srcA:               "",
@@ -55,7 +66,7 @@ var resolveTree = map[string]string{
 	}`,
 	"packages/core/tsconfig.json":        `{"extends": "../../tsconfig.json", "compilerOptions": {"customConditions": ["code"]}}`,
 	"packages/core/src/index.ts":         "",
-	"packages/core/src/plain.ts":         "",
+	corePlain:                            "",
 	"packages/core/src/store.ts":         "",
 	"packages/core/src/internal/x.ts":    "",
 	"packages/old/package.json":          `{"name": "old", "main": "./lib/main.js"}`,
@@ -88,6 +99,16 @@ var resolveTree = map[string]string{
 	"deps/node_modules/@tsconfig/base/tsconfig.json": `{"compilerOptions": {"baseUrl": "../../.."}}`,
 	"deps/node_modules/x/index.js":                   "",
 	"deps/lib.ts":                                    "",
+	// A tsconfig that extends a package: the paths it may set are unknown.
+	"pkgext/tsconfig.json": extendsCompany,
+	"pkgext/package.json": `{"dependencies": {"react": "19"}, "devDependencies": {"@types/estree": "1"},
+		"peerDependencies": {"@scope/peer": "1"}, "optionalDependencies": {"fsevents": "2"}}`,
+	"pkgext/src/y.ts":              "",
+	"chain/tsconfig.json":          `{"extends": "./tsconfig.base.json"}`,
+	"chain/tsconfig.base.json":     `{"extends": "@company/tsconfig", "compilerOptions": {"paths": {"@chain/*": ["src/*"]}}}`,
+	"chain/src/y.ts":               "",
+	chainX:                         "",
+	"chain/complete/tsconfig.json": `{"compilerOptions": {"paths": {"@chain/*": ["../src/*"]}}}`,
 	// A specifier extension and the files TypeScript tries in its place.
 	"ext/model.js":    "",
 	"ext/model.ts":    "",
@@ -124,7 +145,7 @@ func TestResolve(t *testing.T) {
 		{".js file that exists", srcX, "./legacy.js", KindFile, "src/legacy.js"},
 		{".ts specifier names a declaration", srcX, "./types.ts", KindFile, "src/types.d.ts"},
 		{"asset with a query", srcX, "./style.css?raw", KindFile, "src/style.css"},
-		{"missing relative is unknown", srcX, "./gone", KindUnknown, ""},
+		{"missing relative is unknown", srcX, specGone, KindUnknown, ""},
 		{"relative above the root is unknown", srcX, "../../x", KindUnknown, ""},
 		{"absolute path is unknown", srcX, "/src/a.ts", KindUnknown, ""},
 		{"paths wildcard", srcX, "@app/a", KindFile, srcA},
@@ -139,7 +160,7 @@ func TestResolve(t *testing.T) {
 		{"paths exact", srcX, "@lib", KindFile, "src/lib/index.ts"},
 		{"exports with the tsconfig condition", core, "@acme/core", KindFile, core},
 		{"exports without the condition reaches only dist", srcX, "@acme/core", KindUnknown, ""},
-		{"exports string subpath", srcX, "@acme/core/plain", KindFile, "packages/core/src/plain.ts"},
+		{"exports string subpath", srcX, "@acme/core/plain", KindFile, corePlain},
 		{"exports pattern subpath", core, "@acme/core/internal/x", KindFile, "packages/core/src/internal/x.ts"},
 		{"subpath that exports does not list", srcX, "@acme/core/preview", KindUnknown, ""},
 		{"package imports field", core, "#store", KindFile, "packages/core/src/store.ts"},
@@ -150,9 +171,28 @@ func TestResolve(t *testing.T) {
 		{"exports conditions in document order", srcX, "order", KindFile, "packages/order/b.ts"},
 		{"paths alias into node_modules is external", depsA, pkgReact, KindExternal, ""},
 		{"relative path into node_modules is external", depsA, "./node_modules/x", KindExternal, ""},
-		{"extends into node_modules is not read", depsA, "lib", KindExternal, ""},
+		// The unread base config sets baseUrl: TypeScript places "lib" on deps/lib.ts.
+		{"under an extends into node_modules a bare name is unknown", depsA, "lib", KindUnknown, ""},
 		{"third-party package", srcX, pkgReact, KindExternal, ""},
 		{"node builtin", srcX, "node:fs", KindExternal, ""},
+		{"complete tsconfig: an undeclared bare name is external", srcX, pkgLodash, KindExternal, ""},
+
+		{"package extends: an alias is unknown", pkgExtX, internalFoo, KindUnknown, ""},
+		{"package extends: an undeclared package is unknown", pkgExtX, pkgLodash, KindUnknown, ""},
+		{"package extends: a dependency is external", pkgExtX, pkgReact, KindExternal, ""},
+		{"package extends: a dependency's subpath is external", pkgExtX, "react/jsx-runtime", KindExternal, ""},
+		{"package extends: a scoped peer dependency's subpath is external", pkgExtX, "@scope/peer/sub", KindExternal, ""},
+		{"package extends: an optional dependency is external", pkgExtX, "fsevents", KindExternal, ""},
+		{"package extends: a package declared through @types is external", pkgExtX, "estree", KindExternal, ""},
+		{"package extends: a root manifest declares too", pkgExtX, "vitest", KindExternal, ""},
+		{"package extends: a bare built-in is external", pkgExtX, "fs/promises", KindExternal, ""},
+		{"package extends: an unknown built-in subpath is unknown", pkgExtX, "fs/nope", KindUnknown, ""},
+		{"package extends: node: is external", pkgExtX, "node:fs", KindExternal, ""},
+		{"package extends: a workspace package resolves", pkgExtX, "@acme/core/plain", KindFile, corePlain},
+		{"package extends: a relative path resolves", pkgExtX, "./y", KindFile, "pkgext/src/y.ts"},
+		{"extends chain: the paths read still resolve", chainX, "@chain/y", KindFile, "chain/src/y.ts"},
+		{"extends chain: an unread link makes a bare name unknown", chainX, pkgLodash, KindUnknown, ""},
+		{"a complete tsconfig nearer the importer decides", "chain/complete/x.ts", pkgLodash, KindExternal, ""},
 
 		{".js with a .ts beside it names the .ts", extMain, "./model.js", KindFile, "ext/model.ts"},
 		{".js alone names the .js", extMain, "./only.js", KindFile, "ext/only.js"},
@@ -170,6 +210,67 @@ func TestResolve(t *testing.T) {
 		if kind != tt.kind || target != tt.target {
 			t.Errorf("%s: resolve(%q, %q) = (%s, %q), want (%s, %q)",
 				tt.name, tt.importer, tt.spec, kind, target, tt.kind, tt.target)
+		}
+	}
+}
+
+func TestTsconfigUnread(t *testing.T) {
+	t.Parallel()
+	const (
+		base     = "tsconfig.base.json"
+		extBase  = `{"extends": "./tsconfig.base.json"}`
+		extLoopA = `{"extends": "./a.json"}`
+	)
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []UnknownItem
+	}{
+		{"no tsconfig", map[string]string{}, nil},
+		{"relative extends is read", map[string]string{tsconfigJSON: extBase, base: "{}"}, nil},
+		{"package", map[string]string{tsconfigJSON: extendsCompany},
+			[]UnknownItem{{tsconfigJSON, companyConfig, reasonPackage}}},
+		{"package subpath", map[string]string{tsconfigJSON: `{"extends": "@tsconfig/svelte/tsconfig.json"}`},
+			[]UnknownItem{{tsconfigJSON, "@tsconfig/svelte/tsconfig.json", reasonPackage}}},
+		{"file in node_modules", map[string]string{
+			tsconfigJSON: `{"extends": "./node_modules/@tsconfig/base/tsconfig.json"}`,
+			"node_modules/@tsconfig/base/tsconfig.json": "{}",
+		}, []UnknownItem{{tsconfigJSON, "./node_modules/@tsconfig/base/tsconfig.json", reasonNodeModules}}},
+		{"path above the root", map[string]string{tsconfigJSON: `{"extends": "../shared/tsconfig.json"}`},
+			[]UnknownItem{{tsconfigJSON, "../shared/tsconfig.json", reasonOutside}}},
+		{"absolute path", map[string]string{tsconfigJSON: `{"extends": "/etc/tsconfig.json"}`},
+			[]UnknownItem{{tsconfigJSON, "/etc/tsconfig.json", reasonOutside}}},
+		{"missing file", map[string]string{tsconfigJSON: `{"extends": "./gone"}`},
+			[]UnknownItem{{tsconfigJSON, specGone, reasonMissing}}},
+		{"loop stops at the depth limit", map[string]string{
+			tsconfigJSON: extLoopA, "a.json": `{"extends": "./b.json"}`, "b.json": extLoopA,
+		}, []UnknownItem{{"b.json", "./a.json", reasonDepth}}},
+		{"extended file does not parse", map[string]string{tsconfigJSON: extBase, base: "{"},
+			[]UnknownItem{{base, "", reasonNoParse}}},
+		{"tsconfig does not parse", map[string]string{tsconfigJSON: `["not an object"]`},
+			[]UnknownItem{{tsconfigJSON, "", reasonNoParse}}},
+		{"an unread link deep in the chain", map[string]string{tsconfigJSON: extBase, base: extendsCompany},
+			[]UnknownItem{{base, companyConfig, reasonPackage}}},
+		{"array extends keeps the read ones", map[string]string{
+			tsconfigJSON: `{"extends": ["./tsconfig.base.json", "@company/tsconfig", "./gone.json"]}`, base: "{}",
+		}, []UnknownItem{{tsconfigJSON, companyConfig, reasonPackage}, {tsconfigJSON, "./gone.json", reasonMissing}}},
+	}
+	for _, tt := range tests {
+		got := newResolver(tree(tt.files)).tsconfig("src").unread
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("%s: unread = %+v, want %+v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestPackageName(t *testing.T) {
+	t.Parallel()
+	const scoped = "@s/a"
+	for spec, want := range map[string]string{
+		pkgReact: pkgReact, "react/jsx-runtime": pkgReact, scoped: scoped, "@s/a/b/c": scoped, "@s": "@s",
+	} {
+		if got := packageName(spec); got != want {
+			t.Errorf("packageName(%q) = %q, want %q", spec, got, want)
 		}
 	}
 }

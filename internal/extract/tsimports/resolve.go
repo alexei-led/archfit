@@ -27,6 +27,21 @@ var specifierExts = map[string][]string{
 	tsExt:  {tsExt, dtsExt},
 }
 
+// nodeBuiltins are the Node built-in modules a bare specifier can name:
+// module.builtinModules of Node 24.15.0 without the names that need "node:".
+var nodeBuiltins = strings.Fields(`_http_agent _http_client _http_common _http_incoming
+	_http_outgoing _http_server _stream_duplex _stream_passthrough _stream_readable
+	_stream_transform _stream_wrap _stream_writable _tls_common _tls_wrap assert
+	assert/strict async_hooks buffer child_process cluster console constants crypto dgram
+	diagnostics_channel dns dns/promises domain events fs fs/promises http http2 https
+	inspector inspector/promises module net os path path/posix path/win32 perf_hooks
+	process punycode querystring readline readline/promises repl stream stream/consumers
+	stream/promises stream/web string_decoder sys timers timers/promises tls trace_events
+	tty url util util/types v8 vm wasi worker_threads zlib`)
+
+// dependencyFields are the package.json fields that declare a package.
+var dependencyFields = []string{"dependencies", "devDependencies", "peerDependencies", "optionalDependencies"}
+
 // resolver places specifiers on root-relative files without node_modules.
 // It is not safe for concurrent use.
 type resolver struct {
@@ -34,6 +49,7 @@ type resolver struct {
 	packages map[string]string // workspace package name to its directory
 	names    []string          // package names, longest first
 	configs  map[string]settings
+	declared map[string][]string // directory to the packages its package.json declares
 }
 
 func newResolver(fsys fs.FS) *resolver {
@@ -45,7 +61,10 @@ func newResolver(fsys fs.FS) *resolver {
 	slices.SortFunc(names, func(a, b string) int {
 		return cmp.Or(cmp.Compare(len(b), len(a)), cmp.Compare(a, b))
 	})
-	return &resolver{fsys: fsys, packages: packages, names: names, configs: map[string]settings{}}
+	return &resolver{
+		fsys: fsys, packages: packages, names: names,
+		configs: map[string]settings{}, declared: map[string][]string{},
+	}
 }
 
 // resolve places the specifier spec of the root-relative file importer. It
@@ -93,7 +112,51 @@ func (r *resolver) resolve(importer, spec string) (Kind, string) {
 	if matched && pattern != "*" {
 		return KindUnknown, ""
 	}
+	// A tsconfig not read may map spec to first-party code with paths, so only
+	// a name known as third-party stays external.
+	if len(config.unread) > 0 && !r.thirdParty(importer, spec) {
+		return KindUnknown, ""
+	}
 	return KindExternal, ""
+}
+
+// thirdParty reports whether a bare specifier names a Node built-in, or a
+// package that a package.json at or above the importer declares, itself or
+// through its @types package. Node looks for node_modules in every directory
+// up to the root, so a root manifest declares for the whole tree.
+func (r *resolver) thirdParty(importer, spec string) bool {
+	if slices.Contains(nodeBuiltins, spec) {
+		return true
+	}
+	name := packageName(spec)
+	types := "@types/" + strings.Replace(strings.TrimPrefix(name, "@"), "/", "__", 1)
+	for dir := path.Dir(importer); ; dir = path.Dir(dir) {
+		declared, ok := r.declared[dir]
+		if !ok {
+			manifest := readJSON(r.fsys, path.Join(dir, "package.json"))
+			for _, field := range dependencyFields {
+				declared = append(declared, keys(asObject(manifest.get(field)))...)
+			}
+			r.declared[dir] = declared
+		}
+		if slices.Contains(declared, name) || slices.Contains(declared, types) {
+			return true
+		}
+		if dir == "." {
+			return false
+		}
+	}
+}
+
+// packageName returns the package a bare specifier names: "a" of "a/b", and
+// "@s/a" of "@s/a/b".
+func packageName(spec string) string {
+	n := 1
+	if strings.HasPrefix(spec, "@") {
+		n = 2
+	}
+	parts := strings.SplitN(spec, "/", n+1)
+	return strings.Join(parts[:min(n, len(parts))], "/")
 }
 
 func (r *resolver) placed(file string, ok bool) (Kind, string) {

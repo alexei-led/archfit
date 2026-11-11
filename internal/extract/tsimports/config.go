@@ -17,6 +17,16 @@ var defaultConditions = []string{"types", "import", "require", "node", "default"
 // maxExtendsDepth stops an extends cycle.
 const maxExtendsDepth = 10
 
+// Reasons of an UnknownItem: why a tsconfig, or one it extends, is not read.
+const (
+	reasonPackage     = "extends not read: it names a package, which needs node_modules"
+	reasonNodeModules = "extends not read: it is in node_modules"
+	reasonOutside     = "extends not read: it is outside the root"
+	reasonMissing     = "extends not read: no such file"
+	reasonDepth       = "extends not read: more than 10 nested extends, or a loop"
+	reasonNoParse     = "tsconfig not read: it does not parse as a JSON object"
+)
+
 const (
 	jsonExt     = ".json"
 	nodeModules = "node_modules"
@@ -43,6 +53,9 @@ type settings struct {
 	hasBaseURL bool
 	conditions []string
 	exports    bool // false under node10 module resolution, which ignores exports
+	// unread lists the configs of the chain that are not read. Any one of
+	// them can set paths, so the chain is incomplete.
+	unread []UnknownItem
 }
 
 // tsOptions are the options one tsconfig chain sets. A nil field is unset.
@@ -53,10 +66,13 @@ type tsOptions struct {
 	hasPaths   bool
 	conditions []string
 	exports    *bool
+	unread     []UnknownItem
 }
 
-// override sets every option that o sets over the receiver.
+// override sets every option that o sets over the receiver and keeps the
+// configs of both that are not read.
 func (t *tsOptions) override(o tsOptions) {
+	t.unread = append(t.unread, o.unread...)
 	if o.baseURL != nil {
 		t.baseURL = o.baseURL
 	}
@@ -72,7 +88,7 @@ func (t *tsOptions) override(o tsOptions) {
 }
 
 func (t tsOptions) settings() settings {
-	s := settings{paths: t.paths, pathsBase: t.pathsDir, conditions: defaultConditions, exports: true}
+	s := settings{paths: t.paths, pathsBase: t.pathsDir, conditions: defaultConditions, exports: true, unread: t.unread}
 	if t.baseURL != nil {
 		s.baseURL, s.hasBaseURL, s.pathsBase = *t.baseURL, true, *t.baseURL
 	}
@@ -110,26 +126,20 @@ func (r *resolver) tsconfig(dir string) settings {
 // tsconfigOptions returns the options a tsconfig sets, merged over its parents
 // in extends order. Only relative extends inside the root and outside
 // node_modules are followed: a dependency's config depends on the install.
+// Every config not read is in the unread list of the result.
 func (r *resolver) tsconfigOptions(name string, depth int) tsOptions {
 	data := readJSONC(r.fsys, name)
+	if data == nil {
+		return tsOptions{unread: []UnknownItem{{File: name, Reason: reasonNoParse}}}
+	}
 	var merged tsOptions
 	for _, parent := range stringList(data.get("extends")) {
-		if !strings.HasPrefix(parent, ".") || depth >= maxExtendsDepth {
+		target, reason := r.extendsTarget(name, parent, depth)
+		if reason != "" {
+			merged.unread = append(merged.unread, UnknownItem{File: name, Specifier: parent, Reason: reason})
 			continue
 		}
-		target := path.Join(path.Dir(name), parent)
-		if !fs.ValidPath(target) || inNodeModules(target) {
-			continue // outside the root, or a dependency's config
-		}
-		if r.isDir(target) {
-			target = path.Join(target, "tsconfig.json")
-		}
-		if path.Ext(target) != jsonExt {
-			target += jsonExt
-		}
-		if r.isFile(target) {
-			merged.override(r.tsconfigOptions(target, depth+1))
-		}
+		merged.override(r.tsconfigOptions(target, depth+1))
 	}
 	options := asObject(data.get("compilerOptions"))
 	here := path.Dir(name)
@@ -153,6 +163,37 @@ func (r *resolver) tsconfigOptions(name string, depth int) tsOptions {
 		merged.exports = &exports
 	}
 	return merged
+}
+
+// extendsTarget returns the root-relative file that the extends value parent
+// of the tsconfig name names, or the reason it is not read. name is at the
+// given depth of the extends chain.
+func (r *resolver) extendsTarget(name, parent string, depth int) (target, reason string) {
+	switch {
+	case depth >= maxExtendsDepth:
+		return "", reasonDepth
+	case path.IsAbs(parent):
+		return "", reasonOutside
+	case !strings.HasPrefix(parent, "."):
+		return "", reasonPackage
+	}
+	target = path.Join(path.Dir(name), parent)
+	switch {
+	case !fs.ValidPath(target):
+		return "", reasonOutside
+	case inNodeModules(target):
+		return "", reasonNodeModules
+	}
+	if r.isDir(target) {
+		target = path.Join(target, "tsconfig.json")
+	}
+	if path.Ext(target) != jsonExt {
+		target += jsonExt
+	}
+	if !r.isFile(target) {
+		return "", reasonMissing
+	}
+	return target, ""
 }
 
 // stringList returns the strings of a string or a list value.

@@ -158,6 +158,34 @@ func TestSpecifier(t *testing.T) {
 	}
 }
 
+func TestExtractUnknownItems(t *testing.T) {
+	t.Parallel()
+	runner, _ := fakeAstGrep(noMatches) // the items do not depend on any import
+	root := writeTree(t, map[string]string{
+		tsconfigJSON:               extendsCompany,
+		srcX:                       "",
+		srcA:                       "",
+		"lib/b.ts":                 "",
+		"other/tsconfig.json":      `{"extends": ["./gone.json", "./gone.json"]}`,
+		"other/c.ts":               "",
+		"complete/tsconfig.json":   "{}",
+		"complete/d.ts":            "",
+		"nosource/tsconfig.json":   `{"extends": "@unused/tsconfig"}`,
+		"nosource/notes/readme.md": "",
+	})
+	got, err := Extract(context.Background(), runner, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []UnknownItem{
+		{"other/tsconfig.json", "./gone.json", reasonMissing},
+		{tsconfigJSON, companyConfig, reasonPackage},
+	}
+	if !slices.Equal(got.Unknown, want) {
+		t.Errorf("Unknown = %+v, want %+v", got.Unknown, want)
+	}
+}
+
 // TestExtractWithAstGrep runs the real ast-grep on the prototype's parse fixtures.
 func TestExtractWithAstGrep(t *testing.T) {
 	t.Parallel()
