@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "archfit",
+          "version": "4.0.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no-chaos-to-runtime",
+          "level": "error",
+          "message": {
+            "text": "pkg_chaos must not depend on pkg_runtime\nwhy: A direct import ties a chaos action to one runtime.\ninstead: Add a method to container.Client.\nnext: fix the code"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "pkg/chaos/netem/netem.go"
+                },
+                "region": {
+                  "startLine": 8
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "archfitKey/v1": "no-chaos-to-runtime pkg_chaos pkg_runtime github.com/alexei-led/pumba/pkg/runtime/docker"
+          }
+        }
+      ]
+    }
+  ]
+}
