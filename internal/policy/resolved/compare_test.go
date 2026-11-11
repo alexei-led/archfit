@@ -12,6 +12,7 @@ const (
 	on         = "true"
 	owner2     = "octocat"
 	denyFrom   = "rules.deny-r.deny.from"
+	tcPaths    = "modules.pkg_tc.paths"
 	dupExpires = "exceptions (duplication pkg_tc → pkg_util).expires"
 )
 
@@ -52,9 +53,10 @@ func TestCompare(t *testing.T) {
 			{ti, "modules.pkg_chaos.depends_on", `removes "pkg_util"`},
 		}},
 		{"added module path", func(p *resolved.Policy) { setPaths(p, modTC, "pkg/tc/**", "pkg/net/**") }, []resolved.Change{
-			{lo, "modules.pkg_tc.paths", `adds "pkg/net/**"`},
+			{lo, tcPaths, `adds "pkg/net/**"`},
 		}},
 		{"removed module path", func(p *resolved.Policy) { setPaths(p, modChaos, "pkg/chaos/core/**") }, []resolved.Change{
+			{lo, "modules.pkg_chaos.paths", `adds "pkg/chaos/core/**"`},
 			{lo, "modules.pkg_chaos.paths", `removes "pkg/chaos/**"`},
 		}},
 		{"added module", func(p *resolved.Policy) {
@@ -75,7 +77,7 @@ func TestCompare(t *testing.T) {
 		{"path change of a whole-module public is said once", func(p *resolved.Policy) {
 			setPaths(p, modTC, "pkg/tc/**", "pkg/net/**")
 			setPublic(p, modTC, "pkg/tc/**", "pkg/net/**")
-		}, []resolved.Change{{lo, "modules.pkg_tc.paths", `adds "pkg/net/**"`}}},
+		}, []resolved.Change{{lo, tcPaths, `adds "pkg/net/**"`}}},
 		{"lower volatility", func(p *resolved.Policy) { setVolatility(p, modTC, resolved.VolatilityMedium) }, []resolved.Change{
 			{lo, "modules.pkg_tc.volatility", "high → medium"},
 		}},
@@ -260,6 +262,18 @@ func TestCompareGate(t *testing.T) {
 	}
 	if c := resolved.Compare(advisory, required); c.Direction != resolved.Tightens {
 		t.Errorf("advisory → required = %+v, want tightens", c)
+	}
+}
+
+// A path glob another glob of the module covers still decides ownership:
+// removing it hands its files to a more specific module of another owner.
+func TestComparePathRemovalUnderACoveringGlob(t *testing.T) {
+	before, after := comparePolicy(), comparePolicy()
+	setPaths(&before, modTC, "pkg/**", "pkg/chaos/private/**")
+	setPaths(&after, modTC, "pkg/**")
+	want := []resolved.Change{{resolved.Loosens, tcPaths, `removes "pkg/chaos/private/**"`}}
+	if c := resolved.Compare(before, after); c.Direction != resolved.Loosens || !reflect.DeepEqual(c.Changes, want) {
+		t.Errorf("Compare = %+v, want %+v", c, want)
 	}
 }
 

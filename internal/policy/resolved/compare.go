@@ -76,9 +76,9 @@ func Compare(before, after Policy) Comparison {
 	d.builtin(before.Builtin, after.Builtin)
 	d.rules(before.Rules, after.Rules)
 	d.exceptions(before.Exceptions, after.Exceptions)
-	d.globs("generated", before.Generated, after.Generated, Tightens)
-	d.globs("tests", before.Tests, after.Tests, Tightens)
-	d.globs("exclude", before.Exclude, after.Exclude, Tightens)
+	d.globs("generated", before.Generated, after.Generated)
+	d.globs("tests", before.Tests, after.Tests)
+	d.globs("exclude", before.Exclude, after.Exclude)
 	d.settings(before.Settings, after.Settings)
 
 	c := Comparison{Direction: Neither, Changes: d.changes}
@@ -127,11 +127,14 @@ func (d *diff) modules(before, after map[string]Module) {
 func (d *diff) module(key string, b, a Module) {
 	// A path dropped from a module goes to no module or to an enclosing one,
 	// and leaves every deny rule that names the module: both can loosen.
-	d.globs(key+".paths", b.Paths, a.Paths, Loosens)
+	// Ownership goes to the most specific glob, so a glob that another glob of
+	// the module covers still decides who owns its files: paths compare by
+	// text, not by cover.
+	d.list(key+".paths", asNames(b.Paths), asNames(a.Paths), Loosens, Loosens)
 	// A public that is the whole module on both sides follows paths; the paths
 	// change already says it.
 	if !wholeModule(b) || !wholeModule(a) {
-		d.globs(key+".public", b.Public, a.Public, Tightens)
+		d.globs(key+".public", b.Public, a.Public)
 	}
 	if b.Volatility != a.Volatility {
 		dir := Loosens
@@ -313,8 +316,9 @@ func (d *diff) expires(key string, b, a time.Time) {
 
 func date(t time.Time) string { return t.Format(time.DateOnly) }
 
-// item is one entry of a list Compare diffs: a path glob, or a module name,
-// which covers only itself.
+// item is one entry of a list Compare diffs: a path glob, or a name that
+// covers only itself (a module name, or a module path, whose specificity
+// matters).
 type item struct {
 	text string
 	glob bool
@@ -335,9 +339,11 @@ func asItems(list []string, isGlob func(string) bool) []item {
 	return items
 }
 
-// globs diffs two lists of path globs whose added entries loosen.
-func (d *diff) globs(key string, before, after []string, removed Direction) {
-	d.list(key, asGlobs(before), asGlobs(after), Loosens, removed)
+// globs diffs two lists of path globs that take code in (public) or out of
+// the rules (generated, tests, exclude): an added one loosens, a removed one
+// tightens.
+func (d *diff) globs(key string, before, after []string) {
+	d.list(key, asGlobs(before), asGlobs(after), Loosens, Tightens)
 }
 
 // list reports the items after has that no item of before covers (added) and
