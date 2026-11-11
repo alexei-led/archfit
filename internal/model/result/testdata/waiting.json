@@ -14,9 +14,8 @@
         "min": 7
       },
       "next": {
-        "kind": "command",
-        "text": "archfit request -m \"<why you need it>\"",
-        "note": "do not copy the code"
+        "kind": "wait",
+        "text": "wait for an owner: #431"
       },
       "from": "pkg_tc",
       "to": "pkg_util",

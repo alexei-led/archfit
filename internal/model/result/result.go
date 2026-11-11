@@ -98,7 +98,8 @@ type Result struct {
 	// "archfit: fail, 1 error (not from this change)".
 	Summary string `json:"summary"`
 	// Errors are the errors of the change, in record order. An expired
-	// exception is listed for every change, with FromChange false.
+	// exception is listed for every change, whether or not the change added
+	// to it.
 	Errors []Error `json:"errors"`
 	// Unknown are the reasons for an unknown status, in record order.
 	Unknown []Unknown `json:"unknown"`
@@ -143,11 +144,14 @@ type Error struct {
 	// rule.
 	To string `json:"to,omitempty"`
 	// Key identifies the error: its rule, modules, and symbol or literal.
+	// An expired exception is keyed by "exception", the rule it covers and
+	// its modules, so it never shares a key with an error of that rule.
 	// Equal keys name the same error in two results of one engine version.
 	// Consumers compare keys and do not parse them.
 	Key string `json:"key"`
-	// FromChange is false only for an expired exception that the change did
-	// not add to.
+	// FromChange is true when the change added the error. It is false for
+	// an expired exception listed because its date has passed, which the
+	// change did not add to.
 	FromChange bool `json:"from_change"`
 	// Exception names the policy exception that has expired. Set only when
 	// Rule is "exception".

@@ -159,11 +159,11 @@
         "key": {
           "type": "string",
           "minLength": 1,
-          "description": "Key identifies the error: its rule, modules, and symbol or literal.\nEqual keys name the same error in two results of one engine version.\nConsumers compare keys and do not parse them."
+          "description": "Key identifies the error: its rule, modules, and symbol or literal.\nAn expired exception is keyed by \"exception\", the rule it covers and\nits modules, so it never shares a key with an error of that rule.\nEqual keys name the same error in two results of one engine version.\nConsumers compare keys and do not parse them."
         },
         "from_change": {
           "type": "boolean",
-          "description": "FromChange is false only for an expired exception that the change did\nnot add to."
+          "description": "FromChange is true when the change added the error. It is false for\nan expired exception listed because its date has passed, which the\nchange did not add to."
         },
         "exception": {
           "$ref": "#/$defs/Exception",
@@ -297,7 +297,7 @@
             "$ref": "#/$defs/Error"
           },
           "type": "array",
-          "description": "Errors are the errors of the change, in record order. An expired\nexception is listed for every change, with FromChange false."
+          "description": "Errors are the errors of the change, in record order. An expired\nexception is listed for every change, whether or not the change added\nto it."
         },
         "unknown": {
           "items": {

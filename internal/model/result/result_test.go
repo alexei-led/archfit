@@ -82,10 +82,28 @@ func TestExpiredExceptionIsNotFromTheChange(t *testing.T) {
 		t.Errorf("expired exception error = %+v, want rule exception, from_change false, exception.rule duplication", e)
 	}
 
+	var copied result.Result
+	decodeStrict(t, readGolden(t, "duplication"), &copied)
+	if e.Key == copied.Errors[0].Key {
+		t.Errorf("expired exception key %q equals the key of the copy it covers: a change that adds one more site would list two errors with one key", e.Key)
+	}
+
 	var graph result.Result
 	decodeStrict(t, readGolden(t, "graph"), &graph)
 	if e := graph.Errors[0]; !e.FromChange || e.Exception != nil || e.Next.Note != "do not copy the code" {
 		t.Errorf("graph error = %+v, want from_change true, no exception, the copy note", e)
+	}
+}
+
+// TestWaitingAsksNothingOfTheAuthor pins design 7.1 and 12.5: on waiting the
+// worker's next step is to wait for the owner, never another request.
+func TestWaitingAsksNothingOfTheAuthor(t *testing.T) {
+	var got result.Result
+	decodeStrict(t, readGolden(t, "waiting"), &got)
+	for i, e := range got.Errors {
+		if e.Next.Kind != result.NextWait || e.Next.Note != "" {
+			t.Errorf("errors[%d].next = %+v, want kind wait and no note", i, e.Next)
+		}
 	}
 }
 
