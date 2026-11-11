@@ -1,0 +1,50 @@
+pkg/chaos/netem/delay.go: module pkg_chaos_netem
+  public: pkg/chaos/netem/**
+  volatility: high
+  layer: core
+  allowed dependencies: pkg_chaos
+  rules that apply:
+    graph: a dependency between two modules must be an allowed dependency (ask: an owner may approve)
+    coupling: new knowledge across a module boundary needs a balance of at least 8 (deny: fix the code)
+    duplication: knowledge that another module already owns is not copied (ask: an owner may approve)
+    layers: dependencies follow the layer order (deny: fix the code)
+    docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime
+      why: One adapter owns the Docker API.
+pkg/tc/internal/shape.go, pkg/tc/netem.go: module pkg_tc
+  public: pkg/tc
+  volatility: high
+  layer: core
+  allowed dependencies: none
+  rules that apply:
+    graph: a dependency between two modules must be an allowed dependency (ask: an owner may approve)
+    coupling: new knowledge across a module boundary needs a balance of at least 8 (deny: fix the code)
+    duplication: knowledge that another module already owns is not copied (ask: an owner may approve)
+    layers: dependencies follow the layer order (deny: fix the code)
+    no-tc-internals-to-util: pkg/tc/internal/** must not depend on pkg_util
+      why: The traffic shaper stays free of helpers.
+      instead: Copy nothing; pass the value in.
+    docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime
+      why: One adapter owns the Docker API.
+  exceptions:
+    duplication pkg_tc -> pkg_util: 2026-11-19 (10 days)
+      why: Request #431 is open.
+    graph pkg_tc -> pkg_container: 2026-11-01 (expired)
+      why: The move to the runner ends this.
+scripts/release.go: in no module
+  rules that apply:
+    unowned: new production code belongs to a module (deny: fix the code)
+    no-scripts-to-chaos: scripts/** must not depend on pkg_chaos
+      why: Release scripts must not start chaos.
+      instead: Call the chaos command from the release job.
+    docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime
+      why: One adapter owns the Docker API.
+  exceptions:
+    unowned scripts/**: no date
+      why: Build scripts belong to no module.
+pkg/tc/netem_test.go: declared tests
+  the rules skip these paths
+pkg/gen/api.go: declared generated
+  the rules skip these paths
+not checked:
+  fan-out-through-runner: Chaos actions fan out through RunOnContainers.
+    why: One place checks the target limit before injection.

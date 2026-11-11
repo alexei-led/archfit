@@ -1,0 +1,2 @@
+docker-sdk-in-runtime: github.com/docker/docker is used only in pkg_runtime
+  why: One adapter owns the Docker API.
