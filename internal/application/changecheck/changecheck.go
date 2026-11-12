@@ -329,52 +329,82 @@ func (s Service) judge(ctx context.Context, o Options, now time.Time, tree strin
 // target finds the target branch, its commit and the base (steps 1 and 2).
 // stopped is true when it could not, with the reason in r.
 func (s Service) target(ctx context.Context, o Options, r *run) (ref, commit string, stopped bool, err error) {
-	baseStop := func(what, next string) (string, string, bool, error) {
-		r.stop(reason{cause: result.CauseBase, what: what, why: whyCompare, kind: result.NextRestore, next: next})
+	t, err := Base(ctx, s.Repository, o.Base, r.head)
+	if err != nil {
+		return "", "", false, err
+	}
+	if t.Base == "" {
+		r.stop(reason{cause: result.CauseBase, what: t.What, why: whyCompare, kind: result.NextRestore, next: t.Next})
 		return "", "", true, nil
 	}
-	ref = o.Base
+	r.base = t.Base
+	return t.Ref, t.Commit, false, nil
+}
+
+// Target is the target branch of a change and the commit the change is
+// compared with.
+type Target struct {
+	// Ref is the target branch: the ref asked for, else origin/HEAD.
+	Ref string
+	// Commit is the commit Ref names.
+	Commit string
+	// Base is the commit the change is compared with. Empty when there is
+	// none: What says why and Next what to do.
+	Base       string
+	What, Next string
+}
+
+// Base finds the target branch and the base of a change (steps 1 and 2 of
+// the package doc): ref, else origin/HEAD; then the merge base of head and
+// the target, or head's first parent when head is the tip of the target.
+// head is the HEAD commit, empty when HEAD names none. `archfit rules` with no
+// argument lists the files changed against the same base. An error is a
+// failure of the repository port.
+func Base(ctx context.Context, repo Repository, ref, head string) (Target, error) {
+	missing := func(what, next string) (Target, error) {
+		return Target{Ref: ref, What: what, Next: next}, nil
+	}
 	if ref == "" {
 		var ok bool
-		if ref, ok, err = s.Repository.OriginHead(ctx); err != nil {
-			return "", "", false, fmt.Errorf("read origin/HEAD: %w", err)
+		var err error
+		if ref, ok, err = repo.OriginHead(ctx); err != nil {
+			return Target{}, fmt.Errorf("read origin/HEAD: %w", err)
 		} else if !ok {
-			return baseStop(whatNoTarget, nextBaseFlag)
+			return missing(whatNoTarget, nextBaseFlag)
 		}
 	}
-	commit, ok, err := s.Repository.Commit(ctx, ref)
+	commit, ok, err := repo.Commit(ctx, ref)
 	if err != nil {
-		return "", "", false, fmt.Errorf("resolve %s: %w", ref, err)
+		return Target{}, fmt.Errorf("resolve %s: %w", ref, err)
 	}
 	if !ok {
-		return baseStop(fmt.Sprintf(whatNoCommit, ref), nextFetch)
+		return missing(fmt.Sprintf(whatNoCommit, ref), nextFetch)
 	}
-	if r.head == "" {
-		return baseStop(whatNoHead, nextCommit)
+	if head == "" {
+		return missing(whatNoHead, nextCommit)
 	}
 	var base string
-	if r.head == commit {
+	if head == commit {
 		// HEAD is the tip of the target branch: the change is what HEAD adds
 		// to its first parent. A HEAD behind the tip is compared with itself,
 		// its merge base, so the commits it shares with the target add nothing.
-		base, ok, err = s.Repository.Parent(ctx, r.head)
+		base, ok, err = repo.Parent(ctx, head)
 		if err != nil {
-			return "", "", false, fmt.Errorf("read the parent of HEAD: %w", err)
+			return Target{}, fmt.Errorf("read the parent of HEAD: %w", err)
 		}
 		if !ok {
-			return baseStop(fmt.Sprintf(whatNoParent, ref), nextUnshallow)
+			return missing(fmt.Sprintf(whatNoParent, ref), nextUnshallow)
 		}
 	} else {
-		base, ok, err = s.Repository.MergeBase(ctx, r.head, commit)
+		base, ok, err = repo.MergeBase(ctx, head, commit)
 		if err != nil {
-			return "", "", false, fmt.Errorf("find the merge base with %s: %w", ref, err)
+			return Target{}, fmt.Errorf("find the merge base with %s: %w", ref, err)
 		}
 		if !ok {
-			return baseStop(fmt.Sprintf(whatNoBase, ref), nextUnshallow)
+			return missing(fmt.Sprintf(whatNoBase, ref), nextUnshallow)
 		}
 	}
-	r.base = base
-	return ref, commit, false, nil
+	return Target{Ref: ref, Commit: commit, Base: base}, nil
 }
 
 // compare compares the local policy with the target's (step 3). compared is
