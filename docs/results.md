@@ -1,170 +1,148 @@
 # Results and JSON contracts
 
-This page explains how to read archfit output and how to consume its JSON contracts. Metric meanings live in [metrics](metrics.md). Coupling terms live in [coupling](coupling.md).
+This page explains the output of `archfit check` and `archfit can` with a version 3 policy: the text record, the statuses, the exit codes, JSON, and SARIF. A version 2 policy (Archfit 3) has other outputs: see [Version 2 (Archfit 3)](#version-2-archfit-3).
 
-## Choose an output
+## The record
 
-`analyze` and `check` accept repeatable `--format` flags. The default is `text`.
-
-| Format | Use | Contract |
-| --- | --- | --- |
-| `text` | Terminal and CI logs | `analyze`: the human report, all blockers and a bounded number of other details. `check`: linter records, see below. |
-| `markdown` or `md` | Saved reports | Same report sections in Markdown. |
-| `json` | Automation and dashboards | `archfit.architecture-state.v1`. |
-| `sarif` | Code scanning tools | SARIF 2.1.0. State metadata is in `run.properties`. |
-| `scorecard` | Dimension review | Nine dimensions with status, gate, confidence, coverage, metrics, and unknowns. |
-| `agent` | Coding-agent loops | Compact `archfit.agent-result.v1`. |
-
-`--json`, `--markdown`, and `--sarif` are shorthands. Do not combine a shorthand with `--format`. Use repeated `--format` flags to write multiple formats.
-
-Multiple formats concatenate on stdout. Select only JSON when a consumer parses stdout as one JSON document.
-
-`check` text reads like a linter. Each blocker is one record, with its explanation indented under it:
+`check` prints one record per error, in the same order everywhere: where, which rule, what; then why, instead, balance, next. The status line comes last, as in a linter.
 
 ```text
-pkg/a/a.go:3: no_b_impl: Remove the forbidden dependency from pkg/a/a.go on pkg/b/impl.
-  why: callers must not see storage
-  instead: use pkg/b/api
-  status: introduced, code_change
-
-FAIL  1 new, 0 unknown, 3 accepted
-engine v3.3.0 · policy 0f7b1dd7cce2 · baseline … · tree … · profile …
-
-repository attention (not this change):
-  unmeasured_ratchet: reference not comparable (drift: measurement_profile): …
+path:line: rule-id: what is wrong
+  why: the reason the rule exists
+  instead: what the owner says to do          (when the rule has it)
+  balance: 9/10 (min 7)                       (when the rule is about coupling)
+  next: one command, or one short instruction
+archfit: status, count
 ```
 
-The footer word is `PASS`, `FAIL`, or `UNKNOWN`, the same as `change.status` in the agent result. `why` is the rule's rationale, or its constraint when it has none; `instead` lists the alternatives the rule's owner declared. The coupling gate's reasons, which older versions printed on stderr, are repository attention. `check` prints nothing on stderr unless you pass `--progress`. The scorecard, dimensions, and seam ledger are not in `check` text: read them with `analyze`.
+A pass is one line:
 
-`check` sets its exit code from the verdict. `analyze` exits `0` after every successful run. See [commands](commands.md#exit-codes).
+```text
+$ archfit check
+archfit: pass
+```
 
-## Read the verdict
+A dependency only an owner can allow:
 
-The architecture-state verdict has three values:
+```text
+$ archfit check
+pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
+  why: a new dependency between modules needs an owner
+  balance: 9/10 (min 7)
+  next: archfit request -m "<why you need it>"     (do not copy the code)
+archfit: fail, 1 error
+```
 
-| Verdict | Meaning |
-| --- | --- |
-| `healthy` | All dimensions are measured, hard gates pass, and no active diagnostic exists. |
-| `needs_attention` | No blocker exists, but diagnostics are active or a dimension is partial or unmeasured. |
-| `blocked` | At least one active hard-gate finding exists. |
+No verdict:
 
-The verdict is not an average score. Missing evidence stays explicit. archfit does not convert unknown values to zero.
+```text
+$ archfit check
+.archfit.yaml: policy: differs from origin/main
+  why: only owners change the policy
+  next: git checkout origin/main -- .archfit.yaml
+archfit: unknown, no verdict
+```
 
-Each of the nine dimensions has its own `status`, `confidence`, `gate`, `coverage`, `metrics`, `findings`, and `unknown` fields. Status is `measured`, `partial`, or `unmeasured`. A dimension gate is `pass`, `warn`, `fail`, or `not_applicable`. An `unmeasured` dimension is `not_applicable` unless a hard-gate finding routes to it: a violation found in the observed edges fails the dimension while its evidence is incomplete. See [metrics](metrics.md) for the dimensions and their measures.
+- `next` is `fix the code`, a command to run, `wait for an owner: #n`, or a short instruction such as `git fetch --unshallow`. A note in parentheses can follow it.
+- An error with no file, such as an expired exception, names `.archfit.yaml` and no line.
+- A reason for `unknown` names its cause instead of a rule: `policy`, `base`, `tool`, or `import`.
+- `balance` is shown only for a rule about coupling, as `n/10 (min m)`.
+- Dates show the days left, such as `2026-11-19 (9 days)`.
+- `(not from this change)` ends the status line when every error comes from an expired exception, not from the change.
+- `policy: not protected` follows the status line when no workflow in `.github/workflows/` uses `alexei-led/archfit-action`. The result is then a local guide, not change control.
+- `--verbose` adds the policy path and digest, and the engine version, after the status line.
 
-Findings appear once in the top-level `findings` array. Dimension `findings` arrays refer to those records by ID. A finding's status and severity describe its gate role and urgency. See [rules](rules.md) for rule behavior.
+`can` prints one answer and no status line:
 
-## Baseline comparison
+```text
+$ archfit can pkg/tc pkg/util
+pkg_tc -> pkg_util: graph: not an allowed dependency
+  balance: 9/10 (min 7)
+  next: archfit request -m "<why you need it>"
+```
 
-`comparison` reports the separate Git comparison requested with `--base`.
-Without `--base`, its status is `not_requested`, even when a stored baseline exists.
-Other statuses are `comparable` and `non_comparable`.
-Numeric deltas require compatible classification, model, labels, rubric, and measurement-profile fingerprints.
-The raw configuration hash identifies file bytes. It is not a comparison fingerprint.
+The record goes to stdout. Notes and tool errors go to stderr.
 
-`gate_reference` reports the reference used by hard gates. It can differ from `comparison`. For example, `--base` adds a Git comparison but does not replace the stored gate reference.
+## Statuses
 
-A dimension can carry an optional `delta` when its comparison has compatible evidence.
-A non-comparable reference carries reasons instead of numeric changes.
-Read the status before reading a delta.
-
-### Finding origin is not debt status
-
-With `--base`, `findings[].origin` compares observed findings with the base-tree
-run. `status: new` means unaccepted debt. It does not mean the PR added it.
-A finding can be both `new` and `pre_existing`. Origin is report-only and never
-changes gate acceptance or the exit code.
-
-- `pre_existing`: the finding ID, or every current member ID of a grouped
-  advisory, was observed in base. A seam-gate finding instead matches a
-  qualifying ordered module pair.
-- `introduced`: at least one current member finding was not observed in base,
-  and the active analyzer evidence permits origin comparison. This is a finding
-  difference, not proof that every dependency or displayed source line was added.
-- `unknown`: the evidence cannot establish introduction. Known matches can still
-  be `pre_existing`. Unmatched findings have unknown origin and no finding is
-  claimed resolved.
-  Accepted-baseline metric ratchets always have unknown base-tree origin.
-
-Read `comparison.origin_status` and `origin_reasons` for analyzer pairing.
-When a base analyzer timed out or left inputs out of its graph, its reason names
-the base row's own cause and fix after `base:`.
-A reason longer than the report's 400-rune bound is cut with `…`; the whole
-reason is written to stderr as a warning.
-Numeric `comparison.status` is separate: fingerprint differences can suppress
-numeric deltas while origin still compares observed IDs. Neither status proves
-that installed dependencies, generated files, or indexer resolution were identical.
-A zero tracked Git diff alone does not establish equivalent measurement inputs.
-
-Grouped coupling advisories match **all** in-memory member IDs, not the
-first eight exported in `matched_by.group_members`. Their `why` gives a compact full-membership match summary.
-`matched_by.origin_basis` adds up to eight unmatched IDs. Adding a member can mark an old group `introduced` without changing its ID.
-The displayed path pair belongs to one member. Locations merge all member sites,
-including test sites when those are in scope. Neither the representative nor the
-first site necessarily identifies the unmatched member. A missing base observation
-is not proof that the source dependency was absent.
-
-## Config comparison
-
-`config compare` measures the same source tree with two configs. It uses no accepted baseline and does not write config or baseline files. Both measurements share the current config's cache and labels.
-
-The text report compares changed finding IDs, classified-edge counts, and classification mix. It does not print a repository score. JSON includes each side's scorecard and `score_delta`. A null delta means that at least one side did not measure `coupling_balance`.
-
-Coverage warnings qualify the comparison. A difference does not show that one config is better. See [commands](commands.md) for invocation.
-
-## Read findings, tasks, and seams
-
-The state JSON includes full findings, `agent_tasks`, and the coupling seam ledger. Text and Markdown cap some non-blocking details. Use JSON when a consumer needs the complete lists.
-
-An `agent_task` gives a constrained repair or an owner decision. It includes the finding and rule IDs, goal, constraints, files, and validation commands. Do not infer that an empty task list means the run is healthy. Check `verdict`, `decision`, diagnostics, and unmeasured required rules.
-
-Each seam record describes a cross-module relationship and its policy. The `policy` value distinguishes `violation`, `accepted`, `advisory`, `allowed`, and `observed`. A seam is not itself a finding. Use the associated finding IDs and gate result to identify blockers. See [coupling](coupling.md).
-
-A seam's `raw_distance` names the owners and deploy units on both sides. `same_owner` and `same_deploy_unit` are `null` unless both sides are known: an undeclared value is not a different one.
-
-## JSON contracts
-
-The `schema_version` field identifies a wire contract. It does not identify the project release or configuration version.
-
-| Contract | Produced by | Published schema |
+| Status | Meaning | The next step |
 | --- | --- | --- |
-| `archfit.architecture-state.v1` | `analyze --format json`, `check --format json` | [`archfit.state.schema.json`](../archfit.state.schema.json) |
-| `archfit.agent-result.v1` | `analyze --format agent`, `check --format agent` | [`archfit.agent-result.schema.json`](../archfit.agent-result.schema.json) |
-| `archfit.config-review.v1` | `config update --json` | Go contract in `internal/initcfg`; no published JSON Schema. |
-| `archfit.config-compare.v1` | `config compare --json` | Go contract in `cmd/archfit/config_compare.go`; no published JSON Schema. |
+| `pass` | The change adds nothing a rule forbids. | None. There is no warning on `pass`. |
+| `fail` | The change adds an error, or an exception has expired. | Fix the code, or ask, as the error says. |
+| `waiting` | The errors are covered by an open request. Set by the App on a pull request only; the CLI never prints it. | Wait for the owner. |
+| `unknown` | No verdict. | Restore what the record names, then run `check` again. |
 
-Every state and agent result carries an `identity` block (`archfit.result-identity.v1`): the sha256 of the policy, baseline, and labels files as read from disk, the base commit, the git tree of the measured head (with `+dirty` for uncommitted edits), the engine version, and a hash of the measurement profile. A value the run could not read is omitted, never empty. The text footer, the SARIF run properties, and the hook message repeat it in short form.
+The status is `unknown` when:
 
-The agent result splits into `change` and `repository`. `change.status` is `pass`, `fail`, or `unknown`; `change.blockers` are the in-scope repairs. `unknown` means evidence is missing and never passes. `repository.attention` holds what the change did not cause: `existing_violation`, `unmeasured_ratchet`, `dead_selector`, `blocked_without_finding`. `next_action` follows `change` only, and the hooks stop a change only on `fail`. The process exit code still follows the verdict, so a clean change in a repository with attention exits `2`.
+- the local `.archfit.yaml` differs from the policy of the target branch, or is not valid;
+- there is no target branch, no merge base, or the base cannot be read;
+- a tool the check needs is missing;
+- a first-party import in a changed file cannot be resolved, or the change adds an import that cannot be resolved.
 
-A `check` result also carries `scope` (how the change and its base were resolved) and, when the change is unknown for a reason other than missing evidence, `change.reason`: `scope_unresolved` (the target or the base could not be resolved) or `policy_changed_on_branch` (the branch edited a protected policy file that now differs from the target tip, with `change.policy_change` holding the changed files and the change judged under the target's policy), or `policy_stale_on_branch` (the target moved a policy file the branch left alone; merge or rebase). Both exit `2`. Identity's `policy_ref` names the target branch and tip.
+The order: a comparison that cannot be made at all (the policy differs or is not valid, there is no merge base, or the base cannot be read) is `unknown` with only its reasons. Otherwise an added error or an expired exception is `fail`, and the other reasons for `unknown` are still listed. Otherwise any reason for `unknown` gives `unknown`. Otherwise the status is `pass`.
 
-`archfit.schema.json` describes the policy file, version 3, which Archfit 4 reads. It is not a report schema. Archfit 3 reads `version: 2` files. See [configuration](configuration.md) for fields and validation.
+The same tree, policy, engine version, and date give the same output.
 
-The coverage sidecar uses numeric schema version `1`. Its shape and source rules belong to the configuration reference because they define input data. The sidecar is separate from the configuration file and report contracts.
+## Exit codes
 
-The persisted `.archfit-baseline.json` uses the string `schema_version: "archfit.baseline.v3"`.
-It stores accepted findings and comparison snapshots. It is separate from state-report JSON and has no published JSON Schema.
-Use [Migration](migration.md) to review and re-anchor older baselines. Do not change the version field by hand.
+| Code | `check` | `can` |
+| --- | --- | --- |
+| `0` | `pass` | yes |
+| `1` | `fail` (and `waiting`) | no |
+| `2` | `unknown`, wrong usage, or a tool error | `unknown`, wrong usage, or a tool error |
 
-## Consume JSON safely
+`unknown` is not a pass: in CI, fail the job on every code except `0`. See [commands](commands.md#exit-codes) for the other commands.
 
-Use the published schema for state and agent output. The schemas use JSON Schema Draft 2020-12. The state schema is generated from the report types and checked for drift. The agent schema is generated from the agent result types and checked for drift.
+## JSON
 
-Decode the exact `schema_version` that your consumer supports. Reject unknown enum values and unknown contract versions. The output contracts do not promise that a future major contract will keep the same fields.
+`--format json` writes one JSON document, `archfit.result.v1`, described by [`archfit.result.schema.json`](../archfit.result.schema.json). It holds the same facts as the record, in the same order. An agent needs no JSON to act: the format is for scripts and for the upload to the App.
 
-The published state and agent schemas reject extra object properties. Some properties can be absent when marked optional by the schema. Most state fields are required, including all nine dimensions. Consumers must handle explicit nulls where the schema permits them.
+| Field | Meaning |
+| --- | --- |
+| `schema` | `archfit.result.v1`. |
+| `status` | `pass`, `fail`, `waiting`, or `unknown`. |
+| `summary` | The status line of the record. |
+| `errors[]` | The errors in record order. |
+| `unknown[]` | The reasons for `unknown`: `path`, `line`, `cause` (`policy`, `base`, `tool`, `import`), `what`, `why`, `next`. |
+| `policy` | `path`, `digest`, `protected`, `differs` (the local file differs from the target's), and `target` (the branch it was compared with). |
+| `base`, `head` | The commits compared. |
+| `date` | The date the exceptions were judged on, `YYYY-MM-DD`. |
+| `engine` | The archfit version. |
 
-`config update --json` reports a review. An empty `issues` list does not prove that every configured module was checked. Read `unchecked_modules` and `status` as well as `issues`.
+Each error has:
 
-`config compare --json` reports two measurements of one source tree. It has `current`, `candidate`, `score_delta`, finding ID groups, coverage details, and warnings. `score_delta` is `null` when either side cannot measure coupling balance. It is a report-only comparison and does not say that one config is better. The text output has no repository score, but JSON keeps the scorecards and `score_delta`.
+| Field | Meaning |
+| --- | --- |
+| `path`, `line` | Where. An expired exception has `.archfit.yaml` and no line. |
+| `rule` | The rule id, or `exception` for an expired exception. |
+| `what`, `why`, `instead` | As in the record. |
+| `balance` | `value` and `min`, for a rule about coupling. |
+| `next` | `kind` and `text`, and `note` when there is one. `kind` is `fix`, `command` (only an error of an `ask` rule), `wait`, or `restore`. |
+| `from`, `to` | The modules. |
+| `key` | The rule, the modules, and the symbol the error is counted by. |
+| `from_change` | `false` for an expired exception that another change added. |
+| `exception` | For an expired exception: the `rule` it covers and the date it `expires`. |
 
-## Compatibility limits
+`archfit can --format json` writes `archfit.can.v1`, in the same schema file: `from`, `to`, `answer` (`yes`, `no`, `unknown`), `rule`, `what`, `why`, `instead`, `balance`, `next`, `policy`, `head`, `date`, and `engine`.
 
-Treat each named contract as a versioned API. Do not use `schema_version` alone to infer a project release or config version.
+Both commands keep their JSON document, with the git tree id of the working tree, in `.archfit-cache/last.json` for `archfit request`. A `check --policy` preview keeps nothing.
 
-The configuration schema helps editors validate config shape. Runtime validation has additional rules, including checks that the schema cannot express. The CLI is the final config validator.
+## SARIF
 
-The config review and config comparison documents have version fields, but they do not have published JSON Schema files. Pin consumers to those version fields and test them against sample output from the supported binary.
+`--format sarif` writes a SARIF 2.1.0 log for code scanning. Each error is one result with level `error`, the rule id, and the location. Its message holds the lines of the record: what, then why, instead, balance, and next. A reason for `unknown` is a tool notification, not a result, and an `unknown` status is an execution that did not succeed. A pass has no result.
 
-See [agents](agents.md) for agent-loop behavior and [CI](ci.md) for gate usage.
+## Version 2 (Archfit 3)
+
+With a version 2 policy, `archfit check`, `analyze`, and the other Archfit 3 commands write the Archfit 3 outputs: `text`, `markdown`, `json` (`archfit.architecture-state.v1`), `sarif`, `scorecard`, and `agent` (`archfit.agent-result.v1`), with the verdicts `healthy`, `needs_attention`, and `blocked`. The full reference is the [Results page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md). Convert the repository with `archfit init` (see [migration](migration.md)).
+
+### Baseline comparison
+
+`archfit.architecture-state.v1` compares findings with the stored baseline and with `--base`. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md#baseline-comparison).
+
+### Config comparison
+
+`archfit config compare` writes `archfit.config-compare.v1`. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md#config-comparison).
+
+### JSON contracts
+
+The JSON Schemas of version 2 are [`archfit.state.schema.json`](../archfit.state.schema.json) and [`archfit.agent-result.schema.json`](../archfit.agent-result.schema.json). See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md#json-contracts).
