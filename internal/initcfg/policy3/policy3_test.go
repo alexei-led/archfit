@@ -425,18 +425,19 @@ func TestInitNamesTheRootModuleRoot(t *testing.T) {
 // matches a path decides, as in git, and only the sources it marks are out
 // of the rules.
 func TestInitGeneratedFollowsGitattributes(t *testing.T) {
+	const genFile = "src/gen/a.ts"
 	for _, tt := range []struct {
 		name, attributes string
 		sources, want    []string
 	}{
 		{"a later line unsets", "src/** linguist-generated\nsrc/manual/** -linguist-generated\n",
-			[]string{"src/gen/a.ts", "src/manual/b.ts"}, []string{"src/gen/a.ts"}},
+			[]string{genFile, "src/manual/b.ts"}, []string{genFile}},
 		{"a later line sets again", "gen/** linguist-generated\ngen/keep.ts linguist-generated=false\ngen/** linguist-generated\n",
 			[]string{"gen/a.ts", "gen/keep.ts", "lib/c.ts"}, []string{"gen/**"}},
 		{"a pattern without a slash", "*.pb.ts linguist-generated=true\n",
 			[]string{"api/x.pb.ts", "api/y.ts"}, []string{"**/*.pb.ts"}},
 		{"a quoted pattern unsets", "src/** linguist-generated\n\"src/manual code/**\" -linguist-generated\n",
-			[]string{"src/gen/a.ts", "src/manual code/b.ts"}, []string{"src/gen/a.ts"}},
+			[]string{genFile, "src/manual code/b.ts"}, []string{genFile}},
 		{"a macro line names no path", "[attr]gen -linguist-generated\nsrc/** linguist-generated\n",
 			[]string{"src/a.ts"}, []string{"src/**"}},
 		{"a generated name with a bracket", "src/** linguist-generated\nsrc/b.ts -linguist-generated\n",
