@@ -1,6 +1,7 @@
 package policyfile_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -271,16 +272,28 @@ builtin:
 }
 
 func TestDecodeVersionNumbers(t *testing.T) {
-	tests := []struct{ version, wantErr string }{
+	tests := []struct {
+		version, wantErr string
+		version2         bool
+	}{
 		{version: "3"},
 		{version: "3.0"},
-		{version: "2.0", wantErr: `version 2 is the Archfit 3 policy format: run "archfit init"`},
+		{version: "2", wantErr: `version 2 is the Archfit 3 policy format: run "archfit init"`, version2: true},
+		{version: "2.0", wantErr: `version 2 is the Archfit 3 policy format: run "archfit init"`, version2: true},
+		{version: "1", wantErr: "version 1: this engine reads version 3"},
 		{version: "3.5", wantErr: "version 3.5: this engine reads version 3"},
 		{version: "-3", wantErr: "version -3: this engine reads version 3"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
-			got, err := policyfile.Decode([]byte("version: " + tt.version + "\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n"))
+			data := []byte("version: " + tt.version + "\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n")
+			got, err := policyfile.Decode(data)
+			_, resolveErr := policyfile.Resolve(data)
+			for name, err := range map[string]error{"Decode": err, "Resolve": resolveErr} {
+				if is := errors.Is(err, policyfile.ErrVersion2); is != tt.version2 {
+					t.Errorf("errors.Is(%s error %v, ErrVersion2) = %v, want %v", name, err, is, tt.version2)
+				}
+			}
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)
