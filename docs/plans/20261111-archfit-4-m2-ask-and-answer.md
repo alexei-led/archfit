@@ -90,7 +90,7 @@ same day.
 
 | Id | Decision | Status |
 | --- | --- | --- |
-| D1 | All milestone 2 and 3 pull requests in archfit-app target the long-lived integration branch `archfit-4`, cut from `main` at the start of milestone 2. App CI runs on every pull request, whatever its base. `main` stays on Archfit 3, deploys on push, and takes v3 hotfixes; the manager merges `main` into `archfit-4` after each hotfix. The release is one merge-commit pull request from `archfit-4` to `main` in the window. Reason: the Workload Identity provider admits only `deploy.yaml` on `refs/heads/main`, so no other ref can deploy. | Changed and approved 2026-11-11, manager. |
+| D1 | All milestone 2 pull requests and milestone 3 tasks 1 to 13 in archfit-app target the long-lived integration branch `archfit-4`, cut from `main` at the start of milestone 2. App CI runs on every pull request, whatever its base. `main` stays on Archfit 3, deploys on push, and takes v3 hotfixes; the manager merges `main` into `archfit-4` after each hotfix. The release is one merge-commit pull request from `archfit-4` to `main` in the window. Reason: the Workload Identity provider admits only `deploy.yaml` on `refs/heads/main`, so no other ref can deploy. | Changed and approved 2026-11-11, manager. |
 | D2 | `archfit request` sends nothing to the App. With an open pull request for the current branch, it posts the request line as a pull-request comment. Without one, it opens an issue only from a `can` answer, with the line and the `can` record, which the App marks "as reported". With `check` output and no pull request, it opens nothing and says to open a pull request first (archfit-app #111). It uses the worker's GitHub credentials (`GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`). No App endpoint and no App credential reach a laptop. Without a shell, a worker replies `/archfit request <why>` on the pull request; that comment is the no-shell path of design 15.1. | Approved 2026-11-11, manager. |
 | D3 | The request line grammar, escaping and duplicate matching are those of "The request line" in the Technical Details. | Approved 2026-11-11, manager. |
 | D4 | Contract ownership and pinning follow the table "Contracts: owner and pin" in the Technical Details. Each consumer vendors the owner's file byte for byte with a `SCHEMA_SOURCE` (repository, commit, SHA-256). Before the release the pin is a commit; at the release it is the tag. | Approved 2026-11-11, manager. |
@@ -99,7 +99,7 @@ same day.
 | D7 | New App state lives under a `v4/` key prefix with JSON values that carry a `schema` field. Archfit 3 keys stay untouched and unread, so the previous revision stays deployable. They are deleted 30 days after the release, after a Firestore export (post-completion). | Approved 2026-11-11, manager. |
 | D8 | Approvals follow the state machine and recovery table of "Approval records" in the Technical Details. | Approved 2026-11-11, manager. |
 | D9 | The passkey uses `github.com/go-webauthn/webauthn`: attestation `none`; ES256, RS256 and Ed25519; user verification required. A hand-written WebAuthn, CBOR and COSE verifier would be security code the App owns forever. Task 18 adds the module to `docs/tech-stack.md`. A second passkey needs an existing one. Credentials live under the installation tenant, so losing every passkey means reinstalling the App, which deletes them. | Changed and approved 2026-11-11, manager. |
-| D10 | In milestone 2 the App decides "loosens" by the answer: approve and approve-until loosen; reject tightens; confirming a policy changed outside the flow loosens. The App gets a general policy comparison only with the YAML editor in milestone 3. | Approved 2026-11-11, manager. |
+| D10 | In milestone 2 the App decides "loosens" by the answer: approve and approve-until loosen; reject tightens; confirming a policy changed outside the flow loosens. Milestone 3 D9 replaced the general comparison planned here: a YAML edit always needs a passkey. | Approved 2026-11-11, manager. |
 | D11 | The App writes an answer into the policy with the YAML node API of `go.yaml.in/yaml/v3`, keeping comments and order. | Approved 2026-11-11, manager. |
 | D12 | Pages: milestone 2 adds the request page and the passkey page, and removes the Decisions page, the policy editor and its AI assist, and the owner actions of the Pull page. Other pages stay as they are until milestone 3. The check (title, summary, annotations) and the comment show the record in milestone 2. Milestone 3 rewrites the pages and the comment layout and adds their goldens. | Approved 2026-11-11, manager. |
 | D13 | The App sets `archfit/gate` on its own architecture pull request. Conditions: the branch is `archfit/policy`, the App authored every commit, the diff touches only `.archfit.yaml`, and the head policy equals the result of the recorded approvals. An upload for that pull request is stored but does not set its verdict. | Approved 2026-11-11, manager. |
@@ -548,8 +548,9 @@ file and its routes). Depends on: 3, 13, 15, 16, 18. M1: none. Merge: manager (p
 - [ ] record the approval, add it to the open proposal of `archfit/policy` or open one ("Approval records"), and
       write the policy from the target tip by applying the proposal's changes in order (task 3)
 - [ ] the writer puts the request number in a YAML line comment on each line an answer adds (`# request #431`): a
-      `depends_on` entry, an exception, a `deny` rule; the policy page of milestone 3 links each line to its request
-      (milestone 3 D8)
+      `depends_on` entry, an exception, a `deny` rule; a flow list (`[a, b]`) that an answer adds to becomes a block
+      list, one entry per line, keeping its comments; the policy page of milestone 3 links each line to its request
+      (milestone 3 D8); a golden where two answers add to the same flow list
 - [ ] when the target moves before the merge, rewrite the branch from the new tip with the same changes and update
       the proposal's expected digest; a change that no longer applies voids its approval and reopens its request
 - [ ] set `archfit/gate` on the proposal's pull request (D13), then merge it with the expected head SHA ("Approve
@@ -697,7 +698,8 @@ Repository: `alexei-led/archfit-4-mechanics` (results in `archfit-4-team/reports
       with a passkey; the App merges; the re-check runs by re-run, then by branch update with a forced condition
 - [ ] walk the protection cases: a code pull request that edits the policy; an approval used twice; a direct push of
       the policy; an expired exception
-- [ ] read the pull-request page and the merge box for each check state in the browser (open item of D.2)
+- [ ] read the pull-request page and the merge box for each check state in the browser (open item of D.2), and the
+      App pages of milestone 3 (Home, a request, the policy, a pull request) with the production App
 - [ ] record the results, the timings and every failure with its cause; a failure that cannot be fixed in the window
       triggers the rollback of release step R5
 
