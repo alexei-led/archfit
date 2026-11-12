@@ -1,8 +1,45 @@
 # CI
 
-Use `archfit check` as the CI gate. It returns `0` for `healthy`, `1` for
-`blocked`, `2` for `needs_attention`, and `3` for a command, config, or runtime
-error. Treat exit `3` as a failure.
+With a version 3 policy, run `archfit check` as shown in
+[Run the check without the Action](#run-the-check-without-the-action). It
+returns `0` for `pass`, `1` for `fail`, and `2` for `unknown`, wrong usage, or
+a tool error.
+
+The rest of this page is for a version 2 policy (Archfit 3). There,
+`archfit check` returns `0` for `healthy`, `1` for `blocked`, `2` for
+`needs_attention`, and `3` for a command, config, or runtime error. Treat exit
+`3` as a failure.
+
+## Run the check without the Action
+
+A pull request is checked against its target branch. `actions/checkout` fetches
+one commit and creates no `origin/HEAD`, so give the check the history and the
+target branch:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- name: archfit check
+  run: archfit check --base "origin/${{ github.base_ref }}"
+```
+
+- `fetch-depth: 0` fetches the merge base. Without it the status is `unknown`,
+  and the record says to fetch the history.
+- `--base origin/<target branch>` names the target branch. Without it, and
+  without `origin/HEAD`, the status is `unknown`, and the record says to pass
+  `--base`. On a push to the default branch, use
+  `--base "origin/${{ github.event.repository.default_branch }}"`: the change
+  is then the last commit.
+- Exit `2` (`unknown`) is not a pass. Fail the job on any exit code except `0`.
+- With `--format sarif`, the output is a SARIF 2.1.0 log for code scanning
+  (see [results](results.md)).
+
+Without a workflow that uses the Archfit Action, every result ends with
+`policy: not protected`. The check compares `.archfit.yaml` with the policy of
+the target branch, but only the Action and a required check on the protected
+branch make that comparison a boundary. The Action for a version 3 policy comes
+with Archfit 4.
 
 ## Go coverage workflow
 

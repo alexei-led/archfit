@@ -9,7 +9,9 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 | Task | Command |
 | --- | --- |
 | Review architecture locally | `archfit analyze` |
-| Enforce the architecture gate | `archfit check` |
+| Check a change: pass, fail, or unknown | `archfit check` |
+| Ask whether a dependency or library may be used | `archfit can <from> <to>` |
+| Show the rules that apply | `archfit rules [PATH... \| RULE] [--graph]` |
 | Accept current findings as the gate baseline | `archfit baseline` |
 | Explain one finding | `archfit explain <fingerprint-prefix>` |
 | Ask which module owns a path | `archfit policy where <path>` |
@@ -25,9 +27,19 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 
 ## Exit codes
 
-Successful `analyze` runs exit `0` for every verdict. Use `check` when the verdict must set the process status.
+`check` with a version 3 policy, `can`, and `rules` use these codes:
 
-| Code | `check` meaning | Other command behavior |
+| Code | `check` | `can` | `rules` |
+| --- | --- | --- | --- |
+| `0` | `pass` | yes | done |
+| `1` | `fail` | no | – |
+| `2` | `unknown`, wrong usage, or a tool error | `unknown`, wrong usage, or a tool error | wrong usage or a tool error |
+
+A flag or argument that the command line parser rejects, such as an unknown flag, still exits `3`, and so does a run stopped by `SIGINT` or `SIGTERM`. These two move to `2` when the Archfit 3 commands are removed.
+
+The other commands, and `check` with no policy file or a version 2 policy, use the codes below. Successful `analyze` runs exit `0` for every verdict. Use `check` when the verdict must set the process status.
+
+| Code | `check` meaning (version 2 policy) | Other command behavior |
 | --- | --- | --- |
 | `0` | `healthy` | Success for report-only and setup commands. `analyze` also exits `0` for `needs_attention` and `blocked`. |
 | `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `hook run pre-commit` found an in-scope repair or owner decision; `agents-md --check` found a missing or stale block. |
@@ -78,7 +90,38 @@ archfit analyze --format scorecard -c .archfit.yaml
 
 ### `check`
 
-`archfit check [flags]` runs the gate and uses the verdict exit codes above. It accepts the same analysis flags as `analyze`, except `--ai-summary`. Its default text output is one linter-style record per blocker and a `PASS`, `FAIL`, or `UNKNOWN` footer (see [results](results.md)). Progress goes to stderr only with `--progress`. For the architecture report, with dimensions, seams, and coupling bands, run `analyze`.
+`archfit check [flags]` gives the status of the change in the working tree: `pass`, `fail`, or `unknown`. It reads the version of `.archfit.yaml` first. A version 3 policy, or `--policy`, runs the check below. No policy file, or a version 2 policy (Archfit 3), runs the Archfit 3 check of [the next section](#check-with-a-version-2-policy) until you convert the repository (see [migration](migration.md)).
+
+```sh
+archfit check
+archfit check --base origin/main
+archfit check --policy candidate.yaml
+archfit check --format sarif > archfit.sarif
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--base <ref>` | The target branch. Default: the remote's default branch, `origin/HEAD`. |
+| `--policy <file>` | Judge the change with this policy file instead of `.archfit.yaml`, and do not compare it with the policy of the target branch. A preview: nothing is kept for `archfit request`. A relative path is read from the directory of `-C`. |
+| `--format <name>` | `text` (default), `json`, or `sarif`. |
+| `--verbose` | Add the policy digest and the engine version after the status line. |
+| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
+
+The run:
+
+1. The target branch is `--base`, else `origin/HEAD`. With neither, the status is `unknown` and the record says to pass `--base`. A CI checkout often has no `origin/HEAD`: see [CI](ci.md).
+2. The base is the merge base of `HEAD` and the target branch. When `HEAD` is the tip of the target branch, the base is the first parent of `HEAD`: the change is the last commit. A clone without the merge base, such as a shallow clone, is `unknown`, and the record names the fetch.
+3. The policy on the target branch is the protected one. When `.archfit.yaml` differs from it, the status is `unknown`, the record names the command that restores the file, and nothing else is checked. When the target branch has no `.archfit.yaml`, or a version 2 one (the pull request that converts the repository), the check uses the local policy and says so on stderr.
+4. The policy must fit the tree. A path glob that matches no file, or another policy error, is `unknown` with the message.
+5. The check reads the base and the working tree and counts the errors of each by rule, modules, and symbol. An error the base does not have, or has fewer times, is added by the change: the status is `fail`. An expired exception fails every change, and the status line ends with `(not from this change)`. See [results](results.md).
+
+The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` uses `alexei-led/archfit-action`, every result ends with the line `policy: not protected`: the result is a local guide, not change control.
+
+Each run except a `--policy` preview keeps its JSON output and the git tree id of the working tree in `.archfit-cache/last.json`. `archfit request` reads it while the tree and `HEAD` are the same. The same tree, policy, engine version, and date give the same output.
+
+### `check` with a version 2 policy
+
+With no policy file or a version 2 policy, `check` runs the Archfit 3 check and uses the version 2 exit codes above. It accepts the same analysis flags as `analyze`, except `--ai-summary`; `check --help` does not list them. Its default text output is one linter-style record per blocker and a `PASS`, `FAIL`, or `UNKNOWN` footer (see [results](results.md)). Progress goes to stderr only with `--progress`. For the architecture report, with dimensions, seams, and coupling bands, run `analyze`.
 
 ```sh
 archfit check -c .archfit.yaml
@@ -93,6 +136,55 @@ archfit check --format agent --base HEAD -c .archfit.yaml
 `check` never falls back to `HEAD` when it cannot resolve the target or the base. It reports `change.status: unknown` with `reason: scope_unresolved` and exits `2`. Fetch the history (`fetch-depth: 0`) or pass `--target` or `--base`.
 
 Before it measures, `check` compares `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` with the target branch's tip. If any differs, the branch cannot grade itself under rules it wrote: the change is `unknown` with `reason: policy_changed_on_branch`, the exit code is `2`, and the result shows both the branch's findings under its own policy and the findings under the target's policy, which is the one the gate will use. If the branch did not touch the file and the target changed it after the fork, the change is `unknown` with `reason: policy_stale_on_branch`: merge or rebase the target. A policy directory outside the repository is not compared, and a target that holds no config has no policy to protect, so nothing is compared.
+
+### `can <from> <to>`
+
+`archfit can <from> <to> [flags]` answers before you write code: may `<from>` depend on `<to>`? It reads `.archfit.yaml` (version 3) and applies the rules `check` applies to one new dependency: `graph`, `coupling`, `layers`, and the custom `deny` and `only` rules.
+
+```text
+$ archfit can pkg/tc pkg/util
+pkg_tc -> pkg_util: graph: not an allowed dependency
+  balance: 9/10 (min 7)
+  next: archfit request -m "<why you need it>"
+```
+
+Each side is a module name, a file or a directory relative to the repository root, or a Go import path that a `go.mod` of the checkout maps. `<to>` can also be a library, such as `github.com/spf13/cobra`. A module name as `<to>` means the public part of the module. A path that does not exist yet is judged by the module its glob gives.
+
+| Answer | Exit | The record shows |
+| --- | --- | --- |
+| yes | `0` | The balance, when the two sides are different modules. |
+| no | `1` | The rule, its `why` for a custom rule, `instead`, the balance, and `next`. |
+| unknown | `2` | A path in no module, or a question only a file can answer, and the command to run next. |
+
+A directory is judged one file at a time, as `check` judges it. When its files answer differently, the answer is `unknown`.
+
+The answer is approximate in two cases. It applies no exception, and it does not see a cycle that the new dependency would close. `check` judges both: a `yes` can still fail `check` when the dependency closes a cycle, and a `no` can pass `check` when an exception that has not expired covers it.
+
+`can` keeps its JSON answer in `.archfit-cache/last.json`, as `check` does, for `archfit request`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--format <name>` | `text` (default) or `json`. |
+| `--verbose` | Add the policy digest and the engine version. |
+| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
+
+### `rules [PATH... | RULE]`
+
+`archfit rules` shows the rules of `.archfit.yaml` (version 3) in plain words. Paths are relative to the repository root.
+
+| Form | Shows |
+| --- | --- |
+| `archfit rules` | The paths form for the files the change adds lines to, against the base `check` uses. |
+| `archfit rules <path>...` | For each path: its module, the public part, volatility, layer, and allowed dependencies, then the rules that apply with their modes and the exceptions that apply with their dates. A path in no module, a declared test, or a generated path says so. |
+| `archfit rules <rule-id>` | One rule in full, with its exceptions. Built-in rule ids work too. |
+| `archfit rules --graph` | The modules by layer, inner first, with their allowed dependencies. |
+
+The notes of the policy are listed as "not checked". Dates show the days left, such as `2026-11-19 (9 days)`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--graph` | The module graph. It takes no path or rule id. |
+| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
 
 ### `baseline`
 
