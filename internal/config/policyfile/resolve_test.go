@@ -137,7 +137,7 @@ func TestResolveEveryKey(t *testing.T) {
 			Why: "SQL belongs to the store.", Instead: "Call a store method.",
 		},
 		{
-			ID: "process-in-cli", Form: resolved.FormOnly, Use: "process", In: []string{modCLI},
+			ID: onlyRule, Form: resolved.FormOnly, Use: "process", In: []string{modCLI},
 			Why: "Side effects stay at the edge.", Instead: "Return a command for the CLI to run.",
 		},
 	}
@@ -150,6 +150,7 @@ func TestResolveEveryKey(t *testing.T) {
 			Rule: resolved.RuleUnowned, From: "scripts/**", Expires: time.Date(2027, 1, 31, 0, 0, 0, 0, time.UTC),
 			Why: "Scripts get a module next quarter.",
 		},
+		{Rule: onlyRule, From: modStore, Why: "The migration tool shells out until it moves to the CLI."},
 	}
 	if !reflect.DeepEqual(p.Exceptions, wantExceptions) {
 		t.Errorf("Exceptions = %+v\nwant %+v", p.Exceptions, wantExceptions)

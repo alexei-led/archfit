@@ -166,7 +166,8 @@ type Exception struct {
 	Rule string
 	// From is a module, or for unowned a path glob.
 	From string
-	// To is a module; empty for unowned.
+	// To is a module; empty for unowned and for a custom only rule, which
+	// names its library itself.
 	To string
 	// Expires is the last day the exception holds, at 00:00 UTC. Zero: no date.
 	Expires time.Time

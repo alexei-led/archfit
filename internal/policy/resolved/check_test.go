@@ -16,6 +16,7 @@ const (
 	owner    = "alexei-led"
 	core     = "core"
 	cmdGlob  = "cmd/**"
+	sqlRule  = "sql-in-util"
 )
 
 // base is a valid policy with three modules and the defaults applied.
@@ -35,11 +36,12 @@ func TestCheckValid(t *testing.T) {
 	p := base()
 	p.Rules = []resolved.Rule{
 		{ID: "no-chaos-to-tc", Form: resolved.FormDeny, From: []string{modChaos, cmdGlob}, To: []string{modTC}, Why: why, Instead: "x"},
-		{ID: "sql-in-util", Form: resolved.FormOnly, Use: resolved.SetDatabase, In: []string{modUtil}, Why: why},
+		{ID: sqlRule, Form: resolved.FormOnly, Use: resolved.SetDatabase, In: []string{modUtil}, Why: why},
 	}
 	p.Exceptions = []resolved.Exception{
 		{Rule: "no-chaos-to-tc", From: modChaos, To: modTC, Why: why},
 		{Rule: resolved.RuleUnowned, From: "scripts/**", Why: why},
+		{Rule: sqlRule, From: modChaos, Why: why},
 	}
 	if err := p.Check(); err != nil {
 		t.Fatalf("Check: %v", err)
@@ -100,6 +102,14 @@ func TestCheckMessages(t *testing.T) {
 				p.Exceptions = []resolved.Exception{{Rule: "no-chaos-to-runtme", From: modChaos, To: modTC, Why: why}}
 			},
 			`exceptions[0].rule: "no-chaos-to-runtme" is not a rule: did you mean "no-chaos-to-runtime"?`,
+		},
+		{
+			"exception of an only rule with a to",
+			func(p *resolved.Policy) {
+				p.Rules = []resolved.Rule{{ID: sqlRule, Form: resolved.FormOnly, Use: resolved.SetDatabase, In: []string{modUtil}, Why: why}}
+				p.Exceptions = []resolved.Exception{{Rule: sqlRule, From: modChaos, To: modUtil, Why: why}}
+			},
+			`exceptions[0].to: "sql-in-util" is an only rule, which names its library itself: remove to`,
 		},
 		{
 			"exception for a misspelled built-in rule",
