@@ -1,0 +1,21 @@
+not checked until an owner writes instead (Archfit 3 named no alternatives): no-container-to-chaos, no-chaos-to-runtime, no-util-to-domain
+not converted or changed:
+  .archfit-app.yaml workflow: dropped: Archfit 4 has no such key
+  .archfit-app.yaml data_mode: dropped: Archfit 4 has no such key
+  target_branch: dropped: the check compares a change with its base
+  coupling: dropped: the coupling rule replaces it: a new use across modules needs a balance of at least 7
+  module_review: dropped: the unowned rule replaces it
+  ai: dropped: Archfit 4 has no AI settings
+  analyzers.scip: dropped: Archfit 4 has no such key
+  analyzers.clones: dropped: Archfit 4 has no such key
+  modules.*.owner: dropped (6 modules): Archfit 4 has no such key
+  modules.*.role: dropped (1 modules): Archfit 4 has no such key
+  modules.*.visible_to: dropped (1 modules): the graph rule and public cover it
+  rules[0] (approved-module-graph).rationale: dropped: Archfit 4 has no place for it (was "The module graph is the approved architecture. A new cross-module edge changes it and needs an owner-approved policy change first, not a code PR.")
+  rules[1] (no-module-cycles).rationale: dropped: Archfit 4 has no place for it (was "A cycle between modules makes them one unit: neither can change or be tested alone.")
+  rules[2] (no-container-to-chaos): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[3] (no-chaos-to-runtime): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[4] (no-util-to-domain): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[5] (layer-inversion).rationale: dropped: Archfit 4 has no place for it (was "cmd is the composition root. A core package that imports it creates a cycle with the wiring and cannot be reused or tested without the CLI.")
+  exceptions.duplication: 8 written for the errors of today; the Archfit 3 baseline accepted 0
+  .archfit-baseline.json metrics: dropped: Archfit 4 has no metric ratchets

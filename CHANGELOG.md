@@ -104,7 +104,7 @@ Bundle a pinned analyzer toolchain for Go, TypeScript/JavaScript, Python, and Ru
 2. Review stored baselines when producer versions or semantics change. Reanchor only after reviewing retained and dropped findings; reanchoring accepts no new debt and cannot repair missing evidence.
 3. Update the App workflow's Action commit, engine version, and matching platform digest as one reviewed change. Publishing the engine does not update existing workflows.
 
-The state, envelope, baseline, and measurement-profile format identifiers are unchanged. Producer semantics changed for dependency-cruiser, JavaScript syntax, SCIP, and cargo-modules, so old measurements are not assumed comparable. See [migration](docs/migration.md#v32-analyzer-environment).
+The state, envelope, baseline, and measurement-profile format identifiers are unchanged. Producer semantics changed for dependency-cruiser, JavaScript syntax, SCIP, and cargo-modules, so old measurements are not assumed comparable. See [migration](docs/archived/migration-v2-to-v3.md#v32-analyzer-environment).
 
 ## v3.1.2
 
@@ -229,7 +229,7 @@ Archfit does not rewrite stored baselines automatically.
 
 ## v3.0.0
 
-This is a breaking release. Read the [migration guide](docs/migration.md) first.
+This is a breaking release. Read the [migration guide](docs/archived/migration-v2-to-v3.md) first.
 It lists each step in the order you do it.
 
 Breaking changes:

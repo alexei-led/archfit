@@ -1,0 +1,136 @@
+# The Archfit policy, converted by archfit init from the Archfit 3 files.
+# Review the modules, rules and exceptions, then commit it.
+version: 3
+owners:
+  - alexei-led
+gate: required
+layers:
+  - core
+  - cmd
+modules:
+  cmd:
+    paths:
+      - cmd/**
+    public:
+      - cmd
+    volatility: low
+    subdomain: supporting
+    layer: cmd
+    depends_on:
+      - pkg_chaos
+      - pkg_container
+      - pkg_runtime
+  pkg_chaos:
+    paths:
+      - pkg/chaos/**
+    public:
+      - pkg/chaos
+      - pkg/chaos/cliflags
+      - pkg/chaos/*/cmd
+    volatility: high
+    subdomain: core
+    layer: core
+    depends_on:
+      - pkg_container
+      - pkg_util
+  pkg_container:
+    paths:
+      - pkg/container/**
+    public:
+      - pkg/container
+    volatility: medium
+    subdomain: core
+    layer: core
+  pkg_runtime:
+    paths:
+      - pkg/runtime/**
+    public:
+      - pkg/runtime/*
+    volatility: high
+    subdomain: core
+    layer: core
+    depends_on:
+      - pkg_container
+      - pkg_tc
+  pkg_tc:
+    paths:
+      - pkg/tc/**
+    public:
+      - pkg/tc
+    volatility: high
+    subdomain: core
+    layer: core
+  pkg_util:
+    paths:
+      - pkg/util/**
+    public:
+      - pkg/util
+    volatility: low
+    subdomain: supporting
+    layer: core
+rules:
+  - id: no-container-to-chaos
+    note: No dependency from pkg/container/** to pkg/chaos/**.
+    why: pkg/container is the domain model that chaos consumes. Importing chaos inverts the dependency and couples the model to every chaos action.
+  - id: no-chaos-to-runtime
+    note: No dependency from pkg/chaos/** to pkg/runtime/**.
+    why: Chaos says what to do through the container.Client interface; runtime adapters say how. A direct import bypasses the interface and ties chaos actions to one runtime.
+  - id: no-util-to-domain
+    note: No dependency from pkg/util/** to pkg/chaos/**.
+    why: pkg/util must stay domain-agnostic so any package can use it without pulling in chaos behavior.
+exceptions:
+  - rule: duplication
+    from: cmd
+    to: pkg_chaos
+    why: The error existed when archfit init wrote this policy.
+  - rule: duplication
+    from: cmd
+    to: pkg_runtime
+    why: The error existed when archfit init wrote this policy.
+  - rule: duplication
+    from: pkg_chaos
+    to: pkg_container
+    why: The error existed when archfit init wrote this policy.
+  - rule: duplication
+    from: pkg_chaos
+    to: pkg_runtime
+    why: The error existed when archfit init wrote this policy.
+  - rule: duplication
+    from: pkg_chaos
+    to: pkg_util
+    why: The error existed when archfit init wrote this policy.
+  - rule: duplication
+    from: pkg_container
+    to: pkg_runtime
+    why: The error existed when archfit init wrote this policy.
+  - rule: duplication
+    from: pkg_runtime
+    to: pkg_tc
+    why: The error existed when archfit init wrote this policy.
+  - rule: duplication
+    from: pkg_tc
+    to: pkg_util
+    why: The error existed when archfit init wrote this policy.
+generated:
+  - mocks/*.go
+  - pkg/container/mock_Client.go
+  - pkg/container/mock_Executor.go
+  - pkg/container/mock_FilterFunc.go
+  - pkg/container/mock_IPTables.go
+  - pkg/container/mock_Inspector.go
+  - pkg/container/mock_Lifecycle.go
+  - pkg/container/mock_Lister.go
+  - pkg/container/mock_Netem.go
+  - pkg/container/mock_Stressor.go
+  - pkg/runtime/containerd/mock_apiClient.go
+  - pkg/runtime/docker/mock_conn.go
+languages:
+  go:
+    enabled: true
+  typescript:
+    enabled: false
+  python:
+    enabled: false
+analyzers:
+  syntax:
+    enabled: true

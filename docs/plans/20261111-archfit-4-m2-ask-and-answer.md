@@ -90,7 +90,7 @@ same day.
 
 | Id | Decision | Status |
 | --- | --- | --- |
-| D1 | All milestone 2 and 3 pull requests in archfit-app target the long-lived integration branch `archfit-4`, cut from `main` at the start of milestone 2. App CI runs on every pull request, whatever its base. `main` stays on Archfit 3, deploys on push, and takes v3 hotfixes; the manager merges `main` into `archfit-4` after each hotfix. The release is one merge-commit pull request from `archfit-4` to `main` in the window. Reason: the Workload Identity provider admits only `deploy.yaml` on `refs/heads/main`, so no other ref can deploy. | Changed and approved 2026-11-11, manager. |
+| D1 | All milestone 2 pull requests and milestone 3 tasks 1 to 13 in archfit-app target the long-lived integration branch `archfit-4`, cut from `main` at the start of milestone 2. App CI runs on every pull request, whatever its base. `main` stays on Archfit 3, deploys on push, and takes v3 hotfixes; the manager merges `main` into `archfit-4` after each hotfix. The release is one merge-commit pull request from `archfit-4` to `main` in the window. Reason: the Workload Identity provider admits only `deploy.yaml` on `refs/heads/main`, so no other ref can deploy. | Changed and approved 2026-11-11, manager. |
 | D2 | `archfit request` sends nothing to the App. With an open pull request for the current branch, it posts the request line as a pull-request comment. Without one, it opens an issue only from a `can` answer, with the line and the `can` record, which the App marks "as reported". With `check` output and no pull request, it opens nothing and says to open a pull request first (archfit-app #111). It uses the worker's GitHub credentials (`GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`). No App endpoint and no App credential reach a laptop. Without a shell, a worker replies `/archfit request <why>` on the pull request; that comment is the no-shell path of design 15.1. | Approved 2026-11-11, manager. |
 | D3 | The request line grammar, escaping and duplicate matching are those of "The request line" in the Technical Details. | Approved 2026-11-11, manager. |
 | D4 | Contract ownership and pinning follow the table "Contracts: owner and pin" in the Technical Details. Each consumer vendors the owner's file byte for byte with a `SCHEMA_SOURCE` (repository, commit, SHA-256). Before the release the pin is a commit; at the release it is the tag. | Approved 2026-11-11, manager. |
@@ -99,7 +99,7 @@ same day.
 | D7 | New App state lives under a `v4/` key prefix with JSON values that carry a `schema` field. Archfit 3 keys stay untouched and unread, so the previous revision stays deployable. They are deleted 30 days after the release, after a Firestore export (post-completion). | Approved 2026-11-11, manager. |
 | D8 | Approvals follow the state machine and recovery table of "Approval records" in the Technical Details. | Approved 2026-11-11, manager. |
 | D9 | The passkey uses `github.com/go-webauthn/webauthn`: attestation `none`; ES256, RS256 and Ed25519; user verification required. A hand-written WebAuthn, CBOR and COSE verifier would be security code the App owns forever. Task 18 adds the module to `docs/tech-stack.md`. A second passkey needs an existing one. Credentials live under the installation tenant, so losing every passkey means reinstalling the App, which deletes them. | Changed and approved 2026-11-11, manager. |
-| D10 | In milestone 2 the App decides "loosens" by the answer: approve and approve-until loosen; reject tightens; confirming a policy changed outside the flow loosens. The App gets a general policy comparison only with the YAML editor in milestone 3. | Approved 2026-11-11, manager. |
+| D10 | In milestone 2 the App decides "loosens" by the answer: approve and approve-until loosen; reject tightens; confirming a policy changed outside the flow loosens. Milestone 3 D9 replaced the general comparison planned here: a YAML edit always needs a passkey. | Approved 2026-11-11, manager. |
 | D11 | The App writes an answer into the policy with the YAML node API of `go.yaml.in/yaml/v3`, keeping comments and order. | Approved 2026-11-11, manager. |
 | D12 | Pages: milestone 2 adds the request page and the passkey page, and removes the Decisions page, the policy editor and its AI assist, and the owner actions of the Pull page. Other pages stay as they are until milestone 3. The check (title, summary, annotations) and the comment show the record in milestone 2. Milestone 3 rewrites the pages and the comment layout and adds their goldens. | Approved 2026-11-11, manager. |
 | D13 | The App sets `archfit/gate` on its own architecture pull request. Conditions: the branch is `archfit/policy`, the App authored every commit, the diff touches only `.archfit.yaml`, and the head policy equals the result of the recorded approvals. An upload for that pull request is stored but does not set its verdict. | Approved 2026-11-11, manager. |
@@ -547,11 +547,16 @@ file and its routes). Depends on: 3, 13, 15, 16, 18. M1: none. Merge: manager (p
       token of task 18 (D10); any owner of the target policy may answer, including the one who filed it
 - [ ] record the approval, add it to the open proposal of `archfit/policy` or open one ("Approval records"), and
       write the policy from the target tip by applying the proposal's changes in order (task 3)
+- [ ] the writer puts the request number in a YAML line comment on each line an answer adds (`# request #431`): a
+      `depends_on` entry, an exception, a `deny` rule; a flow list (`[a, b]`) that an answer adds to becomes a block
+      list, one entry per line, keeping its comments; the policy page of milestone 3 links each line to its request
+      (milestone 3 D8); a golden where two answers add to the same flow list
 - [ ] when the target moves before the merge, rewrite the branch from the new tip with the same changes and update
       the proposal's expected digest; a change that no longer applies voids its approval and reopens its request
 - [ ] set `archfit/gate` on the proposal's pull request (D13), then merge it with the expected head SHA ("Approve
       and merge", the default); "merge later" leaves it open and the next answers join it, up to the proposal limit
-- [ ] close the request issue with the answer; for reject, the new `deny` rule answers later requests
+- [ ] close the request issue with the answer, naming the owner and the passkey it was made with (design 19); for
+      reject, the new `deny` rule answers later requests
 - [ ] write tests: each answer; no passkey token; a reused token; an answer by a non-owner; a merge refused by the
       ruleset (405) keeps the proposal open for the sweep; two answers that join one pull request; a target that moves
       between two joined answers; a change that no longer applies
@@ -628,6 +633,9 @@ Repository: archfit-app. Design: 9.2 (set up), 7.1, 10.1, 14, D15. Packages: `in
       App, the App not a bypass actor; the push ruleset only on an organization-owned private or internal repository
 - [ ] read the rulesets and say what is missing; warn when the App is a bypass actor or approvals are required; name
       an administrator bypass as the emergency path of design 10.8
+- [ ] record each approval of this task on GitHub with the owner and the passkey it was made with (design 19): the
+      first and workflow approvals on their pull request (a first approval of an already-converted repository, which has
+      none, on an issue assigned to the owners), confirm and revert on the issue of the policy changed outside the flow
 - [ ] write tests for each ruleset case, the first approval (new and already-converted repository), a workflow
       approval, confirm, and revert
 - [ ] run `make all`
@@ -694,7 +702,8 @@ Repository: `alexei-led/archfit-4-mechanics` (results in `archfit-4-team/reports
       with a passkey; the App merges; the re-check runs by re-run, then by branch update with a forced condition
 - [ ] walk the protection cases: a code pull request that edits the policy; an approval used twice; a direct push of
       the policy; an expired exception
-- [ ] read the pull-request page and the merge box for each check state in the browser (open item of D.2)
+- [ ] read the pull-request page and the merge box for each check state in the browser (open item of D.2), and the
+      App pages of milestone 3 (Home, a request, the policy, a pull request) with the production App
 - [ ] record the results, the timings and every failure with its cause; a failure that cannot be fixed in the window
       triggers the rollback of release step R5
 
@@ -867,11 +876,12 @@ per GitHub user id. The sign counter must grow when it is not zero. Verification
 ## Release order
 
 Design 11.7: engine 4.0.0, Action 4 and the App release together, and old and new contracts are never accepted side
-by side.
+by side. Design 16: 4.0.0 contains milestones 1 to 3. The window opens when milestone 3 is done, and tasks 28 to 32
+run after milestone 3 ([milestone 3 plan](20261112-archfit-4-m3-app-pages.md), D1).
 
 | Step | Action | Rollback |
 | --- | --- | --- |
-| R0 | Preparation: milestone 1 done (M1 task 44); tasks 1 to 27 and 33 merged, and their CI green with fakes and the Firestore emulator; `main` of archfit-app merged into `archfit-4` after the last hotfix; `coupling-dev/pumba-pilot` removed from the App installation (D23); the owner sets the window and the freeze. | Reinstall the App on `pumba-pilot` if the window is cancelled. |
+| R0 | Preparation: milestone 1 done (M1 task 44); tasks 1 to 27 and 33 merged, and milestone 3 tasks 1 to 13 merged, all with CI green with fakes and the Firestore emulator; `main` of archfit-app merged into `archfit-4` after the last hotfix; `coupling-dev/pumba-pilot` removed from the App installation (D23); the owner sets the window and the freeze. | Reinstall the App on `pumba-pilot` if the window is cancelled. |
 | R1 | archfit: `main` is green. Annotated tag `v4.0.0` from the release notes (`docs/development.md`, "Release"). The workflow builds binaries and the image and creates the release. | Tags never move. Fix and tag `v4.0.1`. No consumer pins `v4.0.0` yet. |
 | R2 | archfit-action: merge task 30, then tag `v4.0.0` and `v4`. | No consumer pins `v4` yet. Fix and tag `v4.0.1`. |
 | R3 | archfit-app: merge task 29 into `archfit-4`. | Revert the pull request. Nothing deploys from `archfit-4`. |
@@ -881,7 +891,7 @@ by side.
 | R7 | `pumba`: the M1 task 28 pull request with the Action 4 pin is an onboarding pull request; the owner gives the first approval with a passkey (task 23), then merges it. Check the ruleset. | R5's rollback first, then revert the `pumba` pull request through the administrator bypass (design 10.8): neither App can pass that revert's check. |
 | R8 | archfit: the owner gives the first approval of archfit's converted policy (task 23), then task 31 merges. | Revert the pull request. |
 | R9 | Task 32 on `pumba`. | A failure that cannot be fixed in the window: R5's rollback, then revert R8 and R7 (R7 through the administrator bypass). |
-| R10 | **The window closes.** Publish the release notes. `archfit-4` stays the integration branch for milestone 3 (D1) and is deleted after the milestone 3 release. | — |
+| R10 | **The window closes.** Publish the release notes. `archfit-4` is deleted after the release. | — |
 
 The window is R4 to R10. Target: under 2 hours. During it, every Archfit 3 check on an installed repository fails,
 which is why D23 freezes merges. No milestone 2 App build talks to GitHub before R5 (D22). The rollback of R5,
@@ -893,8 +903,6 @@ _No checkboxes: work outside these repositories or after milestone 2._
 
 - 30 days after the release: export Firestore, then delete the Archfit 3 keys (D7).
 - The owner deletes `alexei-led/archfit-4-mechanics` (design D.2).
-- Milestone 3 rewrites the pages and the comment layout with goldens and the words test, adds the YAML editor with a
-  general loosen-or-tighten comparison (D10, D12), and moves this plan with the design to `docs/archived/plans/`.
 - Milestone 5 adds the Action `report` mode on a schedule (D14).
 - Unmeasured after this milestone: the 14-day `stale` rule (D20), a re-run after 30 days, a push ruleset with the App
   as bypass actor.

@@ -1,0 +1,276 @@
+{
+  "schema_version": "archfit.baseline.v3",
+  "accepted": [
+    {
+      "fingerprint": "1f841c4ef66c9d9a70430132618740e2",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "25583a9622c5bc1e0fee18f579fa6a12",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "2af8fb58ddd7b4ac6e437c8a8b301005",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "2b2f68b0757a3eaeb5c9244588a8ff16",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "50a698c4a94070e7e276fa6164316d8e",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "9a8e5d61d663876efe2854b608cfb29f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "bf9c5ee4242875ff9d121eea63a29737",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "c63bae9ac43a663e4677d59c87aa9d83",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "3ef835400a5770fb0e5874bf35280310",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "bd9da20f2cdaa72e29841b99517bb28b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "ec535315f78fd6a77d308ed7d9ccfc00",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "db7cf7eb90b3de70d97c35125f9ba784",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "bac855784f6375d70fafc86e9174c111",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "1163394a44b1ef00322bc385feb09a5b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "2472e9c5dd85957da047770defe380a6",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "10ebd4f5c079cb2baff9d5de735d356f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "ae66ef0d5fd05668821c865237e4d80a",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "7d1653760b760d38e90f6b188fa527e9",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "d8aa67ce1be41a3fa6804d4939180b42",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "82c798195ae7edc20ad3b3066a0053e8",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "b088715ad4f2e2debcb026bd942f6c67",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "806e208194bc4f65a519c7f24cb45f8e",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "de1baaf9965964cd3bd9a5d3d3246f0e",
+      "rule_id": "module_cycles",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "90578a16f4ad116c1009426c4ae12ffb",
+      "rule_id": "syntax_api_size_ceiling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "a597753d9e9da57a7549ec037f4e4396",
+      "rule_id": "syntax_api_size_ceiling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "b98c265d65853beceff848d802bb31a0",
+      "rule_id": "syntax_api_size_ceiling",
+      "kind": "advisory",
+      "severity": "medium"
+    }
+  ],
+  "metrics": {
+    "blast_radius": {
+      "value": 10,
+      "version": "blast_radius.v2"
+    },
+    "coverage": {
+      "value": 1,
+      "version": "coverage.v1"
+    },
+    "cycle": {
+      "value": 0,
+      "version": "cycle.v1"
+    },
+    "unbalanced_edge": {
+      "value": 0,
+      "version": "unbalanced_edge.v3"
+    }
+  },
+  "state": {
+    "config_hash": "efb27b718e57802cc968a40f8cb2ab31d52ced10e6fc7252015988b077a408c0",
+    "classification_hash": "b960cc2884924420cb8e8e09969a77c4d93f686acb4564e4c268bb8d072f3882",
+    "model_hash": "9d94d4b33b88e29959736c961262269a4e6ef3e43d90c2d8c9bc3f88d7c60428",
+    "labels_hash": "",
+    "rubric_version": "bc_score.v7",
+    "measurement_profile": {
+      "version": "archfit.measurement.v2",
+      "settings_hash": "0ab6fe77f2b22fe89c6dee4a38f5997083027f9a5ced0ce1e3f0e614294d06b8",
+      "producers": [
+        {
+          "tool": "ast-grep",
+          "semantics_version": "ast-grep.v1",
+          "status": "disabled"
+        },
+        {
+          "tool": "ast-grep/syntax",
+          "semantics_version": "ast-grep/syntax.v2",
+          "tool_version": "ast-grep 0.51.0",
+          "status": "ok"
+        },
+        {
+          "tool": "dependency-cruiser",
+          "semantics_version": "dependency-cruiser.v2",
+          "status": "absent"
+        },
+        {
+          "tool": "deploy-unit",
+          "semantics_version": "deploy-unit.v2",
+          "status": "ok"
+        },
+        {
+          "tool": "dotnet-msbuild",
+          "semantics_version": "dotnet-msbuild.v1",
+          "status": "absent"
+        },
+        {
+          "tool": "git-history",
+          "semantics_version": "git-history.recent500-full-fallback.v2",
+          "tool_version": "git version 2.39.5",
+          "status": "ok"
+        },
+        {
+          "tool": "go/packages",
+          "semantics_version": "go/packages.v2",
+          "tool_version": "go1.27.3",
+          "status": "ok"
+        },
+        {
+          "tool": "grimp",
+          "semantics_version": "grimp.v3",
+          "status": "absent"
+        },
+        {
+          "tool": "jscpd",
+          "semantics_version": "jscpd.v1",
+          "tool_version": "jscpd 5.4.2",
+          "status": "ok"
+        },
+        {
+          "tool": "loc",
+          "semantics_version": "loc.v1",
+          "status": "ok"
+        },
+        {
+          "tool": "roslyn",
+          "semantics_version": "roslyn.v1",
+          "status": "absent"
+        },
+        {
+          "tool": "scip",
+          "semantics_version": "scip.v3",
+          "tool_version": "scip-go 0.2.9",
+          "status": "ok"
+        },
+        {
+          "tool": "scip-symbols",
+          "semantics_version": "scip-symbols.v2",
+          "tool_version": "scip-go 0.2.9",
+          "status": "ok"
+        },
+        {
+          "tool": "supplied-coverage",
+          "semantics_version": "supplied-coverage.v1",
+          "status": "disabled"
+        }
+      ],
+      "unknowns": []
+    },
+    "qualifying_seam_ids": [
+      "efcdc1e1a6a9568dc41af954595869e8b645020c47f7fa6a70da5660c8c402fd",
+      "6c85bbb28a549e6a02ca6f32271abe53c3e91f3d6ec7650e10ad9d5231c1df2b",
+      "294684873f6180efccb5beb40670d2681f957646931483ba03a8f9b74737fc20",
+      "afcd1a408c32fe0c4f64d0034436343758a99463b02d92dbf765e315acfe54db",
+      "44360a5209e18c9c17ca138d830becb012857b4ddfeede35b7738c2cb1d7b5d3"
+    ]
+  }
+}

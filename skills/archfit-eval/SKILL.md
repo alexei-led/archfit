@@ -41,7 +41,7 @@ workflow lives in `docs/development.md`. Read it before running a sweep.
 The state JSON identifier is `archfit.architecture-state.v1`. The current
 configuration schema is version 2. The v3 engine uses baseline schema 3 and
 supports `archfit baseline --reanchor` for accepted findings. Do not infer
-compatibility from the version string alone. See the [migration guide](../../docs/migration.md).
+compatibility from the version string alone. See the [migration guide](../../docs/archived/migration-v2-to-v3.md).
 
 ## Output
 

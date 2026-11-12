@@ -1,0 +1,52 @@
+not checked until an owner writes instead (Archfit 3 named no alternatives): internal_no_labelsio, relationship_no_assessment, projector_no_domain_internals, model_no_baseline, evidence_no_policy, baseline_no_score, assessment_no_score_decision, application_no_cmd, core_no_cmd, adapter_no_cli
+not converted or changed:
+  .archfit-app.yaml workflow: dropped: Archfit 4 has no such key
+  .archfit-app.yaml data_mode: dropped: Archfit 4 has no such key
+  coupling: dropped: the coupling rule replaces it: a new use across modules needs a balance of at least 7
+  module_review: dropped: the unowned rule replaces it
+  ai: dropped: Archfit 4 has no AI settings
+  analyzers.syntax.gate: dropped: Archfit 4 has no such key
+  analyzers.scip: dropped: Archfit 4 has no such key
+  analyzers.clones: dropped: Archfit 4 has no such key
+  modules.*.deploy_unit: dropped (16 modules): Archfit 4 has no such key
+  modules.*.owner: dropped (18 modules): Archfit 4 has no such key
+  modules.*.role: dropped (17 modules): Archfit 4 has no such key
+  modules.*.visible_to: dropped (2 modules): the graph rule and public cover it
+  modules.architecture-tests.paths: "internal" matches no source file: dropped
+  modules.analysis-application.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (6)
+  modules.architecture-policy.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (1)
+  modules.architecture-tests.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (3)
+  modules.assessment-repair.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (5)
+  modules.cli-composition.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (14)
+  modules.config-lifecycle.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (8)
+  modules.development-tools.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (6)
+  modules.evidence-acquisition.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (9)
+  modules.evidence-adapters.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (6)
+  modules.evidence-analysis.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (1)
+  modules.persistence-adapters.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (7)
+  modules.policy-config-adapter.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (9)
+  modules.provider-adapters.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (0)
+  modules.relationship-analysis.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (3)
+  modules.report-adapters.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (1)
+  rules[0] (module_boundaries).rationale: dropped: Archfit 4 has no place for it (was "A module that reaches past its depends_on or visible_to list turns the module map into fiction: the next change to the target breaks an owner who never declared the dependency.")
+  rules[1] (module_cycles): gate warn: the built-in cycle rule replaces it, mode deny
+  rules[6] (internal_no_labelsio): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[9] (relationship_no_assessment): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[18] (projector_no_domain_internals): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[19] (model_no_baseline): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[20] (evidence_no_policy): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[21] (no_stage_view): written as a note: to "internal/view/**" matches no file (a guard: Archfit 4 has none)
+  rules[22] (baseline_no_score): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[24] (assessment_no_score_decision): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[33] (application_no_cmd): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[34] (no_analysispipeline): written as a note: to "internal/analysispipeline/**" matches no file (a guard: Archfit 4 has none)
+  rules[35] (core_no_cmd): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[36] (adapter_no_cli): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
+  rules[38] (layer_inversion).rationale: dropped: Archfit 4 has no place for it (was "An inner layer importing an outer one reverses the dependency direction. A change in the outer layer then breaks the core, and cycles follow.")
+  rules[39] (syntax_api_size_ceiling): public_api_max: written as a note: nothing checks it in Archfit 4
+  rules[40] (arch_public_api_type_leak): public_api_type_leak: written as a note: nothing checks it in Archfit 4
+  exceptions.coupling: 15 written for the errors of today; the Archfit 3 baseline accepted 17
+  exceptions.duplication: 64 written for the errors of today; the Archfit 3 baseline accepted 5
+  exceptions.cycle: 2 written for the errors of today; the Archfit 3 baseline accepted 1
+  .archfit-baseline.json: 3 accepted entries of syntax_api_size_ceiling dropped: nothing checks that rule in Archfit 4
+  .archfit-baseline.json metrics: dropped: Archfit 4 has no metric ratchets
