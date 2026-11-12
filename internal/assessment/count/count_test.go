@@ -564,3 +564,73 @@ func digestOf(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
+
+// Stand judges one tree on its own: what the repository state reads.
+func TestStand(t *testing.T) {
+	drift := tree{imports: []evidence.ImportFact{imp(tcFile, 5, "pkg/util")}}
+	cp := tree{literals: []evidence.LiteralOccurrence{lit(tcFile, 9), lit(utilFile, 15)}}
+	both := tree{imports: drift.imports, literals: cp.literals}
+	graphX := func(expires time.Time) resolved.Exception {
+		return resolved.Exception{Rule: resolved.RuleGraph, From: tc, To: util, Expires: expires, Why: "planned migration"}
+	}
+	cases := []struct {
+		name                  string
+		exceptions            []resolved.Exception
+		head                  tree
+		drift, expired, cover []change.Key
+	}{
+		{name: "a tree with no error", head: tree{}},
+		{name: "an error no exception matches", head: drift, drift: []change.Key{graphKey}},
+		{name: "a copy", head: cp, drift: []change.Key{copyKey}},
+		{
+			name: "an error and a copy, in record order", head: both,
+			drift: []change.Key{graphKey, copyKey},
+		},
+		{
+			name: "a holding exception", exceptions: []resolved.Exception{graphX(day(0))}, head: drift,
+			cover: []change.Key{graphKey},
+		},
+		{
+			name: "an exception with no date", exceptions: []resolved.Exception{graphX(time.Time{})}, head: drift,
+			cover: []change.Key{graphKey},
+		},
+		{
+			name: "an expired exception the tree still breaks", exceptions: []resolved.Exception{graphX(day(-1))},
+			head: drift, expired: []change.Key{expiredKey},
+		},
+		{name: "an expired exception the tree no longer breaks", exceptions: []resolved.Exception{graphX(day(-1))}},
+		{name: "a holding exception that matches nothing", exceptions: []resolved.Exception{graphX(day(5))}},
+		{
+			name:       "a copy matched in either order",
+			exceptions: []resolved.Exception{{Rule: resolved.RuleDuplication, From: util, To: tc}},
+			head:       cp, cover: []change.Key{copyKey},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := policy(c.exceptions...)
+			s := count.Stand(p, c.head.facts(), today)
+			if got, want := keys(s.Drift), orEmpty(c.drift); !reflect.DeepEqual(got, want) {
+				t.Errorf("drift = %v, want %v", got, want)
+			}
+			if got, want := keys(s.Expired), orEmpty(c.expired); !reflect.DeepEqual(got, want) {
+				t.Errorf("expired = %v, want %v", got, want)
+			}
+			if len(c.cover) > 0 != (len(s.Holding) == 1) {
+				t.Errorf("holding = %+v, want one exception: %t", s.Holding, len(c.cover) > 0)
+			}
+			for _, e := range slices.Concat(s.Drift, s.Expired) {
+				if e.FromChange {
+					t.Errorf("%v: FromChange true on a tree judged on its own", e.Key)
+				}
+			}
+		})
+	}
+}
+
+func orEmpty(ks []change.Key) []change.Key {
+	if ks == nil {
+		return []change.Key{}
+	}
+	return ks
+}

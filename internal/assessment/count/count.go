@@ -29,6 +29,10 @@
 //  4. pass.
 //
 // The engine never sets waiting: only the App knows the open requests.
+//
+// Stand judges one tree on its own, with the same rules and exceptions: the
+// errors no exception matches, the exceptions past their date, and those
+// that hold. The repository state for owners reads it.
 package count
 
 import (
@@ -142,6 +146,48 @@ func Assess(in Input) Verdict {
 	return Verdict{Status: status, Errors: errs, Unknown: reasons}
 }
 
+// Standing is one tree judged on its own, with no base and no added lines:
+// how the tree stands against the policy and its exceptions on a date. The
+// repository state for owners reads it (design 7.1).
+type Standing struct {
+	// Drift are the errors of the tree that no exception matches, holding
+	// or expired, in record order. FromChange is false.
+	Drift []Error
+	// Expired are the exceptions past their date that the tree still
+	// breaks, in policy order, as Assess reports them. FromChange is false.
+	// The errors they match are not in Drift.
+	Expired []Error
+	// Holding are the exceptions on or before their date that match an
+	// error of the tree, in policy order. An exception that matches nothing
+	// is not listed.
+	Holding []resolved.Exception
+}
+
+// Stand judges one tree on its own: the same rules and the same exception
+// matching as Assess, with no comparison. today decides which exceptions
+// hold.
+func Stand(p resolved.Policy, facts evidence.CheckFacts, today time.Time) Standing {
+	errs := judge(p, facts, nil, day(today).AddDate(0, 0, proposedDays))
+	s := Standing{Drift: []Error{}, Expired: []Error{}, Holding: []resolved.Exception{}}
+	for _, x := range p.Exceptions {
+		switch {
+		case isExpired(x, today):
+			if err, ok := expiredError(p, x, errs, nil); ok {
+				s.Expired = append(s.Expired, err)
+			}
+		case slices.ContainsFunc(errs, func(e change.Error) bool { return matches(p, x, e) }):
+			s.Holding = append(s.Holding, x)
+		}
+	}
+	slices.SortFunc(errs, recordOrder(nil, ruleOrder(p)))
+	for _, e := range errs {
+		if !slices.ContainsFunc(p.Exceptions, func(x resolved.Exception) bool { return matches(p, x, e) }) {
+			s.Drift = append(s.Drift, Error{Error: e})
+		}
+	}
+	return s
+}
+
 // judge returns the errors of one tree: every rule of change.Evaluate and
 // the duplication rule.
 func judge(p resolved.Policy, facts evidence.CheckFacts, added evidence.AddedLines, proposed time.Time) []change.Error {
@@ -217,7 +263,14 @@ func addedErrors(base, head []change.Error, lines evidence.AddedLines, order map
 	for i := range out {
 		out[i].Sites = addedFirst(out[i].Sites, lines)
 	}
-	slices.SortFunc(out, func(a, b change.Error) int {
+	slices.SortFunc(out, recordOrder(lines, order))
+	return out
+}
+
+// recordOrder compares errors in record order: an error whose first site is
+// on an added line first, then by file, line, rule (order ranks them) and key.
+func recordOrder(lines evidence.AddedLines, order map[string]int) func(a, b change.Error) int {
+	return func(a, b change.Error) int {
 		return cmp.Or(
 			cmp.Compare(rank(a.Sites[0], lines), rank(b.Sites[0], lines)),
 			cmp.Compare(a.Sites[0].File, b.Sites[0].File),
@@ -228,8 +281,7 @@ func addedErrors(base, head []change.Error, lines evidence.AddedLines, order map
 			cmp.Compare(a.Key.To, b.Key.To),
 			cmp.Compare(a.Key.Symbol, b.Key.Symbol),
 		)
-	})
-	return out
+	}
 }
 
 // ruleOrder ranks the rules as change.Evaluate does: the built-in rules in
