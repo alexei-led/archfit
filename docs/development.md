@@ -74,11 +74,15 @@ make build
 make language-contracts
 ```
 
-The language contract harness exercises Go, TypeScript, JavaScript, Python, Rust, and .NET producers.
-Read its output for missing tools and unverified cases.
-Passing a fixture without its required producer is not evidence of language support.
+The language contract harness runs `archfit check` on Go, TypeScript, JavaScript, Python, Rust, and .NET fixtures.
+Each fixture has a schema 3 policy with one `deny` rule. Its `main` branch holds a clean tree, and its change branch adds the forbidden dependency.
+The check must report the rule's error and exit 1. An active exception (judged with `--policy`) must pass, and an expired one must fail.
+When the change is undone, the check must pass with exit 0.
+Go, TypeScript, JavaScript, and Python need only `git` and `ast-grep`. Rust also needs `cargo`. .NET needs the SDK and the Roslyn helper.
+The preflight fails on a missing tool. Passing a fixture without its required producer is not evidence of language support.
+`--only LANGUAGE` runs one case and checks only the tools it needs.
 
-`make language-contracts` builds the Roslyn helper first. The .NET case runs the real SDK and helper on a copy of `internal/testdata/dotnet`, using `ARCHFIT_DOTNET_ROSLYN` when set, else `.bin/dotnet-roslyn`. `--only dotnet` runs that case alone. Build and test the helper on its own with:
+`make language-contracts` builds the Roslyn helper first. The .NET case runs the real SDK and helper on a copy of `internal/testdata/dotnet`, using `ARCHFIT_DOTNET_ROSLYN` when set, else `.bin/dotnet-roslyn`. It asserts the helper's project statuses and edges. Then it runs the check with a new `ProjectReference` as the forbidden dependency, because the check reads .NET at the project-reference level. The policy lists the four projects that evaluate. With every project, the failed `Broken` project must appear in the record, and the result is never a pass. `--only dotnet` runs that case alone. Build and test the helper on its own with:
 
 ```sh
 make dotnet-roslyn
@@ -216,9 +220,8 @@ runner-owned prefix named by `ARCHFIT_PREFIX`. The CI job restores that prefix f
 cache keyed on the lock files below and rebuilds it only on a miss, so a pin change re-provisions and a
 code change reuses the verified tree. The CI job calls `scripts/ci-provision-tools.sh`; it is not
 a general host installer.
-The image contract runs all supported languages and positive optional-tool cases under the default
-and arbitrary numeric UID with readonly trusted inputs. The .NET case also analyzes the fixture directly from the readonly mount and checks its tree hash is unchanged. Known-bad compiler/config cases must not
-produce valid empty evidence. Native amd64 and arm64 release jobs validate their own immutable
+The image contract runs `archfit check` on the language-contract fixtures under the default
+and arbitrary numeric UID with readonly trusted inputs: each forbidden dependency must give its error and exit 1. The .NET case also analyzes the fixture directly from the readonly mount and checks its tree hash is unchanged. Poisoned target config, `sitecustomize.py` and virtual environments must not run, and the real error must stay. Native amd64 and arm64 release jobs validate their own immutable
 platform images before the manifest/version tags are assembled. Emulation is not native proof.
 
 Run the SCIP reader tests with the provisioned interpreter; they do not bootstrap dependencies:
