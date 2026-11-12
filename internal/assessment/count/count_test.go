@@ -492,9 +492,15 @@ func TestAssessUnknown(t *testing.T) {
 			status: result.StatusPass, causes: []result.Cause{},
 		},
 		{
+			name:   "a removed failure in one directory does not hide a new one in another",
+			base:   tree{unknown: []evidence.UnknownItem{unresolved("web/a/main.ts", 3)}},
+			head:   tree{unknown: []evidence.UnknownItem{unresolved("api/b/main.ts", 5)}},
+			status: result.StatusUnknown, causes: []result.Cause{result.CauseImport},
+		},
+		{
 			name:   "one more unresolved use of a specifier, in an unchanged file",
 			base:   tree{unknown: []evidence.UnknownItem{unresolved(utilFile, 3)}},
-			head:   tree{unknown: []evidence.UnknownItem{unresolved(utilFile, 3), unresolved(chaosFile, 5)}},
+			head:   tree{unknown: []evidence.UnknownItem{unresolved(utilFile, 3), unresolved("pkg/util/more.go", 5)}},
 			status: result.StatusUnknown, causes: []result.Cause{result.CauseImport, result.CauseImport},
 		},
 		{

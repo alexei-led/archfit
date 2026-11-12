@@ -33,6 +33,7 @@ package count
 
 import (
 	"cmp"
+	"path"
 	"regexp"
 	"slices"
 	"time"
@@ -326,19 +327,23 @@ func baseUnread(base evidence.CheckFacts) []result.Unknown {
 	return out
 }
 
-// itemKey groups unknown items as errors are grouped: by what cannot be
-// read, not where, so a deletion above an item or a pure rename keeps its key
-// and count. An item without a specifier (a file that cannot be parsed) is
-// keyed by its file, so a rename of such a file is a new item.
+// itemKey groups unknown items as errors are grouped, by count and not by
+// line: a specifier resolves the same way from every file of one directory
+// (a relative path, or an alias of the tsconfig that covers it), so the key
+// is the directory, the specifier and the cause. A deletion above an item, or
+// a rename within its directory, keeps the key and the count; the same
+// specifier failing in another directory is another key, so a removed failure
+// there cannot hide it. An item without a specifier (a file that cannot be
+// parsed) is keyed by its file, so a rename of such a file is a new item.
 type itemKey struct {
-	specifier, file string
-	cause           evidence.UnknownCause
+	place, specifier string
+	cause            evidence.UnknownCause
 }
 
 func keyOf(u evidence.UnknownItem) itemKey {
-	k := itemKey{specifier: u.Specifier, cause: u.Cause}
-	if u.Specifier == "" {
-		k.file = u.File
+	k := itemKey{place: u.File, specifier: u.Specifier, cause: u.Cause}
+	if u.Specifier != "" && u.File != "" {
+		k.place = path.Dir(u.File)
 	}
 	return k
 }
