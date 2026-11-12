@@ -2,15 +2,19 @@
 """Run the bounded, real-tool language acceptance contract.
 
 This gate creates five disposable repositories (Go, TypeScript, JavaScript,
-Python, and a Rust workspace) and exercises the branch binary through the
-public CLI.  The fixtures deliberately contain one forbidden dependency so
-the gate proves both a real producer edge and the finding lifecycle around it.
-A sixth case runs the .NET SDK, the Roslyn helper, and the branch binary on a
-copy of internal/testdata/dotnet and asserts project statuses, file edges, and
-strength hints.
+Python, and a Rust workspace) and runs the branch binary's `archfit check` on
+each.  Every fixture has a schema 3 policy with one custom deny rule.  Its
+target branch holds a clean tree; its change branch adds the forbidden
+dependency.  The check must give the deny error and exit 1, honour a policy
+exception until its date, and pass (exit 0) once the change is undone.
+A sixth case runs the .NET SDK and the Roslyn helper on a copy of
+internal/testdata/dotnet: it asserts the helper's project statuses, file edges
+and strength hints, then runs the same check with a new project reference as
+the forbidden dependency.
 Every required producer is checked before the run; a missing tool is an
-environment failure, never an accepted skip.  `--only LANGUAGE` runs one case
-and checks only the producers that case uses.
+environment failure, never an accepted skip.  Go, TypeScript, JavaScript and
+Python need `git` and `ast-grep` only.  `--only LANGUAGE` runs one case and
+checks only the producers that case uses.
 """
 
 from __future__ import annotations
@@ -34,34 +38,34 @@ DEFAULT_OUTPUT = Path("/tmp/archfit-language-contracts")
 OUTPUT_MARKER = ".archfit-language-contracts"
 TOOL_MANIFEST = json.loads((REPO_ROOT / "tools/manifest.json").read_text())
 RUST_TOOLCHAIN = TOOL_MANIFEST["versions"]["rust"]
-DEPCRUISE_VERSION = TOOL_MANIFEST["node"]["dependency-cruiser"]
 DOTNET_VERSION = TOOL_MANIFEST["versions"]["dotnet"]
 DOTNET_FIXTURE = REPO_ROOT / "internal" / "testdata" / "dotnet"
 DOTNET_HELPER_DEFAULT = REPO_ROOT / ".bin" / "dotnet-roslyn"
 DOTNET_HELPER_DLL = "archfit-roslyn.dll"
 DOTNET_HELPER_ENV = "ARCHFIT_DOTNET_ROSLYN"
-TYPESCRIPT_VERSION = TOOL_MANIFEST["node"]["typescript"]
+RESULT_SCHEMA_PATH = REPO_ROOT / "archfit.result.schema.json"
+RESULT_SCHEMA = "archfit.result.v1"
 RULE_ID = "core_no_adapter"
-WARN_RULE_ID = "core_warn_adapter"
-OPTIONAL_DISABLED = {
-    "scip": "disabled",
-    "jscpd": "disabled",
-    "cargo-modules": "disabled",
-}
-
-sys.path.insert(0, str(SCRIPT_DIR))
-import corpus_sweep as corpus
+EXCEPTION_RULE = "exception"
+POLICY_OWNER = "archfit-acceptance"
+TARGET_BRANCH = "main"
+CHANGE_BRANCH = "change"
+ACTIVE_UNTIL = "2099-12-31"
+EXPIRED_ON = "2000-01-01"
+GITIGNORE = ".archfit-cache/\n"
 
 
 @dataclass(frozen=True, slots=True)
 class FixtureSpec:
     name: str
     language: str
+    # The clean tree on the target branch.
     files: dict[str, str]
-    from_selector: str
-    to_selector: str
+    # What the change writes over files: the forbidden dependency.
+    forbidden: dict[str, str]
+    core_paths: str
+    adapter_paths: str
     python_package: str = ""
-    node: bool = False
 
 
 @dataclass(slots=True)
@@ -88,14 +92,26 @@ class CommandResult:
     stderr: str
 
 
+@dataclass(frozen=True, slots=True)
+class ChangeContract:
+    """One repository, its policy, and the change that adds a forbidden dependency."""
+
+    policy: str
+    forbidden: dict[str, str]
+    rule: str
+
+
 FIXTURES = (
     FixtureSpec(
         "go",
         "go",
         {
             "go.mod": "module example.com/language-contract\n\ngo 1.25\n",
-            "core/core.go": 'package core\n\nimport "example.com/language-contract/adapter"\n\nfunc Run() int { return adapter.Value() }\n',
+            "core/core.go": "package core\n\nfunc Run() int { return 1 }\n",
             "adapter/adapter.go": "package adapter\n\nfunc Value() int { return 1 }\n",
+        },
+        {
+            "core/core.go": 'package core\n\nimport "example.com/language-contract/adapter"\n\nfunc Run() int { return adapter.Value() }\n',
         },
         "core/**",
         "adapter/**",
@@ -104,18 +120,7 @@ FIXTURES = (
         "typescript",
         "typescript",
         {
-            "package.json": json.dumps(
-                {
-                    "name": "archfit-language-contract-typescript",
-                    "private": True,
-                    "devDependencies": {
-                        "dependency-cruiser": DEPCRUISE_VERSION,
-                        "typescript": TYPESCRIPT_VERSION,
-                    },
-                },
-                indent=2,
-            )
-            + "\n",
+            "package.json": '{\n  "name": "archfit-language-contract-typescript",\n  "private": true\n}\n',
             "tsconfig.json": json.dumps(
                 {
                     "compilerOptions": {
@@ -128,34 +133,29 @@ FIXTURES = (
                 indent=2,
             )
             + "\n",
-            "src/core/index.ts": 'import { value } from "../adapter/index";\n\nexport const run = () => value();\n',
+            "src/core/index.ts": "export const run = () => 1;\n",
             "src/adapter/index.ts": "export const value = () => 1;\n",
+        },
+        {
+            "src/core/index.ts": 'import { value } from "../adapter/index";\n\nexport const run = () => value();\n',
         },
         "src/core/**",
         "src/adapter/**",
-        node=True,
     ),
     FixtureSpec(
         "javascript",
         "typescript",
         {
-            "package.json": json.dumps(
-                {
-                    "name": "archfit-language-contract-javascript",
-                    "private": True,
-                    "type": "module",
-                    "devDependencies": {"dependency-cruiser": DEPCRUISE_VERSION},
-                },
-                indent=2,
-            )
-            + "\n",
+            "package.json": '{\n  "name": "archfit-language-contract-javascript",\n  "private": true,\n  "type": "module"\n}\n',
             "tsconfig.json": '{"compilerOptions":{"allowJs":true,"checkJs":true,"module":"NodeNext","moduleResolution":"NodeNext"},"include":["src/**/*.js"]}\n',
-            "src/core/index.js": 'import { value } from "../adapter/index.js";\n\nexport const run = () => value();\n',
+            "src/core/index.js": "export const run = () => 1;\n",
             "src/adapter/index.js": "export const value = () => 1;\n",
+        },
+        {
+            "src/core/index.js": 'import { value } from "../adapter/index.js";\n\nexport const run = () => value();\n',
         },
         "src/core/**",
         "src/adapter/**",
-        node=True,
     ),
     FixtureSpec(
         "python",
@@ -163,25 +163,34 @@ FIXTURES = (
         {
             "pyproject.toml": '[project]\nname = "archfit-language-contract-python"\nversion = "0.1.0"\nrequires-python = ">=3.12"\n',
             "smoke/__init__.py": "",
-            "smoke/core.py": "from smoke.adapter import value\n\ndef run():\n    return value()\n",
+            "smoke/core.py": "def run():\n    return 1\n",
             "smoke/adapter.py": "def value():\n    return 1\n",
         },
-        "smoke.core**",
-        "smoke.adapter**",
+        {
+            "smoke/core.py": "from smoke.adapter import value\n\ndef run():\n    return value()\n",
+        },
+        "smoke/core.py",
+        "smoke/adapter.py",
         python_package="smoke",
     ),
     FixtureSpec(
         "rust",
         "rust",
         {
+            # cargo metadata may write the lock file during the check.
+            ".gitignore": GITIGNORE + "Cargo.lock\n",
             "Cargo.toml": '[workspace]\nmembers = ["core", "adapter"]\nresolver = "2"\n',
-            "core/Cargo.toml": '[package]\nname = "smoke-core"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nsmoke-adapter = { path = "../adapter" }\n',
-            "core/src/lib.rs": "pub fn run() -> u32 { smoke_adapter::value() }\n",
+            "core/Cargo.toml": '[package]\nname = "smoke-core"\nversion = "0.1.0"\nedition = "2021"\n',
+            "core/src/lib.rs": "pub fn run() -> u32 { 1 }\n",
             "adapter/Cargo.toml": '[package]\nname = "smoke-adapter"\nversion = "0.1.0"\nedition = "2021"\n',
             "adapter/src/lib.rs": "pub fn value() -> u32 { 1 }\n",
         },
-        "smoke-core",
-        "smoke-adapter",
+        {
+            "core/Cargo.toml": '[package]\nname = "smoke-core"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nsmoke-adapter = { path = "../adapter" }\n',
+            "core/src/lib.rs": "pub fn run() -> u32 { smoke_adapter::value() }\n",
+        },
+        "core/**",
+        "adapter/**",
     ),
 )
 
@@ -195,6 +204,17 @@ DOTNET_PROJECTS = (
     "Tests",
     "Unresolved",
 )
+# The projects the check reads. Broken fails evaluation, Tests references it, and
+# Unresolved names a missing package: the full set is the unknown case below.
+DOTNET_CHECKED_PROJECTS = ("Domain", "Application", "Infrastructure", "Legacy")
+DOTNET_RULE_ID = "legacy_no_application"
+DOTNET_CHANGED_PROJECT = "Legacy/Legacy.csproj"
+DOTNET_EXISTING_REFERENCE = (
+    '    <ProjectReference Include="..\\Domain\\Domain.csproj" />\n'
+)
+DOTNET_FORBIDDEN_REFERENCE = (
+    '    <ProjectReference Include="..\\Application\\Application.csproj" />\n'
+)
 DOTNET_MISSING_SDK = "Archfit.Fixture.Missing.Sdk"
 DOTNET_NET8_PACK = "Microsoft.NETCore.App.Ref 8."
 DOTNET_EXPECTED_EDGES = (
@@ -204,45 +224,84 @@ DOTNET_EXPECTED_EDGES = (
     ("Application/Contracts.cs", "Domain/Domain.cs", "model", "model"),
     ("Legacy/Legacy.cs", "Domain/Domain.cs", "functional", "model"),
 )
-DOTNET_EXPECTED_SEAMS = {
-    ("Infrastructure", "Domain"): "intrusive",
-    ("Application", "Domain"): "model",
-    ("Legacy", "Domain"): "functional",
-}
 # Broken fails evaluation too and Tests is a test project: neither has an edge.
 DOTNET_EDGELESS_PROJECTS = ("Broken", "Tests")
 
 
-def dotnet_config_text() -> str:
-    modules = "".join(
-        f"  {name}:\n    paths: ['{name}/**']\n    owner: team-{name.lower()}\n"
-        for name in DOTNET_PROJECTS
+def config_text(spec: FixtureSpec) -> str:
+    """The schema 3 policy of a fixture: two modules and one deny rule."""
+    languages = (
+        f"languages:\n  python:\n    package: {spec.python_package}\n"
+        if spec.python_package
+        else ""
     )
-    return f"""version: 2
-languages:
-  go:
-    enabled: false
-  typescript:
-    enabled: false
-  python:
-    enabled: false
-  rust:
-    enabled: false
-  dotnet:
-    enabled: true
-analyzers:
-  syntax:
-    enabled: false
-  scip:
-    enabled: false
-  clones:
-    enabled: false
-  cargo_modules:
-    enabled: false
-  roslyn:
-    enabled: true
-modules:
-{modules}"""
+    return f"""version: 3
+owners: [{POLICY_OWNER}]
+{languages}modules:
+  core:
+    paths: ['{spec.core_paths}']
+  adapter:
+    paths: ['{spec.adapter_paths}']
+rules:
+  - id: {RULE_ID}
+    deny: {{ from: core, to: adapter }}
+    why: The core must not know its adapter.
+    instead: Pass the value in through the core's own API.
+"""
+
+
+def dotnet_policy_text(projects: tuple[str, ...] | None) -> str:
+    """The .NET policy: one module per directory; projects limits what is read."""
+    languages = ""
+    if projects is not None:
+        listed = ", ".join(f"{name}/{name}.csproj" for name in projects)
+        languages = f"languages:\n  dotnet:\n    projects: [{listed}]\n"
+    modules = "".join(
+        f"  {name}:\n    paths: ['{name}/**']\n"
+        for name in (*DOTNET_PROJECTS, "Shared")
+    )
+    return f"""version: 3
+owners: [{POLICY_OWNER}]
+{languages}modules:
+{modules}rules:
+  - id: {DOTNET_RULE_ID}
+    deny: {{ from: Legacy, to: Application }}
+    why: Legacy code stays off the application layer.
+    instead: Keep Legacy on the domain model.
+"""
+
+
+def dotnet_forbidden(project: str) -> str:
+    """Legacy.csproj with a new reference to Application: the forbidden dependency."""
+    if DOTNET_EXISTING_REFERENCE not in project:
+        raise RuntimeError(
+            f"{DOTNET_CHANGED_PROJECT} no longer holds its Domain reference"
+        )
+    return project.replace(
+        DOTNET_EXISTING_REFERENCE,
+        DOTNET_EXISTING_REFERENCE + DOTNET_FORBIDDEN_REFERENCE,
+    )
+
+
+def exceptions_text(errors: list[dict[str, Any]], expires: str) -> str:
+    """An exceptions block that covers every error of a result until expires."""
+    covered = sorted(
+        {
+            (error.get("rule", ""), error.get("from", ""), error.get("to", ""))
+            for error in errors
+            if error.get("rule") != EXCEPTION_RULE
+        }
+    )
+    lines = ["exceptions:"]
+    for rule, source, target in covered:
+        lines += [
+            f"  - rule: {rule}",
+            f"    from: {source}",
+            f"    to: {target}",
+            f'    expires: "{expires}"',
+            "    why: acceptance exception lifecycle",
+        ]
+    return "\n".join(lines) + "\n"
 
 
 def dotnet_environment(home: Path, helper: Path) -> dict[str, str]:
@@ -362,71 +421,37 @@ def check_dotnet_helper(result: ContractResult, doc: dict[str, Any]) -> None:
     assert_result(result, "Broken and Tests emit no helper edges", not leaked, leaked)
 
 
-def check_dotnet_state(result: ContractResult, state: dict[str, Any]) -> None:
-    """Assert what the branch binary reports for the fixture through the public state."""
-    rows = {row.get("tool"): row for row in state.get("coverage", {}).get("tools", [])}
-    msbuild = rows.get("dotnet-msbuild", {})
+def check_dotnet_unknown(
+    result: ContractResult, command: CommandResult, doc: dict[str, Any]
+) -> None:
+    """A project that fails evaluation is a reason in the record and never a pass.
+
+    The status is fail when the change also adds an error, else unknown."""
+    named = [
+        reason
+        for reason in doc.get("unknown", [])
+        if reason.get("cause") == "tool"
+        and "Broken/Broken.csproj" in reason.get("what", "")
+        and DOTNET_MISSING_SDK in reason.get("what", "")
+    ]
     assert_result(
         result,
-        "dotnet-msbuild row is partial and names Broken's SDK",
-        msbuild.get("status") == "partial"
-        and "Broken/Broken.csproj" in msbuild.get("reason", "")
-        and DOTNET_MISSING_SDK in msbuild.get("reason", ""),
-        msbuild,
-    )
-    roslyn = rows.get("roslyn", {})
-    reason = roslyn.get("reason", "")
-    named_pack = " Legacy/Legacy.csproj partial" not in f" {reason}" or (
-        "Microsoft.NETCore.App.Ref 8." in reason
-    )
-    assert_result(
-        result,
-        "roslyn row is partial with unresolved inputs and names the failed project",
-        roslyn.get("status") == "partial"
-        and re.search(r"\d+ unresolved symbols?", reason) is not None
-        and "Broken/Broken.csproj failed" in reason
-        and re.search(
-            rf"\d+ of {len(DOTNET_PROJECTS)} projects partial, 1 failed", reason
-        )
-        and named_pack,
-        roslyn,
-    )
-    versions = state.get("measurement", {}).get("tool_versions", {})
-    assert_result(
-        result,
-        "producer versions are recorded",
-        versions.get("dotnet-msbuild") == DOTNET_VERSION
-        and versions.get("roslyn", "").startswith("archfit-roslyn "),
-        versions,
-    )
-    seams = {
-        f"{seam.get('from_module')}->{seam.get('to_module')}": seam.get("strength")
-        for seam in state.get("seams", [])
-    }
-    assert_result(
-        result,
-        "seams carry the compiler-derived strengths",
-        all(
-            seams.get(f"{source}->{target}") == want
-            for (source, target), want in DOTNET_EXPECTED_SEAMS.items()
-        ),
-        seams,
-    )
-    leaked = sorted(
-        pair
-        for pair in seams
-        if any(name in pair.split("->") for name in DOTNET_EDGELESS_PROJECTS)
-    )
-    assert_result(
-        result,
-        "Broken and Tests have no seams, so no fallback edges",
-        not leaked,
-        leaked,
+        "the full project set never passes and names Broken's SDK",
+        command.returncode in (1, 2)
+        and doc.get("status") in ("fail", "unknown")
+        and bool(named),
+        {
+            "exit": command.returncode,
+            "status": doc.get("status"),
+            "unknown": doc.get("unknown"),
+        },
     )
 
 
 def copy_dotnet_fixture(destination: Path) -> Path:
-    shutil.copytree(DOTNET_FIXTURE, destination)
+    shutil.copytree(
+        DOTNET_FIXTURE, destination, ignore=shutil.ignore_patterns("bin", "obj")
+    )
     return destination
 
 
@@ -459,32 +484,28 @@ def run_dotnet_contract(
         check_dotnet_helper(result, doc)
 
     root = copy_dotnet_fixture(artifact_dir / "repo")
-    config = root / ".archfit.yaml"
-    config.write_text(dotnet_config_text(), encoding="utf-8")
-    validate_config_v2(result, config)
-    git_fixture(root, commands)
-    cli = run_command(
-        "dotnet-analyze",
-        [
-            str(archfit),
-            "analyze",
-            "--root",
-            str(root),
-            "--config",
-            str(config),
-            "--json",
-            "--quiet",
-        ],
+    project = (root / DOTNET_CHANGED_PROJECT).read_text(encoding="utf-8")
+    contract = ChangeContract(
+        dotnet_policy_text(DOTNET_CHECKED_PROJECTS),
+        {DOTNET_CHANGED_PROJECT: dotnet_forbidden(project)},
+        DOTNET_RULE_ID,
+    )
+    prepare_change_repo(root, contract, commands, ignore=GITIGNORE + "bin/\nobj/\n")
+    every_project = artifact_dir / "policy-every-project.yaml"
+    every_project.write_text(dotnet_policy_text(None), encoding="utf-8")
+    unknown = archfit_command(
+        archfit,
+        "dotnet-every-project",
+        check_args(root, every_project),
         root,
+        commands,
         env=env,
         timeout=900,
     )
-    commands.append(cli)
-    (artifact_dir / "analyze.stderr").write_text(cli.stderr, encoding="utf-8")
-    assert_result(result, "analyze exits 0", cli.returncode == 0, cli.stderr)
-    state = parse_state(result, cli)
-    if state is not None:
-        check_dotnet_state(result, state)
+    unknown_doc = parse_result(result, unknown)
+    if unknown_doc is not None:
+        check_dotnet_unknown(result, unknown, unknown_doc)
+    run_change_stages(result, archfit, root, contract, commands, env=env, timeout=900)
     return result
 
 
@@ -540,14 +561,22 @@ def _version_number(output: str) -> str:
 
 
 PRODUCER_TOOLS = {
-    "go": ("go",),
-    "typescript": ("node", "depcruise"),
-    "javascript": ("node", "depcruise"),
-    "python": (),
-    "rust": ("cargo",),
+    "go": ("ast-grep",),
+    "typescript": ("ast-grep",),
+    "javascript": ("ast-grep",),
+    "python": ("ast-grep",),
+    "rust": ("ast-grep", "cargo"),
     "dotnet": ("dotnet",),
 }
 ALL_CASES = (*PRODUCER_TOOLS,)
+
+
+def required_tools(cases: tuple[str, ...]) -> set[str]:
+    """The tools on PATH that the selected cases need: git, plus each producer."""
+    tools = {"git"}
+    for case in cases:
+        tools.update(PRODUCER_TOOLS[case])
+    return tools
 
 
 def preflight(
@@ -564,21 +593,11 @@ def preflight(
         )
     if not archfit.is_file() or not os.access(archfit, os.X_OK):
         failures.append(f"archfit binary is missing or not executable: {archfit}")
-    tools = {"git"}
-    for case in cases:
-        tools.update(PRODUCER_TOOLS[case])
-    if set(cases) - {"dotnet"}:
-        tools.add("ast-grep")
+    tools = required_tools(cases)
     for tool in sorted(tools):
         if shutil.which(tool) is None:
             failures.append(f"required tool {tool!r} is not on PATH")
 
-    if "node" in tools and shutil.which("node"):
-        node = run_command("node-version", ["node", "--version"], root)
-        if _version_number(node.stdout) != TOOL_MANIFEST["versions"]["node"]:
-            failures.append(
-                f"Node {TOOL_MANIFEST['versions']['node']} is required, got {node.stdout.strip()!r}"
-            )
     if "ast-grep" in tools and shutil.which("ast-grep"):
         sg = run_command("ast-grep-version", ["ast-grep", "--version"], root)
         if "ast-grep" not in (sg.stdout + sg.stderr).lower():
@@ -588,25 +607,6 @@ def preflight(
         if _version_number(cargo.stdout) != RUST_TOOLCHAIN:
             failures.append(
                 f"Cargo/Rust toolchain {RUST_TOOLCHAIN} is required, got {cargo.stdout.strip()!r}"
-            )
-    if "python" in cases:
-        python = os.environ.get("ARCHFIT_TOOL_PYTHON", sys.executable)
-        grimp = run_command(
-            "grimp-preflight",
-            [
-                python,
-                "-I",
-                "-c",
-                "import grimp, importlib.metadata, platform; print(importlib.metadata.version('grimp')); print(platform.python_version())",
-            ],
-            root,
-        )
-        if grimp.returncode != 0 or grimp.stdout.splitlines() != [
-            TOOL_MANIFEST["python"]["grimp"],
-            TOOL_MANIFEST["versions"]["python"],
-        ]:
-            failures.append(
-                f"isolated pinned Python/grimp is unavailable: {grimp.stdout} {grimp.stderr}"
             )
     if "dotnet" in cases:
         failures.extend(dotnet_preflight(root))
@@ -637,57 +637,6 @@ def dotnet_preflight(root: Path) -> list[str]:
     return failures
 
 
-def config_text(spec: FixtureSpec) -> str:
-    enabled = {name: "false" for name in ("go", "typescript", "python", "rust")}
-    enabled[spec.language] = "true"
-    package_line = (
-        f"    package: {spec.python_package}\n" if spec.python_package else ""
-    )
-    return f"""version: 2
-languages:
-  go:
-    enabled: {enabled["go"]}
-  typescript:
-    enabled: {enabled["typescript"]}
-  python:
-    enabled: {enabled["python"]}
-{package_line}  rust:
-    enabled: {enabled["rust"]}
-analyzers:
-  syntax:
-    enabled: true
-  scip:
-    enabled: false
-  clones:
-    enabled: false
-  cargo_modules:
-    enabled: false
-layers: [core, adapter]
-modules:
-  core:
-    paths: ['{spec.from_selector}']
-    layer: core
-    owner: team-core
-    deploy_unit: smoke
-  adapter:
-    paths: ['{spec.to_selector}']
-    layer: adapter
-    owner: team-adapter
-    deploy_unit: smoke
-rules:
-  - id: {RULE_ID}
-    type: forbidden_dependency
-    from: '{spec.from_selector}'
-    to: '{spec.to_selector}'
-    gate: fail
-  - id: {WARN_RULE_ID}
-    type: forbidden_dependency
-    from: '{spec.from_selector}'
-    to: '{spec.to_selector}'
-    gate: warn
-"""
-
-
 def assert_result(
     result: ContractResult, name: str, passed: bool, detail: Any = None
 ) -> None:
@@ -697,110 +646,186 @@ def assert_result(
         result.failures.append(f"{name}: {detail}")
 
 
-def baseline_capture_succeeded(result: ContractResult, command: CommandResult) -> bool:
-    """Record baseline capture failure before inspecting its output artifact."""
-    succeeded = command.returncode == 0
-    assert_result(
-        result,
-        "waived baseline capture succeeds",
-        succeeded,
-        {"exit": command.returncode, "stderr": command.stderr},
+_RESULT_VALIDATOR: Any = None
+
+
+def validate_result(doc: Any) -> list[str]:
+    """Validate a check result against the published archfit.result.schema.json."""
+    global _RESULT_VALIDATOR
+    if _RESULT_VALIDATOR is None:
+        import jsonschema
+
+        schema = json.loads(RESULT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        _RESULT_VALIDATOR = jsonschema.Draft202012Validator(schema)
+    errors = sorted(
+        _RESULT_VALIDATOR.iter_errors(doc), key=lambda error: list(error.absolute_path)
     )
-    return succeeded
+    return [
+        "/" + "/".join(str(part) for part in error.absolute_path) + f": {error.message}"
+        for error in errors
+    ]
 
 
-def parse_state(
+def parse_result(
     result: ContractResult, command: CommandResult
 ) -> dict[str, Any] | None:
     try:
-        state = json.loads(command.stdout)
+        doc = json.loads(command.stdout)
     except json.JSONDecodeError as exc:
-        assert_result(result, "JSON output parses", False, str(exc))
-        return None
-    failures = corpus.validate_state(state, schema_path=corpus.STATE_SCHEMA_PATH)
-    assert_result(
-        result, "published state schema and structural contract", not failures, failures
-    )
-    if not isinstance(state, dict):
-        return None
-    return state
-
-
-def finding_for(state: dict[str, Any], rule_id: str) -> dict[str, Any] | None:
-    return next(
-        (
-            finding
-            for finding in state.get("findings", [])
-            if finding.get("rule_id") == rule_id
-        ),
-        None,
-    )
-
-
-def check_exit(
-    result: ContractResult, command: CommandResult, state: dict[str, Any]
-) -> None:
-    want = corpus.expected_check_exit(state.get("verdict"))
-    assert_result(
-        result,
-        "check exit matches published verdict",
-        want is not None and command.returncode == want,
-        {"exit": command.returncode, "verdict": state.get("verdict"), "expected": want},
-    )
-
-
-def optional_tools_disclosed(result: ContractResult, state: dict[str, Any]) -> None:
-    rows = {row.get("tool"): row for row in state.get("coverage", {}).get("tools", [])}
-    syntax = rows.get("ast-grep/syntax")
-    assert_result(
-        result,
-        "syntax producer runs with real ast-grep",
-        syntax is not None and syntax.get("status") == "ok",
-        syntax,
-    )
-    for tool, status in OPTIONAL_DISABLED.items():
-        row = rows.get(tool)
-        if tool == "cargo-modules":
-            assert_result(
-                result,
-                "optional analyzer cargo-modules is disclosed",
-                row is not None and row.get("status") in {"absent", "disabled"},
-                row,
-            )
-            continue
         assert_result(
             result,
-            f"optional analyzer {tool} is explicitly disabled",
-            row is not None and row.get("status") == status and bool(row.get("reason")),
-            row,
+            f"{command.label}: JSON output parses",
+            False,
+            {"error": str(exc), "exit": command.returncode, "stderr": command.stderr},
         )
+        return None
+    failures = validate_result(doc)
+    assert_result(
+        result, f"{command.label}: published result schema", not failures, failures
+    )
+    if not isinstance(doc, dict):
+        return None
+    return doc
 
 
-def git_fixture(root: Path, commands: list[CommandResult]) -> None:
-    for label, argv in (
-        ("git-init", ["git", "init", "-q"]),
-        ("git-config-name", ["git", "config", "user.name", "Archfit Acceptance"]),
-        (
-            "git-config-email",
-            ["git", "config", "user.email", "acceptance@example.invalid"],
-        ),
-        ("git-add", ["git", "add", "."]),
-        ("git-commit", ["git", "commit", "-qm", "language acceptance fixture"]),
-    ):
-        command = run_command(label, argv, root)
-        commands.append(command)
-        if command.returncode != 0:
-            raise RuntimeError(f"{label} failed: {command.stderr.strip()}")
+def check_forbidden(
+    result: ContractResult,
+    command: CommandResult,
+    doc: dict[str, Any],
+    rule: str,
+    changed: set[str] | frozenset[str],
+) -> None:
+    """The change adds the forbidden dependency: its error, exit 1, every producer ran."""
+    assert_result(
+        result,
+        "the forbidden dependency fails the check with exit 1",
+        command.returncode == 1 and doc.get("status") == "fail",
+        {
+            "exit": command.returncode,
+            "status": doc.get("status"),
+            "stderr": command.stderr,
+        },
+    )
+    assert_result(
+        result,
+        "every producer ran: no unknown reason",
+        doc.get("unknown") == [],
+        doc.get("unknown"),
+    )
+    error = next(
+        (error for error in doc.get("errors", []) if error.get("rule") == rule), None
+    )
+    assert_result(
+        result,
+        f"the record holds the {rule} error, from the change, at the changed file",
+        error is not None
+        and error.get("from_change") is True
+        and error.get("path") in changed,
+        doc.get("errors"),
+    )
 
 
-def install_node_fixture(root: Path, commands: list[CommandResult]) -> None:
-    # Never install analyzers in the target or select a target-local npm tool.
-    version = run_command("depcruise-version", ["depcruise", "--version"], root)
-    commands.append(version)
-    if DEPCRUISE_VERSION not in version.stdout:
-        raise RuntimeError(
-            f"fixture dependency-cruiser is not {DEPCRUISE_VERSION}: {version.stdout.strip()!r}"
-        )
+def check_exceptions(
+    result: ContractResult,
+    active: CommandResult,
+    active_doc: dict[str, Any],
+    expired: CommandResult,
+    expired_doc: dict[str, Any],
+    rule: str,
+) -> None:
+    """An exception holds the errors until its date; after it, the check fails."""
+    assert_result(
+        result,
+        "an active exception passes the change",
+        active.returncode == 0
+        and active_doc.get("status") == "pass"
+        and active_doc.get("errors") == [],
+        {
+            "exit": active.returncode,
+            "errors": active_doc.get("errors"),
+            "stderr": active.stderr,
+        },
+    )
+    lapsed = [
+        error
+        for error in expired_doc.get("errors", [])
+        if error.get("rule") == EXCEPTION_RULE
+        and (error.get("exception") or {}).get("rule") == rule
+        and (error.get("exception") or {}).get("expires") == EXPIRED_ON
+    ]
+    assert_result(
+        result,
+        "an expired exception fails the change and names its rule",
+        expired.returncode == 1
+        and expired_doc.get("status") == "fail"
+        and bool(lapsed),
+        {"exit": expired.returncode, "errors": expired_doc.get("errors")},
+    )
+
+
+def check_clean(
+    result: ContractResult, command: CommandResult, doc: dict[str, Any]
+) -> None:
+    assert_result(
+        result,
+        "the clean fixture passes with exit 0",
+        command.returncode == 0
+        and doc.get("status") == "pass"
+        and doc.get("errors") == []
+        and doc.get("unknown") == [],
+        {"exit": command.returncode, "doc": doc, "stderr": command.stderr},
+    )
+
+
+def write_files(root: Path, files: dict[str, str]) -> None:
+    for relative, content in files.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+
+def git(root: Path, commands: list[CommandResult], label: str, *args: str) -> None:
+    command = run_command(label, ["git", *args], root)
+    commands.append(command)
+    if command.returncode != 0:
+        raise RuntimeError(f"{label} failed: {command.stderr.strip()}")
+
+
+def prepare_change_repo(
+    root: Path,
+    contract: ChangeContract,
+    commands: list[CommandResult],
+    *,
+    ignore: str = GITIGNORE,
+) -> None:
+    """Commit the tree in root and its policy on the target branch, then commit
+    the forbidden change on the change branch, which stays checked out."""
+    (root / ".archfit.yaml").write_text(contract.policy, encoding="utf-8")
+    if not (root / ".gitignore").exists():
+        (root / ".gitignore").write_text(ignore, encoding="utf-8")
+    git(root, commands, "git-init", "init", "-q", "-b", TARGET_BRANCH)
+    git(root, commands, "git-config-name", "config", "user.name", "Archfit Acceptance")
+    git(
+        root,
+        commands,
+        "git-config-email",
+        "config",
+        "user.email",
+        "acceptance@example.invalid",
+    )
+    git(root, commands, "git-add-base", "add", "-A")
+    git(root, commands, "git-commit-base", "commit", "-qm", "clean tree")
+    git(root, commands, "git-branch", "checkout", "-qb", CHANGE_BRANCH)
+    write_files(root, contract.forbidden)
+    git(root, commands, "git-add-change", "add", "-A")
+    git(root, commands, "git-commit-change", "commit", "-qm", "forbidden dependency")
+
+
+def check_args(root: Path, policy: Path | None = None) -> list[str]:
+    args = ["check", "-C", str(root), "--base", TARGET_BRANCH, "--format", "json"]
+    if policy is not None:
+        args += ["--policy", str(policy)]
+    return args
 
 
 def archfit_command(
@@ -810,9 +835,10 @@ def archfit_command(
     root: Path,
     commands: list[CommandResult],
     *,
+    env: dict[str, str] | None = None,
     timeout: int = 600,
 ) -> CommandResult:
-    command = run_command(label, [str(archfit), *args], root, timeout=timeout)
+    command = run_command(label, [str(archfit), *args], root, env=env, timeout=timeout)
     commands.append(command)
     (root.parent / f"{root.name}-{label}.stdout").write_text(
         command.stdout, encoding="utf-8"
@@ -823,339 +849,90 @@ def archfit_command(
     return command
 
 
-def target_task(state: dict[str, Any]) -> dict[str, Any] | None:
-    target = finding_for(state, RULE_ID)
-    if target is None:
-        return None
-    return next(
-        (
-            task
-            for task in state.get("agent_tasks", [])
-            if task.get("finding_id") == target.get("id")
-        ),
-        None,
-    )
-
-
-def repair_files(spec: FixtureSpec, root: Path) -> None:
-    if spec.name == "go":
-        (root / "core/core.go").write_text(
-            "package core\n\nfunc Run() int { return 1 }\n", encoding="utf-8"
-        )
-    elif spec.name == "typescript":
-        (root / "src/core/index.ts").write_text(
-            "export const run = () => 1;\n", encoding="utf-8"
-        )
-    elif spec.name == "javascript":
-        (root / "src/core/index.js").write_text(
-            "export const run = () => 1;\n", encoding="utf-8"
-        )
-    elif spec.name == "python":
-        (root / "smoke/core.py").write_text(
-            "def run():\n    return 1\n", encoding="utf-8"
-        )
-    elif spec.name == "rust":
-        (root / "core/Cargo.toml").write_text(
-            '[package]\nname = "smoke-core"\nversion = "0.1.0"\nedition = "2021"\n',
-            encoding="utf-8",
-        )
-        (root / "core/src/lib.rs").write_text(
-            "pub fn run() -> u32 { 1 }\n", encoding="utf-8"
-        )
-
-
-def validate_config_v2(result: ContractResult, config: Path) -> None:
-    raw = config.read_text(encoding="utf-8")
+def run_change_stages(
+    result: ContractResult,
+    archfit: Path,
+    root: Path,
+    contract: ChangeContract,
+    commands: list[CommandResult],
+    *,
+    env: dict[str, str] | None = None,
+    timeout: int = 600,
+) -> None:
+    """Check the change, its repeat, its exceptions, and the clean tree."""
     assert_result(
         result,
-        "fixture config uses schema v2",
-        re.search(r"(?m)^version:\s*2\s*$", raw) is not None,
-        raw.splitlines()[:2],
+        "fixture policy uses schema 3",
+        re.search(r"(?m)^version:\s*3\s*$", contract.policy) is not None,
+        contract.policy.splitlines()[:1],
     )
+
+    def check(label: str, policy: Path | None = None) -> CommandResult:
+        return archfit_command(
+            archfit,
+            label,
+            check_args(root, policy),
+            root,
+            commands,
+            env=env,
+            timeout=timeout,
+        )
+
+    cold = check(f"{result.language}-forbidden")
+    doc = parse_result(result, cold)
+    if doc is None:
+        return
+    check_forbidden(result, cold, doc, contract.rule, set(contract.forbidden))
+    repeat = check(f"{result.language}-repeat")
+    assert_result(
+        result,
+        "a repeated check gives byte-identical JSON and the same exit",
+        repeat.stdout == cold.stdout and repeat.returncode == cold.returncode,
+        {"exit": repeat.returncode, "first exit": cold.returncode},
+    )
+
+    # A policy that differs from the target branch is unknown, so the exceptions
+    # are judged through the --policy preview, from files outside the repository.
+    documents = {}
+    for label, expires in (("active", ACTIVE_UNTIL), ("expired", EXPIRED_ON)):
+        candidate = root.parent / f"policy-{label}-exception.yaml"
+        candidate.write_text(
+            contract.policy + exceptions_text(doc.get("errors", []), expires),
+            encoding="utf-8",
+        )
+        command = check(f"{result.language}-{label}-exception", candidate)
+        documents[label] = (command, parse_result(result, command))
+    (active, active_doc), (expired, expired_doc) = documents.values()
+    if active_doc is not None and expired_doc is not None:
+        check_exceptions(
+            result, active, active_doc, expired, expired_doc, contract.rule
+        )
+
+    clean = run_command(
+        "git-restore-clean",
+        ["git", "checkout", TARGET_BRANCH, "--", *contract.forbidden],
+        root,
+    )
+    commands.append(clean)
+    if clean.returncode != 0:
+        assert_result(result, "the clean tree is restored", False, clean.stderr)
+        return
+    repaired = check(f"{result.language}-clean")
+    repaired_doc = parse_result(result, repaired)
+    if repaired_doc is not None:
+        check_clean(result, repaired, repaired_doc)
 
 
 def run_fixture(
     spec: FixtureSpec, archfit: Path, output: Path, commands: list[CommandResult]
 ) -> ContractResult:
     result = ContractResult(spec.name)
-    artifact_dir = output / spec.name
-    root = artifact_dir / "repo"
+    root = output / spec.name / "repo"
     root.mkdir(parents=True)
-    for relative, content in spec.files.items():
-        path = root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-    config = root / ".archfit.yaml"
-    config.write_text(config_text(spec), encoding="utf-8")
-    validate_config_v2(result, config)
-    (root / ".gitignore").write_text(
-        "node_modules/\n.archfit-cache/\n.archfit-baseline.json\n", encoding="utf-8"
-    )
-    if spec.node:
-        install_node_fixture(root, commands)
-    git_fixture(root, commands)
-
-    common = ["--root", str(root), "--config", str(config), "--json", "--quiet"]
-    cold = archfit_command(
-        archfit, f"{spec.name}-cold", ["check", *common], root, commands
-    )
-    state = parse_state(result, cold)
-    if state is None:
-        return result
-    check_exit(result, cold, state)
-    target = finding_for(state, RULE_ID)
-    assert_result(
-        result,
-        "real forbidden dependency blocks",
-        cold.returncode == 1 and target is not None and target.get("status") == "new",
-        target,
-    )
-    unevaluated = {
-        entry.get("rule_id")
-        for entry in state.get("decision", {}).get("unevaluated_required_rules", [])
-    }
-    primary = {
-        row.get("tool"): row for row in state.get("coverage", {}).get("tools", [])
-    }
-    primary_tool = {
-        "go": "go/packages",
-        "typescript": "dependency-cruiser",
-        "python": "grimp",
-        "rust": "cargo",
-    }[spec.language]
-    assert_result(
-        result,
-        "required rule scope is evaluated with producer success",
-        RULE_ID not in unevaluated
-        and primary.get(primary_tool, {}).get("status") == "ok",
-        {"unevaluated": sorted(unevaluated), "producer": primary.get(primary_tool)},
-    )
-    optional_tools_disclosed(result, state)
-    producer_pin = {
-        "go": TOOL_MANIFEST["versions"]["go"],
-        "typescript": DEPCRUISE_VERSION,
-        "python": f"grimp {TOOL_MANIFEST['python']['grimp']}; python {TOOL_MANIFEST['versions']['python']}",
-        "rust": RUST_TOOLCHAIN,
-    }[spec.language]
-    producers = (
-        state.get("comparison", {}).get("measurement_profile", {}).get("producers", [])
-    )
-    producer = next((row for row in producers if row.get("tool") == primary_tool), {})
-    assert_result(
-        result,
-        "consumed primary producer matches manifest",
-        producer_pin in producer.get("tool_version", ""),
-        producer,
-    )
-    if spec.name == "python":
-        locations = (target or {}).get("locations") or []
-        physical = bool(locations) and all(
-            isinstance(location.get("file"), str)
-            and location["file"].endswith(".py")
-            and (root / location["file"]).is_file()
-            for location in locations
-        )
-        assert_result(
-            result,
-            "Python finding locations are physical .py files",
-            physical,
-            locations,
-        )
-    task = target_task(state)
-    assert_result(
-        result,
-        "forbidden finding has a replayable repair task",
-        task is not None and bool(task.get("validation")),
-        task,
-    )
-    if task is None or not task.get("validation"):
-        return result
-    replay_bin = output / "bin" / "archfit"
-    replay_bin.parent.mkdir(exist_ok=True)
-    if not replay_bin.exists():
-        replay_bin.symlink_to(archfit)
-    before_repair = run_command(
-        f"{spec.name}-replay-before-repair",
-        ["/bin/sh", "-c", task["validation"][0]],
-        root,
-        env={
-            **command_environment(),
-            "PATH": f"{replay_bin.parent}:{os.environ.get('PATH', '')}",
-        },
-    )
-    commands.append(before_repair)
-    assert_result(
-        result,
-        "emitted replay blocks before repair",
-        before_repair.returncode == 1,
-        before_repair.stderr or before_repair.stdout,
-    )
-
-    warm = archfit_command(
-        archfit, f"{spec.name}-warm", ["check", *common], root, commands
-    )
-    refresh = archfit_command(
-        archfit, f"{spec.name}-refresh", ["check", *common, "--refresh"], root, commands
-    )
-    assert_result(
-        result,
-        "cold/warm/refresh JSON is byte-identical",
-        cold.stdout == warm.stdout == refresh.stdout,
-        {"warm": warm.returncode, "refresh": refresh.returncode},
-    )
-
-    baseline = archfit_command(
-        archfit,
-        f"{spec.name}-baseline",
-        ["baseline", "--root", str(root), "--config", str(config)],
-        root,
-        commands,
-    )
-    assert_result(
-        result,
-        "baseline capture succeeds",
-        baseline.returncode == 0,
-        baseline.stderr or baseline.stdout,
-    )
-    baseline_check = archfit_command(
-        archfit, f"{spec.name}-baseline-check", ["check", *common], root, commands
-    )
-    baseline_state = parse_state(result, baseline_check)
-    if baseline_state is not None:
-        check_exit(result, baseline_check, baseline_state)
-        baseline_target = finding_for(baseline_state, RULE_ID)
-        assert_result(
-            result,
-            "same-identity baseline is comparable and live ID is baseline",
-            baseline_state.get("gate_reference", {}).get("status") == "comparable"
-            and baseline_target is not None
-            and baseline_target.get("status") == "baseline",
-            {
-                "reference": baseline_state.get("gate_reference"),
-                "finding": baseline_target,
-            },
-        )
-        warning = finding_for(baseline_state, WARN_RULE_ID)
-        assert_result(
-            result,
-            "warn finding is captured exactly once as baseline",
-            warning is not None and warning.get("status") == "baseline",
-            warning,
-        )
-        assert_result(
-            result,
-            "baseline report has unique live finding IDs",
-            not corpus.validate_identity_lifecycle(baseline_state),
-            corpus.validate_identity_lifecycle(baseline_state),
-        )
-    saved_baseline = root / ".archfit-baseline.json"
-    assert_result(
-        result,
-        "baseline file is written beside the source config",
-        saved_baseline.is_file(),
-        str(saved_baseline),
-    )
-    if saved_baseline.is_file():
-        shutil.copy2(saved_baseline, artifact_dir / "normal-baseline.json")
-        saved_baseline.unlink()
-
-    original_config = config.read_text(encoding="utf-8")
-    waiver = (
-        original_config
-        + f"""waivers:
-  - rule: core_no_adapter
-    from: '{spec.from_selector}'
-    to: '{spec.to_selector}'
-    reason: acceptance lifecycle smoke
-    approved_by: acceptance
-    expires: "2099-12-31"
-"""
-    )
-    config.write_text(waiver, encoding="utf-8")
-    waived = archfit_command(
-        archfit, f"{spec.name}-waived", ["check", *common], root, commands
-    )
-    waived_state = parse_state(result, waived)
-    if waived_state is not None:
-        waived_target = finding_for(waived_state, RULE_ID)
-        assert_result(
-            result,
-            "temporary waiver suppresses the hard gate",
-            waived.returncode != 1
-            and waived_target is not None
-            and waived_target.get("status") == "waived",
-            waived_target,
-        )
-    waived_baseline = archfit_command(
-        archfit,
-        f"{spec.name}-waived-baseline",
-        ["baseline", "--root", str(root), "--config", str(config)],
-        root,
-        commands,
-    )
-    if baseline_capture_succeeded(result, waived_baseline) and saved_baseline.is_file():
-        body = saved_baseline.read_text(encoding="utf-8")
-        assert_result(
-            result,
-            "waived finding is excluded from permanent baseline",
-            RULE_ID not in body,
-            body,
-        )
-        shutil.copy2(saved_baseline, artifact_dir / "waived-baseline.json")
-        saved_baseline.unlink()
-    elif waived_baseline.returncode == 0:
-        assert_result(
-            result,
-            "waived baseline file is written beside the source config",
-            False,
-            str(saved_baseline),
-        )
-    config.write_text(waiver.replace("2099-12-31", "2000-01-01"), encoding="utf-8")
-    expired = archfit_command(
-        archfit, f"{spec.name}-expired", ["check", *common], root, commands
-    )
-    expired_state = parse_state(result, expired)
-    if expired_state is not None:
-        expired_target = finding_for(expired_state, RULE_ID)
-        assert_result(
-            result,
-            "expired waiver blocks",
-            expired.returncode == 1
-            and expired_target is not None
-            and expired_target.get("status") == "expired_waiver",
-            expired_target,
-        )
-    config.write_text(original_config, encoding="utf-8")
-
-    repair_files(spec, root)
-    repaired = run_command(
-        f"{spec.name}-replay-after-repair",
-        ["/bin/sh", "-c", task["validation"][0]],
-        root,
-        env={
-            **command_environment(),
-            "PATH": f"{replay_bin.parent}:{os.environ.get('PATH', '')}",
-        },
-    )
-    commands.append(repaired)
-    assert_result(
-        result,
-        "emitted replay succeeds after source repair",
-        repaired.returncode in (0, 2),
-        repaired.stderr or repaired.stdout,
-    )
-    repaired_check = archfit_command(
-        archfit, f"{spec.name}-repaired", ["check", *common], root, commands
-    )
-    repaired_state = parse_state(result, repaired_check)
-    if repaired_state is not None:
-        assert_result(
-            result,
-            "source repair clears forbidden gate",
-            finding_for(repaired_state, RULE_ID) is None
-            and repaired_state.get("decision", {}).get("active_blockers") == 0,
-            repaired_state.get("findings"),
-        )
+    write_files(root, spec.files)
+    contract = ChangeContract(config_text(spec), spec.forbidden, RULE_ID)
+    prepare_change_repo(root, contract, commands)
+    run_change_stages(result, archfit, root, contract, commands)
     return result
 
 
@@ -1217,12 +994,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     summary = {
         "archfit": str(args.archfit.resolve()),
-        "toolchain": {
-            "rust": RUST_TOOLCHAIN,
-            "dotnet": DOTNET_VERSION,
-            "dependency_cruiser": DEPCRUISE_VERSION,
-            "optional_analyzers": OPTIONAL_DISABLED,
-        },
+        "toolchain": {"rust": RUST_TOOLCHAIN, "dotnet": DOTNET_VERSION},
         "results": [
             {
                 "language": result.language,
