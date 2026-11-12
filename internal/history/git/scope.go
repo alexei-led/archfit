@@ -60,6 +60,21 @@ func OriginHead(ctx context.Context, dir string, runner toolrun.Runner) (string,
 	return ref, ref != ""
 }
 
+// OriginURL returns the URL of the remote named origin. ok is false when the
+// repository has no such remote; err is set only when git cannot run.
+// It runs: git remote get-url origin
+func OriginURL(ctx context.Context, dir string, runner toolrun.Runner) (url string, ok bool, err error) {
+	out, err := run(ctx, dir, runner, "remote", "get-url", "origin")
+	if err != nil {
+		return "", false, err
+	}
+	if out.ExitCode != 0 {
+		return "", false, nil
+	}
+	url = strings.TrimSpace(string(out.Stdout))
+	return url, url != "", nil
+}
+
 // MergeBase returns the best common ancestor of a and b. ok is false when the
 // two share no history this clone holds, for example in a shallow clone.
 // It runs: git merge-base <a> <b>
