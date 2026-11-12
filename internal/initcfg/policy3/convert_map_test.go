@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,6 +27,7 @@ const (
 	libFile     = "lib/lib.go"
 	corePkg     = "pkg/core"
 	shopOrders  = "shop/orders.py"
+	utilFile    = "pkg/util/util.go"
 )
 
 // tree is a small Go repository: app imports core, core imports nothing.
@@ -33,7 +35,7 @@ var tree = evidence.CheckFacts{
 	Sources: []string{
 		mainFile, "cmd/tool/tool.go",
 		coreFile, "pkg/core/model/model.go", "pkg/core/store/store.go",
-		"pkg/util/util.go", libFile, "lib/deep/deep.go",
+		utilFile, libFile, "lib/deep/deep.go",
 	},
 	Imports: []evidence.ImportFact{
 		{File: mainFile, Line: 3, Target: corePkg},
@@ -77,7 +79,7 @@ func convertFiles(t *testing.T, files map[string]string, facts evidence.CheckFac
 	if err != nil {
 		t.Fatalf("Resolve: %v\n%s", err, data)
 	}
-	if err := p.CheckTree(facts.Sources); err != nil {
+	if err := p.CheckTree(factFiles(facts)); err != nil {
 		t.Fatalf("CheckTree: %v\n%s", err, data)
 	}
 	return conv
@@ -404,7 +406,7 @@ func TestConvertRules(t *testing.T) {
 
 // graphTree is a tree whose only use between modules is app's use of core.
 var graphTree = evidence.CheckFacts{
-	Sources: []string{mainFile, coreFile, "pkg/util/util.go"},
+	Sources: []string{mainFile, coreFile, utilFile},
 	Imports: []evidence.ImportFact{{File: mainFile, Line: 3, Target: corePkg}},
 }
 
@@ -625,6 +627,43 @@ rules:
 	}
 	wantNote(t, conv, "exceptions.no-lib", "no exception can name the error from app to lib at cmd/main.go:3: the code is in no module")
 	wantNote(t, conv, "exceptions.no-lib-core", "no exception can name the error from no module to core at lib/use.go:4")
+}
+
+// TestConvertDeclaresTests: the converted policy declares the test files the
+// facts name, though Go sources leave them out, so a literal a test copies
+// from another module is no error and gets no exception.
+func TestConvertDeclaresTests(t *testing.T) {
+	const copied = "order not found in the store"
+	tests := []struct {
+		name string
+		copy string
+		want []policyfile.Exception
+	}{
+		{name: "a test copies the literal", copy: "pkg/core/core_test.go"},
+		{
+			name: "production code copies the literal", copy: coreFile,
+			want: []policyfile.Exception{{Rule: resolved.RuleDuplication, From: modCore, To: modUtil, Why: whyException}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			facts := evidence.CheckFacts{
+				Sources: []string{mainFile, coreFile, utilFile},
+				Literals: []evidence.LiteralOccurrence{
+					{File: "pkg/core/core_test.go", Line: 9, Value: "place an order twice", Shape: evidence.ShapeOther},
+					{File: tt.copy, Line: 5, Value: copied, Shape: evidence.ShapeOther},
+					{File: utilFile, Line: 3, Value: copied, Shape: evidence.ShapeOther},
+				},
+			}
+			conv := convertFiles(t, map[string]string{PolicyFile: "version: 2\n" + modulesV2}, facts)
+			if want := []string{"**/*_test.go"}; !reflect.DeepEqual(conv.File.Tests, want) {
+				t.Errorf("tests = %v, want %v", conv.File.Tests, want)
+			}
+			if !slices.Equal(conv.File.Exceptions, tt.want) {
+				t.Errorf("exceptions = %+v, want %+v", conv.File.Exceptions, tt.want)
+			}
+		})
+	}
 }
 
 func TestConvertPackageDirectoryGlobs(t *testing.T) {

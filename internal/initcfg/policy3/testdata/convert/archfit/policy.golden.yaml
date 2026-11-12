@@ -611,10 +611,6 @@ exceptions:
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
     from: analysis-application
-    to: architecture-policy
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: analysis-application
     to: assessment-repair
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
@@ -622,84 +618,24 @@ exceptions:
     to: cli-composition
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
-    from: analysis-application
-    to: config-lifecycle
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: analysis-application
+    from: analysis-scope
     to: evidence-adapters
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
-    from: analysis-application
-    to: persistence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: analysis-application
+    from: architecture-policy
     to: policy-config-adapter
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
-    from: analysis-application
+    from: architecture-policy
     to: report-adapters
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
-    from: analysis-application
-    to: report-contract
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: analysis-scope
-    to: cli-composition
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: analysis-scope
-    to: evidence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: analysis-scope
-    to: persistence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: architecture-policy
-    to: assessment-repair
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: architecture-policy
-    to: cli-composition
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: architecture-policy
-    to: config-lifecycle
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: architecture-policy
-    to: evidence-acquisition
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: architecture-policy
-    to: policy-config-adapter
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: architecture-policy
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: assessment-repair
-    to: cli-composition
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
     from: assessment-repair
     to: config-lifecycle
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
     from: assessment-repair
-    to: evidence-acquisition
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: assessment-repair
     to: evidence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: assessment-repair
-    to: evidence-analysis
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
     from: assessment-repair
@@ -707,14 +643,6 @@ exceptions:
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
     from: assessment-repair
-    to: policy-config-adapter
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: assessment-repair
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: assessment-repair
     to: report-adapters
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
@@ -727,14 +655,6 @@ exceptions:
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
     from: cli-composition
-    to: evidence-acquisition
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: cli-composition
-    to: evidence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: cli-composition
     to: persistence-adapters
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
@@ -742,128 +662,12 @@ exceptions:
     to: policy-config-adapter
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
-    from: cli-composition
-    to: provider-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: cli-composition
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: cli-composition
-    to: report-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: config-lifecycle
-    to: evidence-acquisition
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
     from: config-lifecycle
     to: evidence-adapters
     why: Accepted in the Archfit 3 baseline.
   - rule: duplication
     from: config-lifecycle
-    to: persistence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: config-lifecycle
-    to: policy-config-adapter
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: config-lifecycle
-    to: provider-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: config-lifecycle
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: config-lifecycle
     to: report-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: development-tools
-    to: evidence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-acquisition
-    to: evidence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-acquisition
-    to: evidence-contracts
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-acquisition
-    to: persistence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-acquisition
-    to: policy-config-adapter
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-adapters
-    to: evidence-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-adapters
-    to: evidence-contracts
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-adapters
-    to: persistence-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-adapters
-    to: policy-config-adapter
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-adapters
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-adapters
-    to: report-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-adapters
-    to: report-contract
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-contracts
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: evidence-contracts
-    to: report-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: persistence-adapters
-    to: provider-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: persistence-adapters
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: persistence-adapters
-    to: report-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: policy-config-adapter
-    to: provider-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: policy-config-adapter
-    to: relationship-analysis
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: policy-config-adapter
-    to: report-adapters
-    why: Accepted in the Archfit 3 baseline.
-  - rule: duplication
-    from: report-adapters
-    to: report-contract
     why: Accepted in the Archfit 3 baseline.
   - rule: cycle
     from: evidence-adapters
@@ -879,6 +683,9 @@ generated:
   - internal/evidence/ports/symbol_resolver_moq.go
   - internal/evidence/ports/syntax_provider_moq.go
   - internal/toolrun/runner_moq.go
+tests:
+  - "**/*_test.go"
+  - "**/testdata/**"
 exclude:
   - tools/dotnet/**
 languages:

@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 // rootKey is the key of the files at the repository root.
@@ -49,6 +51,20 @@ type module struct {
 // tests returns the test globs that match a source file.
 func tests(sources []string) []string {
 	return slices.DeleteFunc(slices.Clone(testGlobs), func(g string) bool { return !matchesAny(g, sources) })
+}
+
+// factFiles lists the files the facts name: the sources and the files of the
+// literals, sorted. The Go parser's sources leave out _test.go files and
+// testdata, which the literal reader reads, so the test globs and the tree
+// check use both. Limit: a test path that holds no literal gets no glob; it
+// has no facts, so no rule reports an error in it.
+func factFiles(facts evidence.CheckFacts) []string {
+	files := slices.Clone(facts.Sources)
+	for _, l := range facts.Literals {
+		files = append(files, l.File)
+	}
+	slices.Sort(files)
+	return slices.Compact(files)
 }
 
 // generated returns the globs of generated sources: the sources the root
