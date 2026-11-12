@@ -357,8 +357,8 @@ func (c *converter) keep(v, schema any, key string) any {
 // name. So:
 //
 //   - a bare directory, which named that Go package, becomes dir/*; one that
-//     is a Python package with no Go source, named by its dotted name,
-//     becomes dir/__init__.py;
+//     holds only Python files is a dotted package name: its __init__.py, or
+//     nothing for a namespace package, which Archfit 3 did not read;
 //   - a glob that matches directories of Go sources, which named packages,
 //     becomes glob/*, the files of those packages; it stays as it is only
 //     when it also matches a source that is not Go, a file node;
@@ -372,10 +372,16 @@ func (c *converter) fileGlobs(p string) []string {
 		globs = []string{p}
 	case !strings.ContainsAny(p, globMetaChars):
 		globs = []string{p}
+		direct := slices.DeleteFunc(slices.Clone(c.sources), func(f string) bool { return path.Dir(f) != p })
+		python := len(direct) > 0 && !slices.ContainsFunc(direct, func(f string) bool { return !isPython(f) })
 		switch {
-		case c.dirs[p] && !c.matchesGoDir(literal(p)) && slices.Contains(c.sources, join(p, "__init__.py")):
+		case !c.dirs[p]:
+		case python && slices.Contains(direct, join(p, "__init__.py")):
 			globs = []string{join(literal(p), "__init__.py")}
-		case c.dirs[p]:
+		case python:
+			// A namespace package: Archfit 3 read no node for it.
+			globs = nil
+		default:
 			globs = []string{join(literal(p), "*")}
 		}
 	case p == "**" || strings.HasSuffix(p, "/**") || !c.matchesGoDir(p):
@@ -396,22 +402,27 @@ func (c *converter) fileGlobs(p string) []string {
 // pythonGlobs are the file globs of a dotted Python module selector, at the
 // root or under src/. Archfit 3 matched the dotted name with doublestar, where
 // a dot is not a separator, so a * segment crossed dots: a.b.* named every
-// module below a.b, at any depth. A * or ** segment becomes **, and a
-// selector that ends in one is everything under its directory (a.b.* is
-// a/b/**, which also takes the package a/b/__init__.py itself). Otherwise
-// a.b is the module a/b.py or the package a/b/__init__.py. Limit: a partial
+// module below a.b, at any depth. A selector that ends in * or ** is
+// everything under its directory (a.b.* is a/b/**, which also takes the
+// package a/b/__init__.py itself). An inner * is one package or more (a.*.api
+// is a/*/**/api.py, never a/api.py); an inner ** stays **. Otherwise a.b is
+// the module a/b.py or the package a/b/__init__.py. Limit: a partial
 // wildcard in a segment (a.b_*) stays within one directory, where Archfit 3
 // also matched deeper modules.
 func pythonGlobs(dotted string) []string {
 	segs := strings.Split(dotted, ".")
-	for i, seg := range segs {
+	last := len(segs) - 1
+	if segs[last] == "*" || segs[last] == "**" {
+		segs[last] = "**"
+	}
+	for i, seg := range segs[:last] {
 		if seg == "*" {
-			segs[i] = "**"
+			segs[i] = "*/**"
 		}
 	}
 	base := strings.Join(segs, "/")
 	rel := []string{base + ".py", base + "/__init__.py"}
-	if segs[len(segs)-1] == "**" {
+	if segs[last] == "**" {
 		rel = []string{base}
 	}
 	prefixes := []string{"", srcPrefix}
@@ -422,6 +433,12 @@ func pythonGlobs(dotted string) []string {
 		}
 	}
 	return out
+}
+
+// isPython reports whether file is a Python source.
+func isPython(file string) bool {
+	ext := path.Ext(file)
+	return ext == ".py" || ext == ".pyi"
 }
 
 // matchesGoDir reports whether glob matches a directory that holds a Go

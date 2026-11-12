@@ -25,6 +25,7 @@ const (
 	coreFile    = "pkg/core/core.go"
 	libFile     = "lib/lib.go"
 	corePkg     = "pkg/core"
+	shopOrders  = "shop/orders.py"
 )
 
 // tree is a small Go repository: app imports core, core imports nothing.
@@ -708,10 +709,10 @@ func TestPythonGlobs(t *testing.T) {
 		dotted string
 		want   []string
 	}{
-		{"shop.orders", []string{"shop/orders.py", "shop/orders/__init__.py", "src/shop/orders.py", "src/shop/orders/__init__.py"}},
+		{"shop.orders", []string{shopOrders, "shop/orders/__init__.py", "src/shop/orders.py", "src/shop/orders/__init__.py"}},
 		{"shop.orders.*", []string{"shop/orders/**", "src/shop/orders/**"}},
 		{"shop.orders.**", []string{"shop/orders/**", "src/shop/orders/**"}},
-		{"shop.*.api", []string{"shop/**/api.py", "shop/**/api/__init__.py", "src/shop/**/api.py", "src/shop/**/api/__init__.py"}},
+		{"shop.*.api", []string{"shop/*/**/api.py", "shop/*/**/api/__init__.py", "src/shop/*/**/api.py", "src/shop/*/**/api/__init__.py"}},
 	}
 	for _, tt := range tests {
 		if got := pythonGlobs(tt.dotted); !reflect.DeepEqual(got, tt.want) {
@@ -720,8 +721,34 @@ func TestPythonGlobs(t *testing.T) {
 	}
 }
 
+func TestPythonInnerWildcardNeedsAPackage(t *testing.T) {
+	globs := pythonGlobs("shop.*.api")
+	for file, want := range map[string]bool{"shop/api.py": false, "shop/orders/api.py": true, "shop/a/b/api.py": true} {
+		if got := matchesGlob(globs, file); got != want {
+			t.Errorf("shop.*.api covers %s = %v, want %v", file, got, want)
+		}
+	}
+}
+
+func TestConvertPythonNamespacePackage(t *testing.T) {
+	facts := evidence.CheckFacts{Sources: []string{shopOrders, "shop/pay/card.py"}}
+	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
+modules:
+  root:
+    paths: [shop]
+  parts:
+    paths: [shop.*]
+`}, facts)
+	if _, ok := conv.File.Modules["root"]; ok {
+		t.Errorf("root = %+v: a namespace package had no node in Archfit 3", conv.File.Modules["root"])
+	}
+	if want := []string{"shop/**"}; !reflect.DeepEqual(conv.File.Modules["parts"].Paths, want) {
+		t.Errorf("parts paths = %v, want %v", conv.File.Modules["parts"].Paths, want)
+	}
+}
+
 func TestConvertPythonTopLevelPackageBesideItsModules(t *testing.T) {
-	facts := evidence.CheckFacts{Sources: []string{"shop/__init__.py", "shop/orders.py", "shop/pay/card.py"}}
+	facts := evidence.CheckFacts{Sources: []string{"shop/__init__.py", shopOrders, "shop/pay/card.py"}}
 	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
 modules:
   root:
