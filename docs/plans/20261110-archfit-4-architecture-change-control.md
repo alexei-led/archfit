@@ -1220,6 +1220,7 @@ Other risks:
 | A built-in resolver disagrees with the language's own tool. | The equivalence test before removal; unresolved imports are `unknown`, not dropped; C# keeps Roslyn if the test fails. |
 | The rewrite stalls. | Milestones 1 and 2 reuse the scorer, evidence, adapters, hooks, the App's trust layer and its request handling. Much of the engine work is removal. |
 | The evidence is narrow. | The trap benchmark at every milestone, with more traps, languages, bends, and long sessions. |
+| A passkey belongs to the installation, not to one repository. Its registration issue goes to the owners of the repository it was registered in, so co-owners of another repository of the installation are not told at registration. | Every answer names its owner and the passkey it was made with on GitHub: on the request issue it closes, on the pull request it changes, or on the issue of a policy changed outside the flow. The owners of that repository are notified there, so co-owners of every repository see the passkey in use. Manager, M2 task 18 review, 2026-11-12. |
 
 ## Appendix A. Worked example
 
