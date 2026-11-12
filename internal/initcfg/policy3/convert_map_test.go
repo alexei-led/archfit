@@ -722,10 +722,12 @@ func TestPythonGlobs(t *testing.T) {
 }
 
 func TestPythonInnerWildcardNeedsAPackage(t *testing.T) {
-	globs := pythonGlobs("shop.*.api")
-	for file, want := range map[string]bool{"shop/api.py": false, "shop/orders/api.py": true, "shop/a/b/api.py": true} {
-		if got := matchesGlob(globs, file); got != want {
-			t.Errorf("shop.*.api covers %s = %v, want %v", file, got, want)
+	for _, dotted := range []string{"shop.*.api", "shop.**.api"} {
+		globs := pythonGlobs(dotted)
+		for file, want := range map[string]bool{"shop/api.py": false, "shop/orders/api.py": true, "shop/a/b/api.py": true} {
+			if got := matchesGlob(globs, file); got != want {
+				t.Errorf("%s covers %s = %v, want %v", dotted, file, got, want)
+			}
 		}
 	}
 }

@@ -404,8 +404,9 @@ func (c *converter) fileGlobs(p string) []string {
 // a dot is not a separator, so a * segment crossed dots: a.b.* named every
 // module below a.b, at any depth. A selector that ends in * or ** is
 // everything under its directory (a.b.* is a/b/**, which also takes the
-// package a/b/__init__.py itself). An inner * is one package or more (a.*.api
-// is a/*/**/api.py, never a/api.py); an inner ** stays **. Otherwise a.b is
+// package a/b/__init__.py itself). An inner * or ** is one package or more,
+// because doublestar reads a ** between dots as * (a.*.api is
+// a/*/**/api.py, never a/api.py). Otherwise a.b is
 // the module a/b.py or the package a/b/__init__.py. Limit: a partial
 // wildcard in a segment (a.b_*) stays within one directory, where Archfit 3
 // also matched deeper modules.
@@ -416,7 +417,7 @@ func pythonGlobs(dotted string) []string {
 		segs[last] = "**"
 	}
 	for i, seg := range segs[:last] {
-		if seg == "*" {
+		if seg == "*" || seg == "**" {
 			segs[i] = "*/**"
 		}
 	}
