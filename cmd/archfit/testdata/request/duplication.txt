@@ -1,0 +1,4 @@
+pkg/tc/interface.go:12: duplication: pkg_tc -> pkg_util
+request: tc parses the name before pkg_util loads
+  until: 2026-12-10 (30 days)
+next: ask an owner     (open a pull request first if there is none)

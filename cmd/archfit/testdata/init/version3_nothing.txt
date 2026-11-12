@@ -1,0 +1,2 @@
+left .archfit.yaml as it is: archfit init never changes a version 3 policy
+left AGENTS.md as it is: it has the instruction block

@@ -1,0 +1,7 @@
+converted .archfit.yaml: 4 modules, 1 allowed dependency, 1 rule, 1 exception
+  exception: duplication pkg_tc -> pkg_util
+not converted or changed:
+  exceptions.duplication: 1 written for the errors of today; the Archfit 3 baseline accepted 0
+removed: .archfit-app.yaml, .archfit-baseline.json
+wrote AGENTS.md: the instruction block for agents
+next: read .archfit.yaml, then open a pull request with it

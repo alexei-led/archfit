@@ -26,6 +26,8 @@ const (
 	reasonCopy  = "tc parses the interface name before pkg_util is loaded"
 	// laterDay is a day after the check, on an unchanged tree.
 	laterDay = "2026-11-14"
+	// yearAndADay is 366 days after the check's date.
+	yearAndADay = "2027-11-11"
 )
 
 // TestRequestsOfTheDesignExamples builds the request of the 8.1 graph error,
@@ -112,6 +114,12 @@ func TestAskRefuses(t *testing.T) {
 		{name: "no reason and no terminal", store: stored(mixed), noTTY: true, want: request.ErrNoReason, wantErr: `a reason is required: archfit request -m "<why>"`},
 		{name: "a blank reason and no terminal", store: stored(mixed), in: request.Input{Reason: " \t\n"}, noTTY: true, want: request.ErrNoReason},
 		{name: "the terminal gives no reason", store: stored(mixed), typed: new("  \n"), want: request.ErrNoReason, asked: true},
+		{name: "expires a year and a day ahead", store: stored(mixed), in: request.Input{Expires: yearAndADay}, want: request.ErrExpiresTooFar, wantErr: "--expires is too far ahead: want 2027-11-10 or earlier (365 days), got 2027-11-11"},
+		{name: "expires far ahead of a later today", store: stored(mixed), today: laterDay, in: request.Input{Expires: "2027-11-15"}, want: request.ErrExpiresTooFar},
+		{name: "a reason that ends in the flag", store: stored(mixed), in: request.Input{Reason: "needs it --expires"}, want: request.ErrReasonFlag, wantErr: `the reason ends like the --expires flag: give the date outside the reason: archfit request -m "<why>" --expires YYYY-MM-DD`},
+		{name: "a reason that ends in the flag and a word", store: stored(mixed), in: request.Input{Reason: "needs it --expires 2026-12-10 \n"}, want: request.ErrReasonFlag},
+		{name: "a reason that is only the flag", store: stored(mixed), in: request.Input{Reason: "--expires soon"}, want: request.ErrReasonFlag},
+		{name: "the terminal gives the flag", store: stored(mixed), typed: new("needs it --expires\n"), want: request.ErrReasonFlag, asked: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := request.Service{Last: tc.store, Checkout: fixedCheckout{now: orDefault(tc.now)}, Clock: on(t, tc.today)}
@@ -150,6 +158,48 @@ func TestOnlyAskErrorsJoin(t *testing.T) {
 	}
 	if len(out.Request.Errors) != 1 || out.Request.Errors[0].Rule != "graph" {
 		t.Errorf("errors = %+v, want only the graph error", out.Request.Errors)
+	}
+}
+
+// TestExpiresCountsUTCDays: the 365 days count from today's UTC date, as the
+// output's date and the App do, not from the local date.
+func TestExpiresCountsUTCDays(t *testing.T) {
+	// 01:00 on 11 November east of UTC is still 10 November in UTC.
+	east := time.FixedZone("UTC+3", 3*60*60)
+	s := service(checked(t, "graph"))
+	s.Clock = fixedClock(time.Date(2026, 11, 11, 1, 0, 0, 0, east))
+	if _, err := s.Ask(context.Background(), request.Input{Reason: reasonGraph, Expires: yearAndADay}); !errors.Is(err, request.ErrExpiresTooFar) {
+		t.Errorf("366 UTC days ahead: error = %v, want %v", err, request.ErrExpiresTooFar)
+	}
+	// 23:00 on 10 November west of UTC is already 11 November in UTC.
+	west := time.FixedZone("UTC-3", -3*60*60)
+	s.Clock = fixedClock(time.Date(2026, 11, 10, 23, 0, 0, 0, west))
+	if _, err := s.Ask(context.Background(), request.Input{Reason: reasonGraph, Expires: yearAndADay}); err != nil {
+		t.Errorf("365 UTC days ahead: error = %v, want none", err)
+	}
+}
+
+// TestAskAccepts pins the edges the refusals leave open: the last day
+// --expires may name, and a reason that only mentions the flag.
+func TestAskAccepts(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   request.Input
+	}{
+		{name: "expires 365 days ahead", in: request.Input{Reason: reasonGraph, Expires: "2027-11-10"}},
+		{name: "the flag inside the reason", in: request.Input{Reason: "the --expires flag of tc is parsed twice"}},
+		{name: "the flag with two words after it", in: request.Input{Reason: "set --expires on every call"}},
+		{name: "the flag glued to a word", in: request.Input{Reason: "keeps tc-only--expires"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := service(checked(t, "graph")).Ask(context.Background(), tc.in)
+			if err != nil {
+				t.Fatalf("Ask: %v", err)
+			}
+			if out.Request.Expires != tc.in.Expires || out.Request.Reason != tc.in.Reason {
+				t.Errorf("request = %q until %q, want %q until %q", out.Request.Reason, out.Request.Expires, tc.in.Reason, tc.in.Expires)
+			}
+		})
 	}
 }
 

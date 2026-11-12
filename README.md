@@ -6,45 +6,42 @@
 
 **archfit checks whether code changes follow the architecture declared for a repository.**
 
-Tests can pass while a change adds a forbidden dependency or a new cycle. archfit reads dependency facts from language tools, applies your rules, and reports a verdict with evidence. Use the same check locally and in continuous integration (CI).
-
-The report shows measured evidence and evidence gaps. It does not reduce the repository to one score.
+Tests can pass while a change adds a forbidden dependency, a new cycle, or a copy of code another module owns. archfit reads the imports and literals of the change, applies the rules of your policy, `.archfit.yaml`, and gives the change one status: `pass`, `fail`, or `unknown`. Use the same check locally, in agent hooks, and in continuous integration (CI).
 
 ```text
-archfit check
-
-VERDICT    NEEDS ATTENTION
-BLOCKING   0 active
-ATTENTION  diagnostics or incomplete evidence
+$ archfit check
+pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
+  why: a new dependency between modules needs an owner
+  balance: 9/10 (min 7)
+  next: archfit request -m "<why you need it>"     (do not copy the code)
+archfit: fail, 1 error
 ```
 
-The lines above show the report shape. Counts and verdicts depend on your repository.
+Each error says where, which rule, and what is wrong; then why, what to do instead, and the next step. The status line comes after the errors.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    S[Source code] --> A[Language analyzers]
-    C[.archfit.yaml] --> G[Rules and checks]
-    A --> G
-    G --> R[Verdict and evidence]
-    R -->|healthy| H[Continue]
-    R -->|needs attention| E[Review diagnostics<br/>and missing evidence]
-    R -->|blocked| F[Review the change]
+    S[The change] --> C[archfit check]
+    P[.archfit.yaml] --> C
+    C -->|pass| H[Done]
+    C -->|fail| F[Fix the code<br/>or ask an owner]
+    C -->|unknown| U[Restore what<br/>the record names]
 
-    classDef process fill:#e0f2fe,stroke:#0284c7,color:#082f49
     classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
-    classDef healthy fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef attention fill:#fef3c7,stroke:#d97706,color:#451a03
-    classDef blocked fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
-    class A,G process
-    class S,C,R neutral
-    class H healthy
-    class E attention
-    class F blocked
+    classDef process fill:#e0f2fe,stroke:#0284c7,color:#082f49
+    classDef pass fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef unknown fill:#fef3c7,stroke:#d97706,color:#451a03
+    classDef fail fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    class S,P neutral
+    class C process
+    class H pass
+    class U unknown
+    class F fail
 ```
 
-The report labels each outcome. Green means healthy, amber means needs attention, and red means blocked.
+The check compares the change with its target branch and lists only the errors the change adds. An error that existed before is the owners' work, not the work of an unrelated change.
 
 ## Install and start
 
@@ -60,25 +57,28 @@ Or install a tagged release with Go:
 go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
 ```
 
-Run these commands from your repository root:
+Run these commands from your repository:
 
 ```sh
-archfit doctor
-archfit config init --root .
-archfit analyze -c .archfit.yaml
+archfit doctor                # this checkout: the tools archfit needs
+archfit init                  # write .archfit.yaml and the block for agents
+archfit rules                 # the rules for the files you change
+archfit can pkg/tc pkg/util   # before a new dependency between modules
+archfit check                 # the change: pass, fail, or unknown
+archfit request -m "<why>"    # when a rule is in your way: ask an owner
 ```
 
-Review the generated module paths and rules before you use the configuration as policy. Create a baseline only after you review the findings. Run `archfit check` in CI.
+Read the policy `init` writes, then open a pull request with it. Run `archfit check` in CI. See [Getting started](docs/getting-started.md).
 
 The Docker image includes the locked Go, TypeScript/JavaScript, Python, Rust, and .NET toolchains, plus ast-grep, SCIP indexers, jscpd, cargo-modules, and the Roslyn helper (`archfit-roslyn`). Deeper analyzers remain configuration-controlled. See [Getting started](docs/getting-started.md#use-docker) for details.
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md) — install tools and run your first check.
+- [Getting started](docs/getting-started.md) — set up a repository and run your first check.
 - [Commands](docs/commands.md) — command behavior, flags, and exit codes.
-- [Configuration](docs/configuration.md) — every configuration field and default.
-- [Rules](docs/rules.md) — rule types, selectors, and waivers.
-- [Results](docs/results.md) — verdicts and output schemas.
+- [Configuration](docs/configuration.md) — every policy field and default.
+- [Rules](docs/rules.md) — built-in rules, custom rules, and exceptions.
+- [Results](docs/results.md) — the record, the statuses, JSON, and SARIF.
 - [Metrics](docs/metrics.md) and [coupling](docs/coupling.md) — what the measurements mean.
 - [Language support](docs/languages.md) — analyzers, tools, and coverage.
 - [CI](docs/ci.md), [agents](docs/agents.md), and [AI](docs/ai.md) — automation workflows.

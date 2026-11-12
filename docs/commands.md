@@ -4,6 +4,10 @@ This page lists the `archfit` commands and flags. It does not repeat the full co
 
 Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 
+## Policy version
+
+`check`, `can`, `rules`, `request` and `init` are the Archfit 4 commands. `can`, `rules` and `request` need a version 3 `.archfit.yaml`. `check` reads the version first: a version 3 policy runs the Archfit 4 check, and a version 2 policy (Archfit 3) runs the Archfit 3 check. In a repository with a version 2 policy, run `archfit init` to convert it to version 3 (see [migration](migration.md)).
+
 ## Choose a command
 
 | Task | Command |
@@ -12,6 +16,8 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 | Check a change: pass, fail, or unknown | `archfit check` |
 | Ask whether a dependency or library may be used | `archfit can <from> <to>` |
 | Show the rules that apply | `archfit rules [PATH... \| RULE] [--graph]` |
+| Ask an owner to change the policy | `archfit request -m "<why>" [--expires DATE]` |
+| Set up a repository, or convert an Archfit 3 one | `archfit init` |
 | Accept current findings as the gate baseline | `archfit baseline` |
 | Explain one finding | `archfit explain <fingerprint-prefix>` |
 | Ask which module owns a path | `archfit policy where <path>` |
@@ -27,13 +33,13 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 
 ## Exit codes
 
-`check` with a version 3 policy, `can`, and `rules` use these codes:
+`check` with a version 3 policy, `can`, `rules`, `request`, and `init` use these codes:
 
-| Code | `check` | `can` | `rules` |
-| --- | --- | --- | --- |
-| `0` | `pass` | yes | done |
-| `1` | `fail` | no | – |
-| `2` | `unknown`, wrong usage, or a tool error | `unknown`, wrong usage, or a tool error | wrong usage or a tool error |
+| Code | `check` | `can` | `rules`, `init` | `request` |
+| --- | --- | --- | --- | --- |
+| `0` | `pass` | yes | done | sent (with the App, milestone 2) |
+| `1` | `fail` | no | – | – |
+| `2` | `unknown`, wrong usage, or a tool error | `unknown`, wrong usage, or a tool error | wrong usage or a tool error | not sent: no App, no `check` output for this tree, nothing to ask, wrong usage, or a tool error |
 
 A flag or argument that the command line parser rejects, such as an unknown flag, still exits `3`, and so does a run stopped by `SIGINT` or `SIGTERM`. These two move to `2` when the Archfit 3 commands are removed.
 
@@ -115,7 +121,7 @@ The run:
 4. The policy must fit the tree. A path glob that matches no file, or another policy error, is `unknown` with the message.
 5. The check reads the base and the working tree and counts the errors of each by rule, modules, and symbol. An error the base does not have, or has fewer times, is added by the change: the status is `fail`. An expired exception fails every change, and the status line ends with `(not from this change)`. See [results](results.md).
 
-The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` has a step that uses `alexei-led/archfit-action` (`uses: alexei-led/archfit-action@<ref>`), every result ends with the line `policy: not protected`: the result is a local guide, not change control.
+The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` has a step that uses `alexei-led/archfit-action` (`uses: alexei-led/archfit-action@<ref>`), every result carries the line `policy: not protected`, after the status line: the result is a local guide, not change control.
 
 Each run except a `--policy` preview keeps its JSON output and the git tree id of the working tree in `.archfit-cache/last.json`. `archfit request` reads it while the tree and `HEAD` are the same. The same tree, policy, engine version, and date give the same output.
 
@@ -184,6 +190,56 @@ The notes of the policy are listed as "not checked". Dates show the days left, s
 | Flag | Meaning |
 | --- | --- |
 | `--graph` | The module graph. It takes no path or rule id. |
+| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
+
+### `request`
+
+`archfit request -m "<why>" [--expires DATE] [flags]` asks an owner to change the policy. It takes the errors of the last `archfit check`, or the dependency of the last `archfit can` answer, from `.archfit-cache/last.json`, so you write only the reason. The output is used only while `HEAD` and the working tree are the ones it was produced on: after an edit, run `archfit check` again.
+
+Only an error whose `next` is `archfit request` joins the request: an error of a rule an owner may allow. An error that says `fix the code`, or `wait for an owner: #n`, does not.
+
+Without the App, `archfit request` prints the request it built and exits `2`. The last line is `next: ask an owner`. A request built from `check` output adds a note: the App joins it to a pull request, so open one first if there is none. A request built from a `can` answer comes before a pull request.
+
+```text
+$ archfit request -m "netem needs the shared retry helper"
+pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util
+  balance: 9/10 (min 7)
+request: netem needs the shared retry helper
+next: ask an owner     (open a pull request first if there is none)
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `-m <why>` | The reason. Required. On a terminal, `archfit request` asks for it when `-m` is not given. The reason must not end in `--expires` or `--expires <word>`: give the date with the flag. |
+| `--expires <date>` | Ask for an exception until this day, `YYYY-MM-DD`: a date after today and after the `check`, at most 365 days ahead. Without it the request asks for a permanent change. |
+| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
+
+`archfit request` exits `2` with the reason on stderr when there is no `check` or `can` output for this tree (`run archfit check first`), when the output is `pass` or has nothing an owner may allow (`nothing to ask`), when it is `unknown`, or when `-m` or `--expires` is wrong.
+
+### `init`
+
+`archfit init [flags]` sets up a repository. It writes what is missing and never changes a version 3 policy. It writes no workflow file: the workflow comes with Action 4.
+
+| The repository has | `archfit init` |
+| --- | --- |
+| No `.archfit.yaml` | Writes a version 3 policy from the code: a module for each directory of code cut to two levels, such as `pkg/chaos` (for Python, below `src/`), with `paths` and `public` (the packages other modules use today); `depends_on` as the dependencies that exist; `tests` and `generated`; `owners` from the GitHub `origin` remote; an `only` rule for network, process, or database code that only some modules use; and an exception for each error that exists today, so the first `check` passes. |
+| A version 2 `.archfit.yaml` (Archfit 3) | Converts it, with `.archfit-baseline.json`, `.archfit-labels.yaml` and `.archfit-app.yaml`, into one version 3 policy, removes the old files, and lists what it could not convert. See [migration](migration.md). |
+| A version 3 `.archfit.yaml` | Leaves it as it is. |
+
+In each case it writes the five lines for agents between the `<!-- archfit:start -->` and `<!-- archfit:end -->` markers in `AGENTS.md`, and creates the file when it is missing. Text outside the markers stays as it is. When the block is already there, nothing is written and the command still exits `0`.
+
+```text
+$ archfit init
+wrote .archfit.yaml: 4 modules, 0 allowed dependencies, 0 rules, 1 exception
+  exception: duplication pkg_tc -> pkg_util
+wrote AGENTS.md: the instruction block for agents
+next: read .archfit.yaml, then open a pull request with it
+```
+
+Read the policy and its exceptions before you open the pull request. A place in the code that `init` could not read is listed with `not read:` and its fix. A missing tool, unbalanced markers in `AGENTS.md`, or no GitHub `origin` remote stops `init` before it writes anything, with exit `2`.
+
+| Flag | Meaning |
+| --- | --- |
 | `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
 
 ### `baseline`
@@ -270,7 +326,7 @@ After the tool table and the LLM settings, `doctor` reports the agent loop: the 
 
 ### `config init`
 
-Creates a starter config. `--ai-classify` drafts AI classifications.
+Creates a starter config for a version 2 policy (Archfit 3). For a version 3 policy, run [`archfit init`](#init). `--ai-classify` drafts AI classifications.
 
 | Flag | Meaning |
 | --- | --- |

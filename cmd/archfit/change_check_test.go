@@ -73,6 +73,7 @@ const (
 	flagFormat  = "--format"
 	fixtureDate = "2026-11-10"
 	tcNetem     = "pkg/tc/netem.go"
+	tcInterface = "pkg/tc/interface.go"
 	runtimeGo   = "pkg/runtime/runtime.go"
 	notARepo    = "is not in a git repository"
 	pkgTC       = "pkg/tc"
@@ -226,15 +227,15 @@ func TestDesignExamplesFromTheCLI(t *testing.T) {
 			date: fixtureDate, args: []string{cmdCheck}, wantCode: 0},
 		{name: "deny", base: base, head: map[string]string{"pkg/chaos/netem/netem.go": chaosImportsRuntime},
 			date: fixtureDate, args: []string{cmdCheck}, wantCode: 1},
-		{name: "graph", base: base, head: map[string]string{tcNetem: tcImportsUtil},
+		{name: ruleGraph, base: base, head: map[string]string{tcNetem: tcImportsUtil},
 			date: fixtureDate, args: []string{cmdCheck}, wantCode: 1},
-		{name: "duplication", base: base, head: map[string]string{"pkg/tc/interface.go": tcCopiesLiteral},
+		{name: ruleDuplication, base: base, head: map[string]string{tcInterface: tcCopiesLiteral},
 			date: fixtureDate, args: []string{cmdCheck}, wantCode: 1},
 		{name: "policy_differs", base: base, head: map[string]string{defaultConfigPath: fixturePolicy + "  - id: one-more\n    note: A note.\n    why: It is a note.\n"},
 			date: fixtureDate, args: []string{cmdCheck}, wantCode: 2},
 		{
 			name: "expired_exception",
-			base: with(base, map[string]string{defaultConfigPath: fixturePolicy + expiredException, "pkg/tc/interface.go": tcCopiesLiteral}),
+			base: with(base, map[string]string{defaultConfigPath: fixturePolicy + expiredException, tcInterface: tcCopiesLiteral}),
 			head: map[string]string{runtimeGo: base[runtimeGo] + "\n// Done.\n"},
 			date: "2026-11-20", args: []string{cmdCheck}, wantCode: 1,
 		},
