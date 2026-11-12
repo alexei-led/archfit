@@ -61,12 +61,12 @@ func build(root, owner string, facts evidence.CheckFacts) (policyfile.File, []by
 		f.Modules[m.name] = mod
 	}
 	f.Rules = containment(today.users, len(mods))
-	_, p, err := encode(f, facts.Sources)
+	_, p, err := encode(f, facts.Sources, header)
 	if err != nil {
 		return policyfile.File{}, nil, err
 	}
 	f.Exceptions = exceptions(p, facts)
-	data, _, err := encode(f, facts.Sources)
+	data, _, err := encode(f, facts.Sources, header)
 	if err != nil {
 		return policyfile.File{}, nil, err
 	}
@@ -265,8 +265,9 @@ func exceptions(p resolved.Policy, facts evidence.CheckFacts) []policyfile.Excep
 	return out
 }
 
-// encode writes the policy file and checks that it loads and fits the tree.
-func encode(f policyfile.File, sources []string) ([]byte, resolved.Policy, error) {
+// encode writes the policy file under its header comment and checks that it
+// loads and fits the tree.
+func encode(f policyfile.File, sources []string, header string) ([]byte, resolved.Policy, error) {
 	body, err := yaml.MarshalWithOptions(f, yaml.Indent(2), yaml.IndentSequence(true))
 	if err != nil {
 		return nil, resolved.Policy{}, err
