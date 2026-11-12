@@ -93,7 +93,7 @@ Loose Python files outside the scanned packages do not become verified source. R
 
 If multiple files map to the same dotted module, such as `app.py` and `app/__init__.py`, their bodies are ambiguous and do not count as verified source. Excluded files do not contribute to that ambiguity. A rule whose target vocabulary cannot contain Python nodes does not wait for omitted Python source.
 
-The v3.1.1 image supplies Python 3.14. CI checks the src-layout `testdata/python314` fixture; releases also check each immutable platform image before publishing image version tags. Images through v3.1.0 contain Python 3.11; caller-side Python setup cannot change the container interpreter. See [migration](migration.md#python-producer-semantics) for baseline compatibility.
+The v3.1.1 image supplies Python 3.14. CI checks the src-layout `testdata/python314` fixture; releases also check each immutable platform image before publishing image version tags. Images through v3.1.0 contain Python 3.11; caller-side Python setup cannot change the container interpreter. See [the Archfit 3 migration](archived/migration-v2-to-v3.md#python-producer-semantics) for baseline compatibility.
 
 Use `uv` to resolve the analyzer without a global install:
 

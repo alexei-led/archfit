@@ -155,7 +155,7 @@ same job that checks a change.
 Capture or reanchor a baseline in a separate reviewed change. Use the same
 platform, analyzer versions, toolchain, and build settings as the gate. A
 different measurement environment can make the baseline non-comparable. See
-[migration](migration.md) for baseline version changes.
+[the Archfit 3 migration](archived/migration-v2-to-v3.md) for baseline version changes.
 
 ## Complete engine image and App adoption
 
