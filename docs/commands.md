@@ -255,7 +255,7 @@ On a version 3 policy, it first judges the whole working tree with the rules and
 | `drift` | An error exists that no exception covers. The report lists each one. |
 | `expired` | An exception passed its date and the code still breaks the rule. Every change fails until an owner extends the exception or the code is fixed. |
 
-Beside the state, the report lists the places the check could not read (the state does not cover them), the exceptions within 14 days of their date, the rules nothing checks, and the balance of each allowed dependency. Then come the measurements of the code. A policy that does not fit the tree, such as a path glob that matches no file, stops the report with exit `2` before the measurements.
+Beside the state, the report lists the places the check could not read (the state does not cover them), the exceptions within 14 days of their date, the rules nothing checks, and the balance of each allowed dependency. Then come the measurements of the code. A tool whose evidence is partial or timed out, or that the code needs and is not installed, is listed first under `evidence not complete:`: a measurement it feeds can show a zero that was not measured. A policy that does not fit the tree, such as a path glob that matches no file, stops the report with exit `2` before the measurements.
 
 ```text
 $ archfit report
@@ -274,7 +274,7 @@ measurements:
 policy: not protected
 ```
 
-On a version 2 policy the report shows the measurements only, and says to run `archfit init`. On a version 3 policy, the report does not yet place Python code in its modules, so the coupling measurements of a Python repository are `n/a`.
+On a version 2 policy the report shows the measurements only, says to run `archfit init`, and has no `policy:` line, as the version 2 `check` has none. On a version 3 policy, the report does not yet place Python code in its modules, so the coupling measurements of a Python repository are `n/a`.
 
 `--format json` writes the `archfit.architecture-state.v1` document of `archfit.state.schema.json`. On a version 3 policy, its `repository` object holds the state and each list above.
 

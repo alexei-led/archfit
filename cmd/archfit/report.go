@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
@@ -74,10 +73,6 @@ func (c *ReportCmd) Run(deps *appDeps) error {
 			return noVerdict(err)
 		}
 	} else if cfg, err = loadAnalysisConfig(ctx, co.policyPath("")); err != nil {
-		var ee *exitError
-		if errors.As(err, &ee) {
-			return noVerdict(errors.New(ee.msg))
-		}
 		return noVerdict(err)
 	}
 

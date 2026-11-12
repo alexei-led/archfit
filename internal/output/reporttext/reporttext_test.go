@@ -59,6 +59,16 @@ func TestRenderGoldens(t *testing.T) {
 		{Reason: "ast-grep is not installed", Fix: "archfit doctor --fix"},
 	}
 	drift.Protected = false
+	partial := state(drift)
+	partial.ToolCoverage = []report.Coverage{
+		{Tool: "go", Status: report.StatusPartial, Reason: "go list failed: no Go toolchain"},
+		{Tool: "scip", Status: report.StatusDisabled},
+		{Tool: "ast-grep", Status: report.StatusOK},
+		{Tool: "grimp", Status: report.StatusAbsent},
+		{Tool: "gocyclo", Status: report.StatusAbsent},
+		{Tool: "dependency-cruiser", Status: report.StatusTimedOut},
+	}
+	partial.CoverageGaps = []report.CoverageGap{{Tool: "gocyclo", InstallCmd: "archfit doctor --fix", AffectedMetrics: []string{"complexity"}}}
 
 	expired := empty(report.RepositoryExpired)
 	expired.Expired = []report.RepositoryError{{
@@ -75,7 +85,7 @@ func TestRenderGoldens(t *testing.T) {
 		doc  report.Document
 	}{
 		{name: "clean", doc: state(empty(report.RepositoryClean))},
-		{name: "drift", doc: state(drift)},
+		{name: "drift", doc: partial},
 		{name: "expired", doc: state(expired)},
 		{name: "version2", doc: version2},
 	} {

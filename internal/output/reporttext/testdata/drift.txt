@@ -13,6 +13,11 @@ not read:
     fix: add web/x.ts
   ast-grep is not installed
     fix: archfit doctor --fix
+evidence not complete:
+  go: partial: go list failed: no Go toolchain
+  dependency-cruiser: timed out
+  gocyclo: not installed (complexity)
+    fix: archfit doctor --fix
 measurements:
   coupling_balance: 78 (mixed)
   cycle: 0

@@ -8,7 +8,7 @@
 // The layout:
 //
 //	report      = state-line { error } [ expiring ] [ not-checked ] [ allowed ]
-//	              [ unread ] [ measurements ] [ unprotected ]
+//	              [ unread ] [ incomplete ] [ measurements ] [ unprotected ]
 //	state-line  = "repository: " state [ ", " count ] [ " (" n " places not read)" ] NL
 //	error       = path [ ":" line ] ": " rule-id ": " what NL fields
 //	fields      = [ "  why: " text NL ] [ "  instead: " text NL ]
@@ -17,9 +17,18 @@
 //	not-checked = "not checked:" NL { "  " rule-id ": " note NL }
 //	allowed     = "allowed dependencies:" NL { "  " from " -> " to ": " n "/10 (min " m ")" NL }
 //	unread      = "not read:" NL { "  " [ path [ ":" line ] ": " ] reason NL [ "    fix: " fix NL ] }
+//	incomplete  = "evidence not complete:" NL
+//	              { "  " tool ": " status [ ": " reason ] NL }
+//	              { "  " tool ": not installed" [ " (" metrics ")" ] NL [ "    fix: " install NL ] }
 //	measurements = "measurements:" NL { "  " name ": " value [ " (" band ")" ] NL }
 //	              (the band only when it is not the value, as "n/a" is)
 //	unprotected = "policy: not protected" NL
+//
+// A tool whose evidence is not complete (partial or timed out), and a tool
+// the code needs that is not installed (the coverage gaps), is listed before
+// the measurements: a measurement it feeds can show a zero that is not
+// measured, and missing evidence is not zero. An absent tool with no gap is a
+// language the tree does not have, and a disabled one is the policy's choice.
 //
 // A document without a repository state, from a version 2 policy, says so on
 // the state line and shows the measurements.
@@ -54,6 +63,7 @@ func (*Renderer) Render(d report.Document, w io.Writer) error {
 	} else {
 		writeRepository(&b, *repo)
 	}
+	writeIncomplete(&b, d.ToolCoverage, d.CoverageGaps)
 	writeMeasurements(&b, d.Metrics)
 	if repo != nil && !repo.Protected {
 		b.WriteString("policy: not protected\n")
@@ -124,6 +134,35 @@ func writeError(b *strings.Builder, e report.RepositoryError) {
 	if e.Balance != nil {
 		b.WriteString("  balance: " + balance(*e.Balance) + "\n")
 	}
+}
+
+// writeIncomplete lists the tools whose evidence is not complete.
+func writeIncomplete(b *strings.Builder, tools []report.Coverage, gaps []report.CoverageGap) {
+	var lines []string
+	for _, c := range tools {
+		if c.Status != report.StatusPartial && c.Status != report.StatusTimedOut {
+			continue
+		}
+		line := "  " + c.Tool + ": " + c.Status
+		if c.Reason != "" {
+			line += ": " + c.Reason
+		}
+		lines = append(lines, line)
+	}
+	for _, g := range gaps {
+		line := "  " + g.Tool + ": not installed"
+		if len(g.AffectedMetrics) > 0 {
+			line += " (" + strings.Join(g.AffectedMetrics, ", ") + ")"
+		}
+		if g.InstallCmd != "" {
+			line += "\n    fix: " + g.InstallCmd
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return
+	}
+	b.WriteString("evidence not complete:\n" + strings.Join(lines, "\n") + "\n")
 }
 
 func writeMeasurements(b *strings.Builder, metrics []report.MetricResult) {
