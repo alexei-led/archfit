@@ -634,8 +634,8 @@ Repository: archfit-app. Design: 9.2 (set up), 7.1, 10.1, 14, D15. Packages: `in
 - [ ] read the rulesets and say what is missing; warn when the App is a bypass actor or approvals are required; name
       an administrator bypass as the emergency path of design 10.8
 - [ ] record each approval of this task on GitHub with the owner and the passkey it was made with (design 19): the
-      first and workflow approvals on their pull request, confirm and revert on the issue of the policy changed outside
-      the flow
+      first and workflow approvals on their pull request (a first approval of an already-converted repository, which has
+      none, on an issue assigned to the owners), confirm and revert on the issue of the policy changed outside the flow
 - [ ] write tests for each ruleset case, the first approval (new and already-converted repository), a workflow
       approval, confirm, and revert
 - [ ] run `make all`
