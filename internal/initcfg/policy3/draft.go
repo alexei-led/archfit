@@ -1,7 +1,6 @@
 package policy3
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -12,8 +11,8 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/alexei-led/archfit/v3/internal/application/repostate"
 	"github.com/alexei-led/archfit/v3/internal/assessment/change"
-	"github.com/alexei-led/archfit/v3/internal/assessment/copies"
 	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
@@ -254,38 +253,16 @@ func containment(users map[string][]string, modules int) []policyfile.Rule {
 }
 
 // exceptions returns one exception, with no date, for each rule and place
-// where the policy p reports errors on the tree: an error that exists already
-// does not fail the first check.
+// where the policy p reports errors on the tree (repostate's Existing): an
+// error that exists already does not fail the first check. The date only
+// judges exceptions, and p has none yet.
 func exceptions(p resolved.Policy, facts evidence.CheckFacts) []policyfile.Exception {
-	errs := slices.Concat(change.Evaluate(p, facts).Errors, copies.Find(facts.Literals, p, nil, time.Time{}))
-	seen := map[policyfile.Exception]bool{}
-	var out []policyfile.Exception
-	for _, e := range errs {
-		x := policyfile.Exception{Rule: e.Key.Rule, From: e.Key.From, To: e.Key.To, Why: whyException}
-		if e.Key.Rule == resolved.RuleUnowned {
-			x.From, x.To = literal(e.Key.Symbol), ""
-		}
-		if !seen[x] {
-			seen[x] = true
-			out = append(out, x)
-		}
+	existing := repostate.Evaluate(repostate.Input{Policy: p, Head: facts, Today: time.Now()}).Existing
+	out := make([]policyfile.Exception, 0, len(existing))
+	for _, e := range existing {
+		out = append(out, policyfile.Exception{Rule: e.Rule, From: e.From, To: e.To, Why: whyException})
 	}
-	order := map[string]int{}
-	for i, id := range slices.Concat(resolved.BuiltinRules, ruleIDs(p)) {
-		order[id] = i
-	}
-	slices.SortFunc(out, func(a, b policyfile.Exception) int {
-		return cmp.Or(cmp.Compare(order[a.Rule], order[b.Rule]), cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To))
-	})
 	return out
-}
-
-func ruleIDs(p resolved.Policy) []string {
-	ids := make([]string, 0, len(p.Rules))
-	for _, r := range p.Rules {
-		ids = append(ids, r.ID)
-	}
-	return ids
 }
 
 // encode writes the policy file and checks that it loads and fits the tree.
