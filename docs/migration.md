@@ -30,7 +30,7 @@ It does not read or delete the draft files of Archfit 3's `config enrich`: `.arc
 | Module `paths`, `public`, `layer`, `subdomain`, `layers`                                                          | The same keys.                                                                               |
 | A bare directory in `paths`, such as `internal`                                                                   | `internal/*`: the files in that directory.                                                   |
 | A glob of Go package directories, such as `pkg/*` | `pkg/*/*`: the files of those packages. |
-| A Python module name, such as `shop.orders`, `shop.orders.*` or `shop.orders.**` | Its files: `shop/orders.py` or `shop/orders/__init__.py`, `shop/orders/*.py`, or `shop/orders/**`, at the root or under `src/`. |
+| A Python module name, such as `shop`, `shop.orders`, `shop.orders.*` or `shop.orders.**` | Its files, at the root or under `src/`: `shop/__init__.py`; `shop/orders.py` or `shop/orders/__init__.py`; `shop/orders/**` for both wildcards, because Archfit 3 let `*` cross dots. |
 | Module `depends_on`                                                                                               | The same module names. `layer:`, `role:` and name globs become the module names they select. |
 | No `depends_on` (any module)                                                                                      | The modules the module uses today.                                                           |
 | `volatility: frozen` or `legacy`                                                                                  | `low`.                                                                                       |

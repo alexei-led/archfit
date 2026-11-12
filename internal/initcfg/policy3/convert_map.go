@@ -356,13 +356,14 @@ func (c *converter) keep(v, schema any, key string) any {
 // directory, a TypeScript file by its path, a Python module by its dotted
 // name. So:
 //
-//   - a bare directory, which named that Go package, becomes dir/*;
+//   - a bare directory, which named that Go package, becomes dir/*; one that
+//     is a Python package with no Go source, named by its dotted name,
+//     becomes dir/__init__.py;
 //   - a glob that matches directories of Go sources, which named packages,
 //     becomes glob/*, the files of those packages; it stays as it is only
 //     when it also matches a source that is not Go, a file node;
 //   - a dotted name with no slash that matches nothing, a Python module,
-//     becomes its files: a.b is a/b.py or a/b/__init__.py, a.b.* the modules
-//     in a/b, a.b.** everything under a/b, at the root or under src/.
+//     becomes its files (pythonGlobs).
 func (c *converter) fileGlobs(p string) []string {
 	p = strings.TrimSuffix(p, "/")
 	var globs []string
@@ -371,7 +372,10 @@ func (c *converter) fileGlobs(p string) []string {
 		globs = []string{p}
 	case !strings.ContainsAny(p, globMetaChars):
 		globs = []string{p}
-		if c.dirs[p] {
+		switch {
+		case c.dirs[p] && !c.matchesGoDir(literal(p)) && slices.Contains(c.sources, join(p, "__init__.py")):
+			globs = []string{join(literal(p), "__init__.py")}
+		case c.dirs[p]:
 			globs = []string{join(literal(p), "*")}
 		}
 	case p == "**" || strings.HasSuffix(p, "/**") || !c.matchesGoDir(p):
@@ -389,18 +393,26 @@ func (c *converter) fileGlobs(p string) []string {
 	return globs
 }
 
-// pythonGlobs are the file globs of a dotted Python module selector.
+// pythonGlobs are the file globs of a dotted Python module selector, at the
+// root or under src/. Archfit 3 matched the dotted name with doublestar, where
+// a dot is not a separator, so a * segment crossed dots: a.b.* named every
+// module below a.b, at any depth. A * or ** segment becomes **, and a
+// selector that ends in one is everything under its directory (a.b.* is
+// a/b/**, which also takes the package a/b/__init__.py itself). Otherwise
+// a.b is the module a/b.py or the package a/b/__init__.py. Limit: a partial
+// wildcard in a segment (a.b_*) stays within one directory, where Archfit 3
+// also matched deeper modules.
 func pythonGlobs(dotted string) []string {
-	var rel []string
-	switch {
-	case strings.HasSuffix(dotted, ".**"):
-		rel = []string{strings.ReplaceAll(strings.TrimSuffix(dotted, ".**"), ".", "/") + "/**"}
-	case strings.HasSuffix(dotted, ".*"):
-		base := strings.ReplaceAll(strings.TrimSuffix(dotted, ".*"), ".", "/")
-		rel = []string{base + "/*.py", base + "/*/__init__.py"}
-	default:
-		base := strings.ReplaceAll(dotted, ".", "/")
-		rel = []string{base + ".py", base + "/__init__.py"}
+	segs := strings.Split(dotted, ".")
+	for i, seg := range segs {
+		if seg == "*" {
+			segs[i] = "**"
+		}
+	}
+	base := strings.Join(segs, "/")
+	rel := []string{base + ".py", base + "/__init__.py"}
+	if segs[len(segs)-1] == "**" {
+		rel = []string{base}
 	}
 	prefixes := []string{"", srcPrefix}
 	out := make([]string, 0, len(prefixes)*len(rel))

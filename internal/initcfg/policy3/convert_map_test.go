@@ -675,7 +675,7 @@ func TestConvertPythonDottedSelectors(t *testing.T) {
 	const pyA, pyB = "fixture_py/a.py", "fixture_py/b/__init__.py"
 	facts := evidence.CheckFacts{Sources: []string{
 		"fixture_py/__init__.py", pyA, pyB,
-		"fixture_py/b/_internal/__init__.py", "fixture_py/b/_internal/impl.py",
+		"fixture_py/b/_internal/__init__.py", "fixture_py/b/_internal/impl.py", "fixture_py/b/_internal/deep/x.py",
 	}}
 	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
 modules:
@@ -697,8 +697,42 @@ rules:
 	if want := []string{pyB}; !reflect.DeepEqual(b.Public, want) {
 		t.Errorf("b public = %v, want %v", b.Public, want)
 	}
-	want := policyfile.Deny{From: policyfile.Names{pyA}, To: policyfile.Names{"fixture_py/b/_internal/*.py"}}
+	want := policyfile.Deny{From: policyfile.Names{pyA}, To: policyfile.Names{"fixture_py/b/_internal/**"}}
 	if len(conv.File.Rules) != 1 || conv.File.Rules[0].Deny == nil || !reflect.DeepEqual(*conv.File.Rules[0].Deny, want) {
 		t.Errorf("rules = %+v, want deny %+v", conv.File.Rules, want)
+	}
+}
+
+func TestPythonGlobs(t *testing.T) {
+	tests := []struct {
+		dotted string
+		want   []string
+	}{
+		{"shop.orders", []string{"shop/orders.py", "shop/orders/__init__.py", "src/shop/orders.py", "src/shop/orders/__init__.py"}},
+		{"shop.orders.*", []string{"shop/orders/**", "src/shop/orders/**"}},
+		{"shop.orders.**", []string{"shop/orders/**", "src/shop/orders/**"}},
+		{"shop.*.api", []string{"shop/**/api.py", "shop/**/api/__init__.py", "src/shop/**/api.py", "src/shop/**/api/__init__.py"}},
+	}
+	for _, tt := range tests {
+		if got := pythonGlobs(tt.dotted); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("pythonGlobs(%q) = %v, want %v", tt.dotted, got, tt.want)
+		}
+	}
+}
+
+func TestConvertPythonTopLevelPackageBesideItsModules(t *testing.T) {
+	facts := evidence.CheckFacts{Sources: []string{"shop/__init__.py", "shop/orders.py", "shop/pay/card.py"}}
+	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
+modules:
+  root:
+    paths: [shop]
+  parts:
+    paths: [shop.*]
+`}, facts)
+	if want := []string{"shop/__init__.py"}; !reflect.DeepEqual(conv.File.Modules["root"].Paths, want) {
+		t.Errorf("root paths = %v, want %v: the dotted name shop is the package", conv.File.Modules["root"].Paths, want)
+	}
+	if want := []string{"shop/**"}; !reflect.DeepEqual(conv.File.Modules["parts"].Paths, want) {
+		t.Errorf("parts paths = %v, want %v", conv.File.Modules["parts"].Paths, want)
 	}
 }
