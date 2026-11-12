@@ -65,6 +65,26 @@
         "validation"
       ]
     },
+    "AllowedDependency": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "balance": {
+          "$ref": "#/$defs/RepositoryBalance"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "balance"
+      ]
+    },
     "DimensionCoverage": {
       "properties": {
         "basis": {
@@ -212,6 +232,32 @@
         "testability",
         "operations",
         "drift"
+      ]
+    },
+    "ExpiringException": {
+      "properties": {
+        "rule": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule",
+        "from",
+        "expires"
       ]
     },
     "Finding": {
@@ -495,6 +541,25 @@
         "unit"
       ]
     },
+    "NoteRule": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "note"
+      ]
+    },
     "PolicyRef": {
       "properties": {
         "ref": {
@@ -509,6 +574,121 @@
       "required": [
         "ref",
         "sha"
+      ]
+    },
+    "RepositoryBalance": {
+      "properties": {
+        "value": {
+          "type": "integer"
+        },
+        "min": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "value",
+        "min"
+      ]
+    },
+    "RepositoryError": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "instead": {
+          "type": "string"
+        },
+        "balance": {
+          "$ref": "#/$defs/RepositoryBalance"
+        },
+        "expires": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "rule",
+        "what"
+      ]
+    },
+    "RepositoryState": {
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "drift": {
+          "items": {
+            "$ref": "#/$defs/RepositoryError"
+          },
+          "type": "array"
+        },
+        "expired": {
+          "items": {
+            "$ref": "#/$defs/RepositoryError"
+          },
+          "type": "array"
+        },
+        "expiring": {
+          "items": {
+            "$ref": "#/$defs/ExpiringException"
+          },
+          "type": "array"
+        },
+        "not_checked": {
+          "items": {
+            "$ref": "#/$defs/NoteRule"
+          },
+          "type": "array"
+        },
+        "balances": {
+          "items": {
+            "$ref": "#/$defs/AllowedDependency"
+          },
+          "type": "array"
+        },
+        "unread": {
+          "items": {
+            "$ref": "#/$defs/UnreadPlace"
+          },
+          "type": "array"
+        },
+        "protected": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "drift",
+        "expired",
+        "expiring",
+        "not_checked",
+        "balances",
+        "unread",
+        "protected"
       ]
     },
     "ResultIdentity": {
@@ -1042,6 +1222,27 @@
         "reason",
         "owner"
       ]
+    },
+    "UnreadPlace": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "fix": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "reason"
+      ]
     }
   },
   "properties": {
@@ -1104,6 +1305,9 @@
         "$ref": "#/$defs/Seam"
       },
       "type": "array"
+    },
+    "repository": {
+      "$ref": "#/$defs/RepositoryState"
     }
   },
   "additionalProperties": false,

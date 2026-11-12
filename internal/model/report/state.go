@@ -399,6 +399,9 @@ type ArchitectureState struct {
 	// reason findings are — the ledger has exactly one owner and the coupling
 	// envelope keeps the common shape every dimension uses.
 	Seams []Seam `json:"seams"`
+	// Repository is the state of the repository for owners. Only `archfit
+	// report` on a version 3 policy sets it.
+	Repository *RepositoryState `json:"repository,omitempty"`
 }
 
 // NewArchitectureState returns a state whose nine envelopes are named, owned,
