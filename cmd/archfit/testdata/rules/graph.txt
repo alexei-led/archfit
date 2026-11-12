@@ -1,0 +1,8 @@
+layers: core, adapters (inner first)
+core:
+  pkg_chaos -> pkg_runtime
+  pkg_tc -> none
+adapters:
+  pkg_runtime -> none
+no layer:
+  pkg_util -> none

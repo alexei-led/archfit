@@ -17,7 +17,7 @@ func TestTreeFiles(t *testing.T) {
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q")
 	writeIn(t, dir, ".gitignore", "*.log\n")
-	writeIn(t, dir, "a.go", "a\n")
+	writeIn(t, dir, "main.go", "a\n")
 	writeIn(t, dir, "gone.go", "g\n")
 	writeIn(t, dir, "sub/deep/b.go", "b\n")
 	gitIn(t, dir, "add", "-A")
@@ -35,7 +35,7 @@ func TestTreeFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TreeFiles: %v", err)
 	}
-	want := []string{".gitignore", "a.go", "new dir/with space.go", "sub/deep/b.go"}
+	want := []string{".gitignore", "main.go", "new dir/with space.go", "sub/deep/b.go"}
 	if !slices.Equal(got, want) {
 		t.Errorf("TreeFiles = %q, want %q", got, want)
 	}

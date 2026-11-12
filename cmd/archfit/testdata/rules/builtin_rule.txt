@@ -1,0 +1,5 @@
+duplication: knowledge that another module already owns is not copied
+  mode: ask (an owner may approve)
+  exceptions:
+    duplication pkg_tc -> pkg_util: 2026-11-19 (9 days)
+      why: Request #431 is open.
