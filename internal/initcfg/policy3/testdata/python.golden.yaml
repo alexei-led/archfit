@@ -1,0 +1,58 @@
+# The Archfit policy, written by archfit init from the code as it is today.
+# Review the modules, public, depends_on and exceptions, then commit it.
+version: 3
+owners:
+  - acme
+modules:
+  shop:
+    paths:
+      - src/shop/*.py
+    public:
+      - src/shop
+    depends_on:
+      - shop_orders
+  shop_billing:
+    paths:
+      - src/shop/billing/**
+    public:
+      - src/shop/billing
+    depends_on:
+      - shop_orders
+  shop_orders:
+    paths:
+      - src/shop/orders/**
+    public:
+      - src/shop/orders
+    depends_on:
+      - shop_billing
+  shop_util:
+    paths:
+      - src/shop/util/**
+    public:
+      - src/shop/util
+rules:
+  - id: contain-network
+    only:
+      use: network
+      in:
+        - shop_orders
+    why: Network code stays in the modules that used it when archfit init wrote this policy.
+  - id: contain-database
+    only:
+      use: database
+      in:
+        - shop_billing
+    why: Database code stays in the modules that used it when archfit init wrote this policy.
+exceptions:
+  - rule: duplication
+    from: shop_orders
+    to: shop_util
+    why: The error existed when archfit init wrote this policy.
+  - rule: cycle
+    from: shop_billing
+    to: shop_orders
+    why: The error existed when archfit init wrote this policy.
+  - rule: cycle
+    from: shop_orders
+    to: shop_billing
+    why: The error existed when archfit init wrote this policy.
