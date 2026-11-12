@@ -555,7 +555,8 @@ file and its routes). Depends on: 3, 13, 15, 16, 18. M1: none. Merge: manager (p
       the proposal's expected digest; a change that no longer applies voids its approval and reopens its request
 - [ ] set `archfit/gate` on the proposal's pull request (D13), then merge it with the expected head SHA ("Approve
       and merge", the default); "merge later" leaves it open and the next answers join it, up to the proposal limit
-- [ ] close the request issue with the answer; for reject, the new `deny` rule answers later requests
+- [ ] close the request issue with the answer, naming the owner and the passkey it was made with (design 19); for
+      reject, the new `deny` rule answers later requests
 - [ ] write tests: each answer; no passkey token; a reused token; an answer by a non-owner; a merge refused by the
       ruleset (405) keeps the proposal open for the sweep; two answers that join one pull request; a target that moves
       between two joined answers; a change that no longer applies
@@ -632,6 +633,9 @@ Repository: archfit-app. Design: 9.2 (set up), 7.1, 10.1, 14, D15. Packages: `in
       App, the App not a bypass actor; the push ruleset only on an organization-owned private or internal repository
 - [ ] read the rulesets and say what is missing; warn when the App is a bypass actor or approvals are required; name
       an administrator bypass as the emergency path of design 10.8
+- [ ] record each approval of this task on GitHub with the owner and the passkey it was made with (design 19): the
+      first and workflow approvals on their pull request, confirm and revert on the issue of the policy changed outside
+      the flow
 - [ ] write tests for each ruleset case, the first approval (new and already-converted repository), a workflow
       approval, confirm, and revert
 - [ ] run `make all`

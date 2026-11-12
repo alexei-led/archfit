@@ -168,7 +168,7 @@ The manager decided D1 and D2 and approved D3 to D14 on 2026-11-12.
 | 17 Balance and preview | 4, 6 | the request data |
 | 18 The passkey | 7, 10 | the step-up token |
 | 19 Answers: approve and merge | 9, 10 | the writer with request numbers (D8), proposals |
-| 20 Recorded approvals | 4, 9, 10 | the state "policy changed outside the flow" |
+| 20 Recorded approvals | 4, 10 | the state "policy changed outside the flow" |
 | 22 Expiry and drift | 2, 4, 11 | expired exceptions, drift, repository state |
 | 23 Onboarding and owner actions | 4, 7, 11 | set-up state, owner actions API |
 | 24 Request and passkey pages | 1, 6 | the pages and the spec file it changes |
@@ -277,12 +277,11 @@ Repository: archfit-app. Design: 9.2, 10.4, 12.1, 12.3. Files: the request page 
       the same modules, then **Approve and merge**, **Approve until a date**, **Reject** with a field for what to do
       instead
 - [ ] the passkey prompt appears on an answer that loosens (approve, approve until a date); reject needs none
-- [ ] after an answer the page says what happens next; a closed request shows its answer, the owner who gave it,
-      the passkey it was made with (design 19), and no buttons
+- [ ] after an answer the page says what happens next; a closed request shows its answer, a link to the
+      request issue where the owner and the passkey are recorded (design 19), and no buttons
 - [ ] register the request page route in `ui.go` when milestone 2 task 24 did not (its files are `web/src/` only), so
       a link from the request issue opens the page
-- [ ] the request data gains what the page needs and task 17 lacks: the declared volatility of both modules (D11),
-      and the owner and the passkey of an answer
+- [ ] the request data gains what the page needs and task 17 lacks: the declared volatility of both modules (D11)
 - [ ] API goldens of task 17 for an open, an "as reported", a joined and an answered request; text goldens and the
       words check
 - [ ] run `make all`
@@ -296,7 +295,7 @@ worker.
 
 - [ ] pages for the actions of task 23 (D12): approve the first policy; approve a workflow change; confirm or revert
       a policy changed outside the flow; each shows the status line, what changed as a diff, one main action and the
-      passkey step; a done action shows its answer, the owner who gave it and the passkey it was made with (design 19)
+      passkey step
 - [ ] register each page route in `ui.go`, so a direct load or a link from a GitHub issue opens the page, not Not
       found
 - [ ] API goldens of task 23; text goldens and the words check
@@ -309,9 +308,8 @@ stays so the other task names do not change.
 
 ### Task 9: The policy page
 
-Repository: archfit-app. Design: 6, 12.1, 12.4. Packages: `internal/control/ui` (`policy.go`, routes in `ui.go`),
-`internal/gate` (new façade file `policyview.go`).
-Files: `web/src/pages/Policy.svelte`, `web/e2e/policy.spec.ts`. Depends on: 1. M2: 3, 19, 20, 26. Merge: worker. Impact
+Repository: archfit-app. Design: 6, 12.1, 12.4. Packages: `internal/control/ui` (`policy.go`, routes in `ui.go`).
+Files: `web/src/pages/Policy.svelte`, `web/e2e/policy.spec.ts`. Depends on: 1. M2: 3, 19, 26. Merge: worker. Impact
 first: `apiPolicy`.
 
 - [ ] `GET /api/repos/{o}/{n}/policy`: the target policy decoded by `policy3`: modules with paths, `public`,
@@ -319,11 +317,8 @@ first: `apiPolicy`.
       `why` and `instead`; notes marked "not checked"; exceptions with their dates and days left; each with its
       request number from its line comment (D8); the raw YAML and its digest; when an `archfit/policy` proposal is
       open, also its file and digest, the base of an edit (D9)
-- [ ] the approvals of the proposal that made the current policy (milestone 2 "Approval records"): each kind, owner,
-      passkey and date, so an edit or an owner action shows who made it and with which passkey (design 19); a line an
-      edit added has no request to link to
-- [ ] the page: the readable list first, the last change's approvals, the raw YAML folded, one main action (Edit,
-      task 10)
+- [ ] the page: the readable list first, the raw YAML folded, one main action (Edit, task 10); a line an edit added
+      has no request to link to
 - [ ] remove the old policy API handlers that milestone 2 left
 - [ ] API goldens of the 6.1 typical policy and of `pumba`'s converted policy; text goldens and the words check
 - [ ] run `make all`
@@ -339,7 +334,8 @@ Repository: archfit-app. Design: 9.2, 12.4, 10.4. Packages: `internal/control/an
       passkey step
 - [ ] join the `archfit/policy` proposal as its last change; refuse when the bytes the edit started from are
       not the current base (the open proposal's file, or the target's when no proposal is open), with "the policy
-      changed; reload"; the merge push consumes it (task 20)
+      changed; reload"; the merge push consumes it (task 20); the App's comment on the `archfit/policy` pull request
+      names the owner and the passkey the edit was made with (design 19)
 - [ ] the edit view: a text area with the YAML, the errors by line, the diff against the current policy, the line
       `preview it: archfit check --policy <file>`, and the passkey step
 - [ ] a target that moves before the merge voids the edit's approval; the App does not replay it (D9)
