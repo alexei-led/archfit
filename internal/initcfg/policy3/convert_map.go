@@ -88,6 +88,13 @@ const (
 	excludeKey = "exclude"
 )
 
+// goExt is the extension of a Go source; srcPrefix the source directory a
+// Python package may sit in.
+const (
+	goExt     = ".go"
+	srcPrefix = "src/"
+)
+
 // globMetaChars make a path a glob.
 const globMetaChars = "*?[{"
 
@@ -345,33 +352,71 @@ func (c *converter) keep(v, schema any, key string) any {
 }
 
 // fileGlobs is a path of an Archfit 3 policy as globs of files, keeping only
-// those that match a source. Archfit 3 matched a Go package by its directory:
-// a bare directory was that package, the files right in it, and a glob such
-// as pkg/* matched package directories. So a bare directory becomes dir/*,
-// and a glob that matches a directory of sources also gives glob/* for the
-// files of those directories. The glob itself stays for the files it
-// matches, because a TypeScript or Python node was a file. Simplification: a
-// Go file right in a directory such a glob names as its parent (pkg/doc.go
-// for pkg/*) joins the module; Archfit 3 left that package out.
+// those that match a source. Archfit 3 matched a node: a Go package by its
+// directory, a TypeScript file by its path, a Python module by its dotted
+// name. So:
+//
+//   - a bare directory, which named that Go package, becomes dir/*;
+//   - a glob that matches directories of Go sources, which named packages,
+//     becomes glob/*, the files of those packages; it stays as it is only
+//     when it also matches a source that is not Go, a file node;
+//   - a dotted name with no slash that matches nothing, a Python module,
+//     becomes its files: a.b is a/b.py or a/b/__init__.py, a.b.* the modules
+//     in a/b, a.b.** everything under a/b, at the root or under src/.
 func (c *converter) fileGlobs(p string) []string {
 	p = strings.TrimSuffix(p, "/")
-	globs := []string{p}
+	var globs []string
 	switch {
 	case p == "" || p == rootKey:
+		globs = []string{p}
 	case !strings.ContainsAny(p, globMetaChars):
+		globs = []string{p}
 		if c.dirs[p] {
 			globs = []string{join(literal(p), "*")}
 		}
-	case p != "**" && !strings.HasSuffix(p, "/**") && c.matchesDir(p):
-		globs = append(globs, p+"/*")
+	case p == "**" || strings.HasSuffix(p, "/**") || !c.matchesGoDir(p):
+		globs = []string{p}
+	default:
+		globs = []string{p + "/*"}
+		if slices.ContainsFunc(c.sources, func(f string) bool { return path.Ext(f) != goExt && match(p, f) }) {
+			globs = append(globs, p)
+		}
 	}
-	return slices.DeleteFunc(globs, func(g string) bool { return !matchesAny(g, c.sources) })
+	globs = slices.DeleteFunc(globs, func(g string) bool { return !matchesAny(g, c.sources) })
+	if len(globs) == 0 && !strings.Contains(p, "/") {
+		globs = slices.DeleteFunc(pythonGlobs(p), func(g string) bool { return !matchesAny(g, c.sources) })
+	}
+	return globs
 }
 
-// matchesDir reports whether glob matches a directory that holds a source.
-func (c *converter) matchesDir(glob string) bool {
-	for d := range c.dirs {
-		if d != rootKey && match(glob, d) {
+// pythonGlobs are the file globs of a dotted Python module selector.
+func pythonGlobs(dotted string) []string {
+	var rel []string
+	switch {
+	case strings.HasSuffix(dotted, ".**"):
+		rel = []string{strings.ReplaceAll(strings.TrimSuffix(dotted, ".**"), ".", "/") + "/**"}
+	case strings.HasSuffix(dotted, ".*"):
+		base := strings.ReplaceAll(strings.TrimSuffix(dotted, ".*"), ".", "/")
+		rel = []string{base + "/*.py", base + "/*/__init__.py"}
+	default:
+		base := strings.ReplaceAll(dotted, ".", "/")
+		rel = []string{base + ".py", base + "/__init__.py"}
+	}
+	prefixes := []string{"", srcPrefix}
+	out := make([]string, 0, len(prefixes)*len(rel))
+	for _, prefix := range prefixes {
+		for _, r := range rel {
+			out = append(out, prefix+r)
+		}
+	}
+	return out
+}
+
+// matchesGoDir reports whether glob matches a directory that holds a Go
+// source: an Archfit 3 Go package.
+func (c *converter) matchesGoDir(glob string) bool {
+	for _, f := range c.sources {
+		if path.Ext(f) == goExt && match(glob, path.Dir(f)) {
 			return true
 		}
 	}
@@ -431,11 +476,14 @@ func (c *converter) modules() {
 		}
 		var public []string
 		for _, g := range mods[name].Public {
-			if !matchesAny(g, c.sources) && !matchesAny(g, slices.Collect(maps.Keys(c.dirs))) {
+			switch {
+			case matchesAny(g, c.sources) || matchesAny(g, slices.Collect(maps.Keys(c.dirs))):
+				public = append(public, g)
+			case !strings.Contains(g, "/") && len(c.fileGlobs(g)) > 0:
+				public = append(public, c.fileGlobs(g)...)
+			default:
 				c.note("modules."+name+".public", "%q matches no file or directory: dropped", g)
-				continue
 			}
-			public = append(public, g)
 		}
 		if len(mods[name].Public) > 0 && len(public) == 0 {
 			c.note("modules."+name+".public", "no entry matches: the whole module is public")

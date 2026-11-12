@@ -652,3 +652,53 @@ func TestConvertWaiverByModuleName(t *testing.T) {
 		t.Errorf("exceptions = %+v, want %+v: Archfit 3 matched a module rule's waiver by module name", conv.File.Exceptions, want)
 	}
 }
+
+func TestConvertPackageGlobBesideABareDirectory(t *testing.T) {
+	facts := evidence.CheckFacts{Sources: []string{"api/api.go", "api/v1/v1.go", "web/x.ts", "web/sub/y.ts"}}
+	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
+modules:
+  api:
+    paths: [api]
+  handlers:
+    paths: [api/*]
+  web:
+    paths: [web/*]
+`}, facts)
+	for name, want := range map[string][]string{"api": {"api/*"}, "handlers": {"api/*/*"}, "web": {"web/*"}} {
+		if got := conv.File.Modules[name].Paths; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s paths = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestConvertPythonDottedSelectors(t *testing.T) {
+	const pyA, pyB = "fixture_py/a.py", "fixture_py/b/__init__.py"
+	facts := evidence.CheckFacts{Sources: []string{
+		"fixture_py/__init__.py", pyA, pyB,
+		"fixture_py/b/_internal/__init__.py", "fixture_py/b/_internal/impl.py",
+	}}
+	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
+modules:
+  a:
+    paths: [fixture_py.a]
+  b:
+    paths: [fixture_py.b, fixture_py.b.**]
+    public: [fixture_py.b]
+rules:
+  - {id: no-internal, type: forbidden_dependency, from: fixture_py.a, to: fixture_py.b._internal.*, rationale: r, alternatives: [use b]}
+`}, facts)
+	if want := []string{pyA}; !reflect.DeepEqual(conv.File.Modules["a"].Paths, want) {
+		t.Errorf("a paths = %v, want %v", conv.File.Modules["a"].Paths, want)
+	}
+	b := conv.File.Modules["b"]
+	if want := []string{pyB, "fixture_py/b/**"}; !reflect.DeepEqual(b.Paths, want) {
+		t.Errorf("b paths = %v, want %v", b.Paths, want)
+	}
+	if want := []string{pyB}; !reflect.DeepEqual(b.Public, want) {
+		t.Errorf("b public = %v, want %v", b.Public, want)
+	}
+	want := policyfile.Deny{From: policyfile.Names{pyA}, To: policyfile.Names{"fixture_py/b/_internal/*.py"}}
+	if len(conv.File.Rules) != 1 || conv.File.Rules[0].Deny == nil || !reflect.DeepEqual(*conv.File.Rules[0].Deny, want) {
+		t.Errorf("rules = %+v, want deny %+v", conv.File.Rules, want)
+	}
+}
