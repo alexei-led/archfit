@@ -51,6 +51,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -70,7 +71,22 @@ var (
 	// ErrExpires: --expires is not a date after both the output's date and
 	// today. A usage error.
 	ErrExpires = errors.New("--expires is not a later date")
+	// ErrExpiresTooFar: --expires is more than MaxExpiresDays after today.
+	// The App refuses such a date. A usage error.
+	ErrExpiresTooFar = errors.New("--expires is too far ahead")
+	// ErrReasonFlag: the reason ends in --expires or --expires <word>. The
+	// request line puts --expires after the reason, so the App could not
+	// tell that text from the flag. A usage error.
+	ErrReasonFlag = errors.New("the reason ends like the --expires flag")
 )
+
+// MaxExpiresDays is how far after today --expires may be. The App refuses a
+// later date.
+const MaxExpiresDays = 365
+
+// endsInExpires matches a reason whose end the request line would read as
+// the --expires flag: "--expires" alone or with one word after it.
+var endsInExpires = regexp.MustCompile(`(?:^|\s)--expires(?:\s+\S+)?\s*$`)
 
 // Request asks an owner to change the policy. The package doc describes its
 // fields.
@@ -256,7 +272,7 @@ func nothingToAsk(status result.Status) error {
 }
 
 // expires checks that value, when given, is a date after both the output's
-// date and today.
+// date and today, and at most MaxExpiresDays after today.
 func (s Service) expires(value, date string) (string, error) {
 	if value == "" {
 		return "", nil
@@ -265,7 +281,8 @@ func (s Service) expires(value, date string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: its date %q is not valid: run archfit check again", ErrNoLastResult, date)
 	}
-	if today, _ := time.Parse(time.DateOnly, s.Clock.Now().Format(time.DateOnly)); today.After(from) {
+	today, _ := time.Parse(time.DateOnly, s.Clock.Now().Format(time.DateOnly))
+	if today.After(from) {
 		from = today
 	}
 	after := from.Format(time.DateOnly)
@@ -275,6 +292,10 @@ func (s Service) expires(value, date string) (string, error) {
 	}
 	if !day.After(from) {
 		return "", fmt.Errorf("%w: want a date after %s, got %s", ErrExpires, after, value)
+	}
+	if last := today.AddDate(0, 0, MaxExpiresDays); day.After(last) {
+		return "", fmt.Errorf("%w: want %s or earlier (%d days), got %s",
+			ErrExpiresTooFar, last.Format(time.DateOnly), MaxExpiresDays, value)
 	}
 	return value, nil
 }
@@ -292,6 +313,9 @@ func (s Service) reason(ctx context.Context, given string) (string, error) {
 	}
 	if why == "" {
 		return "", fmt.Errorf(`%w: archfit request -m "<why>"`, ErrNoReason)
+	}
+	if endsInExpires.MatchString(why) {
+		return "", fmt.Errorf(`%w: give the date outside the reason: archfit request -m "<why>" --expires YYYY-MM-DD`, ErrReasonFlag)
 	}
 	return why, nil
 }
