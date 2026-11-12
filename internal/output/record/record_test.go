@@ -81,7 +81,10 @@ func TestResultLines(t *testing.T) {
 		name string
 		r    result.Result
 		opts record.Options
-		want string
+		// unprotected keeps Policy.Protected false; every other case is
+		// protected, so it shows no "policy: not protected" line.
+		unprotected bool
+		want        string
 	}{
 		{
 			name: "errors in the given order, then unknown reasons, then the status line",
@@ -146,10 +149,25 @@ func TestResultLines(t *testing.T) {
 			r:    result.Result{Summary: passLine, Policy: policy, Engine: engine},
 			want: "archfit: pass\n",
 		},
+		{
+			name:        "a policy no workflow protects adds a line after the status line",
+			r:           result.Result{Summary: failOne, Errors: []result.Error{{Path: file, Line: 5, Rule: ruleGraph, What: "w", Next: result.Next{Text: fixCode}}}},
+			unprotected: true,
+			want:        "x.go:5: graph: w\n  next: fix the code\narchfit: fail, 1 error\npolicy: not protected\n",
+		},
+		{
+			name:        "the not protected line comes before the verbose lines",
+			r:           result.Result{Summary: passLine, Policy: policy, Engine: engine},
+			opts:        record.Options{Verbose: true},
+			unprotected: true,
+			want:        "archfit: pass\npolicy: not protected\npolicy: .archfit.yaml sha256:abc\nengine: 4.0.0\n",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			r := tc.r
+			r.Policy.Protected = !tc.unprotected
 			var buf bytes.Buffer
-			if err := record.Result(&buf, tc.r, tc.opts); err != nil {
+			if err := record.Result(&buf, r, tc.opts); err != nil {
 				t.Fatalf("Result: %v", err)
 			}
 			if got := buf.String(); got != tc.want {
@@ -161,10 +179,11 @@ func TestResultLines(t *testing.T) {
 
 func TestAnswerLines(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		a    result.CanAnswer
-		opts record.Options
-		want string
+		name        string
+		a           result.CanAnswer
+		opts        record.Options
+		unprotected bool
+		want        string
 	}{
 		{
 			name: "yes with the balance it would have",
@@ -201,10 +220,18 @@ func TestAnswerLines(t *testing.T) {
 			opts: record.Options{Verbose: true},
 			want: "a -> b: yes\npolicy: .archfit.yaml sha256:abc\nengine: 4.0.0\n",
 		},
+		{
+			name:        "a policy no workflow protects adds a line after the answer",
+			a:           result.CanAnswer{From: "a", To: "b", Answer: result.ReplyYes, Balance: &result.Balance{Value: 8, Min: 7}},
+			unprotected: true,
+			want:        "a -> b: yes\n  balance: 8/10 (min 7)\npolicy: not protected\n",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			a := tc.a
+			a.Policy.Protected = !tc.unprotected
 			var buf bytes.Buffer
-			if err := record.Answer(&buf, tc.a, tc.opts); err != nil {
+			if err := record.Answer(&buf, a, tc.opts); err != nil {
 				t.Fatalf("Answer: %v", err)
 			}
 			got := buf.String()

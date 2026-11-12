@@ -11,9 +11,11 @@
 //	              [ "  balance: " n "/10 (min " m ")" NL ]
 //	next-line   = "  next: " text [ "     (" note ")" ] NL
 //	status-line = "archfit: " status [ ", " count ] [ " (not from this change)" ] NL
+//	              [ unprotected ]
+//	unprotected = "policy: not protected" NL
 //	verbose     = "policy: " path " " digest NL "engine: " version NL
 //	answer      = from " -> " to ": " ( "yes" | ( rule-id | "no" | "unknown" ) ": " what ) NL
-//	              fields [ next-line ] [ verbose ]
+//	              fields [ next-line ] [ unprotected ] [ verbose ]
 //
 // A path-less error, such as an expired exception, uses .archfit.yaml as the
 // path and no line. `next` is "fix the code", a command, "wait for an owner:
@@ -23,6 +25,8 @@
 // result's summary, and dates, counts and steps are already in the text. It
 // decides nothing, so the JSON and the text of one result cannot disagree.
 // Digests and the engine version appear only with Options.Verbose (design 5).
+// A policy no workflow protects adds the line "policy: not protected" to every
+// result and answer (design 9.4).
 //
 // The same result has two more forms (design 8.3): ResultJSON and AnswerJSON
 // write the documents of archfit.result.schema.json, and ResultSARIF writes a
@@ -60,6 +64,7 @@ func Result(w io.Writer, r result.Result, opts Options) error {
 		writeDetails(&b, u.Why, "", nil, &u.Next)
 	}
 	b.WriteString(r.Summary + "\n")
+	writeUnprotected(&b, r.Policy)
 	if opts.Verbose {
 		writeVerbose(&b, r.Policy, r.Engine)
 	}
@@ -76,6 +81,7 @@ func Answer(w io.Writer, a result.CanAnswer, opts Options) error {
 	}
 	writeHead(&b, a.From+" -> "+a.To, label, a.What)
 	writeDetails(&b, a.Why, a.Instead, a.Balance, a.Next)
+	writeUnprotected(&b, a.Policy)
 	if opts.Verbose {
 		writeVerbose(&b, a.Policy, a.Engine)
 	}
@@ -119,6 +125,16 @@ func writeDetails(b *strings.Builder, why, instead string, balance *result.Balan
 			b.WriteString(noteGap + "(" + next.Note + ")")
 		}
 		b.WriteString("\n")
+	}
+}
+
+// notProtected is the line of design 9.4: no check on pull requests guards
+// the policy, so the result is a local guide.
+const notProtected = "policy: not protected"
+
+func writeUnprotected(b *strings.Builder, policy result.Policy) {
+	if !policy.Protected {
+		b.WriteString(notProtected + "\n")
 	}
 }
 
