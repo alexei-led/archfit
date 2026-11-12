@@ -76,6 +76,9 @@ const (
 	runtimeGo   = "pkg/runtime/runtime.go"
 	notARepo    = "is not in a git repository"
 	pkgTC       = "pkg/tc"
+	pkgUtil     = "pkg/util"
+	apiPolicy   = "services/api/.archfit.yaml"
+	version1    = "version: 1\n"
 	statusPass  = string(result.StatusPass)
 	statusFail  = string(result.StatusFail)
 )
@@ -235,7 +238,7 @@ func TestDesignExamplesFromTheCLI(t *testing.T) {
 			head: map[string]string{runtimeGo: base[runtimeGo] + "\n// Done.\n"},
 			date: "2026-11-20", args: []string{cmdCheck}, wantCode: 1,
 		},
-		{name: "can", base: base, date: fixtureDate, args: []string{cmdCan, pkgTC, "pkg/util"}, wantCode: 1},
+		{name: "can", base: base, date: fixtureDate, args: []string{cmdCan, pkgTC, pkgUtil}, wantCode: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -364,7 +367,7 @@ func TestLastOutputForRequest(t *testing.T) {
 		t.Errorf("after check: last = %+v (found %v), want tree %s and the fail result", last, ok, tree)
 	}
 
-	runCLI(t, fixtureDate, cmdCan, pkgTC, "pkg/util", "-C", dir)
+	runCLI(t, fixtureDate, cmdCan, pkgTC, pkgUtil, "-C", dir)
 	last, _ = readLast(t, dir)
 	if last.Tree != tree || last.Output.Answer != "no" {
 		t.Errorf("after can: last = %+v, want tree %s and the no answer", last, tree)
@@ -425,6 +428,21 @@ func TestCheckDispatchesOnThePolicyVersion(t *testing.T) {
 		t.Errorf("version 2: exit %d, want 1 with the Archfit 3 JSON:\n%s\n%s", old.code, old.stdout, old.stderr)
 	}
 
+	// A file that is not version 3 keeps the Archfit 3 path and its exit 3,
+	// even when it does not parse or names no version.
+	broken := filepath.Join(t.TempDir(), defaultConfigPath)
+	for _, data := range []string{"version: 2\nmodules: [\n", version1, "modules: {}\n"} {
+		if err := os.WriteFile(broken, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := runCLI(t, fixtureDate, cmdCheck, "-c", broken); got.code != 3 {
+			t.Errorf("-c with %q: exit %d, want 3; stderr %q", data, got.code, got.stderr)
+		}
+	}
+	if got := runCLI(t, fixtureDate, cmdCheck, "-c", t.TempDir()); got.code != 3 {
+		t.Errorf("-c naming a directory: exit %d, want 3; stderr %q", got.code, got.stderr)
+	}
+
 	requireGitBinary(t)
 	repo := t.TempDir()
 	gitRun(t, repo, "init", "-q")
@@ -432,5 +450,51 @@ func TestCheckDispatchesOnThePolicyVersion(t *testing.T) {
 	got := runCLI(t, fixtureDate, cmdCheck, "-C", repo)
 	if got.code != 3 || !strings.Contains(got.stderr, "-C and --verbose need a version 3 policy") {
 		t.Errorf("version 2 with -C: exit %d, stderr %q; want 3", got.code, got.stderr)
+	}
+}
+
+// TestCanExitCodes: yes is 0, no is 1, unknown is 2.
+func TestCanExitCodes(t *testing.T) {
+	t.Parallel()
+	dir := fixtureRepo(t, fixtureFiles(), nil)
+	for _, tc := range []struct {
+		from, to string
+		want     int
+	}{
+		{tcNetem, pkgTC, 0},
+		{pkgTC, pkgUtil, exitNo},
+		{"tools/gen.go", pkgTC, exitUnknown},
+	} {
+		got := runCLI(t, fixtureDate, cmdCan, tc.from, tc.to, "-C", dir)
+		if got.code != tc.want {
+			t.Errorf("can %s %s = %d, want %d\n%s%s", tc.from, tc.to, got.code, tc.want, got.stdout, got.stderr)
+		}
+	}
+}
+
+// TestPolicyFlagReadsFromTheStartDirectory: --policy .archfit.yaml with -C in
+// a subdirectory names that directory's file, as the record shows.
+func TestPolicyFlagReadsFromTheStartDirectory(t *testing.T) {
+	t.Parallel()
+	dir := fixtureRepo(t, with(fixtureFiles(), map[string]string{apiPolicy: "version: 3\nowners: [alexei-led]\n"}), nil)
+	got := runCLI(t, fixtureDate, cmdCheck, "-C", filepath.Join(dir, "services", "api"), "--policy", defaultConfigPath)
+	if got.code != exitUnknown || !strings.HasPrefix(got.stdout, apiPolicy+": policy: ") {
+		t.Errorf("= %d\n%s%s; want unknown about services/api/.archfit.yaml", got.code, got.stdout, got.stderr)
+	}
+}
+
+// TestRulesWithoutATargetBranch: with no origin/HEAD, rules with no argument
+// says to name a path or a rule id, not to pass a flag it does not take.
+func TestRulesWithoutATargetBranch(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+	dir := t.TempDir()
+	gitRun(t, dir, "init", "-q", "-b", "main")
+	writeFiles(t, dir, fixtureFiles())
+	gitRun(t, dir, "add", "-A")
+	gitRun(t, dir, "commit", "-qm", "base", "--no-gpg-sign")
+	got := runCLI(t, fixtureDate, cmdRules, "-C", dir)
+	if got.code != exitUnknown || !strings.Contains(got.stderr, "origin/HEAD is not set: name a path or a rule id") || strings.Contains(got.stderr, "--base") {
+		t.Errorf("= %d, stderr %q", got.code, got.stderr)
 	}
 }

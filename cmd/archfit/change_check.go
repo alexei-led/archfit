@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"slices"
 
@@ -46,10 +45,12 @@ func exitWith(code int) error {
 	return &exitError{code: code}
 }
 
-// version2 reports whether the check runs the Archfit 3 path: the policy file
-// is absent or is version 2 (D1). With -c the file is the one it names; else
-// .archfit.yaml at the root of the repository of -C, or of the current
-// directory. Outside a git repository the file is .archfit.yaml there.
+// version2 reports whether the check runs the Archfit 3 path (D1): unless the
+// policy file declares version 3, the Archfit 3 check runs and keeps its exit
+// codes, also for a file that is absent, does not parse or cannot be read
+// (exit 3). With -c the file is the one it names; else .archfit.yaml at the
+// root of the repository of -C, or of the current directory. Outside a git
+// repository the file is .archfit.yaml there.
 func (c *CheckCmd) version2(deps *appDeps) (bool, error) {
 	file := c.Config
 	if file == "" {
@@ -64,13 +65,10 @@ func (c *CheckCmd) version2(deps *appDeps) (bool, error) {
 		}
 	}
 	data, err := os.ReadFile(file) //nolint:gosec // the policy file the user names
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
+	if err != nil {
 		return true, nil
-	case err != nil:
-		return false, noVerdict(err)
 	}
-	return isVersion2(data), nil
+	return !isVersion3(data), nil
 }
 
 // version2Flags are the flags of the Archfit 3 path that a version 3 check
@@ -131,7 +129,11 @@ func (c *CheckCmd) runChange(deps *appDeps) error {
 	if err != nil {
 		return noVerdict(err)
 	}
-	out, err := co.changeCheck().Check(ctx, changecheck.Options{Base: base, Policy: c.Policy})
+	policy := c.Policy
+	if policy != "" {
+		policy = co.policyArg(policy)
+	}
+	out, err := co.changeCheck().Check(ctx, changecheck.Options{Base: base, Policy: policy})
 	if err != nil {
 		return noVerdict(err)
 	}

@@ -10,10 +10,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/goccy/go-yaml"
 	"golang.org/x/mod/modfile"
 
 	"github.com/alexei-led/archfit/v3/internal/application/canquery"
@@ -43,6 +45,11 @@ var lastFile = filepath.Join(cacheDirName, "last.json")
 // actionRepo is the Action a protecting workflow uses (D6).
 const actionRepo = "alexei-led/archfit-action"
 
+// usesAction matches a step that uses the Action: a "uses:" key, quoted or
+// not, whose value is the Action at a ref. A comment, another key, or another
+// Action with the same prefix does not match.
+var usesAction = regexp.MustCompile(`(?m)^[ \t]*(?:-[ \t]+)?uses:[ \t]*["']?` + regexp.QuoteMeta(actionRepo) + `@`)
+
 // workflowsDir holds the GitHub workflows, under the repository root.
 var workflowsDir = filepath.Join(".github", "workflows")
 
@@ -67,6 +74,14 @@ func openCheckout(ctx context.Context, deps *appDeps, dir string) (checkout, err
 	if err != nil {
 		return checkout{}, fmt.Errorf("%s is not in a git repository: %w", start, err)
 	}
+	// git names the root with its symlinks resolved (/private/var on macOS):
+	// the start directory must be named the same way to compare with it.
+	if resolved, err := filepath.EvalSymlinks(start); err == nil {
+		start = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	return checkout{root: root, start: start, runner: deps.Runner, engine: version, now: deps.clock()}, nil
 }
 
@@ -81,23 +96,55 @@ func (co checkout) policyAt(file string) (data []byte, ok bool, err error) {
 	return data, err == nil, err
 }
 
-// policyPath is the path of a policy file: .archfit.yaml at the root, or a
-// --policy file read against the start directory.
+// policyPath is the path of a policy file: .archfit.yaml at the root when file
+// is empty, else file, relative to the root or absolute (policyArg).
 func (co checkout) policyPath(file string) string {
 	switch {
-	case file == "" || file == changecheck.PolicyPath:
+	case file == "":
 		return filepath.Join(co.root, changecheck.PolicyPath)
 	case filepath.IsAbs(file):
 		return file
 	default:
-		return filepath.Join(co.start, file)
+		return filepath.Join(co.root, filepath.FromSlash(file))
 	}
 }
 
-// isVersion2 reports whether data is a version 2 policy, the Archfit 3 format.
-func isVersion2(data []byte) bool {
-	_, err := policyfile.Resolve(data)
-	return errors.Is(err, policyfile.ErrVersion2)
+// policyArg names a --policy file as changecheck and the record use it: read
+// against the start directory (-C, or the current one), then written relative
+// to the repository root, or absolute outside it. So `--policy .archfit.yaml`
+// in a subdirectory names that directory's file, not the root's.
+func (co checkout) policyArg(file string) string {
+	abs := file
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(co.start, file)
+	}
+	rel, err := filepath.Rel(co.root, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return abs
+	}
+	return filepath.ToSlash(rel)
+}
+
+// isVersion3 reports whether data declares policy version 3, valid or not: the
+// version 3 commands judge it and report what is wrong with it. A file that
+// does not parse, or names another version, is not version 3. As in
+// policyfile, a number with no fraction is an integer: 3.0 is 3.
+func isVersion3(data []byte) bool {
+	var header struct {
+		Version any `yaml:"version"`
+	}
+	if yaml.Unmarshal(data, &header) != nil {
+		return false
+	}
+	switch v := header.Version.(type) {
+	case uint64:
+		return v == policyfile.Version
+	case int64:
+		return v == policyfile.Version
+	case float64:
+		return v == policyfile.Version
+	}
+	return false
 }
 
 func (co checkout) changeCheck() changecheck.Service {
@@ -287,7 +334,7 @@ func (p protection) Protected(context.Context) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if bytes.Contains(data, []byte(actionRepo)) {
+		if usesAction.Match(data) {
 			return true, nil
 		}
 	}
@@ -335,10 +382,9 @@ func (l localPolicy) Policy(context.Context) (resolved.Policy, error) {
 // sources the head check facts list, read once and only when a directory is
 // asked for.
 type tree struct {
-	co      checkout
-	policy  localPolicy
-	sources []string
-	read    bool
+	co     checkout
+	policy localPolicy
+	facts  *evidence.CheckFacts
 }
 
 func (t *tree) Entry(ctx context.Context, rel string) (canquery.Entry, error) {
@@ -354,33 +400,50 @@ func (t *tree) Entry(ctx context.Context, rel string) (canquery.Entry, error) {
 	case !info.IsDir():
 		return canquery.Entry{Kind: canquery.KindFile}, nil
 	}
-	sources, err := t.headSources(ctx)
+	facts, err := t.headFacts(ctx)
 	if err != nil {
 		return canquery.Entry{}, err
 	}
-	var files []string
-	for _, f := range sources {
-		if path.Dir(f) == rel {
-			files = append(files, f)
-		}
+	files, err := dirFiles(facts, rel)
+	if err != nil {
+		return canquery.Entry{}, err
 	}
 	return canquery.Entry{Kind: canquery.KindDir, Files: files}, nil
 }
 
-func (t *tree) headSources(ctx context.Context) ([]string, error) {
-	if t.read {
-		return t.sources, nil
+func (t *tree) headFacts(ctx context.Context) (evidence.CheckFacts, error) {
+	if t.facts != nil {
+		return *t.facts, nil
 	}
 	p, err := t.policy.Policy(ctx)
 	if err != nil {
-		return nil, err
+		return evidence.CheckFacts{}, err
 	}
 	facts, err := checkFacts{t.co}.Head(ctx, p)
 	if err != nil {
-		return nil, err
+		return evidence.CheckFacts{}, err
 	}
-	t.sources, t.read = facts.Sources, true
-	return t.sources, nil
+	t.facts = &facts
+	return facts, nil
+}
+
+// dirFiles returns the sources directly in dir. When a tool is missing or a
+// tree could not be read, the sources are not all known, and a directory
+// that looks empty would answer yes: that is an error, which `can` reports as
+// no verdict. An import that cannot be resolved leaves the sources known.
+func dirFiles(facts evidence.CheckFacts, dir string) ([]string, error) {
+	for _, u := range facts.Unknown {
+		if u.Cause != evidence.CauseImport {
+			return nil, fmt.Errorf("the files of %s are not all known: %s: %s", dir, u.Reason, u.Fix)
+		}
+	}
+	var files []string
+	for _, f := range facts.Sources {
+		if path.Dir(f) == dir {
+			files = append(files, f)
+		}
+	}
+	return files, nil
 }
 
 // goModules is canquery.GoModules: the module line of each go.mod of the
@@ -420,18 +483,53 @@ func (g *goModules) read(ctx context.Context) error {
 	}
 	g.modules = map[string]string{}
 	for _, f := range files {
-		if path.Base(f) != "go.mod" {
+		if path.Base(f) != "go.mod" || goIgnores(path.Dir(f)) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(g.co.root, filepath.FromSlash(f)))
 		if err != nil {
 			return err
 		}
-		if mod := modfile.ModulePath(data); mod != "" {
-			g.modules[mod] = path.Dir(f)
+		mod, dir := modfile.ModulePath(data), path.Dir(f)
+		if mod == "" {
+			continue
 		}
+		// Two go.mod files that declare one module: the shallower one, then
+		// the first by name, as check's root module is.
+		if prev, ok := g.modules[mod]; ok && !shallower(dir, prev) {
+			continue
+		}
+		g.modules[mod] = dir
 	}
 	return nil
+}
+
+// goIgnores reports whether the go command ignores the directory: a segment
+// named testdata or vendor, or one that starts with . or _.
+func goIgnores(dir string) bool {
+	if dir == "." {
+		return false
+	}
+	for seg := range strings.SplitSeq(dir, "/") {
+		if seg == "testdata" || seg == "vendor" || strings.HasPrefix(seg, ".") || strings.HasPrefix(seg, "_") {
+			return true
+		}
+	}
+	return false
+}
+
+// shallower orders two directories by depth, then by name.
+func shallower(a, b string) bool {
+	depth := func(d string) int {
+		if d == "." {
+			return 0
+		}
+		return strings.Count(d, "/") + 1
+	}
+	if da, db := depth(a), depth(b); da != db {
+		return da < db
+	}
+	return a < b
 }
 
 // changedFiles is rulesquery.ChangedFiles: the files with lines the change
@@ -449,7 +547,8 @@ func (c changedFiles) Changed(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	if t.Base == "" {
-		return nil, fmt.Errorf("%w: %s: %s, or name a path or a rule id", errNoChanged, t.What, t.Next)
+		// rules takes no --base: the way out is a path or a rule id.
+		return nil, fmt.Errorf("%w: %s: name a path or a rule id", errNoChanged, t.What)
 	}
 	added, err := repo.AddedLines(ctx, t.Base)
 	if err != nil {

@@ -54,7 +54,7 @@ func TestRulesForms(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "paths", args: []string{tcNetem, "pkg/util", "tools/gen.go"}},
+		{name: "paths", args: []string{tcNetem, pkgUtil, "tools/gen.go"}},
 		{name: "custom_rule", args: []string{"no-chaos-to-runtime"}},
 		{name: "builtin_rule", args: []string{"duplication"}},
 		{name: "changed_files", args: nil},

@@ -102,7 +102,7 @@ archfit check --format sarif > archfit.sarif
 | Flag | Meaning |
 | --- | --- |
 | `--base <ref>` | The target branch. Default: the remote's default branch, `origin/HEAD`. |
-| `--policy <file>` | Judge the change with this policy file instead of `.archfit.yaml`, and do not compare it with the policy of the target branch. A preview: nothing is kept for `archfit request`. A relative path is read from the directory of `-C`. |
+| `--policy <file>` | Judge the change with this policy file instead of `.archfit.yaml`, and do not compare it with the policy of the target branch. A preview: nothing is kept for `archfit request`. A relative path is read from the directory of `-C`, else from the current directory. |
 | `--format <name>` | `text` (default), `json`, or `sarif`. |
 | `--verbose` | Add the policy digest and the engine version after the status line. |
 | `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
@@ -115,7 +115,7 @@ The run:
 4. The policy must fit the tree. A path glob that matches no file, or another policy error, is `unknown` with the message.
 5. The check reads the base and the working tree and counts the errors of each by rule, modules, and symbol. An error the base does not have, or has fewer times, is added by the change: the status is `fail`. An expired exception fails every change, and the status line ends with `(not from this change)`. See [results](results.md).
 
-The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` uses `alexei-led/archfit-action`, every result ends with the line `policy: not protected`: the result is a local guide, not change control.
+The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` has a step that uses `alexei-led/archfit-action` (`uses: alexei-led/archfit-action@<ref>`), every result ends with the line `policy: not protected`: the result is a local guide, not change control.
 
 Each run except a `--policy` preview keeps its JSON output and the git tree id of the working tree in `.archfit-cache/last.json`. `archfit request` reads it while the tree and `HEAD` are the same. The same tree, policy, engine version, and date give the same output.
 
