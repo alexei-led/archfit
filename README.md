@@ -66,6 +66,7 @@ archfit rules                 # the rules for the files you change
 archfit can pkg/tc pkg/util   # before a new dependency between modules
 archfit check                 # the change: pass, fail, or unknown
 archfit request -m "<why>"    # when a rule is in your way: ask an owner
+archfit report                # for owners: the state of the repository
 ```
 
 Read the policy `init` writes, then open a pull request with it. Run `archfit check` in CI. See [Getting started](docs/getting-started.md).

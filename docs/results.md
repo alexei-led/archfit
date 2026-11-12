@@ -131,6 +131,10 @@ Both commands keep their JSON document, with the git tree id of the working tree
 
 `--format sarif` writes a SARIF 2.1.0 log for code scanning. Each error is one result with level `error`, the rule id, and the location. Its message holds the lines of the record: what, then why, instead, balance, and next. A reason for `unknown` is a tool notification, not a result, and an `unknown` status is an execution that did not succeed. A pass has no result.
 
+## The report
+
+`archfit report --format json` writes the `archfit.architecture-state.v1` document of [`archfit.state.schema.json`](../archfit.state.schema.json). On a version 3 policy it has a `repository` object: `state` (`clean`, `drift`, or `expired`), `drift` and `expired` (the errors, in the fields of the record), `expiring` (exceptions within 14 days of their date), `not_checked` (the notes), `balances` (each allowed dependency), `unread` (the places the check could not read, which `state` does not cover), and `protected`. A reader that shows `state` shows `unread` beside it. The report decides nothing and exits `0` whatever it shows. Until the Archfit 3 outputs are removed, the document still carries their `verdict` and `decision`: read `repository` instead. See [commands](commands.md#report).
+
 ## Version 2 (Archfit 3)
 
 With a version 2 policy, `archfit check`, `analyze`, and the other Archfit 3 commands write the Archfit 3 outputs: `text`, `markdown`, `json` (`archfit.architecture-state.v1`), `sarif`, `scorecard`, and `agent` (`archfit.agent-result.v1`), with the verdicts `healthy`, `needs_attention`, and `blocked`. The full reference is the [Results page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md). Convert the repository with `archfit init` (see [migration](migration.md)).

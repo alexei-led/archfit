@@ -88,6 +88,14 @@ archfit request -m "netem needs the shared retry helper"
 
 The request takes the errors of the last check, so you write only the reason. Add `--expires 2026-12-10` to ask for an exception until a date. Without the App, `archfit request` prints the request and ends with `next: ask an owner`: show it to an owner. Do not copy the code to get around the rule.
 
+## For owners: the state of the repository
+
+```sh
+archfit report
+```
+
+`report` judges the whole tree, not one change. Its state is `clean`, `drift` (an error no exception covers), or `expired` (an exception passed its date and the code still breaks the rule). It also lists the exceptions close to their date, the rules nothing checks, the balance of each allowed dependency, and the measurements of the code. It exits `0` whatever it shows.
+
 ## Run the check in CI
 
 A pull request is checked against its target branch. Fetch the history and name the branch:
