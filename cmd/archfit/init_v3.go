@@ -14,10 +14,11 @@ import (
 )
 
 // RepoInitCmd is `archfit init` (internal/initcfg/policy3): set up a
-// repository. It writes what is missing and never changes a file it does
-// not own: a fresh repository gets a version 3 policy and the instruction
-// block for agents; an Archfit 3 repository is converted; a repository with a
-// version 3 policy gets only a missing block. It writes no workflow file
+// repository. It writes what is missing and never changes a version 3
+// policy: a fresh repository gets a version 3 policy and the instruction
+// block for agents; an Archfit 3 repository is converted, which replaces its
+// policy and removes the other Archfit 3 files; a repository with a version 3
+// policy gets only a missing block. It writes no workflow file
 // (D11: the workflow waits for Action 4).
 type RepoInitCmd struct {
 	Dir string `short:"C" name:"directory" help:"Run in DIR instead of the current directory." placeholder:"DIR"`
@@ -25,7 +26,7 @@ type RepoInitCmd struct {
 
 func (*RepoInitCmd) Help() string {
 	return `Set up a repository for archfit. It writes what is missing and never
-changes your policy.
+changes a version 3 policy.
 
   No .archfit.yaml      writes a version 3 policy from the code: modules,
                         public, depends_on as the dependencies that exist,
@@ -34,8 +35,9 @@ changes your policy.
                         so the first check passes
   Archfit 3 policy      converts .archfit.yaml version 2 and its files
                         (.archfit-baseline.json, .archfit-labels.yaml,
-                        .archfit-app.yaml) into one version 3 policy and
-                        says what it could not convert
+                        .archfit-app.yaml) into one version 3 policy,
+                        removes the old files, and says what it could not
+                        convert
   Version 3 policy      leaves it as it is
 
 Each case writes the five lines for agents between the archfit markers in
@@ -45,7 +47,7 @@ Then read .archfit.yaml and open a pull request with it.
 
 Exit codes:
   0  done, also when nothing was missing
-  2  wrong usage or a tool error (nothing is written)`
+  2  wrong usage or a tool error`
 }
 
 // initNext is the last line of init: the owner's step.
@@ -119,7 +121,7 @@ func (co checkout) initBlock(b *strings.Builder) error {
 	if err != nil {
 		return err
 	}
-	b.WriteString("left " + policy3.PolicyFile + " as it is: archfit init never changes a policy\n")
+	b.WriteString("left " + policy3.PolicyFile + " as it is: archfit init never changes a version 3 policy\n")
 	if wrote {
 		b.WriteString("wrote " + policy3.AgentsFile + ": the instruction block for agents\n")
 	} else {

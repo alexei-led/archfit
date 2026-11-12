@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/v3/internal/application/request"
 )
@@ -125,6 +127,29 @@ func TestLineReason(t *testing.T) {
 	boom := errors.New("boom")
 	if _, err := (lineReason{in: failingReader{boom}, prompt: &prompt}).Reason(context.Background()); !errors.Is(err, boom) {
 		t.Errorf("Reason on a read error = %v, want %v", err, boom)
+	}
+}
+
+// TestLineReasonStopsOnCancel: a signal at the prompt ends the wait, though
+// the read of the terminal never returns.
+func TestLineReasonStopsOnCancel(t *testing.T) {
+	t.Parallel()
+	in, _ := io.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	var prompt strings.Builder
+	done := make(chan error, 1)
+	go func() {
+		_, err := lineReason{in: in, prompt: &prompt}.Reason(ctx)
+		done <- err
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Reason after cancel = %v, want %v", err, context.Canceled)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Reason still waits after its context ended")
 	}
 }
 

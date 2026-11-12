@@ -281,7 +281,8 @@ func (s Service) expires(value, date string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: its date %q is not valid: run archfit check again", ErrNoLastResult, date)
 	}
-	today, _ := time.Parse(time.DateOnly, s.Clock.Now().Format(time.DateOnly))
+	// Days are UTC calendar days, as the output's date and the App count them.
+	today, _ := time.Parse(time.DateOnly, s.Clock.Now().UTC().Format(time.DateOnly))
 	if today.After(from) {
 		from = today
 	}

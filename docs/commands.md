@@ -121,7 +121,7 @@ The run:
 4. The policy must fit the tree. A path glob that matches no file, or another policy error, is `unknown` with the message.
 5. The check reads the base and the working tree and counts the errors of each by rule, modules, and symbol. An error the base does not have, or has fewer times, is added by the change: the status is `fail`. An expired exception fails every change, and the status line ends with `(not from this change)`. See [results](results.md).
 
-The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` has a step that uses `alexei-led/archfit-action` (`uses: alexei-led/archfit-action@<ref>`), every result ends with the line `policy: not protected`: the result is a local guide, not change control.
+The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` has a step that uses `alexei-led/archfit-action` (`uses: alexei-led/archfit-action@<ref>`), every result carries the line `policy: not protected`, after the status line: the result is a local guide, not change control.
 
 Each run except a `--policy` preview keeps its JSON output and the git tree id of the working tree in `.archfit-cache/last.json`. `archfit request` reads it while the tree and `HEAD` are the same. The same tree, policy, engine version, and date give the same output.
 
@@ -218,7 +218,7 @@ next: ask an owner     (open a pull request first if there is none)
 
 ### `init`
 
-`archfit init [flags]` sets up a repository. It writes what is missing and never changes a policy. It writes no workflow file: the workflow comes with Action 4.
+`archfit init [flags]` sets up a repository. It writes what is missing and never changes a version 3 policy. It writes no workflow file: the workflow comes with Action 4.
 
 | The repository has | `archfit init` |
 | --- | --- |

@@ -1,2 +1,2 @@
-left .archfit.yaml as it is: archfit init never changes a policy
+left .archfit.yaml as it is: archfit init never changes a version 3 policy
 wrote AGENTS.md: the instruction block for agents

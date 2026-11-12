@@ -17,7 +17,7 @@ pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
 archfit: fail, 1 error
 ```
 
-Each error says where, which rule, and what is wrong; then why, what to do instead, and the next step. The status comes last.
+Each error says where, which rule, and what is wrong; then why, what to do instead, and the next step. The status line comes after the errors.
 
 ## How it works
 

@@ -197,13 +197,29 @@ type lineReason struct {
 	prompt io.Writer
 }
 
-func (r lineReason) Reason(context.Context) (string, error) {
+// Reason returns when a line is read or ctx ends. A signal cancels ctx, and a
+// read of a terminal does not stop for it, so the read runs apart: the process
+// exits with the read still waiting.
+func (r lineReason) Reason(ctx context.Context) (string, error) {
 	if _, err := fmt.Fprint(r.prompt, "reason: "); err != nil {
 		return "", err
 	}
-	line, err := bufio.NewReader(r.in).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
+	type read struct {
+		line string
+		err  error
 	}
-	return line, nil
+	done := make(chan read, 1)
+	go func() {
+		line, err := bufio.NewReader(r.in).ReadString('\n')
+		done <- read{line, err}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case got := <-done:
+		if got.err != nil && !errors.Is(got.err, io.EOF) {
+			return "", got.err
+		}
+		return got.line, nil
+	}
 }

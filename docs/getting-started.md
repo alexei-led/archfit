@@ -48,7 +48,7 @@ next: read .archfit.yaml, then open a pull request with it
 
 Read the policy, then open one pull request with it. An owner removes an exception when the code is fixed, and writes rules with `why` and `instead`. Read [Configuration](configuration.md) for the fields and [Rules](rules.md) for the built-in rules, custom rules, and exceptions.
 
-`init` never changes a policy. In a repository with an Archfit 3 policy (`.archfit.yaml` version 2), it converts the old files instead: see [Migrate from Archfit 3 to 4](migration.md).
+`init` never changes a version 3 policy. In a repository with an Archfit 3 policy (`.archfit.yaml` version 2), it converts the old files instead: it replaces the policy and removes the other Archfit 3 files. See [Migrate from Archfit 3 to 4](migration.md).
 
 ## Work on a change
 
@@ -74,9 +74,9 @@ Read the policy, then open one pull request with it. An owner removes an excepti
    archfit check
    ```
 
-   The last line is the status: `archfit: pass`, `archfit: fail, N errors`, or `archfit: unknown, no verdict`. The exit code is `0`, `1`, or `2`. Each error says where, which rule, what is wrong, and `next`: do what `next` says. `unknown` is never a pass: the record names what to restore. See [Results](results.md).
+   The status line comes after the errors: `archfit: pass`, `archfit: fail, N errors`, or `archfit: unknown, no verdict`. The exit code is `0`, `1`, or `2`. Each error says where, which rule, what is wrong, and `next`: do what `next` says. `unknown` is never a pass: the record names what to restore. See [Results](results.md).
 
-When no workflow uses the Archfit Action, every result ends with `policy: not protected`: the result is a local guide. The protected check on pull requests comes with the Archfit App and Action 4.
+When no workflow uses the Archfit Action, every result carries the line `policy: not protected`: the result is a local guide. The protected check on pull requests comes with the Archfit App and Action 4.
 
 ## When a rule is in your way
 
