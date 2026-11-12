@@ -3,8 +3,10 @@ package policy3
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -34,6 +36,29 @@ func spliceFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	return splice(current)
+}
+
+// WriteBlock writes Block into the AGENTS.md of the repository at root when
+// the file does not hold it yet, as Init does, and reports whether it wrote.
+// It is what `archfit init` writes in a repository that has a version 3
+// policy: the policy itself is never touched.
+func WriteBlock(root string) (bool, error) {
+	path := filepath.Join(root, AgentsFile)
+	current, err := os.ReadFile(path) //nolint:gosec // the instruction file of the repository init writes into
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	out, err := splice(current)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", AgentsFile, err)
+	}
+	if current != nil && bytes.Equal(out, current) {
+		return false, nil
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil { //nolint:gosec // an instruction file is world-readable by design
+		return false, fmt.Errorf("%s: %w", AgentsFile, err)
+	}
+	return true, nil
 }
 
 // splice replaces the text between the markers, markers included, with Block,

@@ -324,6 +324,56 @@ func TestInitWritesTheBlock(t *testing.T) {
 	}
 }
 
+// TestWriteBlock: the block alone, for a repository whose policy exists. It
+// writes only when the file does not hold the block, and keeps every byte
+// outside the markers.
+func TestWriteBlock(t *testing.T) {
+	const oldBlock = "<!-- archfit:start -->\nold archfit lines\n<!-- archfit:end -->\n"
+	for _, tt := range []struct {
+		name, agents, want string
+		absent, wrote      bool
+	}{
+		{name: "no file", absent: true, want: policy3.Block, wrote: true},
+		{name: "an empty file", want: policy3.Block, wrote: true},
+		{name: "no markers", agents: "# Notes\n", want: "# Notes\n\n" + policy3.Block, wrote: true},
+		{name: "an old block", agents: "# Notes\n\n" + oldBlock + "tail\n", want: "# Notes\n\n" + policy3.Block + "tail\n", wrote: true},
+		{name: "the block already", agents: "# Notes\n\n" + policy3.Block + "tail\n", want: "# Notes\n\n" + policy3.Block + "tail\n"},
+		{name: "the block at the end without a newline", agents: strings.TrimSuffix(policy3.Block, "\n"), want: strings.TrimSuffix(policy3.Block, "\n")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, policy3.AgentsFile)
+			if !tt.absent {
+				if err := os.WriteFile(path, []byte(tt.agents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wrote, err := policy3.WriteBlock(root)
+			if err != nil {
+				t.Fatalf("WriteBlock: %v", err)
+			}
+			if wrote != tt.wrote {
+				t.Errorf("wrote = %v, want %v", wrote, tt.wrote)
+			}
+			if got := readFile(t, path); string(got) != tt.want {
+				t.Errorf("AGENTS.md =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+
+	root := t.TempDir()
+	unbalanced := "<!-- archfit:start -->\nno end\n"
+	if err := os.WriteFile(filepath.Join(root, policy3.AgentsFile), []byte(unbalanced), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if wrote, err := policy3.WriteBlock(root); err == nil || wrote {
+		t.Errorf("unbalanced markers: wrote %v, err %v; want an error and nothing written", wrote, err)
+	}
+	if got := readFile(t, filepath.Join(root, policy3.AgentsFile)); string(got) != unbalanced {
+		t.Errorf("unbalanced markers changed the file: %q", got)
+	}
+}
+
 // TestInitWritesNothingOnAnError: unbalanced markers, a missing origin, an
 // origin outside GitHub and a missing tool stop Init before it writes.
 func TestInitWritesNothingOnAnError(t *testing.T) {
