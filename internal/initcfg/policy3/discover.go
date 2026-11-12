@@ -50,16 +50,17 @@ func tests(sources []string) []string {
 	return slices.DeleteFunc(slices.Clone(testGlobs), func(g string) bool { return !matchesAny(g, sources) })
 }
 
-// generated returns the globs of generated sources: the linguist-generated
-// patterns of the root .gitattributes, and the Go files whose header says
+// generated returns the globs of generated sources: the sources the root
+// .gitattributes marks linguist-generated, and the Go files whose header says
 // "Code generated ... DO NOT EDIT." before the package clause (the go
 // command's rule). A directory whose Go files are all generated is one glob.
 // Every glob matches a source file.
 func generated(root string, sources []string) ([]string, error) {
-	attributes, err := attributeGlobs(root)
+	attrs, err := readAttributes(root)
 	if err != nil {
 		return nil, err
 	}
+	attributes := attributeGlobs(attrs, sources)
 	headers, err := goGenerated(root, sources, attributes)
 	if err != nil {
 		return nil, err
@@ -74,10 +75,17 @@ func generated(root string, sources []string) ([]string, error) {
 	return out, nil
 }
 
-// attributeGlobs reads the patterns that set linguist-generated in the root
-// .gitattributes, as globs. A pattern without a slash matches at any depth;
-// a quoted pattern is skipped.
-func attributeGlobs(root string) ([]string, error) {
+// attribute is a line of .gitattributes that sets (on) or unsets the
+// linguist-generated attribute, with its pattern as a glob.
+type attribute struct {
+	glob string
+	on   bool
+}
+
+// readAttributes reads the lines of the root .gitattributes that name
+// linguist-generated, in file order. A pattern without a slash matches at any
+// depth; a quoted pattern is skipped.
+func readAttributes(root string) ([]attribute, error) {
 	data, err := os.ReadFile(filepath.Join(root, ".gitattributes")) //nolint:gosec // the repository's own attributes file
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -85,30 +93,60 @@ func attributeGlobs(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var globs []string
+	var attrs []attribute
 	lines := bufio.NewScanner(bytes.NewReader(data))
 	for lines.Scan() {
 		fields := strings.Fields(lines.Text())
 		if len(fields) < 2 || strings.HasPrefix(fields[0], "#") || strings.HasPrefix(fields[0], `"`) {
 			continue
 		}
-		if isGenerated(fields[1:]) {
-			globs = append(globs, gitGlob(fields[0]))
+		if on, named := generatedSetting(fields[1:]); named {
+			attrs = append(attrs, attribute{glob: gitGlob(fields[0]), on: on})
 		}
 	}
-	return globs, lines.Err()
+	return attrs, lines.Err()
 }
 
-// isGenerated reads the linguist-generated attribute of one line; the last
-// setting wins, as in git.
-func isGenerated(attrs []string) bool {
+// generatedSetting reads the linguist-generated attribute of one line: whether
+// the line names it, and whether it sets it. The last setting on the line wins.
+func generatedSetting(fields []string) (on, named bool) {
+	for _, f := range fields {
+		switch f {
+		case "linguist-generated", "linguist-generated=true":
+			on, named = true, true
+		case "-linguist-generated", "!linguist-generated", "linguist-generated=false":
+			on, named = false, true
+		}
+	}
+	return on, named
+}
+
+// attributeGlobs returns globs of the sources the attributes mark generated,
+// read as git reads them: the last line that matches a path decides. A setting
+// line that no later line unsets is kept as its glob; every other generated
+// source is listed on its own.
+func attributeGlobs(attrs []attribute, sources []string) []string {
+	var globs []string
+	for i, a := range attrs {
+		if a.on && !slices.ContainsFunc(attrs[i+1:], func(b attribute) bool { return !b.on }) {
+			globs = append(globs, a.glob)
+		}
+	}
+	for _, f := range sources {
+		if markedGenerated(attrs, f) && !matchesGlob(globs, f) {
+			globs = append(globs, literal(f))
+		}
+	}
+	return globs
+}
+
+// markedGenerated reports whether the last attribute line that matches file
+// sets linguist-generated.
+func markedGenerated(attrs []attribute, file string) bool {
 	on := false
 	for _, a := range attrs {
-		switch a {
-		case "linguist-generated", "linguist-generated=true":
-			on = true
-		case "-linguist-generated", "!linguist-generated", "linguist-generated=false":
-			on = false
+		if match(a.glob, file) {
+			on = a.on
 		}
 	}
 	return on
@@ -147,12 +185,12 @@ func goGenerated(root string, sources, covered []string) ([]string, error) {
 	for _, dir := range slices.Sorted(maps.Keys(byDir)) {
 		files := byDir[dir]
 		if !slices.ContainsFunc(files, func(f string) bool { return !isGen[f] }) {
-			out = append(out, join(dir, "*.go"))
+			out = append(out, join(literal(dir), "*.go"))
 			continue
 		}
 		for _, f := range files {
 			if isGen[f] {
-				out = append(out, f)
+				out = append(out, literal(f))
 			}
 		}
 	}
@@ -222,14 +260,14 @@ func longestKey(dir string, keys map[string]bool) string {
 func pathsOf(key string, files, keys []string) []string {
 	below := key == rootKey || slices.ContainsFunc(keys, func(k string) bool { return strings.HasPrefix(k, key+"/") })
 	if !below {
-		return []string{key + "/**"}
+		return []string{literal(key) + "/**"}
 	}
 	var globs []string
 	for _, f := range files {
 		rel := strings.TrimPrefix(f, key+"/")
-		g := join(key, "*"+path.Ext(f))
+		g := join(literal(key), "*"+literal(path.Ext(f)))
 		if first, _, deeper := strings.Cut(rel, "/"); deeper {
-			g = join(key, first) + "/**"
+			g = join(literal(key), literal(first)) + "/**"
 		}
 		if !slices.Contains(globs, g) {
 			globs = append(globs, g)
@@ -241,7 +279,7 @@ func pathsOf(key string, files, keys []string) []string {
 
 // name gives each module a name: its key without a leading internal/ or src/,
 // in lower case, with / - and . as _; the root is "root". Names that collide
-// take their whole key, then a number.
+// take their whole key, then a number; the root keeps "root".
 func name(mods []module) {
 	count := map[string]int{}
 	for i := range mods {
@@ -250,7 +288,7 @@ func name(mods []module) {
 	}
 	taken := map[string]bool{}
 	for i := range mods {
-		if count[mods[i].name] > 1 {
+		if count[mods[i].name] > 1 && mods[i].key != rootKey {
 			mods[i].name = slug(mods[i].key)
 		}
 		n := mods[i].name
@@ -282,6 +320,19 @@ func join(key, rel string) string {
 		return rel
 	}
 	return key + "/" + rel
+}
+
+// literal escapes the glob characters of a path, so the glob matches only the
+// path: app/[slug] is a directory name, not a character class.
+func literal(p string) string {
+	var b strings.Builder
+	for _, r := range p {
+		if strings.ContainsRune(`*?[]{}\`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func match(glob, p string) bool {

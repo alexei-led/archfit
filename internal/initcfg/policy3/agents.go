@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"slices"
+	"strings"
 )
 
 // Markers of the instruction block. They are the markers the Archfit 3
@@ -37,12 +38,14 @@ func spliceFile(path string) ([]byte, error) {
 
 // splice replaces the text between the markers, markers included, with Block,
 // or appends Block after a blank line when current has no markers. Every byte
-// outside the markers stays as it was.
+// outside the markers stays as it was. Anything but one start marker before
+// one end marker, or none of either, is an error.
 func splice(current []byte) ([]byte, error) {
+	starts, ends := bytes.Count(current, []byte(markerStart)), bytes.Count(current, []byte(markerEnd))
 	start := bytes.Index(current, []byte(markerStart))
 	end := bytes.Index(current, []byte(markerEnd))
 	switch {
-	case start < 0 && end < 0:
+	case starts == 0 && ends == 0:
 		out := slices.Clone(current)
 		switch {
 		case len(out) == 0:
@@ -52,13 +55,18 @@ func splice(current []byte) ([]byte, error) {
 			out = append(out, "\n\n"...)
 		}
 		return append(out, Block...), nil
-	case start < 0 || end < start:
+	case starts != 1 || ends != 1 || end < start:
 		return nil, errors.New("the archfit markers are unbalanced: keep one " + markerStart + " before one " + markerEnd)
 	}
 	end += len(markerEnd)
+	// The newline that ends Block replaces the one after the old end marker;
+	// without one there (end of file, CRLF), Block ends at its marker too.
+	block := Block
 	if end < len(current) && current[end] == '\n' {
 		end++
+	} else {
+		block = strings.TrimSuffix(Block, "\n")
 	}
-	out := append(slices.Clone(current[:start]), Block...)
+	out := append(slices.Clone(current[:start]), block...)
 	return append(out, current[end:]...), nil
 }

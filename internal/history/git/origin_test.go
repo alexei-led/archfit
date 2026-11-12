@@ -18,6 +18,10 @@ func TestOriginURL(t *testing.T) {
 		t.Errorf("without origin: OriginURL = %q, %v, %v; want no URL and no error", url, ok, err)
 	}
 
+	if _, _, err := gitpkg.OriginURL(context.Background(), t.TempDir(), toolrun.New()); err == nil {
+		t.Error("outside a repository: OriginURL gave no error; want git's error, not \"no origin\"")
+	}
+
 	const remote = "git@github.com:acme/shop.git"
 	gitIn(t, dir, "remote", "add", "origin", remote)
 	gitIn(t, dir, "remote", "add", "upstream", "https://github.com/other/shop.git")

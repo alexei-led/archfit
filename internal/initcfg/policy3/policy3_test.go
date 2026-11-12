@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,8 +23,12 @@ import (
 )
 
 const (
-	origin   = "git@github.com:acme/shop.git"
-	copyText = "the order could not be saved"
+	origin     = "git@github.com:acme/shop.git"
+	copyText   = "the order could not be saved"
+	gitattrs   = ".gitattributes"
+	mainGo     = "main.go"
+	appMain    = "src/app/main.ts"
+	unbalanced = "unbalanced"
 )
 
 func requireTool(t *testing.T, tool string) {
@@ -123,9 +128,9 @@ func initWith(t *testing.T, facts policy3.HeadFacts, root string) (policy3.Resul
 }
 
 var goRepo = map[string]string{
-	".gitattributes": "api/** linguist-generated=true\n",
-	"go.mod":         "module example.com/shop\n\ngo 1.22\n",
-	"main.go":        "package main\n\nimport \"example.com/shop/internal/app\"\n\nfunc main() { app.Run() }\n",
+	gitattrs: "api/** linguist-generated=true\n",
+	"go.mod": "module example.com/shop\n\ngo 1.22\n",
+	mainGo:   "package main\n\nimport \"example.com/shop/internal/app\"\n\nfunc main() { app.Run() }\n",
 	"cmd/shopd/main.go": "package main\n\nimport (\n\t\"example.com/shop/internal/app\"\n\t\"example.com/shop/internal/pay/card\"\n)\n\n" +
 		"func main() { app.Run(); card.Charge() }\n",
 	"internal/app/app.go": "package app\n\nimport (\n\t\"net/http\"\n\n\tv1 \"example.com/shop/api/v1\"\n" +
@@ -146,10 +151,10 @@ var goRepo = map[string]string{
 }
 
 var tsRepo = map[string]string{
-	".gitattributes": "src/generated/** linguist-generated\n",
-	"package.json":   "{\"name\": \"web\", \"private\": true}\n",
-	"index.ts":       "import { title } from \"./src/app/main\";\n\nconsole.log(title);\n",
-	"src/app/main.ts": "import axios from \"axios\";\nimport { save } from \"../store/db\";\nimport { format } from \"../util/format\";\n\n" +
+	gitattrs:       "src/generated/** linguist-generated\n",
+	"package.json": "{\"name\": \"web\", \"private\": true}\n",
+	"index.ts":     "import { title } from \"./src/app/main\";\n\nconsole.log(title);\n",
+	appMain: "import axios from \"axios\";\nimport { save } from \"../store/db\";\nimport { format } from \"../util/format\";\n\n" +
 		"export const title = \"" + copyText + "\";\n\nsave();\nformat();\naxios.get(\"/\");\n",
 	"src/app/main.test.ts": "import { title } from \"./main\";\n\nconsole.log(title);\n",
 	"src/store/db.ts": "import { Client } from \"pg\";\nimport { schema } from \"../generated/schema\";\nimport { log } from \"../util/log\";\n\n" +
@@ -298,6 +303,10 @@ func TestInitWritesTheBlock(t *testing.T) {
 		{"no markers, no final newline", "# Notes\nkeep me", "# Notes\nkeep me\n\n" + policy3.Block},
 		{"no markers", "# Notes\n", "# Notes\n\n" + policy3.Block},
 		{"markers in the middle", "# Notes\n\n" + oldBlock + "\n## More\ntail", "# Notes\n\n" + policy3.Block + "\n## More\ntail"},
+		{"end marker at the end of the file", "# Notes\n\n" + strings.TrimSuffix(oldBlock, "\n"),
+			"# Notes\n\n" + strings.TrimSuffix(policy3.Block, "\n")},
+		{"CRLF after the end marker", strings.TrimSuffix(oldBlock, "\n") + "\r\ntail\r\n",
+			strings.TrimSuffix(policy3.Block, "\n") + "\r\ntail\r\n"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			files := map[string]string{}
@@ -329,7 +338,9 @@ func TestInitWritesNothingOnAnError(t *testing.T) {
 		facts  fixed
 		want   string
 	}{
-		{"unbalanced markers", "<!-- archfit:start -->\nno end\n", origin, goFacts, "unbalanced"},
+		{"unbalanced markers", "<!-- archfit:start -->\nno end\n", origin, goFacts, unbalanced},
+		{"end marker first", "<!-- archfit:end -->\n<!-- archfit:start -->\n", origin, goFacts, unbalanced},
+		{"a second start marker", "<!-- archfit:start -->\na\n<!-- archfit:end -->\n<!-- archfit:start -->\n", origin, goFacts, unbalanced},
 		{"no origin", "", "", goFacts, "no origin remote"},
 		{"origin outside GitHub", "", "https://gitlab.com/acme/shop.git", goFacts, "on gitlab.com"},
 		{"missing tool", "", origin, missingTool, "next: install ast-grep"},
@@ -359,15 +370,19 @@ func TestInitWritesNothingOnAnError(t *testing.T) {
 // outside the tests is in exactly one module, and the policy fits the tree.
 func TestInitOwnsEverySourceFile(t *testing.T) {
 	sources := []string{
-		"main.go", "setup.py",
+		mainGo, "setup.py",
 		"cmd/tool.go", "cmd/archfit/main.go",
 		"internal/x/x.go", "x/y.go",
 		"src/shop/__init__.py", "src/shop/a/b.py", "src/shop/a/c/d.ts", "src/shop/e/deep/f.py",
 		"web/ui/button.ts", "web/ui/form/input.ts",
+		"app/layout.tsx", "app/[slug]/page.tsx", "app/{group}/view.tsx",
 		"tests/test_a.py", "pkg/a/a_test.go",
 	}
+	facts := fixed{Sources: sources, Imports: []evidence.ImportFact{
+		{File: "web/ui/button.ts", Line: 1, Target: "app/[slug]/page.tsx"},
+	}}
 	root := repo(t, withSources(sources, nil), origin)
-	res, err := initWith(t, fixed{Sources: sources}, root)
+	res, err := initWith(t, facts, root)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -381,8 +396,73 @@ func TestInitOwnsEverySourceFile(t *testing.T) {
 			t.Errorf("%s: module %q, test %v; want a module exactly when it is not a test", f, m, test)
 		}
 	}
+	if m, _ := p.ModuleOf("app/[slug]/page.tsx"); !p.IsPublic(m, "app/[slug]/page.tsx", true) {
+		t.Errorf("app/[slug]/page.tsx is used by web_ui but not public in %s: %v", m, p.Modules[m].Public)
+	}
 	if len(res.File.Exceptions) > 0 {
-		t.Errorf("exceptions on a tree with no imports: %+v", res.File.Exceptions)
+		t.Errorf("exceptions on a tree with one allowed import: %+v", res.File.Exceptions)
+	}
+}
+
+// TestInitNamesTheRootModuleRoot: the root module keeps its name when other
+// modules shorten to it.
+func TestInitNamesTheRootModuleRoot(t *testing.T) {
+	sources := []string{mainGo, "root/a.go", "internal/root/b.go"}
+	root := repo(t, withSources(sources, nil), origin)
+	res, err := initWith(t, fixed{Sources: sources}, root)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	want := map[string]string{"root": "*.go", "root_2": "root/**", "internal_root": "internal/root/**"}
+	for name, glob := range want {
+		if got := res.File.Modules[name].Paths; len(got) != 1 || got[0] != glob {
+			t.Errorf("module %s paths = %v, want [%s]; modules: %v", name, got, glob, res.File.Modules)
+		}
+	}
+}
+
+// TestInitGeneratedFollowsGitattributes: the last .gitattributes line that
+// matches a path decides, as in git, and only the sources it marks are out
+// of the rules.
+func TestInitGeneratedFollowsGitattributes(t *testing.T) {
+	for _, tt := range []struct {
+		name, attributes string
+		sources, want    []string
+	}{
+		{"a later line unsets", "src/** linguist-generated\nsrc/manual/** -linguist-generated\n",
+			[]string{"src/gen/a.ts", "src/manual/b.ts"}, []string{"src/gen/a.ts"}},
+		{"a later line sets again", "gen/** linguist-generated\ngen/keep.ts linguist-generated=false\ngen/** linguist-generated\n",
+			[]string{"gen/a.ts", "gen/keep.ts", "lib/c.ts"}, []string{"gen/**"}},
+		{"a pattern without a slash", "*.pb.ts linguist-generated=true\n",
+			[]string{"api/x.pb.ts", "api/y.ts"}, []string{"**/*.pb.ts"}},
+		{"a generated name with a bracket", "src/** linguist-generated\nsrc/b.ts -linguist-generated\n",
+			[]string{"src/[id].ts", "src/b.ts"}, []string{`src/\[id\].ts`}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := repo(t, withSources(tt.sources, map[string]string{gitattrs: tt.attributes}), origin)
+			res, err := initWith(t, fixed{Sources: tt.sources}, root)
+			if err != nil {
+				t.Fatalf("Init: %v", err)
+			}
+			if got := res.File.Generated; !slices.Equal(got, tt.want) {
+				t.Errorf("generated = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestInitRemovesThePolicyWhenTheBlockFails: when AGENTS.md cannot be written
+// the policy goes too, so a second run is not stopped by it.
+func TestInitRemovesThePolicyWhenTheBlockFails(t *testing.T) {
+	root := repo(t, withSources(goFacts.Sources, nil), origin)
+	if err := os.Symlink(filepath.Join(root, "missing", "AGENTS.md"), filepath.Join(root, policy3.AgentsFile)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := initWith(t, goFacts, root); err == nil {
+		t.Fatal("Init wrote through a link to a missing directory")
+	}
+	if _, err := os.Stat(filepath.Join(root, policy3.PolicyFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("policy left behind: %v", err)
 	}
 }
 
@@ -391,8 +471,8 @@ func TestInitOwnsEverySourceFile(t *testing.T) {
 // tree, and the use past it is an exception.
 func TestInitPublicOfAFileThatIsNotASource(t *testing.T) {
 	facts := fixed{
-		Sources: []string{"src/app/main.ts", "src/ui/button.ts"},
-		Imports: []evidence.ImportFact{{File: "src/app/main.ts", Line: 1, Target: "src/ui/icons/logo.svg"}},
+		Sources: []string{appMain, "src/ui/button.ts"},
+		Imports: []evidence.ImportFact{{File: appMain, Line: 1, Target: "src/ui/icons/logo.svg"}},
 	}
 	root := repo(t, withSources(facts.Sources, map[string]string{"src/ui/icons/logo.svg": "<svg/>"}), origin)
 	res, err := initWith(t, facts, root)

@@ -170,7 +170,7 @@ func publicOf(m module, used, others []string) []string {
 		return m.paths
 	}
 	if len(used) == 0 {
-		return []string{m.key}
+		return []string{literal(m.key)}
 	}
 	isUsed := map[string]bool{}
 	packages := slices.Clone(used)
@@ -200,10 +200,10 @@ func publicOf(m module, used, others []string) []string {
 		if covered[u] {
 			continue
 		}
-		glob := u
+		glob := literal(u)
 		for _, a := range ancestors(m.key, u) {
 			if collapsible(a) {
-				glob = a + "/**"
+				glob = literal(a) + "/**"
 				for _, p := range packages {
 					covered[p] = covered[p] || under(p, a)
 				}
@@ -263,7 +263,7 @@ func exceptions(p resolved.Policy, facts evidence.CheckFacts) []policyfile.Excep
 	for _, e := range errs {
 		x := policyfile.Exception{Rule: e.Key.Rule, From: e.Key.From, To: e.Key.To, Why: whyException}
 		if e.Key.Rule == resolved.RuleUnowned {
-			x.From, x.To = e.Key.Symbol, ""
+			x.From, x.To = literal(e.Key.Symbol), ""
 		}
 		if !seen[x] {
 			seen[x] = true

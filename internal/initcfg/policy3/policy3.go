@@ -106,6 +106,11 @@ func Init(ctx context.Context, deps Deps, root string) (Result, error) {
 		return Result{}, err
 	}
 	if err := os.WriteFile(agentsPath, agents, 0o644); err != nil { //nolint:gosec // an instruction file is world-readable by design
+		// Without this, a second run stops at the policy it left and can
+		// never write the block.
+		if rmErr := os.Remove(policyPath); rmErr != nil {
+			return Result{}, errors.Join(fmt.Errorf("%s: %w", AgentsFile, err), rmErr)
+		}
 		return Result{}, fmt.Errorf("%s: %w", AgentsFile, err)
 	}
 	return Result{File: file, Unknown: unknown}, nil
