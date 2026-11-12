@@ -83,7 +83,7 @@ The Docker image includes the locked Go, TypeScript/JavaScript, Python, Rust, an
 - [Language support](docs/languages.md) — analyzers, tools, and coverage.
 - [CI](docs/ci.md), [agents](docs/agents.md), and [AI](docs/ai.md) — automation workflows.
 - [Troubleshooting](docs/troubleshooting.md) — common errors and recovery.
-- [Migration](docs/migration.md) — upgrade from v2 to v3.
+- [Migration](docs/migration.md) — upgrade from Archfit 3 to 4. [Archfit 2 to 3](docs/archived/migration-v2-to-v3.md).
 - [Architecture](docs/architecture.md) and [evidence](docs/evidence.md) — contributor references.
 - [Development](CONTRIBUTING.md) — build and change the project.
 - [Changelog](CHANGELOG.md) — release history.

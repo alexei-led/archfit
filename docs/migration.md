@@ -35,18 +35,22 @@ It does not read or delete the draft files of Archfit 3's `config enrich`: `.arc
 | `visible_to`, `internal`, `owner`, `deploy_unit`, `role`, `reviewed_*`                                            | Dropped. `depends_on` and `public` cover the first two.                                      |
 | `forbidden_dependency` with `alternatives`                                                                        | A `deny` rule. `rationale` becomes `why`, `alternatives` become `instead`.                   |
 | `forbidden_dependency` without `alternatives`                                                                     | A `note`. Nothing checks it until an owner writes `instead`.                                 |
-| `module_dependencies`, `new_cross_module_dependency`                                                              | The built-in rule `graph`.                                                                   |
-| `module_cycle`, `cycle`                                                                                           | The built-in rule `cycle`.                                                                   |
+| `module_dependencies`, `new_cross_module_dependency` | The built-in rule `graph`. Its rationale is printed, not kept. |
+| `module_cycle`, `cycle` | The built-in rule `cycle`. |
+| One of these rules with `gate: warn` | The built-in rule at its own mode: `graph` ask, `cycle` and `layers` deny. |
+| One of these rules with `gate: off` | The built-in rule `off`, when every rule that maps to it is off. |
 | `forbidden_layer_direction`                                                                                       | The built-in rule `layers`.                                                                  |
 | `public_api_only`, `internal_api_access`                                                                          | Dropped: `coupling` and `public` cover them.                                                 |
-| `public_api_max`, `public_api_change`, `public_api_type_leak`, `forbidden_pattern`, other rules with `gate: warn` | A `note` with the old rationale.                                                             |
+| `public_api_max`, `public_api_change`, `public_api_type_leak`, `forbidden_pattern`, a `forbidden_dependency` with `gate: warn` | A `note` with the old rationale. |
 | A rule id like `D-12`                                                                                             | A name from the type and the id: `forbidden-dependency-d-12`.                                |
 | `waivers`                                                                                                         | Exceptions. `reason` becomes `why`; `expires` stays.                                         |
 | The `accepted` list of `.archfit-baseline.json`                                                                   | Exceptions, see below.                                                                       |
 | `.archfit-labels.yaml`                                                                                            | Dropped: the `coupling` rule takes the strength of a use from `public`.                      |
 | `.archfit-app.yaml` `owners`, `gate`                                                                              | `owners`, `gate`.                                                                            |
-| `languages`, `analyzers.syntax`, `coverage`, `exclude`                                                            | The same keys. Other analyzers and settings are dropped.                                     |
+| `languages`, `analyzers.syntax`, `analyzers.cargo_modules`, `analyzers.roslyn`, `coverage`, `exclude` | The same keys. Other analyzers and settings are dropped. |
 | `coupling`, `metrics`, `module_review`, `ai`, `outputs`, `target_branch` and other keys                           | Dropped.                                                                                     |
+
+A key `init` does not convert is printed with its old value, such as a waiver's `approved_by` or a rule's `patterns`, so the report keeps what the policy loses.
 
 A bare directory keeps its Archfit 3 meaning. Archfit 3 matched `internal` as one package, so a package below it was not in the module. In Archfit 4 that code is still in no module, and the `unowned` rule reports new code there.
 
@@ -85,7 +89,7 @@ not converted or changed:
        instead: Call the runtime through container.Client.
    ```
 
-3. Run `archfit check`. It passes on the converted code.
+3. Run `archfit check`. It passes on the converted code. Errors in code that is in no module get no exception: `init` prints each one, with its file and line.
 4. Open one pull request with the new policy and the deleted files. An owner approves it.
 5. Move the workflow to Action 4 in the same pull request.
 
