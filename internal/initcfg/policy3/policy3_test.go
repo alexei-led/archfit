@@ -435,6 +435,10 @@ func TestInitGeneratedFollowsGitattributes(t *testing.T) {
 			[]string{"gen/a.ts", "gen/keep.ts", "lib/c.ts"}, []string{"gen/**"}},
 		{"a pattern without a slash", "*.pb.ts linguist-generated=true\n",
 			[]string{"api/x.pb.ts", "api/y.ts"}, []string{"**/*.pb.ts"}},
+		{"a quoted pattern unsets", "src/** linguist-generated\n\"src/manual code/**\" -linguist-generated\n",
+			[]string{"src/gen/a.ts", "src/manual code/b.ts"}, []string{"src/gen/a.ts"}},
+		{"a macro line names no path", "[attr]gen -linguist-generated\nsrc/** linguist-generated\n",
+			[]string{"src/a.ts"}, []string{"src/**"}},
 		{"a generated name with a bracket", "src/** linguist-generated\nsrc/b.ts -linguist-generated\n",
 			[]string{"src/[id].ts", "src/b.ts"}, []string{`src/\[id\].ts`}},
 	} {
@@ -485,5 +489,27 @@ func TestInitPublicOfAFileThatIsNotASource(t *testing.T) {
 	want := policyfile.Exception{Rule: resolved.RuleCoupling, From: "app", To: "ui", Why: "The error existed when archfit init wrote this policy."}
 	if len(res.File.Exceptions) != 1 || res.File.Exceptions[0] != want {
 		t.Errorf("exceptions = %+v, want [%+v]", res.File.Exceptions, want)
+	}
+}
+
+// TestInitStopsOnAnUnreadableGitattributesLine: a quoted pattern init cannot
+// read, on a line that names linguist-generated, stops Init: skipping it
+// could mark hand-written code generated.
+func TestInitStopsOnAnUnreadableGitattributesLine(t *testing.T) {
+	for name, line := range map[string]string{
+		"no closing quote": "\"src/manual/** -linguist-generated\n",
+		"a bad escape":     "\"src/\\q/**\" -linguist-generated\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			sources := []string{"src/manual/a.ts"}
+			root := repo(t, withSources(sources, map[string]string{gitattrs: "src/** linguist-generated\n" + line}), origin)
+			_, err := initWith(t, fixed{Sources: sources}, root)
+			if err == nil || !strings.Contains(err.Error(), ".gitattributes line 2") {
+				t.Fatalf("Init error = %v, want one that names .gitattributes line 2", err)
+			}
+			if _, err := os.Stat(filepath.Join(root, policy3.PolicyFile)); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("policy written: %v", err)
+			}
+		})
 	}
 }

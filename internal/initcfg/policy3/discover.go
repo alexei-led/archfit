@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -84,7 +85,10 @@ type attribute struct {
 
 // readAttributes reads the lines of the root .gitattributes that name
 // linguist-generated, in file order. A pattern without a slash matches at any
-// depth; a quoted pattern is skipped.
+// depth; a quoted pattern is unquoted as git does; an [attr] macro line names
+// no path and is skipped. A quoted pattern that cannot be read, on a line that
+// names the attribute, is an error: skipping an unset line would mark
+// hand-written code generated.
 func readAttributes(root string) ([]attribute, error) {
 	data, err := os.ReadFile(filepath.Join(root, ".gitattributes")) //nolint:gosec // the repository's own attributes file
 	if errors.Is(err, fs.ErrNotExist) {
@@ -95,16 +99,46 @@ func readAttributes(root string) ([]attribute, error) {
 	}
 	var attrs []attribute
 	lines := bufio.NewScanner(bytes.NewReader(data))
-	for lines.Scan() {
-		fields := strings.Fields(lines.Text())
-		if len(fields) < 2 || strings.HasPrefix(fields[0], "#") || strings.HasPrefix(fields[0], `"`) {
+	for n := 1; lines.Scan(); n++ {
+		line := strings.TrimSpace(lines.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[attr]") {
 			continue
 		}
-		if on, named := generatedSetting(fields[1:]); named {
-			attrs = append(attrs, attribute{glob: gitGlob(fields[0]), on: on})
+		pattern, rest, perr := splitPattern(line)
+		on, named := generatedSetting(strings.Fields(rest))
+		if !named {
+			continue
 		}
+		if perr != nil {
+			return nil, fmt.Errorf(".gitattributes line %d: %w", n, perr)
+		}
+		attrs = append(attrs, attribute{glob: gitGlob(pattern), on: on})
 	}
 	return attrs, lines.Err()
+}
+
+// splitPattern splits a .gitattributes line into its pattern and the rest. A
+// pattern in double quotes takes C-style escapes, as in git.
+func splitPattern(line string) (pattern, rest string, err error) {
+	if !strings.HasPrefix(line, `"`) {
+		if i := strings.IndexAny(line, " \t"); i >= 0 {
+			return line[:i], line[i:], nil
+		}
+		return line, "", nil
+	}
+	for i := 1; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			i++
+		case '"':
+			pattern, err = strconv.Unquote(line[:i+1])
+			if err != nil {
+				return "", line[i+1:], fmt.Errorf("the quoted pattern %s cannot be read: %w", line[:i+1], err)
+			}
+			return pattern, line[i+1:], nil
+		}
+	}
+	return "", line, errors.New("a quoted pattern has no closing quote")
 }
 
 // generatedSetting reads the linguist-generated attribute of one line: whether
