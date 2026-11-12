@@ -377,7 +377,8 @@ Design: 4 (no stale state), 7.2 (added means more), 11.2 (base and head in one r
 - [ ] read the merge-base tree from git objects into a temporary snapshot without touching the working tree, or reuse
       `worktree.go` if it is simpler; a shallow clone or a missing merge base returns an explicit error
 - [ ] compute added lines of the working tree against the merge base: modified, renamed (`-M`) and untracked files
-- [ ] key cached facts by the git tree id for the base and by the content hash for the working tree
+- [ ] key cached facts by the git tree id for the base and by the content hash for the working tree; the head's
+      tree id is `git.WorkingTreeID` (#152), the one "this tree" id
 - [ ] write tests on temporary repositories: added lines for modified, renamed, untracked and deleted files; the
       snapshot equals `git archive`; cache hit and miss; a shallow clone returns the error
 - [ ] regenerate `model_surface.golden` and read the diff; run `go test ./internal/history/... ./internal/factcache/
@@ -444,19 +445,23 @@ Design: 6.2 (`duplication` judges every copy), 6.4, 7.2, 7.3, 15.1 (copies), sta
 
 ### Task 14: Counting on base and head; exceptions with dates; the four statuses
 
-Design: 6.4, 7.1, 7.2, 15.1 (added or existing, exceptions). Packages: `internal/assessment/change`. Depends on:
-12, 13.
+Design: 6.4, 7.1, 7.2, 15.1 (added or existing, exceptions). Packages: `internal/assessment/count` (new). It imports
+`change` and `copies`; in `change` it would make an import cycle, because `copies` imports `change` (#160). Depends
+on: 12, 13.
 
 - [ ] compare base and head errors per key (tasks 12 and 13): a new key or a higher count is added by the change;
-  report the head sites that are not on the base, and prefer sites on added lines
+  an `unowned` key is added only when its file has an added line, so a pure rename passes (#160); report the head
+  sites that are not on the base, and prefer sites on added lines
 - [ ] apply exceptions: an exception covers the errors of its rule between its `from` and `to` (for `duplication`,
-  the unordered pair, because its key is unordered); on or before its
+  the unordered pair, because its key is unordered; for a custom `only` rule, its `from` alone (#160)); on or before
+  its
   `expires` date it holds; after that date, while the code still breaks the rule on the head, it is an error of every
   change, marked "not from this change"
-- [ ] set the status: `fail` for an added error or an expired exception; `unknown` when base evidence is missing, when
-  an `unknown` item touches a changed file, or when an `unknown` item exists on the head that the base does not have
-  (an unchanged file whose import no longer resolves, for example after a change to `tsconfig` `paths`); `pass`
-  otherwise; the engine never sets `waiting`
+- [ ] set the status in this order (#160): `unknown` with only its reasons when base evidence is missing; else `fail`
+  for an added error or an expired exception, and the unknown items are still listed; else `unknown` when an
+  `unknown` item touches a changed file, or when an `unknown` item exists on the head that the base does not have
+  (an unchanged file whose import no longer resolves, for example after a change to `tsconfig` `paths`); else
+  `pass`; the engine never sets `waiting`
 - [ ] write the tests of 15.1: moved code, a renamed file, one more use of a broken dependency, missing base evidence,
   a new `unknown` item in an unchanged file, an exception that matches and one that does not, the date boundary, an
   expired exception seen by an unrelated change (including an old copy), existing drift that the change does not
@@ -491,7 +496,9 @@ Design: 7.1, 7.2, 9.1, 9.4, 11.1 (`check`), 14, 15.1 (policy protection). Packag
 - [ ] validate the policy against the tree (the task 4 checks, including a path that matches nothing); an invalid
   policy gives `unknown` with the message
 - [ ] assess head and base (tasks 12 to 14), project into `internal/model/result` in one projector file (date,
-  digest, engine version, `policy: not protected` per D6), and save the result for `request`
+  digest, engine version, `policy: not protected` per D6), and save the result for `request` in
+  `.archfit-cache/last.json` as `{"tree", "output"}`: the `git.WorkingTreeID` and the `--format json` document; a
+  `--policy` preview saves nothing (#152)
 - [ ] write tests: a code change that also edits the policy is `unknown`; `--policy` previews; no target policy; a
   version 2 target policy; an invalid policy; a shallow clone without a merge base is `unknown` and names the fetch;
   the date as an input gives the same output twice
@@ -534,7 +541,9 @@ Design: 10.3, 11.1 (`request`), 11.7 (the request is App-owned). Packages: `inte
 Depends on: 2.
 
 - [ ] build a request from the last `check` result (or a `can` answer): the errors (rule, from, to, balance, file and
-      line), the reason, `--expires`, the head and base commits, and the policy digest
+      line), the reason, `--expires`, the head and base commits, and the policy digest; only errors whose
+      `next.kind` is `command` join (#152); "last" means the same HEAD and the same `git.WorkingTreeID` in
+      `.archfit-cache/last.json` (#152)
 - [ ] validate: a reason is required (the CLI asks for it on a terminal; elsewhere a missing `-m` is a usage error);
       `--expires` is a future ISO date; no last result means "run archfit check first"
 - [ ] define the sender port; milestone 1 ships no App sender (D5)
@@ -990,7 +999,8 @@ except 28's merge.
 - `status`: `pass`, `fail`, `waiting` (set by the App only), `unknown`; `summary`: the status line text.
 - `errors[]`, in record order: `path`, `line`, `rule`, `what`, `why`, `instead`, `balance` (`value`, `min`), `next`
   (`kind`: `fix`, `command`, `wait`, `restore`; `text`), `from` and `to` modules, `key`, `from_change` (false for an
-  expired exception seen by another change).
+  expired exception seen by another change). Only an error of an `ask` rule has `next.kind` `command`; the request
+  builder joins exactly those errors (#152).
 - `policy`: `path`, `digest`, `protected`, `differs`, `target`.
 - `base` and `head` commits, `date`, `engine` (version), `unknown[]` (reasons with file and fix).
 - The `can` answer: `from`, `to`, `answer` (`yes`, `no`, `unknown`), `rule`, `why`, `instead`, `balance`, `next`.
@@ -1011,17 +1021,29 @@ and versions after the status line. `can` prints one answer without a status lin
 
 ### Errors, counting and `unknown` (tasks 12 to 16)
 
+- Shared pieces from PR A (#149): the `resolved` matchers `Covers`, `IsPublic`, `IsTest`, `IsGenerated` and
+  `FormatExpires`; `evidence.CheckFacts.Sources`; `evidence.LiteralOccurrence.Shape`; the error type `change.Error`
+  with `Key{Rule, From, To, Symbol}` and `Site{File, Line}`. Tasks use them and define no second copy.
 - Key: the rule id, the from module, the to module, and the symbol: the imported package or library for dependency
-  rules, the file for `unowned`, the sorted module set for `cycle`. For `duplication` the key is the rule, the sorted
-  module pair and the literal digest.
+  rules, the file for `unowned`. For `cycle` the key is each dependency inside a cycle: its from and to modules, and
+  no symbol (#154). With a key of the module set, a change that only deletes a dependency of a cycle would show a
+  new error. The record shows first the cycle error whose site is on an added line (task 14). For `duplication` the
+  key is the rule, the sorted module pair and the literal digest.
 - Count: the number of sites (file and line) with that key in a tree. Added: a key absent on the base, or a higher
-  count on the head.
-- Exceptions match by rule, `from` and `to`; a `duplication` exception matches the unordered module pair. An expired exception: `next` is `wait for an owner: #n` when its `why`
+  count on the head. An `unowned` key is added only when its file has an added line, so a pure rename passes (#160).
+- Exceptions match by rule, `from` and `to`; a `duplication` exception matches the unordered module pair. An
+  exception on a custom `only` rule matches by rule and `from`, and has no `to`: the rule id fixes the library
+  (#160). Task 14's worker changes the policy contract for it (decoder, `resolved`, schema, fixtures) in a separate
+  pull request. An expired exception: `next` is `wait for an owner: #n` when its `why`
   names a request `#n`, otherwise `fix the code, or ask an owner to extend the exception`. This is a milestone 1
   simplification; milestone 2 may add the request to the exception.
 - `unknown`: the local policy differs from the target's; the policy is invalid; there is no merge base; base evidence
   is missing; a needed tool is missing; a first-party import in a changed file cannot be resolved; an unresolved
   import exists on the head that the base does not have.
+- Status order (#160): a comparison that cannot be made at all (the policy differs or is invalid, there is no merge
+  base, or base evidence is missing) gives `unknown` with only its reasons. Otherwise an added error or an expired
+  exception gives `fail`, and the unknown items are still listed. Otherwise an `unknown` item of the list above
+  gives `unknown`. Otherwise the status is `pass`.
 
 ### Exit codes (task 24 for the new commands, task 31 for the whole binary)
 
