@@ -834,6 +834,7 @@ var cmdDomainAdapterFiles = map[string]string{
 	"application_wiring.go":     "composition root: selects concrete stage implementations",
 	"change_wiring.go":          "composition root of check, can and rules: adapters for their application ports",
 	"init.go":                   "config init authors a config file; initcfg is its writer",
+	"init_v3.go":                "init writes the version 3 policy and the agent block; initcfg/policy3 is its writer",
 	"llmreview.go":              "off-gate LLM review; initcfg supplies the draft format",
 	"draft_metadata.go":         "initcfg draft metadata translation",
 	"evidence_pack.go":          "initcfg evidence-pack translation",
