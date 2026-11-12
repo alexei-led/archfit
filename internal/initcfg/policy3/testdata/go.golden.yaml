@@ -1,0 +1,87 @@
+# The Archfit policy, written by archfit init from the code as it is today.
+# Review the modules, public, depends_on and exceptions, then commit it.
+version: 3
+owners:
+  - acme
+modules:
+  api_v1:
+    paths:
+      - api/v1/**
+    public:
+      - api/v1
+  app:
+    paths:
+      - internal/app/**
+    public:
+      - internal/app
+    depends_on:
+      - api_v1
+      - gen
+      - pay
+      - store
+  cmd_shopd:
+    paths:
+      - cmd/shopd/**
+    public:
+      - cmd/shopd
+    depends_on:
+      - app
+      - pay
+  gen:
+    paths:
+      - internal/gen/**
+    public:
+      - internal/gen
+  pay:
+    paths:
+      - internal/pay/**
+    public:
+      - internal/pay/**
+  root:
+    paths:
+      - "*.go"
+    public:
+      - "*.go"
+    depends_on:
+      - app
+  store:
+    paths:
+      - internal/store/**
+    public:
+      - internal/store
+    depends_on:
+      - app
+  util:
+    paths:
+      - internal/util/**
+    public:
+      - internal/util
+rules:
+  - id: contain-network
+    only:
+      use: network
+      in:
+        - app
+    why: Network code stays in the modules that used it when archfit init wrote this policy.
+  - id: contain-database
+    only:
+      use: database
+      in:
+        - store
+    why: Database code stays in the modules that used it when archfit init wrote this policy.
+exceptions:
+  - rule: duplication
+    from: app
+    to: util
+    why: The error existed when archfit init wrote this policy.
+  - rule: cycle
+    from: app
+    to: store
+    why: The error existed when archfit init wrote this policy.
+  - rule: cycle
+    from: store
+    to: app
+    why: The error existed when archfit init wrote this policy.
+generated:
+  - api/**
+  - internal/gen/*.go

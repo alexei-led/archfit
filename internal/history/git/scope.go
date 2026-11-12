@@ -60,6 +60,30 @@ func OriginHead(ctx context.Context, dir string, runner toolrun.Runner) (string,
 	return ref, ref != ""
 }
 
+// gitNoSuchRemote is the exit code of git remote get-url for a remote that
+// does not exist.
+const gitNoSuchRemote = 2
+
+// OriginURL returns the URL of the remote named origin. ok is false when the
+// repository has no such remote; any other failure, such as a directory that
+// is not a repository, is an error with git's message.
+// It runs: git remote get-url origin
+func OriginURL(ctx context.Context, dir string, runner toolrun.Runner) (url string, ok bool, err error) {
+	out, err := run(ctx, dir, runner, "remote", "get-url", "origin")
+	if err != nil {
+		return "", false, err
+	}
+	switch out.ExitCode {
+	case 0:
+	case gitNoSuchRemote:
+		return "", false, nil
+	default:
+		return "", false, fmt.Errorf("git remote get-url origin: exit %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+	}
+	url = strings.TrimSpace(string(out.Stdout))
+	return url, url != "", nil
+}
+
 // MergeBase returns the best common ancestor of a and b. ok is false when the
 // two share no history this clone holds, for example in a shallow clone.
 // It runs: git merge-base <a> <b>
