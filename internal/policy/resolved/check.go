@@ -79,11 +79,20 @@ func (p Policy) Check() error {
 		if e.Rule != RuleUnowned {
 			p.checkModule(&m, key+".from", e.From, modules)
 		}
-		if e.To != "" {
+		switch {
+		case e.To == "":
+		case p.isOnlyRule(e.Rule):
+			m.add(key+".to", "%q is an only rule, which names its library itself: remove to", e.Rule)
+		default:
 			p.checkModule(&m, key+".to", e.To, modules)
 		}
 	}
 	return m.err()
+}
+
+// isOnlyRule reports whether id names a custom only rule.
+func (p Policy) isOnlyRule(id string) bool {
+	return slices.ContainsFunc(p.Rules, func(r Rule) bool { return r.ID == id && r.Form == FormOnly })
 }
 
 func ruleKey(i int, r Rule) string {

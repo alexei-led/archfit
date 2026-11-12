@@ -87,9 +87,18 @@ func schemaAccepts(compiled *jsonschema.Schema, data []byte) error {
 	return compiled.Validate(doc)
 }
 
+// decoderStricter are the fixtures the schema accepts and the decoder rejects by
+// design: whether an exception needs to depends on its rule's form, which the
+// schema cannot read from the rules list.
+var decoderStricter = map[string]bool{
+	"invalid/exception-to-missing.yaml": true,
+	"invalid/exception-only-to.yaml":    true,
+}
+
 // TestSchemaAgreesWithDecoder holds the published schema and policyfile.Decode to
 // one contract: every policyfile fixture, and each edge case below, passes the
-// schema exactly when Decode accepts it.
+// schema exactly when Decode accepts it, except the decoderStricter fixtures,
+// which only the decoder rejects.
 func TestSchemaAgreesWithDecoder(t *testing.T) {
 	compiled := compileSchema(t)
 	files, err := filepath.Glob(filepath.Join(policyDir, "testdata", "*", "*.yaml"))
@@ -150,6 +159,12 @@ func TestSchemaAgreesWithDecoder(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, decodeErr := policyfile.Decode(data)
 			schemaErr := schemaAccepts(compiled, data)
+			if decoderStricter[name] {
+				if decodeErr == nil || schemaErr != nil {
+					t.Errorf("want the decoder alone to reject it:\nDecode: %v\nschema: %v", decodeErr, schemaErr)
+				}
+				return
+			}
 			if (decodeErr == nil) != (schemaErr == nil) {
 				t.Errorf("decoder and schema disagree:\nDecode: %v\nschema: %v", decodeErr, schemaErr)
 			}
