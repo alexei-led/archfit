@@ -127,7 +127,7 @@ type Exception struct {
 	Rule string `yaml:"rule" jsonschema:"required,minLength=1"`
 	// The module the errors come from. For unowned, the glob of the code no module owns.
 	From string `yaml:"from" jsonschema:"required,minLength=1"`
-	// The module the errors reach. Required for every rule except unowned, which has no target.
+	// The module the errors reach. Required for every rule except unowned and a custom only rule, which have no target: an only rule names its library itself.
 	To string `yaml:"to,omitempty" jsonschema:"minLength=1"`
 	// The last day the exception holds, as YYYY-MM-DD. After it, while the code still breaks the rule, every change fails. Absent: no date.
 	Expires string `yaml:"expires,omitempty" jsonschema:"format=date,pattern=^[0-9]{4}-[0-9]{2}-[0-9]{2}$"`
