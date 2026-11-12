@@ -444,8 +444,8 @@ Design: 6.2 (`duplication` judges every copy), 6.4, 7.2, 7.3, 15.1 (copies), sta
 
 ### Task 14: Counting on base and head; exceptions with dates; the four statuses
 
-Design: 6.4, 7.1, 7.2, 15.1 (added or existing, exceptions). Packages: `internal/assessment/change`. Depends on:
-12, 13.
+Design: 6.4, 7.1, 7.2, 15.1 (added or existing, exceptions). Packages: `internal/assessment/count` (new:
+`copies` imports `change`, so counting in `change` would be a cycle). Depends on: 12, 13.
 
 - [ ] compare base and head errors per key (tasks 12 and 13): a new key or a higher count is added by the change;
   report the head sites that are not on the base, and prefer sites on added lines
@@ -1074,7 +1074,8 @@ Every new package sits under a module path glob of today's `.archfit.yaml`, exce
 adds it). The new packages: `internal/config/policyfile`, `internal/policy/resolved`, `internal/relationship/balance`,
 `internal/model/result`, `internal/output/record`, `internal/output/reporttext`, `internal/extract/tsimports`,
 `internal/extract/pyimports`, `internal/extract/literals`, `internal/evidence/acquisition/checkfacts`,
-`internal/assessment/change`, `internal/assessment/copies`, `internal/application/changecheck`,
+`internal/assessment/change`, `internal/assessment/copies`, `internal/assessment/count`,
+`internal/application/changecheck`,
 `internal/application/canquery`, `internal/application/rulesquery`, `internal/application/request`,
 `internal/application/repostate`, `internal/initcfg/policy3`. A worker may rename a package in its task; the pull
 request says so. New packages under `internal/policy` and `internal/relationship` keep the export ratchets of those
