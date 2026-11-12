@@ -89,27 +89,11 @@ exceptions:
     why: The error existed when archfit init wrote this policy.
   - rule: duplication
     from: pkg_chaos
-    to: pkg_container
-    why: The error existed when archfit init wrote this policy.
-  - rule: duplication
-    from: pkg_chaos
     to: pkg_runtime
-    why: The error existed when archfit init wrote this policy.
-  - rule: duplication
-    from: pkg_chaos
-    to: pkg_util
     why: The error existed when archfit init wrote this policy.
   - rule: duplication
     from: pkg_container
     to: pkg_runtime
-    why: The error existed when archfit init wrote this policy.
-  - rule: duplication
-    from: pkg_runtime
-    to: pkg_tc
-    why: The error existed when archfit init wrote this policy.
-  - rule: duplication
-    from: pkg_tc
-    to: pkg_util
     why: The error existed when archfit init wrote this policy.
 generated:
   - mocks/*.go
@@ -124,6 +108,9 @@ generated:
   - pkg/container/mock_Stressor.go
   - pkg/runtime/containerd/mock_apiClient.go
   - pkg/runtime/docker/mock_conn.go
+tests:
+  - "**/*_test.go"
+  - "**/tests/**"
 languages:
   go:
     enabled: true

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -29,6 +30,8 @@ const (
 	mainGo     = "main.go"
 	appMain    = "src/app/main.ts"
 	unbalanced = "unbalanced"
+	aFile      = "pkg/a/a.go"
+	aTestFile  = "pkg/a/a_test.go"
 )
 
 func requireTool(t *testing.T, tool string) {
@@ -265,7 +268,7 @@ func pinGolden(t *testing.T, path string, got []byte) {
 }
 
 var goFacts = fixed{
-	Sources: []string{"go.go", "pkg/a/a.go"},
+	Sources: []string{"go.go", aFile},
 	Imports: []evidence.ImportFact{{File: "go.go", Line: 3, Target: "pkg/a"}},
 }
 
@@ -426,7 +429,7 @@ func TestInitOwnsEverySourceFile(t *testing.T) {
 		"src/shop/__init__.py", "src/shop/a/b.py", "src/shop/a/c/d.ts", "src/shop/e/deep/f.py",
 		"web/ui/button.ts", "web/ui/form/input.ts",
 		"app/layout.tsx", "app/[slug]/page.tsx", "app/{group}/view.tsx",
-		"tests/test_a.py", "pkg/a/a_test.go",
+		"tests/test_a.py", aTestFile,
 	}
 	facts := fixed{Sources: sources, Imports: []evidence.ImportFact{
 		{File: "web/ui/button.ts", Line: 1, Target: "app/[slug]/page.tsx"},
@@ -451,6 +454,44 @@ func TestInitOwnsEverySourceFile(t *testing.T) {
 	}
 	if len(res.File.Exceptions) > 0 {
 		t.Errorf("exceptions on a tree with one allowed import: %+v", res.File.Exceptions)
+	}
+}
+
+// TestInitDeclaresTests: Init declares the test files the facts name, though
+// Go sources leave them out, so a literal a test copies from another module
+// is no error and gets no exception.
+func TestInitDeclaresTests(t *testing.T) {
+	sources := []string{aFile, "pkg/b/b.go"}
+	tests := []struct {
+		name string
+		copy string
+		want []policyfile.Exception
+	}{
+		{name: "a test copies the literal", copy: aTestFile},
+		{
+			name: "production code copies the literal", copy: aFile,
+			want: []policyfile.Exception{{Rule: "duplication", From: "pkg_a", To: "pkg_b", Why: "The error existed when archfit init wrote this policy."}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			facts := fixed{Sources: sources, Literals: []evidence.LiteralOccurrence{
+				{File: aTestFile, Line: 9, Value: "place an order twice", Shape: evidence.ShapeOther},
+				{File: tt.copy, Line: 5, Value: copyText, Shape: evidence.ShapeOther},
+				{File: "pkg/b/b.go", Line: 3, Value: copyText, Shape: evidence.ShapeOther},
+			}}
+			root := repo(t, withSources(append(slices.Clone(sources), aTestFile), nil), origin)
+			res, err := initWith(t, facts, root)
+			if err != nil {
+				t.Fatalf("Init: %v", err)
+			}
+			if want := []string{"**/*_test.go"}; !reflect.DeepEqual(res.File.Tests, want) {
+				t.Errorf("tests = %v, want %v", res.File.Tests, want)
+			}
+			if !slices.Equal(res.File.Exceptions, tt.want) {
+				t.Errorf("exceptions = %+v, want %+v", res.File.Exceptions, tt.want)
+			}
+		})
 	}
 }
 

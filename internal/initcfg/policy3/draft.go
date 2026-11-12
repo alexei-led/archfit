@@ -36,7 +36,7 @@ const probePrefix = "init-probe-"
 // build returns the policy of the code the head facts describe, and its bytes.
 // The bytes load (policyfile.Resolve) and fit the tree (CheckTree).
 func build(root, owner string, facts evidence.CheckFacts) (policyfile.File, []byte, error) {
-	testGlobs := tests(facts.Sources)
+	testGlobs := tests(factFiles(facts))
 	genGlobs, err := generated(root, facts.Sources)
 	if err != nil {
 		return policyfile.File{}, nil, err
@@ -61,12 +61,12 @@ func build(root, owner string, facts evidence.CheckFacts) (policyfile.File, []by
 		f.Modules[m.name] = mod
 	}
 	f.Rules = containment(today.users, len(mods))
-	_, p, err := encode(f, facts.Sources, header)
+	_, p, err := encode(f, factFiles(facts), header)
 	if err != nil {
 		return policyfile.File{}, nil, err
 	}
 	f.Exceptions = exceptions(p, facts)
-	data, _, err := encode(f, facts.Sources, header)
+	data, _, err := encode(f, factFiles(facts), header)
 	if err != nil {
 		return policyfile.File{}, nil, err
 	}

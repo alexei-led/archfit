@@ -223,7 +223,7 @@ next: ask an owner     (open a pull request first if there is none)
 | The repository has | `archfit init` |
 | --- | --- |
 | No `.archfit.yaml` | Writes a version 3 policy from the code: a module for each directory of code cut to two levels, such as `pkg/chaos` (for Python, below `src/`), with `paths` and `public` (the packages other modules use today); `depends_on` as the dependencies that exist; `tests` and `generated`; `owners` from the GitHub `origin` remote; an `only` rule for network, process, or database code that only some modules use; and an exception for each error that exists today, so the first `check` passes. |
-| A version 2 `.archfit.yaml` (Archfit 3) | Converts it, with `.archfit-baseline.json`, `.archfit-labels.yaml` and `.archfit-app.yaml`, into one version 3 policy, removes the old files, and lists what it could not convert. See [migration](migration.md). |
+| A version 2 `.archfit.yaml` (Archfit 3) | Converts it, with `.archfit-baseline.json`, `.archfit-labels.yaml` and `.archfit-app.yaml`, into one version 3 policy with `tests` and `generated` as for a new policy, removes the old files, and lists what it could not convert. See [migration](migration.md). |
 | A version 3 `.archfit.yaml` | Leaves it as it is. |
 
 In each case it writes the five lines for agents between the `<!-- archfit:start -->` and `<!-- archfit:end -->` markers in `AGENTS.md`, and creates the file when it is missing. Text outside the markers stays as it is. When the block is already there, nothing is written and the command still exits `0`.

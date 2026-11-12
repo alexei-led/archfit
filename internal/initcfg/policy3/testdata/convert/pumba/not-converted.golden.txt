@@ -17,5 +17,5 @@ not converted or changed:
   rules[3] (no-chaos-to-runtime): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
   rules[4] (no-util-to-domain): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
   rules[5] (layer-inversion).rationale: dropped: Archfit 4 has no place for it (was "cmd is the composition root. A core package that imports it creates a cycle with the wiring and cannot be reused or tested without the CLI.")
-  exceptions.duplication: 8 written for the errors of today; the Archfit 3 baseline accepted 0
+  exceptions.duplication: 4 written for the errors of today; the Archfit 3 baseline accepted 0
   .archfit-baseline.json metrics: dropped: Archfit 4 has no metric ratchets

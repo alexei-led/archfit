@@ -58,7 +58,7 @@ A bare directory keeps its Archfit 3 meaning. Archfit 3 matched `internal` as on
 
 ### Exceptions
 
-Every error the new policy finds in the code today gets an exception with no date, so the first check passes. The reason says where the error comes from:
+Every error the new policy finds in the code today gets an exception with no date, so the first check passes. The policy declares the `tests` and `generated` paths it finds in the code, as for a new policy, so the rules skip that code: a literal that only a test copies is no error and gets no exception. The reason says where the error comes from:
 
 - `Accepted in the Archfit 3 baseline.` when the baseline accepted errors of that rule.
 - `The error existed when archfit init wrote this policy.` for the other errors.
@@ -75,7 +75,7 @@ not converted or changed:
   coupling: dropped: the coupling rule replaces it: a new use across modules needs a balance of at least 7
   modules.*.owner: dropped (6 modules): Archfit 4 has no such key
   rules[3] (no-chaos-to-runtime): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
-  exceptions.duplication: 8 written for the errors of today; the Archfit 3 baseline accepted 0
+  exceptions.duplication: 4 written for the errors of today; the Archfit 3 baseline accepted 0
 ```
 
 ## Finish
