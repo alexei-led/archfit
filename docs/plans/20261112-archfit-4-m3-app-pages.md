@@ -75,7 +75,7 @@ The manager decided D1 and D2 and approved D3 to D14 on 2026-11-12.
 | D6 | One "Not used" helper. The vendored engine file and its `SCHEMA_SOURCE` move to a new package `internal/wire/wording` with `NotUsedIn(text) []string`, matching as the engine does. The request, feedback and ui tests call it. A Go test keeps `web/e2e/not-used.json` (the words and the gate-name pattern) equal to the vendored file. The Playwright helper `expectNoNotUsedWord(page)` checks the visible text after every page state, and a vitest test runs the matcher cases the Go test runs. | Approved 2026-11-12, manager. |
 | D7 | The map of Home draws the five kinds of design 12.2 from these sources: an allowed dependency from the target policy's `depends_on`; a requested one from the open requests (milestone 2 task 16); one a rule denies (kind `deny`) when a `deny` rule's `from` and `to` match an open request or a stored error key; an exception from the target policy's exceptions with their dates; drift from the drift errors of the latest default-branch result. Task 4 adds the drift errors (rule, from, to) to the `v4/repo` record when milestone 2 task 22 does not store them. Modules sit in the bands of `layers`, the outer layer on top; modules without a layer have their own band. A fold gives the map as a list. The kinds are `allowed`, `requested`, `deny`, `exception` and `drift`; the legend uses the words of design 12.2 ("Map rules"). | Approved 2026-11-12, manager. |
 | D8 | Each policy line links to the request that produced it (design 12.4). The answer writer puts the request number in a YAML line comment on the line it adds (`# request #431`), and the policy page reads it. The file on GitHub then carries the link, and it survives a reinstall of the App. A `depends_on` written as a flow list (`[a, b]`) becomes a block list, one entry per line, the first time an answer adds to it, so each entry carries its own comment; comments already there stay. Milestone 2 task 19 writes it (its plan text and its brief); task 9 reads it, and task 8 is not needed. | Approved 2026-11-12, manager. |
-| D9 | The YAML edit of design 12.4 is an answer of a new kind, `edit`: the whole new file, bound to the digest it was edited from. The editor starts from the open `archfit/policy` proposal's file when one is open, otherwise from the target policy. The App decodes it strictly (task 3 of milestone 2), always asks for a passkey, and joins it to the `archfit/policy` proposal as the last change. When the proposal's bytes are not the bytes it was edited from, the App refuses it and says to reload. When the target moves before the merge, the App does not replay an edit on the new tip: the edit's approval voids and the owner edits again (an edit has no request to reopen). The App does not compare loosen or tighten (milestone 2 D10 planned a general comparison here); a passkey on every edit is the same protection with less code. The page shows the text diff and says to preview with `archfit check --policy <file>` (design 10.4), because the App has no source to check path globs against. | Approved 2026-11-12, manager. |
+| D9 | The YAML edit of design 12.4 is an answer of a new kind, `edit`: the whole new file, bound to the digest it was edited from. The editor starts from the open `archfit/policy` proposal's file when one is open, otherwise from the target policy. The App decodes it strictly (task 3 of milestone 2), always asks for a passkey, and joins it to the `archfit/policy` proposal as the last change. When the bytes it was edited from are not the current base (the open proposal's file, or the target policy when no proposal is open), the App refuses it and says to reload. When the target moves before the merge, the App does not replay an edit on the new tip: the edit's approval voids and the owner edits again (an edit has no request to reopen). The App does not compare loosen or tighten (milestone 2 D10 planned a general comparison here); a passkey on every edit is the same protection with less code. The page shows the text diff and says to preview with `archfit check --policy <file>` (design 10.4), because the App has no source to check path globs against. | Approved 2026-11-12, manager. |
 | D10 | The Data sharing page, its API, the `discover` endpoint and the `consent` redirect are removed in task 12. After milestone 2 no feature sends data out of a customer's environment. The consent records stay unread in the store and go with the Archfit 3 keys 30 days after the release (milestone 2 D7). | Approved 2026-11-12, manager. |
 | D11 | The request page explains the balance with what the App knows: the balance line of the record and the declared volatility of both modules from the target policy. It shows no strength: result JSON v1 has none, and adding it is an engine contract change that this milestone does not need. | Approved 2026-11-12, manager. |
 | D12 | Owner actions of milestone 2 task 23 get one page each, built like the request page: the status line, what changed (the policy or the workflow file as a diff), one main action, the passkey. Home lists them under "Needs you". A repository without its first approval shows the set-up steps of design 10.1 on Home instead of "Needs you" and the map. | Approved 2026-11-12, manager. |
@@ -168,7 +168,7 @@ The manager decided D1 and D2 and approved D3 to D14 on 2026-11-12.
 | 17 Balance and preview | 4, 6 | the request data |
 | 18 The passkey | 7, 10 | the step-up token |
 | 19 Answers: approve and merge | 9, 10 | the writer with request numbers (D8), proposals |
-| 20 Recorded approvals | 4, 10 | the state "policy changed outside the flow" |
+| 20 Recorded approvals | 4, 9, 10 | the state "policy changed outside the flow" |
 | 22 Expiry and drift | 2, 4, 11 | expired exceptions, drift, repository state |
 | 23 Onboarding and owner actions | 4, 7, 11 | set-up state, owner actions API |
 | 24 Request and passkey pages | 1, 6 | the pages and the spec file it changes |
@@ -296,7 +296,7 @@ worker.
 
 - [ ] pages for the actions of task 23 (D12): approve the first policy; approve a workflow change; confirm or revert
       a policy changed outside the flow; each shows the status line, what changed as a diff, one main action and the
-      passkey step
+      passkey step; a done action shows its answer, the owner who gave it and the passkey it was made with (design 19)
 - [ ] register each page route in `ui.go`, so a direct load or a link from a GitHub issue opens the page, not Not
       found
 - [ ] API goldens of task 23; text goldens and the words check
@@ -309,8 +309,9 @@ stays so the other task names do not change.
 
 ### Task 9: The policy page
 
-Repository: archfit-app. Design: 6, 12.1, 12.4. Packages: `internal/control/ui` (`policy.go`, routes in `ui.go`).
-Files: `web/src/pages/Policy.svelte`, `web/e2e/policy.spec.ts`. Depends on: 1. M2: 3, 19, 26. Merge: worker. Impact
+Repository: archfit-app. Design: 6, 12.1, 12.4. Packages: `internal/control/ui` (`policy.go`, routes in `ui.go`),
+`internal/gate` (new façade file `policyview.go`).
+Files: `web/src/pages/Policy.svelte`, `web/e2e/policy.spec.ts`. Depends on: 1. M2: 3, 19, 20, 26. Merge: worker. Impact
 first: `apiPolicy`.
 
 - [ ] `GET /api/repos/{o}/{n}/policy`: the target policy decoded by `policy3`: modules with paths, `public`,
@@ -318,7 +319,11 @@ first: `apiPolicy`.
       `why` and `instead`; notes marked "not checked"; exceptions with their dates and days left; each with its
       request number from its line comment (D8); the raw YAML and its digest; when an `archfit/policy` proposal is
       open, also its file and digest, the base of an edit (D9)
-- [ ] the page: the readable list first, the raw YAML folded, one main action (Edit, task 10)
+- [ ] the approvals of the proposal that made the current policy (milestone 2 "Approval records"): each kind, owner,
+      passkey and date, so an edit or an owner action shows who made it and with which passkey (design 19); a line an
+      edit added has no request to link to
+- [ ] the page: the readable list first, the last change's approvals, the raw YAML folded, one main action (Edit,
+      task 10)
 - [ ] remove the old policy API handlers that milestone 2 left
 - [ ] API goldens of the 6.1 typical policy and of `pumba`'s converted policy; text goldens and the words check
 - [ ] run `make all`
@@ -332,14 +337,16 @@ Repository: archfit-app. Design: 9.2, 12.4, 10.4. Packages: `internal/control/an
 - [ ] the answer `edit` of D9: the whole file, the digest it was edited from, a passkey token bound to the new
       digest; decode strictly and list every error by line, worded as the record (`.archfit.yaml:12: policy: …`), before any
       passkey step
-- [ ] join the `archfit/policy` proposal as its last change; refuse when the proposal's bytes are not the bytes the
-      edit started from, with "the policy changed; reload"; the merge push consumes it (task 20)
+- [ ] join the `archfit/policy` proposal as its last change; refuse when the bytes the edit started from are
+      not the current base (the open proposal's file, or the target's when no proposal is open), with "the policy
+      changed; reload"; the merge push consumes it (task 20)
 - [ ] the edit view: a text area with the YAML, the errors by line, the diff against the current policy, the line
       `preview it: archfit check --policy <file>`, and the passkey step
 - [ ] a target that moves before the merge voids the edit's approval; the App does not replay it (D9)
 - [ ] tests: an edit approved and merged; an edit after a "merge later" answer starts from the proposal's file and
       succeeds; a decode error; no passkey token; a reused token; an edit from the target's file while a proposal is
-      open is refused; a moved target voids the edit
+      open is refused; an edit from an older target digest with no proposal open is refused; a moved target voids
+      the edit
 - [ ] run `make all`
 
 ### Task 11: The pages that stay, in the words of section 5
