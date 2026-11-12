@@ -1,0 +1,7 @@
+repository: clean
+exceptions close to their date:
+  duplication pkg_tc -> pkg_util: 2026-11-19 (9 days)
+not checked:
+  keep-docs: Each module has a README.
+allowed dependencies:
+  pkg_chaos -> pkg_runtime: 9/10 (min 7)

@@ -100,18 +100,18 @@ func assertCLIGolden(t *testing.T, dir, name, got string) {
 }
 
 // TestNewCommandsUseNoNotUsedWord holds the CLI goldens and the help of
-// check, can, rules, request and init to the words of design section 5.
+// check, can, rules, request, init and report to the words of design section 5.
 func TestNewCommandsUseNoNotUsedWord(t *testing.T) {
 	t.Parallel()
 	texts := map[string]string{}
-	for _, cmd := range []string{cmdCheck, cmdCan, cmdRules, cmdRequest, cmdInit} {
+	for _, cmd := range []string{cmdCheck, cmdCan, cmdRules, cmdRequest, cmdInit, cmdReport} {
 		got := runCLI(t, fixtureDate, cmd, "--help")
 		if got.code != 0 || got.stdout == "" {
 			t.Fatalf("%s --help: exit %d, stdout %q", cmd, got.code, got.stdout)
 		}
 		texts[cmd+" --help"] = got.stdout
 	}
-	for _, dir := range []string{rulesGoldens, designExamples, requestGoldens, initGoldens} {
+	for _, dir := range []string{rulesGoldens, designExamples, requestGoldens, initGoldens, reportGoldens} {
 		goldens, err := filepath.Glob(filepath.Join(dir, "*.txt"))
 		if err != nil || len(goldens) == 0 {
 			t.Fatalf("no golden in %s: %v", dir, err)
