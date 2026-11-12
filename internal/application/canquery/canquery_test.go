@@ -163,9 +163,11 @@ func service(p resolved.Policy) canquery.Service {
 	return canquery.Service{Policies: policySource{p: p}, Tree: tree{files: sources}, Go: goModules{}}
 }
 
+// ask answers as for a protected policy, the setting of the records of design
+// 8.1: an unprotected answer adds "policy: not protected" (design 9.4).
 func ask(t *testing.T, p resolved.Policy, from, to string) result.CanAnswer {
 	t.Helper()
-	a, err := service(p).Can(context.Background(), canquery.Question{From: from, To: to})
+	a, err := service(p).Can(context.Background(), canquery.Question{From: from, To: to, Stamp: canquery.Stamp{Protected: true}})
 	if err != nil {
 		t.Fatalf("Can(%s, %s): %v", from, to, err)
 	}
