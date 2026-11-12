@@ -1,6 +1,6 @@
 # Getting started
 
-This guide installs archfit, creates a starter configuration, and runs a first analysis. For full tool requirements, see [Language support](languages.md).
+This guide installs archfit, sets up a repository with `archfit init`, and shows the daily loop: `rules`, `can`, `check`, and `request`. For full tool requirements, see [Language support](languages.md).
 
 ## Install archfit
 
@@ -26,54 +26,77 @@ Run:
 archfit doctor
 ```
 
-This command reports the tools that archfit can find. Install the tools for the languages in your repository. A missing optional tool can leave some evidence incomplete. See [Language support](languages.md#analyzer-tools).
+This command reports the tools that archfit can find. Install the tools for the languages in your repository. A missing tool makes the check `unknown` for the code it cannot read. See [Language support](languages.md#analyzer-tools).
 
-## Create a configuration
+## Set up the repository
 
-From your repository root, run:
-
-```sh
-archfit config init --root .
-```
-
-This command writes `.archfit.yaml`. Review the module `paths`, layer assignments, languages, and rules. Generated paths can include files that do not belong to a module you intend to check.
-
-Read [Configuration](configuration.md) for field meanings and defaults. Use [Rules](rules.md) to choose boundaries and gates.
-
-## Review the first report
-
-Run:
+From your repository, run:
 
 ```sh
-archfit analyze -c .archfit.yaml
+archfit init
 ```
 
-`analyze` prints a report and exits `0` when the analysis completes. Review its verdict, coverage, and findings. Fix incorrect paths or missing tools before you accept the result.
+`init` writes the policy, `.archfit.yaml`, from the code: the modules, the part of each module that other modules use today (`public`), the dependencies between modules that exist (`depends_on`), the test and generated paths, and the owners from the GitHub `origin` remote. Each error that exists today becomes an exception, so the first check passes. `init` also writes five lines for agents between markers in `AGENTS.md`.
 
-## Add a baseline and CI check
+```text
+$ archfit init
+wrote .archfit.yaml: 4 modules, 0 allowed dependencies, 0 rules, 1 exception
+  exception: duplication pkg_tc -> pkg_util
+wrote AGENTS.md: the instruction block for agents
+next: read .archfit.yaml, then open a pull request with it
+```
 
-Create a baseline only after you review the report:
+Read the policy, then open one pull request with it. An owner removes an exception when the code is fixed, and writes rules with `why` and `instead`. Read [Configuration](configuration.md) for the fields and [Rules](rules.md) for the built-in rules, custom rules, and exceptions.
+
+`init` never changes a policy. In a repository with an Archfit 3 policy (`.archfit.yaml` version 2), it converts the old files instead: see [Migrate from Archfit 3 to 4](migration.md).
+
+## Work on a change
+
+1. Before you start, show the rules for the files you change:
+
+   ```sh
+   archfit rules
+   archfit rules pkg/tc
+   ```
+
+2. Before a new dependency between modules, ask:
+
+   ```text
+   $ archfit can pkg/tc pkg/util
+   pkg_tc -> pkg_util: graph: not an allowed dependency
+     balance: 9/10 (min 7)
+     next: archfit request -m "<why you need it>"
+   ```
+
+3. Before you finish, check the change against the target branch:
+
+   ```sh
+   archfit check
+   ```
+
+   The last line is the status: `archfit: pass`, `archfit: fail, N errors`, or `archfit: unknown, no verdict`. The exit code is `0`, `1`, or `2`. Each error says where, which rule, what is wrong, and `next`: do what `next` says. `unknown` is never a pass: the record names what to restore. See [Results](results.md).
+
+When no workflow uses the Archfit Action, every result ends with `policy: not protected`: the result is a local guide. The protected check on pull requests comes with the Archfit App and Action 4.
+
+## When a rule is in your way
+
+Some rules need an owner: a new dependency between modules (`graph`), or a copy of a literal another module holds (`duplication`). Their `next` is `archfit request`. After `archfit check` (or `archfit can`), run:
 
 ```sh
-archfit baseline -c .archfit.yaml
+archfit request -m "netem needs the shared retry helper"
 ```
 
-A baseline records reviewed findings as accepted state. Do not create one to hide findings that you have not reviewed.
+The request takes the errors of the last check, so you write only the reason. Add `--expires 2026-12-10` to ask for an exception until a date. Without the App, `archfit request` prints the request and ends with `next: ask an owner`: show it to an owner. Do not copy the code to get around the rule.
 
-Run the gate locally or in CI:
+## Run the check in CI
+
+A pull request is checked against its target branch. Fetch the history and name the branch:
 
 ```sh
-archfit check -c .archfit.yaml
+archfit check --base "origin/$TARGET_BRANCH"
 ```
 
-The command returns `0` for healthy, `1` for blocked, `2` for needs attention, and `3` for a configuration, tool, or runtime error. Exit `2` alone does not mean "fine": an `unknown` change also exits `2`, and `unknown` never passes. In CI, read `change.status` from the agent format. Pass only on `pass`:
-
-```sh
-archfit check -c .archfit.yaml --format agent > archfit.json || [ "$?" -eq 2 ]
-jq -e '.change.status == "pass"' archfit.json
-```
-
-The first line tolerates exit `2` so that the second line decides. The second line fails on `fail` and on `unknown`. Exit `1` and `3` still fail the step. See [CI](ci.md) for stable workflows and stricter policies.
+Fail the job on any exit code except `0`. See [CI](ci.md) for the workflow.
 
 ## Use Docker
 
@@ -97,5 +120,5 @@ optional indexers and Rust build tools can execute target code. Do not forward c
 ## More help
 
 - [Commands](commands.md) — flags and exit codes.
-- [Configuration](configuration.md) — configuration fields and validation.
+- [Configuration](configuration.md) — the policy fields and their defaults.
 - [Troubleshooting](troubleshooting.md) — common setup and analysis issues.
