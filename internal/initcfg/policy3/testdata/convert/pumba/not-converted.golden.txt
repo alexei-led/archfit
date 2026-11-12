@@ -11,11 +11,11 @@ not converted or changed:
   modules.*.owner: dropped (6 modules): Archfit 4 has no such key
   modules.*.role: dropped (1 modules): Archfit 4 has no such key
   modules.*.visible_to: dropped (1 modules): the graph rule and public cover it
-  rules[0] (approved-module-graph): the built-in graph rule replaces it; its rationale is dropped
-  rules[1] (no-module-cycles): the built-in cycle rule replaces it; its rationale is dropped
+  rules[0] (approved-module-graph).rationale: dropped: Archfit 4 has no place for it (was "The module graph is the approved architecture. A new cross-module edge changes it and needs an owner-approved policy change first, not a code PR.")
+  rules[1] (no-module-cycles).rationale: dropped: Archfit 4 has no place for it (was "A cycle between modules makes them one unit: neither can change or be tested alone.")
   rules[2] (no-container-to-chaos): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
   rules[3] (no-chaos-to-runtime): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
   rules[4] (no-util-to-domain): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
-  rules[5] (layer-inversion): the built-in layers rule replaces it; its rationale is dropped
+  rules[5] (layer-inversion).rationale: dropped: Archfit 4 has no place for it (was "cmd is the composition root. A core package that imports it creates a cycle with the wiring and cannot be reused or tested without the CLI.")
   exceptions.duplication: 8 written for the errors of today; the Archfit 3 baseline accepted 0
   .archfit-baseline.json metrics: dropped: Archfit 4 has no metric ratchets

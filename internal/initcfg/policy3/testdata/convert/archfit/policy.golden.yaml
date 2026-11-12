@@ -442,7 +442,7 @@ rules:
     note: No dependency from internal/evidence/*.go to internal/policy/**.
     why: The evidence contract carries facts. A policy import means the tool boundary has started to decide architecture, and evidence stops being comparable across configs.
   - id: no_stage_view
-    note: No dependency from internal/** to internal/view/**.
+    note: "No dependency from internal/** to internal/view/**. Archfit 3 named instead: Put the contract in the capability that decides it"
     why: A shared stage-view package re-creates the hub every stage depends on, and the capability owners lose their contracts.
   - id: baseline_no_score
     note: No dependency from internal/baseline/** to internal/assessment/score/**.
@@ -526,7 +526,7 @@ rules:
     note: No dependency from internal/application/** to cmd/archfit/**.
     why: "Application importing cmd inverts the composition root: the library would depend on the CLI that wires it."
   - id: no_analysispipeline
-    note: No dependency from ** to internal/analysispipeline/**.
+    note: "No dependency from ** to internal/analysispipeline/**. Archfit 3 named instead: Give the stage to the capability that decides it; the application sequences the stages"
     why: The orchestration hub was removed. Reintroducing it puts stage ownership back in one place that decides everything.
   - id: core_no_cmd
     note: No dependency from internal/{policy,relationship,assessment,evidence,model,scope,syntax}/** to cmd/**.

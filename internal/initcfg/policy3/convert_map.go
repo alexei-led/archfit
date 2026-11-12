@@ -1,11 +1,13 @@
 package policy3
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -231,10 +233,11 @@ func convert(old archfit3, facts evidence.CheckFacts, generatedGlobs []string, o
 		c.note(d, "a draft nobody approved: not read and not deleted; apply it with Archfit 3 first, or delete it")
 	}
 	c.file.Exceptions = c.exceptions(p, waived)
-	data, _, err := encode(c.file, c.sources, convertHeader)
+	data, final, err := encode(c.file, c.sources, convertHeader)
 	if err != nil {
 		return Conversion{}, nil, err
 	}
+	c.noteDrift(final)
 	c.conv.File = c.file
 	return c.conv, data, nil
 }
@@ -341,15 +344,38 @@ func (c *converter) keep(v, schema any, key string) any {
 	}
 }
 
-// fileGlob is a path of an Archfit 3 policy as a glob of files. Archfit 3
-// matched packages: a bare directory was that package, the files right in
-// it, and not the directories below it. A glob or a file stays.
-func (c *converter) fileGlob(p string) string {
+// fileGlobs is a path of an Archfit 3 policy as globs of files, keeping only
+// those that match a source. Archfit 3 matched a Go package by its directory:
+// a bare directory was that package, the files right in it, and a glob such
+// as pkg/* matched package directories. So a bare directory becomes dir/*,
+// and a glob that matches a directory of sources also gives glob/* for the
+// files of those directories. The glob itself stays for the files it
+// matches, because a TypeScript or Python node was a file. Simplification: a
+// Go file right in a directory such a glob names as its parent (pkg/doc.go
+// for pkg/*) joins the module; Archfit 3 left that package out.
+func (c *converter) fileGlobs(p string) []string {
 	p = strings.TrimSuffix(p, "/")
-	if !strings.ContainsAny(p, globMetaChars) && p != "" && p != rootKey && c.dirs[p] {
-		return join(literal(p), "*")
+	globs := []string{p}
+	switch {
+	case p == "" || p == rootKey:
+	case !strings.ContainsAny(p, globMetaChars):
+		if c.dirs[p] {
+			globs = []string{join(literal(p), "*")}
+		}
+	case p != "**" && !strings.HasSuffix(p, "/**") && c.matchesDir(p):
+		globs = append(globs, p+"/*")
 	}
-	return p
+	return slices.DeleteFunc(globs, func(g string) bool { return !matchesAny(g, c.sources) })
+}
+
+// matchesDir reports whether glob matches a directory that holds a source.
+func (c *converter) matchesDir(glob string) bool {
+	for d := range c.dirs {
+		if d != rootKey && match(glob, d) {
+			return true
+		}
+	}
+	return false
 }
 
 // modules converts the modules in name order.
@@ -376,13 +402,14 @@ func (c *converter) modules() {
 		key := "modules." + name
 		var paths []string
 		for _, p := range m.Paths {
-			g := c.fileGlob(p)
-			if !matchesAny(g, c.sources) {
+			globs := c.fileGlobs(p)
+			if len(globs) == 0 {
 				c.note(key+".paths", "%q matches no source file: dropped", p)
-				continue
 			}
-			if !slices.Contains(paths, g) {
-				paths = append(paths, g)
+			for _, g := range globs {
+				if !slices.Contains(paths, g) {
+					paths = append(paths, g)
+				}
 			}
 		}
 		if len(paths) == 0 {
@@ -598,46 +625,119 @@ func (c *converter) selectModules(sel string) []string {
 	return out
 }
 
-// rules converts the custom rules in file order.
+// ruleKeys are the keys of an Archfit 3 rule every conversion reads.
+var ruleKeys = []string{"id", "type", "gate"}
+
+// denyKeys are the keys a converted forbidden_dependency rule carries, as a
+// deny rule or as a note.
+var denyKeys = []string{"from", "to", "from_module", "to_module", "rationale", "alternatives", "docs", "guard"}
+
+// waiverKeys are the keys of an Archfit 3 waiver an exception carries.
+var waiverKeys = []string{"rule", "from", "to", "reason", "expires"}
+
+// rules converts the custom rules in file order. A built-in rule is off only
+// when every Archfit 3 rule that maps to it is off.
 func (c *converter) rules() {
+	raw := c.rawSeq(c.old.raw, "rules")
+	type offRule struct{ key, id, builtin string }
+	var off []offRule
 	for i, r := range c.old.policy.Rules {
 		key := fmt.Sprintf("rules[%d] (%s)", i, r.ID)
 		warn := r.Gate == gateWarn || r.Gate == "" && (r.Type == "public_api_change" || r.Type == "public_api_type_leak")
-		switch {
-		case builtinOf[r.Type] != "":
-			c.builtinRule(key, r, warn)
+		var read []string
+		switch b := builtinOf[r.Type]; {
+		case b != "" && r.Gate == gateOff:
+			off = append(off, offRule{key: key, id: r.ID, builtin: b})
+			continue
+		case b != "":
+			c.checked[r.ID] = b
+			if warn {
+				c.note(key, "gate warn: the built-in %s rule replaces it, mode %s", b, builtinMode[b])
+			}
 		case r.Gate == gateOff:
 			c.note(key, "gate off: dropped")
+			continue
 		case slices.Contains(coveredTypes, r.Type):
 			c.note(key, "%s: dropped: the coupling rule and public cover it", r.Type)
+			continue
 		case r.Type == typeForbiddenDependency:
 			c.denyRule(key, r, warn)
+			read = denyKeys
 		case noteOf[r.Type] != "":
 			text := noteOf[r.Type]
+			read = []string{"rationale", "docs"}
 			if strings.Contains(text, "%d") {
 				text = fmt.Sprintf(text, derefOr(r.Max, 0))
+				read = append(read, "max")
 			}
 			c.noteRule(key, r, text, r.Type+": written as a note: nothing checks it in Archfit 4")
 		default:
 			c.note(key, "type %q: dropped: Archfit 4 has no such rule", r.Type)
+			continue
 		}
+		if i < len(raw) {
+			c.unread(key, raw[i], slices.Concat(ruleKeys, read))
+		}
+	}
+	for _, o := range off {
+		var on []string
+		for id, b := range c.checked {
+			if b == o.builtin && builtinOf[c.ruleType(id)] != "" {
+				on = append(on, id)
+			}
+		}
+		if len(on) > 0 {
+			slices.Sort(on)
+			c.note(o.key, "gate off, but %s enforces the built-in %s rule: it stays on", strings.Join(on, ", "), o.builtin)
+			continue
+		}
+		c.setMode(o.builtin, policyfile.ModeOff)
+		c.note(o.key, "gate off: the built-in %s rule is off", o.builtin)
 	}
 }
 
-// builtinRule maps a rule to the built-in rule that replaces it.
-func (c *converter) builtinRule(key string, r ruleV2, warn bool) {
-	b := builtinOf[r.Type]
-	if r.Gate == gateOff {
-		c.setMode(b, policyfile.ModeOff)
-		c.note(key, "gate off: the built-in %s rule is off", b)
-		return
+// ruleType is the type of the Archfit 3 rule with id, or empty.
+func (c *converter) ruleType(id string) string {
+	for _, r := range c.old.policy.Rules {
+		if r.ID == id {
+			return r.Type
+		}
 	}
-	c.checked[r.ID] = b
-	switch {
-	case warn:
-		c.note(key, "gate warn: the built-in %s rule replaces it, mode %s", b, builtinMode[b])
-	case r.Rationale != "":
-		c.note(key, "the built-in %s rule replaces it; its rationale is dropped", b)
+	return ""
+}
+
+// rawSeq returns the list under key of the policy as written.
+func (c *converter) rawSeq(v any, key string) []any {
+	for _, item := range c.rawMap(v, "") {
+		if fmt.Sprint(item.Key) == key {
+			list, _ := item.Value.([]any)
+			return list
+		}
+	}
+	return nil
+}
+
+// maxNoteValue is the longest value a note quotes.
+const maxNoteValue = 200
+
+// unread notes every key of the raw entry that the conversion did not read,
+// with its value, so the report keeps what the policy file loses.
+func (c *converter) unread(key string, entry any, read []string) {
+	for _, item := range c.rawMap(entry, "") {
+		k := fmt.Sprint(item.Key)
+		if slices.Contains(read, k) {
+			continue
+		}
+		value := fmt.Sprint(item.Value)
+		if text, ok := item.Value.(string); ok {
+			value = strconv.Quote(text)
+		} else if data, err := yaml.MarshalWithOptions(item.Value, yaml.Flow(true)); err == nil {
+			value = strings.TrimSpace(string(data))
+		}
+		if len(value) > maxNoteValue {
+			value = value[:maxNoteValue] + "..."
+		}
+		c.note(key+"."+k, "dropped: Archfit 4 has no place for it (was %s)", value)
 	}
 }
 
@@ -658,6 +758,9 @@ func (c *converter) denyRule(key string, r ruleV2, warn bool) {
 	from, fromProblem := c.side("from", r.FromModule, r.From)
 	to, toProblem := c.side("to", r.ToModule, r.To)
 	text := fmt.Sprintf("No dependency from %s to %s.", strings.Join(from, ", "), strings.Join(to, ", "))
+	if len(r.Alternatives) > 0 && (warn || fromProblem != "" || toProblem != "") {
+		text += " Archfit 3 named instead: " + strings.Join(r.Alternatives, "; ")
+	}
 	switch {
 	case warn:
 		c.noteRule(key, r, text, "gate warn: written as a note")
@@ -693,11 +796,11 @@ func (c *converter) side(name, selector, glob string) (names policyfile.Names, p
 		}
 		return names, ""
 	}
-	g := c.fileGlob(glob)
-	if !matchesAny(g, c.sources) {
-		return policyfile.Names{g}, fmt.Sprintf("%s %q matches no file", name, glob)
+	globs := c.fileGlobs(glob)
+	if len(globs) == 0 {
+		return policyfile.Names{glob}, fmt.Sprintf("%s %q matches no file", name, glob)
 	}
-	return policyfile.Names{g}, ""
+	return globs, ""
 }
 
 // noteRule writes r as a note rule and returns its id.
@@ -711,10 +814,11 @@ func (c *converter) noteRule(key string, r ruleV2, text, why string) string {
 // why is the rule's rationale, with its document.
 func (c *converter) why(key string, r ruleV2) string {
 	why := r.Rationale
-	if why == "" {
-		if r.Type != typeForbiddenDependency {
-			return whyUnchecked
-		}
+	switch {
+	case why != "":
+	case r.Type != typeForbiddenDependency:
+		why = whyUnchecked
+	default:
 		c.note(key, "Archfit 3 gave no rationale: why says so")
 		why = "Converted from the Archfit 3 rule " + r.ID + ", which gave no reason."
 	}
@@ -747,8 +851,12 @@ func (c *converter) ruleID(key string, r ruleV2) string {
 // waivers converts the waivers to exceptions.
 func (c *converter) waivers(p resolved.Policy) []policyfile.Exception {
 	var out []policyfile.Exception
+	raw := c.rawSeq(c.old.raw, "waivers")
 	for i, w := range c.old.policy.Waivers {
 		key := fmt.Sprintf("waivers[%d] (%s)", i, w.Rule)
+		if i < len(raw) {
+			c.unread(key, raw[i], waiverKeys)
+		}
 		rule, ok := c.checked[w.Rule]
 		if !ok {
 			c.note(key, "dropped: nothing checks its rule in Archfit 4")
@@ -769,16 +877,23 @@ func (c *converter) waivers(p resolved.Policy) []policyfile.Exception {
 	return out
 }
 
-// moduleOfGlob returns the one module whose files an Archfit 3 path glob
-// matches, or why there is none.
+// moduleOfGlob returns the one module an Archfit 3 waiver side names: a
+// module name, or a path glob whose files are all in one module; or why there
+// is none.
 func (c *converter) moduleOfGlob(p resolved.Policy, glob string) (string, string) {
 	if glob == "" {
 		return "", "it names no place"
 	}
-	g := c.fileGlob(glob)
+	// A rule between modules matched a waiver by module name.
+	if !strings.Contains(glob, "/") {
+		if names := c.selectModules(glob); len(names) == 1 {
+			return names[0], ""
+		}
+	}
+	globs := c.fileGlobs(glob)
 	var mods []string
 	for _, f := range c.sources {
-		if m, ok := p.ModuleOf(f); ok && match(g, f) && !slices.Contains(mods, m) {
+		if m, ok := p.ModuleOf(f); ok && matchesGlob(globs, f) && !slices.Contains(mods, m) {
 			mods = append(mods, m)
 		}
 	}
@@ -817,7 +932,7 @@ func (c *converter) exceptions(p resolved.Policy, waived []policyfile.Exception)
 	out := slices.Clone(waived)
 	written := map[string]int{}
 	for _, x := range repostate.Evaluate(repostate.Input{Policy: p, Head: c.facts, Today: time.Now()}).Existing {
-		if seen[place(x.Rule, x.From, x.To)] {
+		if seen[place(x.Rule, x.From, x.To)] || x.To == "" && needsTo(p, x.Rule) {
 			continue
 		}
 		why := whyException
@@ -842,6 +957,34 @@ func (c *converter) exceptions(p resolved.Policy, waived []policyfile.Exception)
 		c.note(BaselineFile+" metrics", "dropped: Archfit 4 has no metric ratchets")
 	}
 	return out
+}
+
+// needsTo reports whether an exception of rule names the module the errors
+// reach: every rule but unowned and a custom only rule.
+func needsTo(p resolved.Policy, rule string) bool {
+	return rule != resolved.RuleUnowned && !slices.ContainsFunc(p.Rules, func(r resolved.Rule) bool {
+		return r.ID == rule && r.Form == resolved.FormOnly
+	})
+}
+
+// noteDrift notes each error of the policy p on the head that no exception
+// covers: code in no module that an exception cannot name.
+func (c *converter) noteDrift(p resolved.Policy) {
+	for _, e := range repostate.Evaluate(repostate.Input{Policy: p, Head: c.facts, Today: time.Now()}).Drift {
+		where := ""
+		if len(e.Sites) > 0 {
+			where = fmt.Sprintf(" at %s:%d", e.Sites[0].File, e.Sites[0].Line)
+		}
+		c.note("exceptions."+e.Key.Rule, "no exception can name the error from %s to %s%s: the code is in no module",
+			orNone(e.Key.From), orNone(cmp.Or(e.Key.To, e.Key.Symbol)), where)
+	}
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "no module"
+	}
+	return s
 }
 
 // baselineCounts counts the accepted baseline entries per Archfit 4 rule, and

@@ -22,17 +22,20 @@ const (
 	coreToUtil  = "no-core-to-util"
 	dirAB       = "a/b"
 	dirAC       = "a/c"
+	coreFile    = "pkg/core/core.go"
+	libFile     = "lib/lib.go"
+	corePkg     = "pkg/core"
 )
 
 // tree is a small Go repository: app imports core, core imports nothing.
 var tree = evidence.CheckFacts{
 	Sources: []string{
 		mainFile, "cmd/tool/tool.go",
-		"pkg/core/core.go", "pkg/core/model/model.go", "pkg/core/store/store.go",
-		"pkg/util/util.go", "lib/lib.go", "lib/deep/deep.go",
+		coreFile, "pkg/core/model/model.go", "pkg/core/store/store.go",
+		"pkg/util/util.go", libFile, "lib/deep/deep.go",
 	},
 	Imports: []evidence.ImportFact{
-		{File: mainFile, Line: 3, Target: "pkg/core"},
+		{File: mainFile, Line: 3, Target: corePkg},
 		{File: mainFile, Line: 4, Target: "pkg/core/model"},
 		{File: "cmd/tool/tool.go", Line: 3, Target: "pkg/util"},
 	},
@@ -116,7 +119,7 @@ func TestConvertModulePaths(t *testing.T) {
 	if want := []string{"cmd/*"}; !reflect.DeepEqual(app.Paths, want) {
 		t.Errorf("app paths = %v, want %v: a bare directory is that package", app.Paths, want)
 	}
-	if want := []string{"lib/lib.go"}; !reflect.DeepEqual(conv.File.Modules["lib"].Paths, want) {
+	if want := []string{libFile}; !reflect.DeepEqual(conv.File.Modules["lib"].Paths, want) {
 		t.Errorf("lib paths = %v, want %v: a file stays", conv.File.Modules["lib"].Paths, want)
 	}
 	wantNote(t, conv, "modules.app.paths", `"gone/**" matches no source file: dropped`)
@@ -244,6 +247,9 @@ func TestConvertRules(t *testing.T) {
 		noInstead  []string
 		noteKey    string
 		note       string
+		// checked is the built-in rule a waiver of the rule becomes an
+		// exception of.
+		checked string
 	}{
 		{
 			name: "forbidden dependency",
@@ -267,7 +273,7 @@ func TestConvertRules(t *testing.T) {
 		{
 			name:    "a guard that matches nothing",
 			rule:    `{id: no-view, type: forbidden_dependency, from: "**", to: internal/view/**, guard: true, rationale: Gone., alternatives: [a]}`,
-			want:    []policyfile.Rule{{ID: "no-view", Note: "No dependency from ** to internal/view/**.", Why: "Gone."}},
+			want:    []policyfile.Rule{{ID: "no-view", Note: "No dependency from ** to internal/view/**. Archfit 3 named instead: a", Why: "Gone."}},
 			noteKey: "rules[0] (no-view)", note: `to "internal/view/**" matches no file (a guard: Archfit 4 has none)`,
 		},
 		{
@@ -279,7 +285,7 @@ func TestConvertRules(t *testing.T) {
 		{
 			name:    "a forbidden dependency with gate warn",
 			rule:    `{id: soft, type: forbidden_dependency, from: pkg/core/**, to: pkg/util/**, gate: warn, rationale: r, alternatives: [a]}`,
-			want:    []policyfile.Rule{{ID: "soft", Note: "No dependency from pkg/core/** to pkg/util/**.", Why: "r"}},
+			want:    []policyfile.Rule{{ID: "soft", Note: "No dependency from pkg/core/** to pkg/util/**. Archfit 3 named instead: a", Why: "r"}},
 			noteKey: "rules[0] (soft)", note: "gate warn: written as a note",
 		},
 		{
@@ -290,17 +296,19 @@ func TestConvertRules(t *testing.T) {
 		{
 			name:    "module dependencies",
 			rule:    `{id: boundaries, type: module_dependencies, gate: fail, rationale: The map is the design.}`,
-			noteKey: "rules[0] (boundaries)", note: "the built-in graph rule replaces it; its rationale is dropped",
+			noteKey: "rules[0] (boundaries).rationale", note: `dropped: Archfit 4 has no place for it (was "The map is the design.")`,
+			checked: resolved.RuleGraph,
 		},
 		{
 			name:    "new cross-module dependency",
 			rule:    `{id: new-edges, type: new_cross_module_dependency}`,
-			noteKey: "", note: "",
+			checked: resolved.RuleGraph,
 		},
 		{
 			name:    "a module cycle with gate warn",
 			rule:    `{id: cycles, type: module_cycle, gate: warn}`,
 			noteKey: "rules[0] (cycles)", note: "gate warn: the built-in cycle rule replaces it, mode deny",
+			checked: resolved.RuleCycle,
 		},
 		{
 			name:    "a cycle with gate off",
@@ -311,7 +319,7 @@ func TestConvertRules(t *testing.T) {
 		{
 			name:    "layer direction",
 			rule:    `{id: layers, type: forbidden_layer_direction, gate: fail}`,
-			noteKey: "", note: "",
+			checked: resolved.RuleLayers,
 		},
 		{
 			name:    "public api only",
@@ -336,13 +344,14 @@ func TestConvertRules(t *testing.T) {
 		},
 		{
 			name: "public api type leak",
-			rule: `{id: leak, type: public_api_type_leak}`,
-			want: []policyfile.Rule{{ID: "leak", Note: noteOf["public_api_type_leak"], Why: whyUnchecked}},
+			rule: `{id: leak, type: public_api_type_leak, docs: docs/adr/2.md}`,
+			want: []policyfile.Rule{{ID: "leak", Note: noteOf["public_api_type_leak"], Why: whyUnchecked + " See docs/adr/2.md."}},
 		},
 		{
-			name: "forbidden pattern",
-			rule: `{id: no-panic, type: forbidden_pattern, rationale: Return errors.}`,
-			want: []policyfile.Rule{{ID: "no-panic", Note: noteOf["forbidden_pattern"], Why: "Return errors."}},
+			name:    "forbidden pattern",
+			rule:    `{id: no-panic, type: forbidden_pattern, from: pkg/**, rationale: Return errors., patterns: [{id: p1, regex: "panic\\("}]}`,
+			want:    []policyfile.Rule{{ID: "no-panic", Note: noteOf["forbidden_pattern"], Why: "Return errors."}},
+			noteKey: "rules[0] (no-panic).patterns", note: `dropped: Archfit 4 has no place for it (was [{id: p1, regex: "panic\\("}])`,
 		},
 		{
 			name:    "an unknown type",
@@ -364,7 +373,18 @@ func TestConvertRules(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			conv := convertPolicy(t, modulesV2+"rules:\n  - "+tt.rule+"\n")
+			policy := modulesV2 + "rules:\n  - " + tt.rule + "\n"
+			id := strings.TrimSpace(strings.SplitN(strings.SplitN(tt.rule, "id: ", 2)[1], ",", 2)[0])
+			if tt.checked != "" {
+				policy += "waivers:\n  - {rule: " + id + ", from: app, to: core, reason: r, approved_by: a, expires: \"2027-01-01\"}\n"
+			}
+			conv := convertPolicy(t, policy)
+			if tt.checked != "" {
+				want := policyfile.Exception{Rule: tt.checked, From: modApp, To: modCore, Expires: "2027-01-01", Why: "r"}
+				if len(conv.File.Exceptions) == 0 || conv.File.Exceptions[0] != want {
+					t.Errorf("exceptions = %+v, want first %+v: a waiver of the rule is an exception of %s", conv.File.Exceptions, want, tt.checked)
+				}
+			}
 			if !reflect.DeepEqual(conv.File.Rules, tt.want) {
 				t.Errorf("rules = %+v, want %+v", conv.File.Rules, tt.want)
 			}
@@ -383,8 +403,8 @@ func TestConvertRules(t *testing.T) {
 
 // graphTree is a tree whose only use between modules is app's use of core.
 var graphTree = evidence.CheckFacts{
-	Sources: []string{mainFile, "pkg/core/core.go", "pkg/util/util.go"},
-	Imports: []evidence.ImportFact{{File: mainFile, Line: 3, Target: "pkg/core"}},
+	Sources: []string{mainFile, coreFile, "pkg/util/util.go"},
+	Imports: []evidence.ImportFact{{File: mainFile, Line: 3, Target: corePkg}},
 }
 
 // brokenGraph is a policy whose app uses core without an allowed dependency:
@@ -417,6 +437,7 @@ func TestConvertWaivers(t *testing.T) {
 	if !reflect.DeepEqual(conv.File.Exceptions, want) {
 		t.Errorf("exceptions = %+v, want %+v: the waiver covers the graph error, so no undated exception repeats it", conv.File.Exceptions, want)
 	}
+	wantNote(t, conv, "waivers[0] (boundaries).approved_by", `dropped: Archfit 4 has no place for it (was "alexei-led")`)
 	wantNote(t, conv, "waivers[2] (map/dead_rule)", "nothing checks its rule in Archfit 4")
 	wantNote(t, conv, "waivers[3] (boundaries)", `"**" matches files of 3 modules (app, core, util)`)
 }
@@ -537,5 +558,97 @@ func TestConversionText(t *testing.T) {
 				t.Errorf("Text =\n%s\nwant\n%s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConvertGateOffKeepsABuiltinAnotherRuleEnforces(t *testing.T) {
+	tests := []struct {
+		name, rules string
+		want        policyfile.Builtin
+		note        string
+	}{
+		{
+			name:  "graph",
+			rules: "  - {id: deps, type: module_dependencies}\n  - {id: new-deps, type: new_cross_module_dependency, gate: \"off\"}\n",
+			note:  "gate off, but deps enforces the built-in graph rule: it stays on",
+		},
+		{
+			name:  "cycle",
+			rules: "  - {id: cyc, type: cycle, gate: \"off\"}\n  - {id: mod-cyc, type: module_cycle}\n",
+			note:  "gate off, but mod-cyc enforces the built-in cycle rule: it stays on",
+		},
+		{
+			name:  "both off",
+			rules: "  - {id: cyc, type: cycle, gate: \"off\"}\n  - {id: mod-cyc, type: module_cycle, gate: \"off\"}\n",
+			want:  policyfile.Builtin{Cycle: policyfile.ModeOff},
+			note:  "gate off: the built-in cycle rule is off",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conv := convertPolicy(t, modulesV2+"rules:\n"+tt.rules)
+			if b := conv.File.Builtin; b.Graph != tt.want.Graph || b.Cycle != tt.want.Cycle {
+				t.Errorf("builtin = %+v, want %+v", b, tt.want)
+			}
+			if !strings.Contains(conv.Text(), tt.note) {
+				t.Errorf("no note %q in\n%s", tt.note, conv.Text())
+			}
+		})
+	}
+}
+
+func TestConvertDenyErrorInNoModule(t *testing.T) {
+	facts := evidence.CheckFacts{
+		Sources: []string{mainFile, libFile, "lib/use.go", coreFile},
+		Imports: []evidence.ImportFact{
+			{File: mainFile, Line: 3, Target: "lib"},
+			{File: "lib/use.go", Line: 4, Target: corePkg},
+		},
+	}
+	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
+modules:
+  app:
+    paths: [cmd/**]
+    depends_on: [core]
+  core:
+    paths: [pkg/core/**]
+    depends_on: []
+rules:
+  - {id: no-lib, type: forbidden_dependency, from_module: app, to: lib/**, rationale: r, alternatives: [a]}
+  - {id: no-lib-core, type: forbidden_dependency, from: lib/**, to_module: core, rationale: r, alternatives: [a]}
+`}, facts)
+	for _, x := range conv.File.Exceptions {
+		if x.Rule == "no-lib" || x.Rule == "no-lib-core" {
+			t.Errorf("exception %+v: code in no module has no place an exception can name", x)
+		}
+	}
+	wantNote(t, conv, "exceptions.no-lib", "no exception can name the error from app to lib at cmd/main.go:3: the code is in no module")
+	wantNote(t, conv, "exceptions.no-lib-core", "no exception can name the error from no module to core at lib/use.go:4")
+}
+
+func TestConvertPackageDirectoryGlobs(t *testing.T) {
+	facts := evidence.CheckFacts{Sources: []string{"pkg/a/a.go", "pkg/b/b.go", "web/x.ts"}}
+	conv := convertFiles(t, map[string]string{PolicyFile: `version: 2
+modules:
+  pkgs:
+    paths: [pkg/*]
+  web:
+    paths: [web/*.ts]
+`}, facts)
+	if want := []string{"pkg/*/*"}; !reflect.DeepEqual(conv.File.Modules["pkgs"].Paths, want) {
+		t.Errorf("pkgs paths = %v, want %v: pkg/* named package directories", conv.File.Modules["pkgs"].Paths, want)
+	}
+	if want := []string{"web/*.ts"}; !reflect.DeepEqual(conv.File.Modules["web"].Paths, want) {
+		t.Errorf("web paths = %v, want %v: a file glob stays", conv.File.Modules["web"].Paths, want)
+	}
+}
+
+func TestConvertWaiverByModuleName(t *testing.T) {
+	conv := convertFiles(t, map[string]string{PolicyFile: "version: 2\n" + brokenGraph + `waivers:
+  - {rule: boundaries, from: app, to: core, reason: Until the split., approved_by: a, expires: "2027-01-31"}
+`}, graphTree)
+	want := []policyfile.Exception{{Rule: resolved.RuleGraph, From: modApp, To: modCore, Expires: "2027-01-31", Why: "Until the split."}}
+	if !reflect.DeepEqual(conv.File.Exceptions, want) {
+		t.Errorf("exceptions = %+v, want %+v: Archfit 3 matched a module rule's waiver by module name", conv.File.Exceptions, want)
 	}
 }

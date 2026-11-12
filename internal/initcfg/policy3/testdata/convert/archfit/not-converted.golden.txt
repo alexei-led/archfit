@@ -28,7 +28,7 @@ not converted or changed:
   modules.provider-adapters.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (0)
   modules.relationship-analysis.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (3)
   modules.report-adapters.depends_on: absent, so Archfit 3 allowed any module: written as the modules it uses today (1)
-  rules[0] (module_boundaries): the built-in graph rule replaces it; its rationale is dropped
+  rules[0] (module_boundaries).rationale: dropped: Archfit 4 has no place for it (was "A module that reaches past its depends_on or visible_to list turns the module map into fiction: the next change to the target breaks an owner who never declared the dependency.")
   rules[1] (module_cycles): gate warn: the built-in cycle rule replaces it, mode deny
   rules[6] (internal_no_labelsio): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
   rules[9] (relationship_no_assessment): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
@@ -42,7 +42,7 @@ not converted or changed:
   rules[34] (no_analysispipeline): written as a note: to "internal/analysispipeline/**" matches no file (a guard: Archfit 4 has none)
   rules[35] (core_no_cmd): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
   rules[36] (adapter_no_cli): written as a note: Archfit 3 named no alternatives, and a deny rule needs instead
-  rules[38] (layer_inversion): the built-in layers rule replaces it; its rationale is dropped
+  rules[38] (layer_inversion).rationale: dropped: Archfit 4 has no place for it (was "An inner layer importing an outer one reverses the dependency direction. A change in the outer layer then breaks the core, and cycles follow.")
   rules[39] (syntax_api_size_ceiling): public_api_max: written as a note: nothing checks it in Archfit 4
   rules[40] (arch_public_api_type_leak): public_api_type_leak: written as a note: nothing checks it in Archfit 4
   exceptions.coupling: 15 written for the errors of today; the Archfit 3 baseline accepted 17
