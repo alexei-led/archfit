@@ -10,7 +10,7 @@ import (
 )
 
 // rulesGoldens holds the text of each form of `archfit rules`. Regenerate
-// with ARCHFIT_UPDATE_RULES=1 and read the diff.
+// with ARCHFIT_UPDATE_CLI=1 and read the diff.
 const rulesGoldens = "testdata/rules"
 
 // rulesPolicy adds layers, a public part, a note and an exception to the
@@ -56,9 +56,9 @@ func TestRulesForms(t *testing.T) {
 	}{
 		{name: "paths", args: []string{tcNetem, pkgUtil, "tools/gen.go"}},
 		{name: "custom_rule", args: []string{"no-chaos-to-runtime"}},
-		{name: "builtin_rule", args: []string{"duplication"}},
+		{name: "builtin_rule", args: []string{ruleDuplication}},
 		{name: "changed_files", args: nil},
-		{name: "graph", args: []string{"--graph"}},
+		{name: ruleGraph, args: []string{"--graph"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -73,9 +73,16 @@ func TestRulesForms(t *testing.T) {
 
 func assertRulesGolden(t *testing.T, name, got string) {
 	t.Helper()
-	path := filepath.Join(rulesGoldens, name+".txt")
-	if os.Getenv("ARCHFIT_UPDATE_RULES") != "" {
-		if err := os.MkdirAll(rulesGoldens, 0o750); err != nil {
+	assertCLIGolden(t, rulesGoldens, name, got)
+}
+
+// assertCLIGolden compares got with the golden dir/name.txt of a version 3
+// command, or writes it with ARCHFIT_UPDATE_CLI=1.
+func assertCLIGolden(t *testing.T, dir, name, got string) {
+	t.Helper()
+	path := filepath.Join(dir, name+".txt")
+	if os.Getenv("ARCHFIT_UPDATE_CLI") != "" {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
@@ -85,7 +92,7 @@ func assertRulesGolden(t *testing.T, name, got string) {
 	}
 	want, err := os.ReadFile(path) //nolint:gosec // test goldens
 	if err != nil {
-		t.Fatalf("%v (regenerate with ARCHFIT_UPDATE_RULES=1)", err)
+		t.Fatalf("%v (regenerate with ARCHFIT_UPDATE_CLI=1)", err)
 	}
 	if got != string(want) {
 		t.Errorf("%s:\n--- got\n%s--- want\n%s", path, got, want)
@@ -93,18 +100,18 @@ func assertRulesGolden(t *testing.T, name, got string) {
 }
 
 // TestNewCommandsUseNoNotUsedWord holds the CLI goldens and the help of
-// check, can and rules to the words of design section 5.
+// check, can, rules, request and init to the words of design section 5.
 func TestNewCommandsUseNoNotUsedWord(t *testing.T) {
 	t.Parallel()
 	texts := map[string]string{}
-	for _, cmd := range []string{cmdCheck, cmdCan, cmdRules} {
+	for _, cmd := range []string{cmdCheck, cmdCan, cmdRules, cmdRequest, cmdInit} {
 		got := runCLI(t, fixtureDate, cmd, "--help")
 		if got.code != 0 || got.stdout == "" {
 			t.Fatalf("%s --help: exit %d, stdout %q", cmd, got.code, got.stdout)
 		}
 		texts[cmd+" --help"] = got.stdout
 	}
-	for _, dir := range []string{rulesGoldens, designExamples} {
+	for _, dir := range []string{rulesGoldens, designExamples, requestGoldens, initGoldens} {
 		goldens, err := filepath.Glob(filepath.Join(dir, "*.txt"))
 		if err != nil || len(goldens) == 0 {
 			t.Fatalf("no golden in %s: %v", dir, err)

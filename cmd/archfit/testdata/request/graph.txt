@@ -1,0 +1,4 @@
+pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util
+  balance: 9/10 (min 7)
+request: netem needs the shared retry helper
+next: ask an owner     (open a pull request first if there is none)

@@ -303,12 +303,17 @@ func (f checkFacts) Base(ctx context.Context, p resolved.Policy, commit string) 
 	return f.acquirer(p).Base(ctx, f.co.root, commit)
 }
 
-// acquirer caches facts by tree under .archfit-cache/facts. A dev build
-// cannot name its own code, so it reads every fact afresh.
 func (f checkFacts) acquirer(p resolved.Policy) *checkfacts.Acquirer {
-	a := &checkfacts.Acquirer{Runner: f.co.runner, Config: checkfacts.ConfigFrom(p)}
-	if f.co.engine != devVersion {
-		a.Store, a.Version = factcache.NewStore(factsCacheDir(f.co.root)), f.co.engine
+	return f.co.facts(checkfacts.ConfigFrom(p))
+}
+
+// facts reads the check facts with cfg. It caches facts by tree under
+// .archfit-cache/facts. A dev build cannot name its own code, so it reads
+// every fact afresh.
+func (co checkout) facts(cfg checkfacts.Config) *checkfacts.Acquirer {
+	a := &checkfacts.Acquirer{Runner: co.runner, Config: cfg}
+	if co.engine != devVersion {
+		a.Store, a.Version = factcache.NewStore(factsCacheDir(co.root)), co.engine
 	}
 	return a
 }

@@ -1,0 +1,2 @@
+left .archfit.yaml as it is: archfit init never changes a policy
+wrote AGENTS.md: the instruction block for agents
