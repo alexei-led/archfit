@@ -91,7 +91,7 @@ same day.
 | Id | Decision | Status |
 | --- | --- | --- |
 | D1 | All milestone 2 and 3 pull requests in archfit-app target the long-lived integration branch `archfit-4`, cut from `main` at the start of milestone 2. App CI runs on every pull request, whatever its base. `main` stays on Archfit 3, deploys on push, and takes v3 hotfixes; the manager merges `main` into `archfit-4` after each hotfix. The release is one merge-commit pull request from `archfit-4` to `main` in the window. Reason: the Workload Identity provider admits only `deploy.yaml` on `refs/heads/main`, so no other ref can deploy. | Changed and approved 2026-11-11, manager. |
-| D2 | `archfit request` sends nothing to the App. With an open pull request for the current branch, it posts the request line as a pull-request comment. Without one, it opens an issue with the line and the `can` or `check` record, which the App marks "as reported". It uses the worker's GitHub credentials (`GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`). No App endpoint and no App credential reach a laptop. Without a shell, a worker replies `/archfit request <why>` on the pull request; that comment is the no-shell path of design 15.1. | Approved 2026-11-11, manager. |
+| D2 | `archfit request` sends nothing to the App. With an open pull request for the current branch, it posts the request line as a pull-request comment. Without one, it opens an issue only from a `can` answer, with the line and the `can` record, which the App marks "as reported". With `check` output and no pull request, it opens nothing and says to open a pull request first (archfit-app #111). It uses the worker's GitHub credentials (`GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`). No App endpoint and no App credential reach a laptop. Without a shell, a worker replies `/archfit request <why>` on the pull request; that comment is the no-shell path of design 15.1. | Approved 2026-11-11, manager. |
 | D3 | The request line grammar, escaping and duplicate matching are those of "The request line" in the Technical Details. | Approved 2026-11-11, manager. |
 | D4 | Contract ownership and pinning follow the table "Contracts: owner and pin" in the Technical Details. Each consumer vendors the owner's file byte for byte with a `SCHEMA_SOURCE` (repository, commit, SHA-256). Before the release the pin is a commit; at the release it is the tag. | Approved 2026-11-11, manager. |
 | D5 | Upload envelope 2 has the fields of the Technical Details. Its payload is the result JSON v1, unchanged. | Approved 2026-11-11, manager. |
@@ -310,7 +310,8 @@ the worker's GitHub credentials).
 - [ ] vendor the request-line goldens of task 2 with `SCHEMA_SOURCE`; the built line must equal the golden for the
       same input
 - [ ] implement the sender port of M1 task 19: find the open pull request for the current branch through the GitHub
-      REST API; post the line as a comment there; otherwise open an issue with the line and the record (D2)
+      REST API; post the line as a comment there; otherwise open an issue with the line and the record of a `can`
+      answer; with `check` output and no pull request, open nothing and say to open a pull request first (D2)
 - [ ] credentials: `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`; never print a token; no credentials give
       exit 2 with `next:` naming `gh auth login`
 - [ ] exit 0 when sent, and print the comment or issue URL; keep D5's printed request when no repository remote is on
@@ -797,9 +798,12 @@ date         = YYYY-MM-DD, after the App's date, at most 365 days ahead
 - In a comment, the first line that starts with `/archfit request` is the request; other lines are ignored. Only the
   last `--expires DATE` pair is a flag; earlier text stays in the reason. One request per comment. An edited comment
   is not read again.
-- In an issue the CLI opened, the body has the line first and the reported record after it in a `text` block.
-- The key: `graph`, `coupling`, `layers` and a custom `deny`: rule, from, to. `cycle`: rule and the sorted modules.
-  `only`: rule, the module, the library. `duplication`: rule, the sorted module pair and the literal digest.
+- The CLI opens an issue only from a `can` answer, before a pull request exists. With `check` output and no pull
+  request, it says to open a pull request first (archfit-app #111). In that issue, the body has the line first and
+  the reported `can` record after it in a `text` block.
+- The key (archfit-app #111): `graph`, `coupling`, `layers` and a custom `deny`: rule, from, to. `cycle`: rule, from,
+  to, directed (one dependency inside a cycle). `only`: rule, the module, the library. `duplication`: rule, the
+  sorted module pair and the literal digest. `unowned`: `unowned <path>`. An `exception` error has no key.
 - Rejections, each with one reply: no reason; a reason over 500 characters; a bad or past date; no error that asks;
   an author without permission (D21).
 
@@ -821,9 +825,12 @@ for `workflow`.
 | Proposal state | Meaning | Next |
 | --- | --- | --- |
 | `open` | The pull request holds the approvals' changes, applied in order on the current target tip. The proposal holds the ordered approvals (at most 9), its pull request, its head SHA and the expected digest. | The App merges it, or an owner merges it on GitHub: `merged`. |
-| `merged` | A push whose commit is the pull request's merge commit and whose policy digest is the expected digest. The proposal and every approval in it are consumed at once (`CompareAndSwapAll`, 10 keys) and record that commit. | None. A redelivery of that push is a no-op. |
+| `merged` | A push whose commit is the pull request's merge commit and whose policy digest is the expected digest. The proposal is consumed (`CompareAndSwapAll` of 3 keys: the proposal, its index entry and the repository's approved digest) and records that commit. Every approval in it counts as consumed, because each records the proposal it joined, once (archfit-app #108). | None. A redelivery of that push is a no-op. |
 | `void` | An approval no longer applies to a moved target (its request reopens), or an approval stayed 24 hours without a pull request. | The owner answers again. |
 
+- An approval joins one proposal, once. The same swap pins the proposal's head SHA and expected digest (`Join`,
+  archfit-app #108). A merge of a head from before the join cannot consume the new approval: its digest does not
+  match.
 - A moved target: the App rewrites the branch from the new tip with the same changes and recomputes the expected
   digest. Each approval keeps its change and is consumed once.
 - A `confirm` changes no file: it records the current digest as approved and ends "policy changed outside the
