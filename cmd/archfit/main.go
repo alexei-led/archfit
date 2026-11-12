@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 
@@ -76,7 +77,9 @@ const (
 // analyzer tools.
 type cli struct {
 	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture locally: verdict, dimensions, findings (default command)."`
-	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits 1 when blocked, 2 when it needs attention, 3 on a config or tool error. Use in CI."`
+	Check    CheckCmd    `cmd:"" group:"analysis" help:"The status of the change: pass (0), fail (1), or unknown (2). A version 2 policy runs the Archfit 3 check."`
+	Can      CanCmd      `cmd:"" group:"analysis" help:"Before writing code: may this file, directory or module depend on that one, or use a library."`
+	Rules    RulesCmd    `cmd:"" group:"analysis" help:"The rules that apply to paths or to the change, one rule in full, or the module graph."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
 	Hook     HookCmd     `cmd:"" group:"analysis" help:"Agent and git hooks: install them for Claude Code, Codex, or git; they report a denied import and block a stop or a commit on an architecture repair."`
@@ -187,6 +190,10 @@ type appDeps struct {
 	// Set by each pipeline command from its --refresh flag before the analysis pipeline.
 	refresh bool
 
+	// now is the clock of the version 3 commands: exceptions are judged on
+	// its date. nil → time.Now (tests set a fixed date).
+	now func() time.Time
+
 	// ctx is cancelled on SIGINT or SIGTERM, so tool runs stop and extractor
 	// cleanup (the .NET snapshot) runs before the process exits. nil →
 	// context.Background() (tests that build appDeps directly).
@@ -198,6 +205,14 @@ func (d *appDeps) runContext() context.Context {
 		return context.Background()
 	}
 	return d.ctx
+}
+
+// clock returns the clock of the version 3 commands.
+func (d *appDeps) clock() func() time.Time {
+	if d.now != nil {
+		return d.now
+	}
+	return time.Now
 }
 
 // stdin returns the configured stdin reader, falling back to os.Stdin.
@@ -255,18 +270,7 @@ func RunWithStderr(args []string, stdout, stderr io.Writer) int {
 
 // runWithIO is RunWithStderr with an explicit stdin reader; nil reads os.Stdin.
 // The hook commands read their event from stdin.
-func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) (exitStatus int) {
-	// Capture controlled exits (--version, --help) via panic+recover.
-	defer func() {
-		if r := recover(); r != nil {
-			if code, ok := r.(exitCode); ok {
-				exitStatus = int(code)
-				return
-			}
-			panic(r)
-		}
-	}()
-
+func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// The first SIGINT or SIGTERM cancels ctx: running tools are killed and
 	// deferred cleanup runs. stop then restores the default handling, so a
 	// second signal exits at once.
@@ -277,7 +281,25 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) (exitSt
 		stop()
 	}()
 
-	deps := &appDeps{Runner: toolrun.New(), Stdin: stdin, Stdout: stdout, Stderr: stderr, ctx: ctx}
+	return runDeps(args, &appDeps{Runner: toolrun.New(), Stdin: stdin, Stdout: stdout, Stderr: stderr, ctx: ctx})
+}
+
+// runDeps parses args and runs the selected command with deps, which carry
+// the writers and the context. Tests call it to set deps the binary does
+// not let a user set, such as the clock.
+func runDeps(args []string, deps *appDeps) (exitStatus int) {
+	// Capture controlled exits (--version, --help) via panic+recover.
+	defer func() {
+		if r := recover(); r != nil {
+			if code, ok := r.(exitCode); ok {
+				exitStatus = int(code)
+				return
+			}
+			panic(r)
+		}
+	}()
+	stdout, stderr := deps.Stdout, deps.stderr()
+	ctx := deps.runContext()
 
 	var c cli
 	parser, err := kong.New(&c,

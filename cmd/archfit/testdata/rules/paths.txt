@@ -1,0 +1,34 @@
+pkg/tc/netem.go: module pkg_tc
+  public: pkg/tc/**
+  volatility: high
+  layer: core
+  allowed dependencies: none
+  rules that apply:
+    graph: a dependency between two modules must be an allowed dependency (ask: an owner may approve)
+    coupling: new knowledge across a module boundary needs a balance of at least 7 (deny: fix the code)
+    duplication: knowledge that another module already owns is not copied (ask: an owner may approve)
+    cycle: no new cycle between modules (deny: fix the code)
+    layers: dependencies follow the layer order (deny: fix the code)
+  exceptions:
+    duplication pkg_tc -> pkg_util: 2026-11-19 (9 days)
+      why: Request #431 is open.
+pkg/util: module pkg_util
+  public: pkg/util/**
+  volatility: low (subdomain generic)
+  layer: none
+  allowed dependencies: none
+  rules that apply:
+    graph: a dependency between two modules must be an allowed dependency (ask: an owner may approve)
+    coupling: new knowledge across a module boundary needs a balance of at least 7 (deny: fix the code)
+    duplication: knowledge that another module already owns is not copied (ask: an owner may approve)
+    cycle: no new cycle between modules (deny: fix the code)
+    layers: dependencies follow the layer order (deny: fix the code)
+  exceptions:
+    duplication pkg_tc -> pkg_util: 2026-11-19 (9 days)
+      why: Request #431 is open.
+tools/gen.go: in no module
+  rules that apply:
+    unowned: new production code belongs to a module (deny: fix the code)
+not checked:
+  fan-out-through-runner: Chaos actions fan out through RunOnContainers.
+    why: One place checks the target limit before injection.

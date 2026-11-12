@@ -832,6 +832,7 @@ var cmdDomainAdapterFiles = map[string]string{
 	"config_update_adapters.go": "config-update authoring pipeline",
 	"config_enrich_adapters.go": "config-enrich draft/review adapter",
 	"application_wiring.go":     "composition root: selects concrete stage implementations",
+	"change_wiring.go":          "composition root of check, can and rules: adapters for their application ports",
 	"init.go":                   "config init authors a config file; initcfg is its writer",
 	"llmreview.go":              "off-gate LLM review; initcfg supplies the draft format",
 	"draft_metadata.go":         "initcfg draft metadata translation",

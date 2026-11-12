@@ -352,7 +352,7 @@ func TestRun_CheckHelp_ShowsAgentLoop(t *testing.T) {
 		t.Fatalf("expected exit 0 for check --help, got %d", code)
 	}
 	out := buf.String()
-	for _, want := range []string{"Run the architecture gate", "archfit check", "--format sarif"} {
+	for _, want := range []string{"The status of the change", "archfit check --base origin/main", "--format sarif"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("check --help output missing %q; got:\n%s", want, out)
 		}

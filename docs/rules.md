@@ -1,174 +1,175 @@
 # Rules
 
-Rules declare architecture constraints in `.archfit.yaml`. Each rule needs a stable `id` and a supported `type`. Configuration fields live in [Configuration](configuration.md).
+A rule is anything `archfit check` enforces on a change. The built-in rules have fixed ids and need no entry in `.archfit.yaml`. The custom rules are in its `rules` list. An exception permits an error of one rule in one place. Every key of the policy is in [Configuration](configuration.md).
+
+This page describes a version 3 policy. A version 2 policy (Archfit 3) has other rules: see [Version 2 (Archfit 3)](#version-2-archfit-3).
 
 ```yaml
-rules:
-  - id: domain_no_http
-    type: forbidden_dependency
-    from: internal/domain/**
-    to: internal/http/**
-    gate: fail
-```
-
-## Rule fields
-
-| Field | Applies to | Meaning |
-| --- | --- | --- |
-| `id` | All rules | Stable ID used by findings, baselines, and waivers. |
-| `type` | All rules | Rule implementation to run. Unknown values are errors. |
-| `gate` | All rules | `fail`, `warn`, or `off`. Most rules default to `fail`; `public_api_change` and `public_api_type_leak` default to `warn`. |
-| `from` | Selector rules | Source path or node glob. For `forbidden_pattern`, omission means all production files. |
-| `to` | Dependency rules | Target path or node glob. |
-| `from_module` | `forbidden_dependency` | Module selector for the importing side. Use instead of `from`. |
-| `to_module` | `forbidden_dependency` | Module selector for the imported side. Use instead of `to`. |
-| `max` | `public_api_max` | Maximum exported declarations per module. |
-| `threshold` | Reserved | Accepted by the schema for a reserved per-rule integer threshold. No built-in rule uses it. |
-| `patterns` | `forbidden_pattern` | Required ast-grep pattern entries. Accepted on other rules but ignored, with a warning. |
-| `guard` | Selector rules | Marks an expected empty selector. Default is false. |
-| `rationale` | All rules | Adds a reason to the finding and repair constraints. Give every `gate: fail` rule one: it names the consequence the rule prevents, so an agent that hits the rule fixes the cause. `config lint` warns when it is missing (`--strict`: error). |
-| `alternatives` | All rules | Lists allowed alternatives in findings and repair constraints. |
-| `docs` | All rules | Adds a document reference to findings and repair constraints. |
-
-`from` and `from_module` are mutually exclusive. `to` and `to_module` are mutually exclusive. `forbidden_dependency` requires one selector form on each side. `forbidden_layer_direction`, `cycle`, `module_cycle`, and `module_dependencies` do not accept `from` or `to`.
-
-`rationale`, `alternatives`, and `docs` do not change finding IDs. Archfit folds whitespace and line breaks to spaces when it reads these fields. Long text is truncated in reports.
-
-## Gate behavior
-
-| Gate | Behavior |
-| --- | --- |
-| `fail` or omitted | Active findings block the check and produce exit code 1. |
-| `warn` | Findings remain advisory. The check can still return exit code 2 for incomplete evidence. |
-| `off` | Archfit skips the rule and emits no findings. |
-
-`public_api_change` and `public_api_type_leak` default to `warn`. Set `gate` explicitly when the default does not match the intended policy.
-
-## Built-in rule types
-
-| Type | Behavior and key requirements |
-| --- | --- |
-| `forbidden_dependency` | Finds edges matching both endpoint selectors. Requires one source selector and one target selector. Each side uses a path glob or module selector. A module selector matches only edges between different declared modules. |
-| `forbidden_layer_direction` | Finds dependencies from an inner layer to an outer layer. Uses `layers` order and module `layer` values. Declare at most one global rule of this type. |
-| `forbidden_pattern` | Finds ast-grep patterns in production files. Requires `patterns`; `from` is optional; `to` is invalid. Pattern IDs must be unique across all rules. |
-| `internal_api_access` | Finds access to internal module surfaces. Uses module `public` and `internal` declarations, then extractor hints when no declaration covers the target: an edge the extractor marks `intrusive` (a C# internal member reached through `InternalsVisibleTo`, a Python underscore import, a Rust private symbol) is a use of an undeclared internal surface and fires the rule. A strength an approved label pinned is the owner's verdict on coupling depth, not access evidence, so it does not fire the rule on its own. |
-| `public_api_only` | Finds access to internal module surfaces. Uses the same surface resolution as `internal_api_access`. |
-| `cycle` | Finds cycles between dependency graph nodes. Go's file-to-package graph does not produce these cycles. Use `module_cycle` for cycles across declared modules. |
-| `module_cycle` | Finds cycles between declared modules. It ignores unowned and external endpoints. Needs at least two declared modules with dependency evidence. One finding covers one strongly-connected component: its members are listed once, sorted, and `matched_by.cycle_modules` names the same set, so an eleven-module cycle is one finding and one agent task, not one per pair. |
-| `module_dependencies` | Enforces module `depends_on` and `visible_to` lists. It takes no `from` or `to`. |
-| `new_cross_module_dependency` | Finds cross-module edges. Baseline status separates known findings from new findings. |
-| `public_api_max` | Finds modules whose exported declaration count exceeds `max`. Requires `analyzers.syntax.enabled: true`. |
-| `public_api_change` | Reports exported declarations. A baseline suppresses known declarations so new surface remains visible. Requires syntax analysis. Defaults to `warn`. |
-| `public_api_type_leak` | Finds exported Go fields or return types that expose external package types. Requires syntax analysis. Defaults to `warn`. |
-
-`public_api_max`, `public_api_change`, and `public_api_type_leak` cannot establish conformance without syntax evidence. Required rules remain unevaluated when that evidence is missing.
-
-## Path and module selectors
-
-Path globs use repository-relative paths and doublestar matching. Their meaning depends on the rule and language graph. A dependency rule's `from` can match an importing file or node. Its `to` matches a target node. A Go `from` needs a package path glob, such as `internal/domain/**`. A Go file glob does not identify the importing package. Python selectors use dotted module names. Rust selectors can name crates or `crate::mod` nodes when Cargo module evidence exists.
-
-`from_module` and `to_module` accept these selectors:
-
-| Selector | Selects |
-| --- | --- |
-| `layer:<name>` | Declared modules with that layer. |
-| `role:<role>` | Declared modules with that role. |
-| Any other string | A doublestar glob over declared module names. A plain module name selects that module. |
-
-Module selectors do not select auto-registered modules. Edges within one declared module do not match module selectors.
-
-### Selectors that match nothing
-
-A dead selector cannot prove that a rule passes. A fail-gated rule remains unevaluated and can make `check` return exit code 2. A warn-gated rule produces a configuration warning. `archfit config lint` reports dead selectors as errors.
-
-This check applies to `from` and `to` in `forbidden_dependency`, `public_api_only`, and `internal_api_access`, and to `from` in `forbidden_pattern`. A target selector that names an external package is still evaluated as an external dependency ban. A brace glob of external names is one too. A selector that names first-party source but matches nothing is dead. A `to` path that ends in a file type no dependency producer analyzes, such as `src/**/*.vb`, leaves the rule unevaluated; the owner must change the rule.
-
-Dependency selectors must use the endpoint spelling of the language graph. Go `from` matches the importing package. Go `to` matches a target package. Python uses dotted module names. A .NET `to` matches a file path or an external assembly name, such as `Microsoft.EntityFrameworkCore*`. An external assembly target is the bare assembly name: the graph node is `external:<assembly>`, but a selector names the endpoint path, so `to: Npgsql` fires and `to: external:Npgsql` matches nothing. A selector prefixed with any other node kind (`file:`, `package:`, `module:`, `project:`, `repo:`) is dead for the same reason: `config lint` reports it, and a required rule that carries one stays unevaluated. Rust crate module selectors need Cargo module evidence. A rule can remain unevaluated when its selector matches source that no active dependency producer analyzes.
-
-Set `guard: true` when an empty selector is intentional, such as a ban on a deleted path returning. A guard counts as evaluated while a selector is empty. If the guarded path appears again, the rule becomes a normal rule and needs complete evidence.
-
-```yaml
-rules:
-  - id: no_legacy_reports
-    type: forbidden_dependency
-    from: internal/**
-    to: internal/legacy/reports/**
-    gate: fail
-    guard: true
-```
-
-## Module allowlists
-
-The `module_dependencies` rule enforces module `depends_on` and `visible_to` lists. See [Configuration: modules](configuration.md#layers-and-modules) for the field definitions.
-
-```yaml
+version: 3
+owners: [alexei-led]
 modules:
-  billing:
-    paths: [billing/**]
-    visible_to: [shipping, api-gateway]
-  shipping:
-    paths: [shipping/**]
-    depends_on: [billing, shared-kernel]
-  shared-kernel:
-    paths: [shared/**]
-    depends_on: []
+  pkg_chaos:
+    paths: [pkg/chaos/**]
+    depends_on: [pkg_runtime]
+  pkg_runtime:
+    paths: [pkg/runtime/**]
+    volatility: low
+builtin: { graph: deny, min_balance: 8 }
 rules:
-  - id: module_boundaries
-    type: module_dependencies
-    gate: fail
+  - id: no-chaos-to-runtime
+    deny: { from: pkg_chaos, to: pkg_runtime }
+    why: A direct import ties a chaos action to one runtime.
+    instead: Add a method to container.Client.
+exceptions:
+  - rule: no-chaos-to-runtime
+    from: pkg_chaos
+    to: pkg_runtime
+    expires: 2026-11-19
+    why: "Request #431 is open."
 ```
 
-An absent `depends_on` leaves outbound dependencies unconstrained. An empty list denies dependencies to all declared modules. An absent `visible_to` permits all declared importers. An unowned importer is always denied when the target module sets `visible_to`.
+Run `archfit rules <rule-id>` to see one rule in full, and `archfit rules <path>` for the rules that apply to a path.
 
-External targets and unowned first-party targets are outside `depends_on`. Use `forbidden_dependency` to ban those targets. Allowlist entries can use module names, `layer:` or `role:` selectors, or module-name globs. An entry that matches no declared module allows nothing.
+## Built-in rules
 
-The rule reports each denied ordered module pair. When both lists deny a pair, the finding names both lists. Only production dependency edges count. If no module declares either list, the rule has nothing to enforce and remains unevaluated.
+They apply to what a change adds.
 
-## Forbidden patterns
+| Id | What it says | Default mode |
+| --- | --- | --- |
+| `graph` | A dependency between two modules must be an allowed dependency (`depends_on`). | `ask` |
+| `coupling` | New knowledge across a module boundary needs a balance of at least `min_balance` (default 7). | `deny` |
+| `duplication` | Knowledge that another module already owns is not copied. | `ask` |
+| `cycle` | No new cycle between modules. | `deny` |
+| `layers` | Dependencies follow the layer order: an inner layer does not depend on an outer one. | `deny` |
+| `unowned` | New production code belongs to a module. | `deny` |
 
-`forbidden_pattern` uses ast-grep to reject syntax in production files. Each pattern has an ID, language, and ast-grep rule.
+A rule has one mode:
 
-```yaml
-rules:
-  - id: domain_no_clock
-    type: forbidden_pattern
-    from: internal/domain/**
-    gate: fail
-    patterns:
-      - id: clock_call
-        lang: go
-        rule: time.Now()
-```
-
-The `from` selector matches a repository-relative file path or the file's module selector. Omit it to scan all production files. Test, generated, and vendored files do not produce findings. Excluded files and languages switched off without an explicit gate are outside the rule scope.
-
-The ast-grep pass must complete for the rule to be evaluated. A missing `sg` tool or rejected pattern leaves required rules unevaluated. Test patterns with `sg run --lang <lang> --pattern '<rule>' .` before gating on them. A Go call pattern with exactly one argument, such as `os.Getenv($KEY)`, parses as a type conversion and matches no calls.
-
-Findings identify the pattern and file locations. They do not include matched source text. Pattern IDs must be unique across all rule entries.
-
-## Waivers
-
-Waivers accept findings until a UTC expiry date. They require a rule ID, reason, approver metadata, and expiry.
-
-```yaml
-waivers:
-  - rule: domain_no_http
-    from: internal/domain/legacy/**
-    to: internal/http/**
-    reason: Replace this dependency during the migration.
-    approved_by: "@team-domain"
-    expires: "2026-12-01"
-```
-
-| Field | Requirement |
+| Mode | An error says |
 | --- | --- |
-| `rule` | Required declared or supported synthetic rule ID. |
-| `from` | Source selector. Edge-based findings need `from` or `to`. |
-| `to` | Target selector. Module-only findings match module names. |
-| `reason` | Required explanation. |
-| `approved_by` | Required reviewer or owner metadata. Archfit does not authenticate this value. |
-| `expires` | Required `YYYY-MM-DD` date. The waiver expires at midnight UTC after that date. |
+| `deny` | `next: fix the code`, or the `instead` of the rule. |
+| `ask` | An owner may approve: `next: archfit request -m "<why ...>"`. |
+| `off` | The rule is not checked. |
 
-The edge-less diagnostics `map/uncovered_path`, `map/dead_rule`, and `map/stale_review` require exact rule IDs and no endpoint selectors. `bc/imbalanced_coupling`, `bc/duplicated_knowledge`, and `labels/stale` require endpoint scope. `bc/coupling_gate` and `map/uncovered_change` cannot be waived: unread code is unknown, not accepted.
+Change a mode, or the lowest balance `coupling` accepts, with the `builtin` block:
 
-An active matching waiver takes precedence over an expired match, regardless of YAML order. Active waivers mark findings `waived`. Expired waivers report `expired_waiver`. Invalid selectors or missing metadata reject the configuration before analysis. Baseline capture omits findings covered by active or expired waivers.
+```yaml
+builtin: { graph: off, duplication: deny, min_balance: 8 }
+```
+
+`min_balance` is from 1 to 10.
+
+### `coupling`
+
+The balance of a dependency is shown as `n/10 (min m)`. It follows the volatility of the modules and how deep the use reaches:
+
+| Volatility that applies | Use of the public part | Use past the public part | Copy |
+| --- | ---: | ---: | ---: |
+| `low` | 9 or 8 | 8 | 8 |
+| `medium` | 9 or 7 | 5 | 5 |
+| `high` | 9 or 7 | 2 | 1 |
+
+- For a use of the public part, the volatility of the target applies. For a use past it, and for a copy, the higher volatility of the two modules applies.
+- The check uses the declared volatility (`volatility`, else from `subdomain`, else `high`).
+- A use of the public part is a use of a path that the `public` globs of the target module match. A module with no `public` is public as a whole.
+
+In words: a module may use the public part of a module it is allowed to depend on. It may reach past the public part only into a module declared `low`. The `coupling` rule applies inside allowed dependencies too. See [Coupling](coupling.md).
+
+### `duplication`
+
+The check finds one kind of copy: an identical literal. A string, a regular expression, or a table of values that the change adds in one module, and that production code of another module already has. It counts a literal only when:
+
+- it is at least 12 characters long;
+- it is not a single word or a struct tag;
+- it is not in a declared `tests` or `generated` path;
+- fewer than 3 modules hold it.
+
+The precision is measured, not promised: about 80% on the repositories used to tune it. A copy in other words is not found. The error names where the literal already lives:
+
+```text
+pkg/tc/interface.go:12: duplication: this literal already lives in pkg/util/util.go:15
+  why: two copies must change together and nothing checks that they do
+  next: use pkg_util, or run: archfit request -m "<why a copy is needed>" --expires 2026-12-10
+archfit: fail, 1 error
+```
+
+### `unowned`
+
+A file with added lines that no module path matches is an error. A file the policy declares in `tests` or `generated` is not. A file that is only renamed adds no line, so it passes.
+
+## Custom rules
+
+Each custom rule has an `id`, exactly one form, and a `why`:
+
+| Form | Says | Needs |
+| --- | --- | --- |
+| `deny: { from, to }` | No dependency from these modules or paths to those. | `why`, `instead` |
+| `only: { use, in }` | A library, or a package set, is used only in the listed modules. | `why` |
+| `note: <text>` | A rule nothing can check today, written down with its reason. | `why` |
+
+- `id` is a short name, as in a linter, such as `no-chaos-to-runtime`. It appears in every error. It must be unique and must not be a built-in id.
+- `from`, `to`, and `in` take a module name or a path glob, or a list of them. A name with a `/` or a wildcard that is not a module is a path glob. Any other name must be a module of the policy; an unknown name is an error with a suggestion.
+- `use` is a library import path, such as `github.com/docker/docker`, or a package set: `network`, `process`, or `database`. A set lists the standard and common packages of each language, so `only: { use: process, in: [pkg_runtime] }` keeps process launches in one adapter.
+- A `deny` rule is direct. It does not stop A from reaching C through an allowed B. Use `layers` for a direction that must hold all the way.
+- A `note` shows in `archfit rules` as "not checked".
+
+## Exceptions
+
+An exception permits the errors of one rule in one place, with a reason and usually a date. It is the only way to accept an error.
+
+```yaml
+exceptions:
+  - rule: duplication
+    from: pkg_tc
+    to: pkg_util
+    expires: 2026-11-19
+    why: "Request #431 is open."
+```
+
+| Field | Meaning |
+| --- | --- |
+| `rule` | A built-in or custom rule id. |
+| `from` | The module the errors come from. For `unowned`, the glob of the code no module owns. |
+| `to` | The module the errors reach. Not used for `unowned` and for a custom `only` rule: the `only` rule names its library itself. |
+| `expires` | The last day the exception holds, as `YYYY-MM-DD`. Absent: no date. |
+| `why` | The reason. Required. |
+
+An exception matches by rule, `from`, and `to`. A `duplication` exception matches the two modules in either order. An `only` exception matches by rule and `from`.
+
+**A date has teeth.** After `expires`, while the code still breaks the rule, every change fails, also a change that touches none of that code:
+
+```text
+.archfit.yaml: exception: duplication pkg_tc -> pkg_util expired on 2026-11-19
+  why: an exception with a date fails every change after that date
+  next: wait for an owner: #431
+archfit: fail, 1 error (not from this change)
+```
+
+`next` is `wait for an owner: #n` when the `why` names a request `#n`. Otherwise it is `fix the code, or ask an owner to extend the exception`.
+
+## Added or existing
+
+A change is judged by what it adds. The check reads the merge base and the working tree in one run and counts the errors of each by a key: the rule, the from module, the to module, and the symbol (the imported package or library; for `unowned`, the file; for `duplication`, the literal). For `cycle`, each dependency inside a cycle is one key.
+
+- A key the base does not have, or has fewer times, is added by the change: an error of the change.
+- One more use of an already broken dependency is an error of the change.
+- An error that exists on the base, and that the change does not add to, is not shown. It is the owners' work.
+
+When the base cannot be read, the status is `unknown`, never `pass`. See [results](results.md).
+
+## Tests and generated code
+
+The rules skip the paths that `tests` and `generated` list. Only listed paths are out: a file name that looks generated is not enough.
+
+```yaml
+tests: ["**/*_test.go", "**/testdata/**"]
+generated: ["internal/gen/**"]
+```
+
+## Version 2 (Archfit 3)
+
+A version 2 policy has rule types (`forbidden_dependency`, `module_dependencies`, `forbidden_layer_direction`, `module_cycle`, `public_api_only`, `forbidden_pattern`, and others), a `gate` of `fail`, `warn`, or `off` on each rule, and waivers. `archfit check` and the other Archfit 3 commands read them until the repository is converted with `archfit init`. [Migration](migration.md) maps each rule type to version 3. The full reference is the [Rules page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/rules.md).
+
+### Waivers
+
+A version 2 policy accepts findings with `waivers`: a rule ID, selectors, a reason, approver metadata, and an expiry date. In version 3, exceptions replace them. See the [waivers of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/rules.md#waivers).
