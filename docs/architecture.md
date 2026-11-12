@@ -57,13 +57,13 @@ flowchart LR
   class ports neutral
 ```
 
-1. The target branch is `--base`, else `origin/HEAD`. The base is the merge base of HEAD and the target. When HEAD is on the target branch, the base is its first parent.
+1. The target branch is `--base`, else `origin/HEAD`. The base is the merge base of HEAD and the target. When HEAD is the tip of the target branch, the base is its first parent.
 2. The policy on the target branch is the approved one. A local policy that differs from it gives `unknown`, and no facts are read. A target with no policy file, or with a version 2 file, is not compared: the check judges with the local policy and prints one line on stderr. `--policy FILE` judges with that file, compares nothing, and stores nothing.
-3. `resolved.Policy.CheckTree` checks the policy against the files of the head. A path that matches nothing gives `unknown`.
-4. `checkfacts` reads the facts of the head and the base. `count.Assess` counts the errors of each tree, applies the exceptions on the date, and gives the status.
+3. `resolved.Policy.CheckTree` checks the policy against every file of the working tree, not only the files the extractors read. A path that matches nothing gives `unknown`.
+4. `checkfacts` reads the facts of the head and the base with the settings of the policy that judges. `count.Assess` counts the errors of each tree, applies the exceptions on the date, and gives the status.
 5. `changecheck/project.go` builds the `internal/model/result` value. The result is stored in `.archfit-cache/last.json` for `archfit request`.
 
-The same tree, policy, engine version, and date give the same result. `changecheck` states its needs as ports, and `cmd/archfit` wires them.
+The same tree, policy, engine version, and date give the same result. When the working tree changes during the run, nothing is stored. `changecheck` states its needs as ports, and `cmd/archfit` wires them.
 
 | Package | Responsibility |
 |---|---|

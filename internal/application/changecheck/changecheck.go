@@ -6,9 +6,10 @@
 //
 //  1. The target branch: Options.Base, else origin/HEAD. With neither, the
 //     result is unknown and says to pass --base.
-//  2. The merge base of HEAD and the target. When HEAD is on the target branch
-//     (the merge base is HEAD itself), the base is HEAD's first parent. No merge
-//     base, as in a shallow clone, is unknown and names the fetch.
+//  2. The merge base of HEAD and the target. When HEAD is the tip of the
+//     target branch, the base is HEAD's first parent: the change is the last
+//     commit. No merge base, as in a shallow clone, is unknown and names the
+//     fetch.
 //  3. The policy (design 9.1). The policy on the target branch is the approved
 //     one: when the local file differs from it, the result is unknown, names
 //     the command that restores the file, and no facts are read. A target with
@@ -17,13 +18,18 @@
 //     adds one note. A target file that is not a valid policy is unknown. With
 //     Options.Policy the check judges with that file and compares nothing: a
 //     preview, which is not stored.
-//  4. The policy against the tree: resolved.Policy.CheckTree on the head's
-//     source files. A path glob that matches nothing is unknown.
-//  5. The facts of the head and the base, the lines the change adds, and
-//     count.Assess on the date the Clock gives.
+//  4. The policy against the tree: resolved.Policy.CheckTree on every file of
+//     the working tree, not only the files the extractors read, so a language
+//     that is off or a missing tool never makes a path look empty. A path glob
+//     that matches nothing is unknown.
+//  5. The facts of the head and the base, read with the settings of the
+//     policy that judges, the lines the change adds, and count.Assess on the
+//     date the Clock gives.
 //  6. The result (project.go) and, unless the run is a preview, the store of
 //     the last result for `archfit request`. Every other run is stored, pass
-//     and unknown too.
+//     and unknown too, under the tree id read when the run starts. When the
+//     working tree changes during the run, nothing is stored and a note says
+//     to run the check again: the result would name a tree it did not read.
 //
 // The same tree, policy, engine version and date give the same result. An
 // error of a port (git cannot run, a cancelled context) comes back as an
@@ -92,15 +98,20 @@ type Repository interface {
 	// WorkingTree returns the git tree id of the working tree as a commit of
 	// every change would hold it (internal/history/git.WorkingTreeID).
 	WorkingTree(ctx context.Context) (string, error)
+	// Files returns every file of the git tree id tree, repository-relative
+	// and slash-separated.
+	Files(ctx context.Context, tree string) ([]string, error)
 }
 
-// Facts reads the check facts of a tree.
+// Facts reads the check facts of a tree with the settings of the policy that
+// judges it: its exclude, its languages, and whether the duplication rule is
+// on (checkfacts.ConfigFrom).
 type Facts interface {
 	// Head returns the facts of the working tree.
-	Head(ctx context.Context) (evidence.CheckFacts, error)
+	Head(ctx context.Context, p resolved.Policy) (evidence.CheckFacts, error)
 	// Base returns the facts of the tree of commit. A base that cannot be
 	// read is an unknown item of cause base, not an error.
-	Base(ctx context.Context, commit string) (evidence.CheckFacts, error)
+	Base(ctx context.Context, p resolved.Policy, commit string) (evidence.CheckFacts, error)
 }
 
 // Protection says whether the policy is protected. Milestone 1 (D6): true
@@ -162,7 +173,7 @@ const (
 	whatNoCommit   = "%s names no commit in this clone"
 	whatNoHead     = "HEAD names no commit"
 	whatNoBase     = "HEAD and %s have no merge base in this clone"
-	whatNoParent   = "HEAD is on %s and its parent is not in this clone"
+	whatNoParent   = "HEAD is the tip of %s and its parent is not in this clone"
 	whatDiffers    = "differs from %s"
 	whatNoPolicy   = "no policy file"
 	nextBaseFlag   = "pass --base <target branch>"
@@ -175,8 +186,9 @@ const (
 	nextFix        = "fix %s"
 	nextAskOwner   = "ask an owner to fix " + PolicyPath + " on %s"
 
-	noteNoPolicy = "%s has no " + PolicyPath + ": judged with the local policy"
-	noteVersion2 = "%s has a version 2 " + PolicyPath + ": judged with the local policy until its conversion pull request merges"
+	noteNoPolicy    = "%s has no " + PolicyPath + ": judged with the local policy"
+	noteVersion2    = "%s has a version 2 " + PolicyPath + ": judged with the local policy until its conversion pull request merges"
+	noteTreeChanged = "the working tree changed during the check, so archfit request cannot use this result: run archfit check again"
 )
 
 // run is what one check found, before projection (project.go).
@@ -211,16 +223,13 @@ type reason struct {
 // Check gives the change its result. See the package doc for the run.
 func (s Service) Check(ctx context.Context, o Options) (Outcome, error) {
 	now := s.Clock.Now()
-	tree := ""
-	if o.Policy == "" {
-		// The tree id comes first, so the stored result names the tree the
-		// facts are read from.
-		var err error
-		if tree, err = s.Repository.WorkingTree(ctx); err != nil {
-			return Outcome{}, fmt.Errorf("read the working tree: %w", err)
-		}
+	// The tree id comes first: the policy is checked against the files of this
+	// tree, and the stored result names it.
+	tree, err := s.Repository.WorkingTree(ctx)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("read the working tree: %w", err)
 	}
-	r, err := s.judge(ctx, o, now)
+	r, err := s.judge(ctx, o, now, tree)
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -229,23 +238,31 @@ func (s Service) Check(ctx context.Context, o Options) (Outcome, error) {
 		return Outcome{}, fmt.Errorf("read the workflows: %w", err)
 	}
 	res := project(r, protected, now, s.Engine)
-	if o.Policy == "" {
-		if err := s.Store.Save(ctx, tree, res); err != nil {
-			return Outcome{}, fmt.Errorf("store the result: %w", err)
-		}
+	if o.Policy != "" {
+		return Outcome{Result: res, Notes: r.notes}, nil
+	}
+	after, err := s.Repository.WorkingTree(ctx)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("read the working tree: %w", err)
+	}
+	if after != tree {
+		return Outcome{Result: res, Notes: append(r.notes, noteTreeChanged)}, nil
+	}
+	if err := s.Store.Save(ctx, tree, res); err != nil {
+		return Outcome{}, fmt.Errorf("store the result: %w", err)
 	}
 	return Outcome{Result: res, Notes: r.notes}, nil
 }
 
-// judge runs steps 1 to 5 of the package doc.
-func (s Service) judge(ctx context.Context, o Options, now time.Time) (run, error) {
+// judge runs steps 1 to 5 of the package doc on the working tree tree.
+func (s Service) judge(ctx context.Context, o Options, now time.Time, tree string) (run, error) {
 	r := run{policyPath: PolicyPath}
 	if o.Policy != "" {
 		r.policyPath = o.Policy
 	}
 	head, ok, err := s.Repository.Commit(ctx, "HEAD")
 	if err != nil {
-		return run{}, err
+		return run{}, fmt.Errorf("read HEAD: %w", err)
 	}
 	if ok {
 		r.head = head
@@ -280,11 +297,11 @@ func (s Service) judge(ctx context.Context, o Options, now time.Time) (run, erro
 		r.stopLines(local.Err, whyInvalid, result.NextRestore, fmt.Sprintf(nextFix, r.policyPath))
 		return r, nil
 	}
-	headFacts, err := s.Facts.Head(ctx)
+	files, err := s.Repository.Files(ctx, tree)
 	if err != nil {
-		return run{}, fmt.Errorf("read the head: %w", err)
+		return run{}, fmt.Errorf("list the files of the working tree: %w", err)
 	}
-	if err := local.Policy.CheckTree(headFacts.Sources); err != nil {
+	if err := local.Policy.CheckTree(files); err != nil {
 		next := fmt.Sprintf(nextFix, r.policyPath)
 		if compared {
 			next = fmt.Sprintf(nextAskOwner, ref)
@@ -292,7 +309,11 @@ func (s Service) judge(ctx context.Context, o Options, now time.Time) (run, erro
 		r.stopLines(err, whyTree, result.NextRestore, next)
 		return r, nil
 	}
-	baseFacts, err := s.Facts.Base(ctx, r.base)
+	headFacts, err := s.Facts.Head(ctx, local.Policy)
+	if err != nil {
+		return run{}, fmt.Errorf("read the head: %w", err)
+	}
+	baseFacts, err := s.Facts.Base(ctx, local.Policy, r.base)
 	if err != nil {
 		return run{}, fmt.Errorf("read the base: %w", err)
 	}
@@ -316,14 +337,14 @@ func (s Service) target(ctx context.Context, o Options, r *run) (ref, commit str
 	if ref == "" {
 		var ok bool
 		if ref, ok, err = s.Repository.OriginHead(ctx); err != nil {
-			return "", "", false, err
+			return "", "", false, fmt.Errorf("read origin/HEAD: %w", err)
 		} else if !ok {
 			return baseStop(whatNoTarget, nextBaseFlag)
 		}
 	}
 	commit, ok, err := s.Repository.Commit(ctx, ref)
 	if err != nil {
-		return "", "", false, err
+		return "", "", false, fmt.Errorf("resolve %s: %w", ref, err)
 	}
 	if !ok {
 		return baseStop(fmt.Sprintf(whatNoCommit, ref), nextFetch)
@@ -331,20 +352,25 @@ func (s Service) target(ctx context.Context, o Options, r *run) (ref, commit str
 	if r.head == "" {
 		return baseStop(whatNoHead, nextCommit)
 	}
-	base, ok, err := s.Repository.MergeBase(ctx, r.head, commit)
-	if err != nil {
-		return "", "", false, err
-	}
-	if !ok {
-		return baseStop(fmt.Sprintf(whatNoBase, ref), nextUnshallow)
-	}
-	if base == r.head {
-		// HEAD is on the target branch: the change is what HEAD adds to its
-		// first parent.
-		if base, ok, err = s.Repository.Parent(ctx, r.head); err != nil {
-			return "", "", false, err
-		} else if !ok {
+	var base string
+	if r.head == commit {
+		// HEAD is the tip of the target branch: the change is what HEAD adds
+		// to its first parent. A HEAD behind the tip is compared with itself,
+		// its merge base, so the commits it shares with the target add nothing.
+		base, ok, err = s.Repository.Parent(ctx, r.head)
+		if err != nil {
+			return "", "", false, fmt.Errorf("read the parent of HEAD: %w", err)
+		}
+		if !ok {
 			return baseStop(fmt.Sprintf(whatNoParent, ref), nextUnshallow)
+		}
+	} else {
+		base, ok, err = s.Repository.MergeBase(ctx, r.head, commit)
+		if err != nil {
+			return "", "", false, fmt.Errorf("find the merge base with %s: %w", ref, err)
+		}
+		if !ok {
+			return baseStop(fmt.Sprintf(whatNoBase, ref), nextUnshallow)
 		}
 	}
 	r.base = base

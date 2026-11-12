@@ -97,29 +97,38 @@ func file(text string) changecheck.PolicyFile {
 	}
 }
 
+// fail holds the error each port method returns, by method name.
+type fail map[string]error
+
 type repo struct {
+	fail       fail
 	origin     string
 	commits    map[string]string
 	parents    map[string]string
 	mergeBases map[string]string // by the target commit
 	added      evidence.AddedLines
 	addedBase  string
-	treeReads  int
-	err        error
+	// files are the files of every tree; filesOf the tree ids they were
+	// listed for.
+	files   []string
+	filesOf []string
+	// trees are the ids WorkingTree returns, one per call, the last repeated.
+	trees     []string
+	treeReads int
 }
 
 func (r *repo) OriginHead(context.Context) (string, bool, error) {
-	return r.origin, r.origin != "", r.err
+	return r.origin, r.origin != "", r.fail["OriginHead"]
 }
 
 func (r *repo) Commit(_ context.Context, ref string) (string, bool, error) {
 	sha, ok := r.commits[ref]
-	return sha, ok, r.err
+	return sha, ok, r.fail["Commit"]
 }
 
 func (r *repo) Parent(_ context.Context, commit string) (string, bool, error) {
 	sha, ok := r.parents[commit]
-	return sha, ok, r.err
+	return sha, ok, r.fail["Parent"]
 }
 
 func (r *repo) MergeBase(_ context.Context, a, b string) (string, bool, error) {
@@ -127,49 +136,58 @@ func (r *repo) MergeBase(_ context.Context, a, b string) (string, bool, error) {
 		return "", false, errors.New("merge base of " + a)
 	}
 	sha, ok := r.mergeBases[b]
-	return sha, ok, r.err
+	return sha, ok, r.fail["MergeBase"]
 }
 
 func (r *repo) AddedLines(_ context.Context, base string) (evidence.AddedLines, error) {
 	r.addedBase = base
-	return r.added, r.err
+	return r.added, r.fail["AddedLines"]
 }
 
 func (r *repo) WorkingTree(context.Context) (string, error) {
+	id := r.trees[min(r.treeReads, len(r.trees)-1)]
 	r.treeReads++
-	return treeID, r.err
+	return id, r.fail["WorkingTree"]
+}
+
+func (r *repo) Files(_ context.Context, tree string) ([]string, error) {
+	r.filesOf = append(r.filesOf, tree)
+	return r.files, r.fail["Files"]
 }
 
 type policies struct {
+	fail   fail
 	local  map[string]changecheck.PolicyFile // by path
 	target map[string]changecheck.PolicyFile // by commit
-	err    error
 }
 
 func (p *policies) Local(_ context.Context, path string) (changecheck.PolicyFile, error) {
-	return p.local[path], p.err
+	return p.local[path], p.fail["Local"]
 }
 
 func (p *policies) Target(_ context.Context, commit string) (changecheck.PolicyFile, error) {
-	return p.target[commit], p.err
+	return p.target[commit], p.fail["Target"]
 }
 
 type facts struct {
+	fail       fail
 	head, base evidence.CheckFacts
 	headReads  int
 	baseReads  []string
-	headErr    error
-	baseErr    error
+	// digests are the digests of the policies the facts were read with.
+	digests []string
 }
 
-func (f *facts) Head(context.Context) (evidence.CheckFacts, error) {
+func (f *facts) Head(_ context.Context, p resolved.Policy) (evidence.CheckFacts, error) {
 	f.headReads++
-	return f.head, f.headErr
+	f.digests = append(f.digests, p.Digest)
+	return f.head, f.fail["Head"]
 }
 
-func (f *facts) Base(_ context.Context, commit string) (evidence.CheckFacts, error) {
+func (f *facts) Base(_ context.Context, p resolved.Policy, commit string) (evidence.CheckFacts, error) {
 	f.baseReads = append(f.baseReads, commit)
-	return f.base, f.baseErr
+	f.digests = append(f.digests, p.Digest)
+	return f.base, f.fail["Base"]
 }
 
 type protection struct {
@@ -217,6 +235,8 @@ func newWorld() *world {
 			parents:    map[string]string{},
 			mergeBases: map[string]string{mainSHA: baseSHA},
 			added:      evidence.AddedLines{tcNetem: {12}},
+			files:      append(slices.Clone(sources), "README.md"),
+			trees:      []string{treeID},
 		},
 		policies: &policies{
 			local:  map[string]changecheck.PolicyFile{changecheck.PolicyPath: file(policyYAML)},
@@ -433,24 +453,42 @@ func TestCheck(t *testing.T) {
 			},
 		},
 		{
-			name: "HEAD on the target branch is compared with its first parent",
+			name:  "HEAD at the tip of the target branch is compared with its first parent",
+			setup: func(w *world) { w.atTip(baseSHA) },
+			want:  want{record: graphRecord, target: mainRef, base: baseSHA, facts: true, stored: true},
+		},
+		{
+			name:  "HEAD at the tip of the target branch without its parent in the clone",
+			setup: func(w *world) { w.atTip("") },
+			want: want{
+				record: "base: HEAD is the tip of origin/main and its parent is not in this clone\n" + whyCompare +
+					"  next: git fetch --unshallow\n" + noVerdict,
+				stored: true,
+			},
+		},
+		{
+			// The commits HEAD shares with the target are on the target: they
+			// add nothing, so the base is HEAD, not its parent.
+			name:  "HEAD behind the tip of the target branch is compared with itself",
+			setup: func(w *world) { w.repo.mergeBases[mainSHA] = headSHA },
+			want:  want{record: graphRecord, target: mainRef, base: headSHA, facts: true, stored: true},
+		},
+		{
+			name: "a module whose files no extractor reads still matches them",
 			setup: func(w *world) {
-				w.repo.commits[mainRef] = headSHA
-				w.repo.mergeBases = map[string]string{headSHA: headSHA}
-				w.repo.parents[headSHA] = baseSHA
-				w.policies.target = map[string]changecheck.PolicyFile{headSHA: file(policyYAML)}
+				withWeb := strings.Replace(policyYAML, "rules:\n", "  web:\n    paths: [web/**]\nrules:\n", 1)
+				w.policies.local[changecheck.PolicyPath] = file(withWeb)
+				w.policies.target[mainSHA] = file(withWeb)
+				w.repo.files = append(w.repo.files, "web/app.ts")
 			},
 			want: want{record: graphRecord, target: mainRef, base: baseSHA, facts: true, stored: true},
 		},
 		{
-			name: "HEAD on the target branch without its parent in the clone",
-			setup: func(w *world) {
-				w.repo.mergeBases = map[string]string{mainSHA: headSHA}
-			},
+			name:  "a working tree edited during the check stores nothing",
+			setup: func(w *world) { w.repo.trees = []string{treeID, "0e1d2c3b4a5968778695a4b3c2d1e0f9e8d7c6b5"} },
 			want: want{
-				record: "base: HEAD is on origin/main and its parent is not in this clone\n" + whyCompare +
-					"  next: git fetch --unshallow\n" + noVerdict,
-				stored: true,
+				record: graphRecord, target: mainRef, base: baseSHA, facts: true,
+				notes: []string{"the working tree changed during the check, so archfit request cannot use this result: run archfit check again"},
 			},
 		},
 		{
@@ -608,6 +646,16 @@ func TestCheck(t *testing.T) {
 			if read && (!slices.Equal(w.facts.baseReads, []string{tt.want.base}) || w.repo.addedBase != tt.want.base) {
 				t.Errorf("base facts of %q, added lines against %q; want %s", w.facts.baseReads, w.repo.addedBase, tt.want.base)
 			}
+			for _, digest := range w.facts.digests {
+				if digest != p.Digest {
+					t.Errorf("facts read with the policy %s, want the policy that judges, %s", digest, p.Digest)
+				}
+			}
+			for _, id := range w.repo.filesOf {
+				if id != treeID {
+					t.Errorf("listed the files of tree %s, want the tree the run started on, %s", id, treeID)
+				}
+			}
 			checkStored(t, w, out.Result, tt.want.stored)
 		})
 	}
@@ -621,11 +669,21 @@ func (w *world) withRelease() {
 	w.policies.target[releaseSHA] = file(policyYAML)
 }
 
+// atTip puts HEAD at the tip of origin/main, with parent as its first
+// parent; an empty parent is not in the clone.
+func (w *world) atTip(parent string) {
+	w.repo.commits[mainRef] = headSHA
+	if parent != "" {
+		w.repo.parents[headSHA] = parent
+	}
+	w.policies.target = map[string]changecheck.PolicyFile{headSHA: file(policyYAML)}
+}
+
 func checkStored(t *testing.T, w *world, got result.Result, stored bool) {
 	t.Helper()
 	if !stored {
-		if len(w.store.saves) != 0 || w.repo.treeReads != 0 {
-			t.Errorf("a preview stored %d results and read the tree %d times, want none", len(w.store.saves), w.repo.treeReads)
+		if len(w.store.saves) != 0 {
+			t.Errorf("stored %d results, want none", len(w.store.saves))
 		}
 		return
 	}
@@ -714,16 +772,25 @@ func TestUnprotectedPolicy(t *testing.T) {
 	}
 }
 
-// An error of a port is an error of the check: no result, nothing stored.
+// An error of a port is an error of the check: no result, nothing stored. A
+// target policy that cannot be read is never taken for a target with none,
+// which would judge with a local policy that may be edited.
 func TestPortErrors(t *testing.T) {
 	boom := errors.New("boom")
 	tests := map[string]func(w *world){
-		"repository": func(w *world) { w.repo.err = boom },
-		"policies":   func(w *world) { w.policies.err = boom },
-		"head facts": func(w *world) { w.facts.headErr = boom },
-		"base facts": func(w *world) { w.facts.baseErr = boom },
-		"protection": func(w *world) { w.protection.err = boom },
-		"store":      func(w *world) { w.store.err = boom },
+		"WorkingTree": func(w *world) { w.repo.fail = fail{"WorkingTree": boom} },
+		"Commit":      func(w *world) { w.repo.fail = fail{"Commit": boom} },
+		"OriginHead":  func(w *world) { w.repo.fail = fail{"OriginHead": boom} },
+		"MergeBase":   func(w *world) { w.repo.fail = fail{"MergeBase": boom} },
+		"Parent":      func(w *world) { w.atTip(baseSHA); w.repo.fail = fail{"Parent": boom} },
+		"Files":       func(w *world) { w.repo.fail = fail{"Files": boom} },
+		"AddedLines":  func(w *world) { w.repo.fail = fail{"AddedLines": boom} },
+		"Local":       func(w *world) { w.policies.fail = fail{"Local": boom} },
+		"Target":      func(w *world) { w.policies.fail = fail{"Target": boom} },
+		"Head":        func(w *world) { w.facts.fail = fail{"Head": boom} },
+		"Base":        func(w *world) { w.facts.fail = fail{"Base": boom} },
+		"Protected":   func(w *world) { w.protection.err = boom },
+		"Save":        func(w *world) { w.store.err = boom },
 	}
 	for name, setup := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -732,6 +799,9 @@ func TestPortErrors(t *testing.T) {
 			_, err := w.service(t).Check(context.Background(), changecheck.Options{})
 			if !errors.Is(err, boom) {
 				t.Errorf("Check error = %v, want %v", err, boom)
+			}
+			if name != "Save" && len(w.store.saves) != 0 {
+				t.Errorf("stored %d results after a port error", len(w.store.saves))
 			}
 		})
 	}
