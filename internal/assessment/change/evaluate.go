@@ -68,23 +68,14 @@ type tree struct {
 	// target that is one is a package directory; any other target is a
 	// file, even one that is not a source (a .vue or .json file).
 	isDir map[string]bool
-	// dirFiles are the source files directly in a directory: its production
-	// files, or, when it has only declared tests and generated files (a
-	// protobuf package), those. A generated file imports nothing the rules
-	// judge, but a production import of its package is a dependency.
-	dirFiles map[string][]string
-	// dirModule is the module of a package directory, from its dirFiles: a
-	// Go import names the directory, and the module's paths may be file
-	// globs (pkg/foo/*.go) that do not match the directory itself.
-	dirModule map[string]string
+	// dirs are the ends of the directories that hold a source file
+	// directly, as DirEnd makes them.
+	dirs map[string]End
 }
 
 func newTree(p resolved.Policy, sources []string) tree {
-	t := tree{
-		p: p, files: slices.Sorted(slices.Values(sources)),
-		isDir: map[string]bool{}, dirFiles: map[string][]string{}, dirModule: map[string]string{},
-	}
-	production, excluded := map[string][]string{}, map[string][]string{}
+	t := tree{p: p, files: slices.Sorted(slices.Values(sources)), isDir: map[string]bool{}, dirs: map[string]End{}}
+	byDir := map[string][]string{}
 	for _, file := range t.files {
 		for d := path.Dir(file); !t.isDir[d]; d = path.Dir(d) {
 			t.isDir[d] = true
@@ -92,51 +83,74 @@ func newTree(p resolved.Policy, sources []string) tree {
 				break
 			}
 		}
-		dir := path.Dir(file)
-		if t.excluded(file) {
-			excluded[dir] = append(excluded[dir], file)
-		} else {
-			production[dir] = append(production[dir], file)
-		}
+		byDir[path.Dir(file)] = append(byDir[path.Dir(file)], file)
 	}
-	for dir, files := range excluded {
-		if _, ok := production[dir]; !ok {
-			production[dir] = files
-		}
-	}
-	for dir, files := range production {
-		t.dirFiles[dir] = files
-		owners := map[string]bool{}
-		for _, file := range files {
-			if m, ok := p.ModuleOf(file); ok {
-				owners[m] = true
-			}
-		}
-		if len(owners) == 1 {
-			for m := range owners {
-				t.dirModule[dir] = m
-			}
-		}
+	for dir, files := range byDir {
+		t.dirs[dir] = DirEnd(p, dir, files)
 	}
 	return t
 }
 
 func (t tree) excluded(file string) bool {
-	return t.p.IsTest(file) || t.p.IsGenerated(file)
+	return excluded(t.p, file)
 }
 
-// use is the use one import makes. A directory target takes the module of
-// its files when they agree, else the module that owns the directory.
-func (t tree) use(imp evidence.ImportFact) Use {
-	u := Use{From: End{Path: imp.File, IsFile: true}, Lang: languageOf(imp.File)}
-	if imp.External {
-		u.To = End{Path: imp.Target, Library: true}
-		return u
+// excluded reports whether p declares file a test or generated: out of every
+// rule.
+func excluded(p resolved.Policy, file string) bool {
+	return p.IsTest(file) || p.IsGenerated(file)
+}
+
+// DirEnd is the end of a directory, as Evaluate makes it for a package
+// directory an import names. files are the source files directly in dir,
+// declared tests and generated files included. The end's Files are its
+// production files, or, when it has only tests and generated files (a
+// protobuf package), those: a generated file imports nothing the rules judge,
+// but a production import of its package is a dependency. Its Module is the
+// one module its Files agree on, else the module that owns dir: a Go import
+// names the directory, and the module's paths may be file globs
+// (pkg/foo/*.go) that do not match the directory itself. p has its defaults.
+func DirEnd(p resolved.Policy, dir string, files []string) End {
+	var production, other []string
+	for _, file := range files {
+		if excluded(p, file) {
+			other = append(other, file)
+		} else {
+			production = append(production, file)
+		}
 	}
-	u.To = End{Path: imp.Target, IsFile: !t.isDir[imp.Target]}
-	if !u.To.IsFile {
-		u.To.Module = t.dirModule[imp.Target]
-		u.To.Files = t.dirFiles[imp.Target]
+	if len(production) == 0 {
+		production = other
+	}
+	e := End{Path: dir, Files: production}
+	owners := map[string]bool{}
+	for _, file := range production {
+		if m, ok := p.ModuleOf(file); ok {
+			owners[m] = true
+		}
+	}
+	if len(owners) == 1 {
+		for m := range owners {
+			e.Module = m
+		}
+	}
+	e.Module = moduleOf(p, e)
+	return e
+}
+
+// use is the use one import makes. A directory target is its DirEnd.
+func (t tree) use(imp evidence.ImportFact) Use {
+	u := Use{From: End{Path: imp.File, IsFile: true}, Lang: LanguageOf(imp.File)}
+	switch {
+	case imp.External:
+		u.To = End{Path: imp.Target, Library: true}
+	case !t.isDir[imp.Target]:
+		u.To = End{Path: imp.Target, IsFile: true}
+	default:
+		// A directory that holds no source file directly, such as a parent
+		// of packages, has no DirEnd: the module that owns it.
+		u.To = t.dirs[imp.Target]
+		u.To.Path = imp.Target
 	}
 	// Resolve both modules once, for Judge and for the module graph.
 	u.From.Module = moduleOf(t.p, u.From)
@@ -156,8 +170,9 @@ var extLanguages = map[string]resolved.Language{
 	".cs": resolved.LanguageDotNet,
 }
 
-// languageOf is the language of a file by its extension, or "" when unknown.
-func languageOf(file string) resolved.Language {
+// LanguageOf is the language of a file by its extension, or "" when unknown:
+// the language whose package sets an only rule reads for an importer.
+func LanguageOf(file string) resolved.Language {
 	return extLanguages[path.Ext(file)]
 }
 
@@ -231,10 +246,10 @@ func notes(p resolved.Policy) []resolved.Rule {
 type moduleGraph map[string]map[string][]Site
 
 func (g moduleGraph) add(u Use, site Site) {
-	from, to := u.From.Module, u.To.Module
-	if from == "" || to == "" || from == to || u.To.Library {
+	if !betweenModules(u) {
 		return
 	}
+	from, to := u.From.Module, u.To.Module
 	if g[from] == nil {
 		g[from] = map[string][]Site{}
 	}

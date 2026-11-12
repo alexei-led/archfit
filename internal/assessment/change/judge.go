@@ -91,45 +91,76 @@ func moduleOf(p resolved.Policy, e End) string {
 }
 
 // builtin applies graph, coupling and layers to a use between two modules.
+// Each error carries the check's What, which names the pair, and the Phrase
+// `archfit can` prints after its own pair.
 func builtin(p resolved.Policy, u Use) []Error {
-	from, to := u.From.Module, u.To.Module
-	if from == "" || to == "" || from == to || u.To.Library {
+	bal := BalanceOf(p, u)
+	if bal == nil {
 		return nil
 	}
+	from, to := u.From.Module, u.To.Module
 	fromMod, toMod := p.Modules[from], p.Modules[to]
-	public := u.To.Path == "" || isPublic(p, to, u.To)
-	value := balanceOf(public, fromMod.Volatility, toMod.Volatility)
-	bal := &result.Balance{Value: value, Min: p.Builtin.MinBalance}
 	symbol := u.To.Path
 	if symbol == "" {
 		symbol = to
 	}
-	dependency := func(rule string, mode resolved.Mode, what, why string, b *result.Balance) Error {
+	dependency := func(rule string, mode resolved.Mode, what, phrase, why string, b *result.Balance) Error {
 		return Error{
 			Key: Key{Rule: rule, From: from, To: to, Symbol: symbol}, From: from, To: to,
-			What: what, Why: why, Balance: b, Next: nextOf(mode),
+			What: what, Phrase: phrase, Why: why, Balance: b, Next: nextOf(mode),
 		}
 	}
 	var errs []Error
 	if p.Builtin.Graph != resolved.ModeOff && !slices.Contains(fromMod.DependsOn, to) {
+		const phrase = "not an allowed dependency"
 		errs = append(errs, dependency(resolved.RuleGraph, p.Builtin.Graph,
-			fmt.Sprintf("%s -> %s is not an allowed dependency", from, to), whyGraph, bal))
+			fmt.Sprintf("%s -> %s is %s", from, to, phrase), phrase, whyGraph, bal))
 	}
-	if p.Builtin.Coupling != resolved.ModeOff && value < p.Builtin.MinBalance {
-		part := "reaches past the public part of"
-		if public {
-			part = "uses the public part of"
+	if p.Builtin.Coupling != resolved.ModeOff && bal.Value < p.Builtin.MinBalance {
+		phrase := "reaches past the public part"
+		if publicUse(p, u.To) {
+			phrase = "uses the public part"
 		}
 		errs = append(errs, dependency(resolved.RuleCoupling, p.Builtin.Coupling,
-			fmt.Sprintf("%s -> %s %s %s", from, to, part, to),
+			fmt.Sprintf("%s -> %s %s of %s", from, to, phrase, to), phrase,
 			fmt.Sprintf(whyCoupling, p.Builtin.MinBalance), bal))
 	}
 	if p.Builtin.Layers != resolved.ModeOff && inverted(p.Layers, fromMod.Layer, toMod.Layer) {
 		errs = append(errs, dependency(resolved.RuleLayers, p.Builtin.Layers,
 			fmt.Sprintf("%s (%s) -> %s (%s) goes against the layer order", from, fromMod.Layer, to, toMod.Layer),
+			fmt.Sprintf("layer %s -> layer %s goes against the layer order", fromMod.Layer, toMod.Layer),
 			whyLayers, nil))
 	}
 	return errs
+}
+
+// BalanceOf is the balance a use between two modules has, or would have: of
+// a use of the public part, or past it (design 6.2). A use whose To is a
+// module named on its own uses its public part. nil when the use is not
+// between two modules: an end in no module, one module, or a library. The
+// graph and coupling errors of Judge carry this balance; `archfit can` shows
+// it for an allowed dependency. p has its defaults.
+func BalanceOf(p resolved.Policy, u Use) *result.Balance {
+	u.From.Module = moduleOf(p, u.From)
+	u.To.Module = moduleOf(p, u.To)
+	if !betweenModules(u) {
+		return nil
+	}
+	value := balanceOf(publicUse(p, u.To), p.Modules[u.From.Module].Volatility, p.Modules[u.To.Module].Volatility)
+	return &result.Balance{Value: value, Min: p.Builtin.MinBalance}
+}
+
+// betweenModules reports whether a use, its modules resolved, crosses from
+// one module into another.
+func betweenModules(u Use) bool {
+	from, to := u.From.Module, u.To.Module
+	return from != "" && to != "" && from != to && !u.To.Library
+}
+
+// publicUse reports whether a target end, its module resolved, is in that
+// module's public part. A module named on its own means its public part.
+func publicUse(p resolved.Policy, to End) bool {
+	return to.Path == "" || isPublic(p, to.Module, to)
 }
 
 // balanceOf is the balance of a use of the public part (contract strength,
@@ -185,11 +216,12 @@ func deny(p resolved.Policy, r resolved.Rule, u Use) *Error {
 	}
 	// The key holds modules, as every key does, so exceptions match it and two
 	// modules under one path glob keep apart; the text names the rule's names.
+	what := fmt.Sprintf("%s must not depend on %s", from, to)
 	return &Error{
 		Key:  Key{Rule: r.ID, From: u.From.Module, To: u.To.Module, Symbol: symbolOf(u.To)},
 		From: u.From.Module, To: u.To.Module,
-		What: fmt.Sprintf("%s must not depend on %s", from, to),
-		Why:  r.Why, Instead: r.Instead, Next: nextOf(resolved.ModeDeny),
+		What: what, Phrase: what,
+		Why: r.Why, Instead: r.Instead, Next: nextOf(resolved.ModeDeny),
 	}
 }
 
@@ -215,8 +247,9 @@ func only(p resolved.Policy, r resolved.Rule, u Use) *Error {
 	return &Error{
 		Key:  Key{Rule: r.ID, From: u.From.Module, To: r.Use, Symbol: u.To.Path},
 		From: u.From.Module, To: r.Use,
-		What: fmt.Sprintf("%s uses %s, which only %s may use", label, used, joinNames(r.In)),
-		Why:  r.Why, Instead: r.Instead, Next: nextOf(resolved.ModeDeny),
+		What:   fmt.Sprintf("%s uses %s, which only %s may use", label, used, joinNames(r.In)),
+		Phrase: fmt.Sprintf("only %s may use %s", joinNames(r.In), r.Use),
+		Why:    r.Why, Instead: r.Instead, Next: nextOf(resolved.ModeDeny),
 	}
 }
 
