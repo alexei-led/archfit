@@ -78,7 +78,9 @@ type Repository struct {
 	// left out; the unowned error of its file names that file.
 	Existing []resolved.Exception
 	// Unknown are the places of the head the check could not read. The state
-	// does not cover them.
+	// does not cover them: a missing tool leaves a whole language unread, and
+	// the state can then be clean for code nothing judged. Missing evidence is
+	// not zero, so a consumer that shows State shows Unknown beside it.
 	Unknown []evidence.UnknownItem
 }
 
@@ -161,7 +163,9 @@ func notes(p resolved.Policy) []resolved.Rule {
 func balances(p resolved.Policy) []Balance {
 	out := []Balance{}
 	for _, from := range slices.Sorted(maps.Keys(p.Modules)) {
-		for _, to := range slices.Sorted(slices.Values(p.Modules[from].DependsOn)) {
+		// The policy file may repeat a depends_on entry; it is one allowed
+		// dependency.
+		for _, to := range slices.Compact(slices.Sorted(slices.Values(p.Modules[from].DependsOn))) {
 			use := change.Use{From: change.End{Module: from}, To: change.End{Module: to}}
 			if b := change.BalanceOf(p, use); b != nil {
 				out = append(out, Balance{From: from, To: to, Balance: *b})

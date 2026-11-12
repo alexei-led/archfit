@@ -216,7 +216,8 @@ func TestEvaluateExpiringNeedsAnError(t *testing.T) {
 }
 
 // A use of the public part is contract strength: 9 at every volatility
-// (design 6.2), as `archfit can` shows it.
+// (design 6.2), as `archfit can` shows it. A repeated depends_on entry is one
+// allowed dependency.
 func TestEvaluateBalances(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -233,7 +234,7 @@ func TestEvaluateBalances(t *testing.T) {
 			p := resolved.Policy{
 				Modules: map[string]resolved.Module{
 					tc:    {Paths: []string{tcGlob}, DependsOn: []string{util}},
-					chaos: {Paths: []string{"pkg/chaos/**"}, DependsOn: []string{util, tc}},
+					chaos: {Paths: []string{"pkg/chaos/**"}, DependsOn: []string{util, tc, util}},
 					util:  {Paths: []string{utilGlob}, Volatility: c.volatility},
 				},
 				Builtin: resolved.Builtin{MinBalance: c.minBalance},
