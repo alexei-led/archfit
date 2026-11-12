@@ -19,6 +19,8 @@ const (
 	layerCmd = "cmd"
 	core     = "core"
 	cmdGlob  = "cmd/**"
+	// onlyRule is the id of every-key.yaml's only rule.
+	onlyRule = "process-in-cli"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -109,7 +111,7 @@ func TestDecodeValidFixtures(t *testing.T) {
 					Instead: "Call a store method.",
 				},
 				{
-					ID:      "process-in-cli",
+					ID:      onlyRule,
 					Only:    &policyfile.Only{Use: "process", In: policyfile.Names{modCLI}},
 					Why:     "Side effects stay at the edge.",
 					Instead: "Return a command for the CLI to run.",
@@ -118,6 +120,7 @@ func TestDecodeValidFixtures(t *testing.T) {
 			Exceptions: []policyfile.Exception{
 				{Rule: "graph", From: modStore, To: modCLI, Why: "Migration in progress."},
 				{Rule: policyfile.RuleUnowned, From: "scripts/**", Expires: "2027-01-31", Why: "Scripts get a module next quarter."},
+				{Rule: onlyRule, From: modStore, Why: "The migration tool shells out until it moves to the CLI."},
 			},
 			Generated: []string{"**/*.pb.go"},
 			Tests:     []string{"**/*_test.go", "internal/testutil/**"},
@@ -212,6 +215,7 @@ var invalidFixtures = map[string][]string{
 	"names-empty":          {"rules[0] (empty-from).deny.from: empty: name a module or a path glob"},
 	"exception-to-missing": {"exceptions[0].to: required: name the module the errors reach"},
 	"exception-unowned-to": {"exceptions[0].to: unowned has no target module: remove to"},
+	"exception-only-to":    {"exceptions[0].to: no-docker is an only rule, which names its library itself: remove to"},
 	"timeout-bad":          {`analyzers.roslyn.timeout: "five minutes" is not a Go duration, such as 5m`},
 	"coverage-no-sources":  {"coverage.sources: required when coverage is enabled: list at least one file"},
 }

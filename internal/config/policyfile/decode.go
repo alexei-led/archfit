@@ -126,8 +126,14 @@ func (f File) check() error {
 	for i, r := range f.Rules {
 		r.check(&p, fmt.Sprintf("rules[%d]", i))
 	}
+	only := map[string]bool{}
+	for _, r := range f.Rules {
+		if r.Only != nil {
+			only[r.ID] = true
+		}
+	}
 	for i, e := range f.Exceptions {
-		e.check(&p, fmt.Sprintf("exceptions[%d]", i))
+		e.check(&p, fmt.Sprintf("exceptions[%d]", i), only[e.Rule])
 	}
 	f.checkSwitches(&p)
 	if t := f.Analyzers.Roslyn.Timeout; t != "" {
@@ -206,7 +212,9 @@ func (r Rule) check(p *problems, path string) {
 	}
 }
 
-func (e Exception) check(p *problems, path string) {
+// check checks one exception. onlyRule says its rule is a custom only rule,
+// which names its library itself, so the exception has no to.
+func (e Exception) check(p *problems, path string, onlyRule bool) {
 	if e.Rule == "" {
 		p.add(path+".rule", "required: name the rule")
 	}
@@ -216,7 +224,9 @@ func (e Exception) check(p *problems, path string) {
 	switch {
 	case e.Rule == RuleUnowned && e.To != "":
 		p.add(path+".to", "unowned has no target module: remove to")
-	case e.Rule != RuleUnowned && e.To == "":
+	case onlyRule && e.To != "":
+		p.add(path+".to", "%s is an only rule, which names its library itself: remove to", e.Rule)
+	case e.Rule != RuleUnowned && !onlyRule && e.To == "":
 		p.add(path+".to", "required: name the module the errors reach")
 	}
 	if e.Expires != "" {
