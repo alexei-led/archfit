@@ -629,7 +629,7 @@ const SchemaVersion = 2
 
 // manualMigrationHint points at the rebuild steps. An installed binary has no
 // repository checkout, so it names the published page.
-const manualMigrationHint = "see https://github.com/alexei-led/archfit/blob/main/docs/migration.md#rebuild-an-older-configuration"
+const manualMigrationHint = "see https://github.com/alexei-led/archfit/blob/main/docs/archived/migration-v2-to-v3.md#rebuild-an-older-configuration"
 
 // validateSchemaVersion accepts only the current schema.
 func validateSchemaVersion(v int) error {

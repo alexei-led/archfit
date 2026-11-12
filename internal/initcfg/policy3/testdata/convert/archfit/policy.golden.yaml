@@ -1,0 +1,895 @@
+# The Archfit policy, converted by archfit init from the Archfit 3 files.
+# Review the modules, rules and exceptions, then commit it.
+version: 3
+owners:
+  - alexei-led
+gate: advisory
+layers:
+  - model
+  - support
+  - core
+  - application
+  - adapter
+  - cmd
+modules:
+  analysis-application:
+    paths:
+      - internal/application/**
+    public:
+      - internal/application
+    volatility: medium
+    subdomain: supporting
+    layer: application
+    depends_on:
+      - analysis-scope
+      - architecture-policy
+      - assessment-repair
+      - evidence-contracts
+      - relationship-analysis
+      - report-contract
+  analysis-scope:
+    paths:
+      - internal/scope/**
+    public:
+      - internal/scope
+    volatility: low
+    subdomain: supporting
+    layer: support
+  architecture-policy:
+    paths:
+      - internal/policy/**
+      - internal/model/rule/**
+    public:
+      - internal/policy/**
+      - internal/model/rule
+    volatility: high
+    subdomain: core
+    layer: core
+    depends_on:
+      - evidence-contracts
+  architecture-tests:
+    paths:
+      - internal/testutil/**
+    volatility: low
+    subdomain: generic
+    layer: cmd
+    depends_on:
+      - assessment-repair
+      - relationship-analysis
+      - report-contract
+  assessment-repair:
+    paths:
+      - internal/assessment/**
+    public:
+      - internal/assessment/finding
+      - internal/assessment/rules
+    volatility: high
+    subdomain: core
+    layer: core
+    depends_on:
+      - analysis-scope
+      - architecture-policy
+      - evidence-contracts
+      - relationship-analysis
+      - report-contract
+  cli-composition:
+    paths:
+      - cmd/archfit/**
+      - skills/*
+    public:
+      - cmd/archfit
+      - skills
+    volatility: medium
+    subdomain: generic
+    layer: cmd
+    depends_on:
+      - analysis-application
+      - analysis-scope
+      - architecture-policy
+      - assessment-repair
+      - config-lifecycle
+      - evidence-acquisition
+      - evidence-adapters
+      - evidence-contracts
+      - persistence-adapters
+      - policy-config-adapter
+      - provider-adapters
+      - relationship-analysis
+      - report-adapters
+      - report-contract
+  config-lifecycle:
+    paths:
+      - internal/initcfg/**
+      - internal/configschema/**
+    public:
+      - internal/initcfg
+      - internal/configschema
+    volatility: medium
+    subdomain: supporting
+    layer: adapter
+    depends_on:
+      - analysis-application
+      - architecture-policy
+      - assessment-repair
+      - evidence-acquisition
+      - evidence-adapters
+      - evidence-contracts
+      - persistence-adapters
+      - policy-config-adapter
+  development-tools:
+    paths:
+      - cmd/calibrate/**
+      - internal/calibrate/**
+      - scripts/eval/**
+    public:
+      - cmd/calibrate
+      - internal/calibrate
+      - scripts/eval/coverage
+    volatility: low
+    subdomain: generic
+    layer: cmd
+    depends_on:
+      - analysis-scope
+      - architecture-policy
+      - evidence-adapters
+      - evidence-contracts
+      - policy-config-adapter
+      - relationship-analysis
+  evidence-acquisition:
+    paths:
+      - internal/evidence/acquisition/**
+    public:
+      - internal/evidence/acquisition
+    volatility: medium
+    subdomain: supporting
+    layer: adapter
+    depends_on:
+      - analysis-application
+      - analysis-scope
+      - architecture-policy
+      - assessment-repair
+      - evidence-adapters
+      - evidence-analysis
+      - evidence-contracts
+      - persistence-adapters
+      - relationship-analysis
+  evidence-adapters:
+    paths:
+      - internal/extract/**
+      - internal/toolrun/**
+      - internal/evidence/ports/**
+    public:
+      - internal/extract/acquire
+      - internal/extract/registry
+      - internal/extract/golang
+      - internal/extract/ts
+      - internal/extract/py
+      - internal/extract/rust
+      - internal/extract/dotnet
+      - internal/extract/scip
+      - internal/extract/astgrep
+      - internal/extract/deployunit
+      - internal/extract/runtime
+      - internal/extract/dynimports
+      - internal/extract/clones
+      - internal/extract/loc
+      - internal/extract/manifest
+      - internal/toolrun
+      - internal/evidence/ports
+    volatility: medium
+    subdomain: supporting
+    layer: adapter
+    depends_on:
+      - analysis-scope
+      - architecture-policy
+      - evidence-analysis
+      - evidence-contracts
+      - persistence-adapters
+      - relationship-analysis
+  evidence-analysis:
+    paths:
+      - internal/syntax/**
+    public:
+      - internal/syntax
+    volatility: low
+    subdomain: supporting
+    layer: core
+    depends_on:
+      - evidence-contracts
+  evidence-contracts:
+    paths:
+      - internal/model/evidence/**
+      - internal/model/graph/**
+      - internal/model/symbol/**
+      - internal/model/fileclass/**
+      - internal/model/clone/**
+      - internal/model/pattern/**
+      - internal/evidence/*
+      - internal/evidence/*.go
+    public:
+      - internal/model/evidence
+      - internal/model/graph
+      - internal/model/symbol
+      - internal/model/fileclass
+      - internal/model/clone
+      - internal/model/pattern
+      - internal/evidence
+    volatility: medium
+    subdomain: supporting
+    layer: model
+  persistence-adapters:
+    paths:
+      - internal/factcache/**
+      - internal/history/**
+      - internal/ownership/**
+      - internal/baseline/**
+      - internal/labels/**
+    public:
+      - internal/factcache
+      - internal/history/**
+      - internal/ownership
+      - internal/baseline
+      - internal/labels/**
+    volatility: medium
+    subdomain: supporting
+    layer: adapter
+    depends_on:
+      - analysis-application
+      - architecture-policy
+      - assessment-repair
+      - evidence-adapters
+      - evidence-contracts
+      - relationship-analysis
+      - report-contract
+  policy-config-adapter:
+    paths:
+      - internal/config/**
+    public:
+      - internal/config
+    volatility: high
+    subdomain: supporting
+    layer: adapter
+    depends_on:
+      - analysis-application
+      - analysis-scope
+      - architecture-policy
+      - assessment-repair
+      - evidence-acquisition
+      - evidence-adapters
+      - evidence-analysis
+      - evidence-contracts
+      - relationship-analysis
+  provider-adapters:
+    paths:
+      - internal/llm/**
+    public:
+      - internal/llm
+    volatility: medium
+    subdomain: generic
+    layer: adapter
+  relationship-analysis:
+    paths:
+      - internal/relationship/**
+    public:
+      - internal/relationship
+      - internal/relationship/balance
+      - internal/relationship/coupling
+      - internal/relationship/facts
+      - internal/relationship/labels
+    volatility: high
+    subdomain: core
+    layer: core
+    depends_on:
+      - architecture-policy
+      - evidence-analysis
+      - evidence-contracts
+  report-adapters:
+    paths:
+      - internal/output/**
+      - internal/reportschema/**
+    public:
+      - internal/output/agentout
+      - internal/output/archmap
+      - internal/output/console
+      - internal/output/jsonout
+      - internal/output/markdown
+      - internal/output/sarif
+      - internal/output/scorecard
+      - internal/reportschema
+    volatility: medium
+    subdomain: supporting
+    layer: adapter
+    depends_on:
+      - report-contract
+  report-contract:
+    paths:
+      - internal/model/report/**
+      - internal/model/result/**
+      - internal/report/ports/**
+    public:
+      - internal/model/report
+      - internal/model/result
+      - internal/report/**
+    volatility: medium
+    subdomain: supporting
+    layer: model
+rules:
+  - id: core_no_toolrun
+    deny:
+      from:
+        - internal/relationship/**
+      to:
+        - internal/toolrun/*
+    why: Core that runs processes cannot be tested without the tool and cannot say which evidence is missing, so the verdict starts to depend on the host.
+    instead: Consume the neutral evidence contract in internal/model/evidence and internal/evidence; the tool run belongs in an extractor adapter, not in this package
+  - id: assessment_no_toolrun
+    deny:
+      from:
+        - internal/assessment/**
+      to:
+        - internal/toolrun/*
+    why: Assessment that spawns tools makes the verdict depend on the tools installed on the host instead of on the evidence it was given.
+    instead: Consume the neutral evidence contract in internal/model/evidence and internal/evidence; the tool run belongs in an extractor adapter, not in this package
+  - id: core_no_extract
+    deny:
+      from:
+        - internal/relationship/**
+      to:
+        - internal/extract/**
+    why: Core importing an extractor ties relationship analysis to one language producer; a second producer or a test fixture can no longer replace it.
+    instead: Consume the neutral evidence contract in internal/model/evidence and internal/evidence
+  - id: assessment_no_extract
+    deny:
+      from:
+        - internal/assessment/**
+      to:
+        - internal/extract/**
+    why: Assessment reading extractor output decides on tool-specific facts, so the same rule gives different verdicts per producer.
+    instead: Consume the neutral evidence contract in internal/model/evidence and internal/evidence
+  - id: internal_no_labelsio
+    note: No dependency from internal/** to internal/labels/labelsio/**.
+    why: Label files load in cmd only. Library code that reads them makes the verdict depend on a file nobody passed in, and unapproved labels can reach the gate.
+  - id: assessment_no_coupling_internals
+    deny:
+      from:
+        - internal/assessment/**
+      to:
+        - internal/relationship/coupling/**
+    why: Assessment that reads coupling internals re-derives relationship meaning. Two owners of classification disagree, and the verdict contradicts the report.
+    instead: Use the public relationship contract in internal/relationship
+  - id: assessment_no_raw_graph
+    deny:
+      from:
+        - internal/assessment/**
+      to:
+        - internal/model/graph/**
+    why: A rule that reads the raw dependency graph bypasses relationship classification. A changed extractor shape then breaks rules, and one edge is judged two ways.
+    instead: Use the public relationship contract in internal/relationship
+  - id: relationship_no_assessment
+    note: No dependency from internal/relationship/** to internal/assessment/**.
+    why: "Relationship analysis importing assessment reverses the data flow into a cycle: classification would start to depend on rules and verdicts."
+  - id: assessment_no_report_dtos
+    deny:
+      from:
+        - internal/assessment/**
+      to:
+        - internal/model/report/**
+    why: Report DTOs are the output contract. Assessment importing them couples verdict logic to the wire format, so a schema change rewrites decisions.
+    instead: Return a domain value and let internal/application/report.go project it into the report
+  - id: relationship_no_report_dtos
+    deny:
+      from:
+        - internal/relationship/**
+      to:
+        - internal/model/report/**
+    why: Report DTOs are the output contract. Relationship analysis importing them couples classification to the wire format, so a schema change rewrites relationship facts.
+    instead: Return a domain value and let internal/application/report.go project it into the report
+  - id: assessment_no_relationship_internals
+    deny:
+      from:
+        - internal/assessment/**
+      to:
+        - internal/relationship/{classify,scoring,coupling,facts,labels,analysis}/**
+    why: Assessment must read the public relationship contract. Depending on a classifier or scorer package freezes its internals, and a refactor there changes verdicts.
+    instead: Use the public relationship contract in internal/relationship
+  - id: acquisition_no_assessment_judgment
+    deny:
+      from:
+        - internal/evidence/**
+      to:
+        - internal/assessment/{status,staleness,finding,rules,metrics,decision,agenttask}/**
+    why: Acquisition observes and never judges. A judgment here creates a second owner of rules and findings, and the verdict then depends on how evidence was collected.
+    instead: Return the observation and let internal/assessment decide through the evaluation port
+  - id: report_adapters_no_application
+    deny:
+      from:
+        - internal/output/**
+      to:
+        - internal/application/**
+    why: Renderers read report DTOs only. Importing application lets a renderer re-run or reinterpret a result, so two formats can disagree about one run.
+    instead: Read the value from the report DTOs in internal/model/report
+  - id: renderer_no_assessment
+    deny:
+      from:
+        - internal/output/**
+      to:
+        - internal/assessment/**
+    why: A renderer that reads assessment types can decide for itself. Text, JSON and SARIF would then report different answers for one run.
+    instead: Read the value from the report DTOs in internal/model/report; add it to the projection in internal/application/report.go
+  - id: renderer_no_relationship
+    deny:
+      from:
+        - internal/output/**
+      to:
+        - internal/relationship/**
+    why: A renderer must not reclassify relationships. A second classification path makes the report contradict the verdict.
+    instead: Read the value from the report DTOs in internal/model/report; add it to the projection in internal/application/report.go
+  - id: renderer_no_evidence
+    deny:
+      from:
+        - internal/output/**
+      to:
+        - internal/evidence/**
+    why: A renderer shows what was measured. Reading raw evidence lets a format claim facts the verdict never used.
+    instead: Read the value from the report DTOs in internal/model/report; add it to the projection in internal/application/report.go
+  - id: projector_no_domain_internals
+    note: No dependency from internal/application/report.go to internal/{relationship,evidence}/**.
+    why: The projector copies decided values into report DTOs. Reaching into relationship or evidence internals rebuilds a decision inside the projection, where no rule test guards it.
+  - id: model_no_baseline
+    note: No dependency from internal/model/** to internal/baseline/*.
+    why: Model packages are pure value types. Importing baseline persistence pulls a file format into every consumer of the model.
+  - id: evidence_no_policy
+    note: No dependency from internal/evidence/*.go to internal/policy/**.
+    why: The evidence contract carries facts. A policy import means the tool boundary has started to decide architecture, and evidence stops being comparable across configs.
+  - id: no_stage_view
+    note: "No dependency from internal/** to internal/view/**. Archfit 3 named instead: Put the contract in the capability that decides it"
+    why: A shared stage-view package re-creates the hub every stage depends on, and the capability owners lose their contracts.
+  - id: baseline_no_score
+    note: No dependency from internal/baseline/** to internal/assessment/score/**.
+    why: "Persistence bound to the scorer ties stored baselines to a volatile implementation: a scoring change would invalidate accepted state."
+  - id: output_no_score
+    deny:
+      from:
+        - internal/output/**
+      to:
+        - internal/assessment/score/**
+    why: Renderers bound to the scorer re-derive scores per format, and a scalar leaks into a decision that is made from hard gates.
+    instead: Read the value from the report DTOs in internal/model/report
+  - id: assessment_no_score_decision
+    note: No dependency from internal/assessment/state/** to internal/assessment/score/**.
+    why: The architecture decision comes from hard gates and finding classes, never from an averaged score. If the state package can reach the scorer, a metric can silently decide the verdict.
+  - id: output_no_decision
+    deny:
+      from:
+        - internal/output/**
+      to:
+        - internal/assessment/decision/**
+    why: Renderers display the decision and never make it. A decision inside a renderer gives one run different verdicts by format.
+    instead: Read the verdict from the report DTOs in internal/model/report
+  - id: application_no_concrete_adapters
+    deny:
+      from:
+        - internal/application/**
+      to:
+        - internal/{extract,toolrun,output}/**
+    why: The application states its needs as ports. A concrete extractor, tool runner or renderer inside it cannot be swapped or faked, and its tests need the real tools.
+    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
+  - id: application_no_evidence_acquisition
+    deny:
+      from:
+        - internal/application/**
+      to:
+        - internal/evidence/acquisition/**
+    why: The application sequences stages through the evidence port. Importing the acquisition service ties the use case to one concrete collector.
+    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
+  - id: application_no_factcache
+    deny:
+      from:
+        - internal/application/**
+      to:
+        - internal/factcache/**
+    why: The fact cache is an adapter. Application code that imports it hides cache effects inside use-case logic, and a stale cache can change a verdict unseen.
+    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
+  - id: application_no_persistence_adapters
+    deny:
+      from:
+        - internal/application/**
+      to:
+        - internal/history/**
+    why: History readers are adapters. Application code that imports git history ties the use case to git and breaks fixtures.
+    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
+  - id: application_no_ownership
+    deny:
+      from:
+        - internal/application/**
+      to:
+        - internal/ownership/**
+    why: Ownership readers are adapters. Application code that imports them ties the use case to CODEOWNERS and git.
+    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
+  - id: application_no_baseline
+    deny:
+      from:
+        - internal/application/**
+      to:
+        - internal/baseline/**
+    why: Baseline file I/O is an adapter. Use-case code that reads it directly hides persistence behind verdict logic.
+    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
+  - id: application_no_labelsio
+    deny:
+      from:
+        - internal/application/**
+      to:
+        - internal/labels/labelsio/**
+    why: Label files load in cmd only. An application import of the loader lets unreviewed labels reach the gate.
+    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
+  - id: application_no_cmd
+    note: No dependency from internal/application/** to cmd/archfit/**.
+    why: "Application importing cmd inverts the composition root: the library would depend on the CLI that wires it."
+  - id: no_analysispipeline
+    note: "No dependency from ** to internal/analysispipeline/**. Archfit 3 named instead: Give the stage to the capability that decides it; the application sequences the stages"
+    why: The orchestration hub was removed. Reintroducing it puts stage ownership back in one place that decides everything.
+  - id: core_no_cmd
+    note: No dependency from internal/{policy,relationship,assessment,evidence,model,scope,syntax}/** to cmd/**.
+    why: Core must not know the CLI. A core import of cmd makes a command impossible to replace and hides domain decisions in the composition root.
+  - id: adapter_no_cli
+    note: No dependency from internal/{extract,toolrun,history,output,baseline,labels,factcache,ownership,config}/** to cmd/**.
+    why: "Adapters importing cmd invert the dependency: an adapter would depend on the command that selects it."
+  - id: cli_no_domain_implementation
+    deny:
+      from:
+        - cmd/archfit/**
+      to:
+        - internal/{assessment/rules,assessment/metrics,assessment/score,assessment/status,assessment/decision,assessment/finding,relationship/classify,relationship/scoring,relationship/coupling}/**
+    why: A rule, metric, scorer, status, decision, finding or classifier in cmd is a second place where the verdict is decided, and it drifts from the assessment.
+    instead: Call the application use case in internal/application
+  - id: syntax_api_size_ceiling
+    note: A module has at most 430 exported declarations.
+    why: Archfit 3 checked this rule; Archfit 4 does not check it.
+  - id: arch_public_api_type_leak
+    note: The public part of a module does not expose a type from its inside.
+    why: Archfit 3 checked this rule; Archfit 4 does not check it.
+exceptions:
+  - rule: coupling
+    from: analysis-application
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: analysis-application
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: cli-composition
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: cli-composition
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: config-lifecycle
+    to: analysis-application
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: config-lifecycle
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: config-lifecycle
+    to: evidence-acquisition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: config-lifecycle
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: development-tools
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: evidence-acquisition
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: evidence-acquisition
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: persistence-adapters
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: policy-config-adapter
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: policy-config-adapter
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: coupling
+    from: policy-config-adapter
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: architecture-policy
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: cli-composition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: config-lifecycle
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: persistence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-application
+    to: report-contract
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-scope
+    to: cli-composition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-scope
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: analysis-scope
+    to: persistence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: architecture-policy
+    to: assessment-repair
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: architecture-policy
+    to: cli-composition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: architecture-policy
+    to: config-lifecycle
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: architecture-policy
+    to: evidence-acquisition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: architecture-policy
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: architecture-policy
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: cli-composition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: config-lifecycle
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: evidence-acquisition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: evidence-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: evidence-contracts
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: assessment-repair
+    to: report-contract
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: config-lifecycle
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: evidence-acquisition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: persistence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: provider-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: cli-composition
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: config-lifecycle
+    to: evidence-acquisition
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: config-lifecycle
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: config-lifecycle
+    to: persistence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: config-lifecycle
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: config-lifecycle
+    to: provider-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: config-lifecycle
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: config-lifecycle
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: development-tools
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-acquisition
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-acquisition
+    to: evidence-contracts
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-acquisition
+    to: persistence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-acquisition
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-adapters
+    to: evidence-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-adapters
+    to: evidence-contracts
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-adapters
+    to: persistence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-adapters
+    to: policy-config-adapter
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-adapters
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-adapters
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-adapters
+    to: report-contract
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-contracts
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: evidence-contracts
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: persistence-adapters
+    to: provider-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: persistence-adapters
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: persistence-adapters
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: policy-config-adapter
+    to: provider-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: policy-config-adapter
+    to: relationship-analysis
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: policy-config-adapter
+    to: report-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: duplication
+    from: report-adapters
+    to: report-contract
+    why: Accepted in the Archfit 3 baseline.
+  - rule: cycle
+    from: evidence-adapters
+    to: persistence-adapters
+    why: Accepted in the Archfit 3 baseline.
+  - rule: cycle
+    from: persistence-adapters
+    to: evidence-adapters
+    why: Accepted in the Archfit 3 baseline.
+generated:
+  - internal/evidence/ports/extractor_moq.go
+  - internal/evidence/ports/pattern_provider_moq.go
+  - internal/evidence/ports/symbol_resolver_moq.go
+  - internal/evidence/ports/syntax_provider_moq.go
+  - internal/toolrun/runner_moq.go
+exclude:
+  - tools/dotnet/**
+languages:
+  go:
+    enabled: true
+  typescript:
+    enabled: false
+  python:
+    enabled: false
+  dotnet:
+    enabled: false
+analyzers:
+  syntax:
+    enabled: true

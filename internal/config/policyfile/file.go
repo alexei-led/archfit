@@ -344,6 +344,20 @@ func (s *Switch) UnmarshalYAML(data []byte) error {
 	return nil
 }
 
+// MarshalYAML writes true and false as YAML booleans and auto as the word, the
+// forms UnmarshalYAML reads back as the same Switch. A value outside Switches
+// is written as its text.
+func (s Switch) MarshalYAML() (any, error) {
+	switch s {
+	case SwitchOn:
+		return true, nil
+	case SwitchOff:
+		return false, nil
+	default:
+		return string(s), nil
+	}
+}
+
 // Names is one name or a list of names. A YAML string decodes to a list of one.
 type Names []string
 

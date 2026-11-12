@@ -145,7 +145,7 @@ The coverage sidecar uses numeric schema version `1`. Its shape and source rules
 
 The persisted `.archfit-baseline.json` uses the string `schema_version: "archfit.baseline.v3"`.
 It stores accepted findings and comparison snapshots. It is separate from state-report JSON and has no published JSON Schema.
-Use [Migration](migration.md) to review and re-anchor older baselines. Do not change the version field by hand.
+Use [the Archfit 3 migration](archived/migration-v2-to-v3.md) to review and re-anchor older baselines. Do not change the version field by hand.
 
 ## Consume JSON safely
 

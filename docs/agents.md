@@ -201,7 +201,7 @@ are owner work. Each links to the page that holds the detail.
 | --- | --- |
 | Create, update, and check the config | `archfit config init`, `config update`, `config lint`. See [commands](commands.md) and [configuration](configuration.md). |
 | Preview a policy change | `archfit config compare <candidate>`. The report has a `policy_change` section that shows what the candidate loosens or tightens. See [commands](commands.md#config-compare-candidate) and [results](results.md#config-comparison). |
-| Accept reviewed findings, move the baseline | `archfit baseline`. See [migration](migration.md) for re-anchor. |
+| Accept reviewed findings, move the baseline | `archfit baseline`. See [the Archfit 3 migration](archived/migration-v2-to-v3.md) for re-anchor. |
 | Accept a finding with an owner and an expiry | Waivers. See [rules](rules.md#waivers). |
 | Add reviewed AI annotations | `archfit config enrich <kind>`. See [commands](commands.md#config-enrich-kind) and [AI](ai.md). |
 | Write the agent instructions block | `archfit agents-md --write` |

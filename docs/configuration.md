@@ -388,7 +388,7 @@ Rule selector liveness depends on the scanned repository. A dependency rule's `t
 In a version 2 file, an unknown module `role` is an error.
 Analysis warns about unknown layer, subdomain, and volatility values. `config lint` reports them too.
 
-The policy version is separate from the Archfit release version. Archfit 3 accepts only `version: 2`. It rejects version 1 and removed coupling gate fields. Use the migration instructions in [Migration](migration.md) for older files.
+The policy version is separate from the Archfit release version. Archfit 3 accepts only `version: 2`. It rejects version 1 and removed coupling gate fields. Use the migration instructions in [the Archfit 3 migration](archived/migration-v2-to-v3.md) for older files. To convert to Archfit 4, see [Migrate from Archfit 3 to 4](migration.md).
 
 ## Starter configurations
 

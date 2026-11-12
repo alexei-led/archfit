@@ -1733,12 +1733,12 @@ func TestLoad_ValidateEnums(t *testing.T) {
 		{
 			name:    "config schema v1 rejected before retired fields decode",
 			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: serviceable\n    max_drop: 5\n",
-			wantErr: "docs/migration.md#rebuild-an-older-configuration",
+			wantErr: "docs/archived/migration-v2-to-v3.md#rebuild-an-older-configuration",
 		},
 		{
 			name:    "retired scalar gate in v2 points to manual migration",
 			yaml:    "version: 2\ncoupling:\n  gate:\n    min_band: serviceable\n",
-			wantErr: "retired in schema v2; see https://github.com/alexei-led/archfit/blob/main/docs/migration.md#rebuild-an-older-configuration",
+			wantErr: "retired in schema v2; see https://github.com/alexei-led/archfit/blob/main/docs/archived/migration-v2-to-v3.md#rebuild-an-older-configuration",
 		},
 		{
 			name:    "config schema newer than this binary rejected",

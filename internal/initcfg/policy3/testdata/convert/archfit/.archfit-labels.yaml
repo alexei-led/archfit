@@ -1,0 +1,7 @@
+# Human-approved coupling-strength overrides for the capability-oriented module map.
+#
+# The previous labels named package-level modules and are not mechanically
+# migrated. A renamed label is a new architecture decision, not metadata cleanup.
+# Current Go type information and declared public/internal surfaces classify all
+# scored edges; add an override only after reviewing a concrete misclassification.
+labels: []
