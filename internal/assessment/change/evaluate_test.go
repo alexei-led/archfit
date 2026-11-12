@@ -19,6 +19,11 @@ var sources = []string{
 	"pkg/util/util.go", "pkg/util/util.pb.go",
 }
 
+const (
+	fooTest  = "pkg/foo/foo_test.go"
+	mixAFile = "pkg/mix/a.go"
+)
+
 func imp(file string, line int, target string) evidence.ImportFact {
 	return evidence.ImportFact{File: file, Line: line, Target: target}
 }
@@ -309,12 +314,12 @@ func TestEvaluateExcludedFilesDoNotDecideADirectory(t *testing.T) {
 		Modules: map[string]resolved.Module{
 			modApp:     {Paths: []string{appGlob}},
 			modFoo:     {Paths: []string{fooGlob}},
-			"fixtures": {Paths: []string{"pkg/foo/foo_test.go"}},
+			"fixtures": {Paths: []string{fooTest}},
 		},
 		Tests: []string{testGlob},
 	}.WithDefaults()
 	facts := evidence.CheckFacts{
-		Sources: []string{appMain, fooFile, "pkg/foo/foo_test.go"},
+		Sources: []string{appMain, fooFile, fooTest},
 		Imports: []evidence.ImportFact{imp(appMain, 1, fooDir)},
 	}
 	want := []change.Key{{Rule: resolved.RuleGraph, From: modApp, To: modFoo, Symbol: fooDir}}
@@ -331,7 +336,7 @@ func TestEvaluateGeneratedOnlyPackageKeepsItsModule(t *testing.T) {
 			modApp: {Paths: []string{appGlob}},
 			"api":  {Paths: []string{"pkg/api/*.go"}},
 		},
-		Generated: []string{"**/*.pb.go"},
+		Generated: []string{pbGlob},
 	}.WithDefaults()
 	facts := evidence.CheckFacts{
 		Sources: []string{appMain, "pkg/api/api.pb.go"},
@@ -340,5 +345,52 @@ func TestEvaluateGeneratedOnlyPackageKeepsItsModule(t *testing.T) {
 	want := []change.Key{{Rule: resolved.RuleGraph, From: modApp, To: "api", Symbol: "pkg/api"}}
 	if got := keys(change.Evaluate(p, facts).Errors); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// DirEnd is the end Evaluate makes for an imported package directory.
+func TestDirEnd(t *testing.T) {
+	p := resolved.Policy{
+		Modules: map[string]resolved.Module{
+			modApp:     {Paths: []string{appGlob}},
+			modFoo:     {Paths: []string{fooGlob}},
+			"fixtures": {Paths: []string{fooTest}},
+			"mixed":    {Paths: []string{"pkg/mix/**"}},
+			"mixA":     {Paths: []string{mixAFile}},
+		},
+		Tests:     []string{testGlob},
+		Generated: []string{pbGlob},
+	}.WithDefaults()
+	tests := []struct {
+		name, dir string
+		files     []string
+		want      change.End
+	}{
+		{"a file glob gives the package its module; tests are left out", fooDir, []string{fooFile, fooTest},
+			change.End{Path: fooDir, Module: modFoo, Files: []string{fooFile}}},
+		{"only tests and generated files: those", "pkg/gen", []string{"pkg/gen/x.pb.go"},
+			change.End{Path: "pkg/gen", Files: []string{"pkg/gen/x.pb.go"}}},
+		{"files of two modules: the module that owns the directory", "pkg/mix", []string{mixAFile, "pkg/mix/b.go"},
+			change.End{Path: "pkg/mix", Module: "mixed", Files: []string{mixAFile, "pkg/mix/b.go"}}},
+		{"no file: the module that owns the directory", "app/sub", nil, change.End{Path: "app/sub", Module: modApp}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := change.DirEnd(p, tt.dir, tt.files); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("DirEnd = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLanguageOf(t *testing.T) {
+	for file, want := range map[string]resolved.Language{
+		"a/b.go": resolved.LanguageGo, "a/b.tsx": resolved.LanguageTypeScript, "a/b.mjs": resolved.LanguageTypeScript,
+		"a/b.py": resolved.LanguagePython, "a/b.rs": resolved.LanguageRust, "a/b.cs": resolved.LanguageDotNet,
+		"a/b.vue": "", "a/b": "", "a": "",
+	} {
+		if got := change.LanguageOf(file); got != want {
+			t.Errorf("LanguageOf(%q) = %q, want %q", file, got, want)
+		}
 	}
 }

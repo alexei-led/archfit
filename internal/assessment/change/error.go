@@ -33,6 +33,13 @@ type Error struct {
 	Sites []Site
 	// What says what is wrong.
 	What string
+	// Phrase is What without the dependency's modules: the text `archfit
+	// can` prints after its own "from -> to" head (design 8.1). A deny
+	// rule's What names the rule's own names, so its Phrase is its What; an
+	// only rule's Phrase states the rule ("only pkg_runtime may use
+	// process"). Judge sets it; it is empty for cycle, duplication and
+	// unowned.
+	Phrase string
 	// Why is the reason the rule exists.
 	Why string
 	// Instead is what the owner says to do, when the rule has it.
