@@ -14,33 +14,72 @@ import image_contracts as image
 
 
 class ImageContractsTest(unittest.TestCase):
-    def test_empty_graph_is_not_a_forbidden_dependency_positive_control(self):
-        self.assertFalse(image.forbidden({"findings": []}, "new"))
-        self.assertEqual(image.metric({}, "complexity", "function_loc_max"), 0)
+    def test_only_the_changes_deny_error_is_a_forbidden_dependency(self):
+        def error(rule, from_change):
+            return {"rule": rule, "from_change": from_change}
 
-    def test_fixture_builds_real_clone_sources_and_keeps_depth_opt_in(self):
+        cases = {
+            "empty record": ([], False),
+            "deny error from the change": ([error(image.lc.RULE_ID, True)], True),
+            "deny error not from the change": ([error(image.lc.RULE_ID, False)], False),
+            "only the graph error": ([error("graph", True)], False),
+        }
+        for name, (errors, want) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(image.forbidden({"errors": errors}), want)
+
+    def test_read_result_accepts_only_a_version_3_record(self):
+        good = {"schema": image.lc.RESULT_SCHEMA, "errors": [], "unknown": []}
+        cases = {
+            "record": (good, True),
+            "version 2 state": (
+                {"schema_version": "archfit.architecture-state.v1"},
+                False,
+            ),
+            "errors not a list": ({**good, "errors": None}, False),
+            "unknown missing": (
+                {"schema": image.lc.RESULT_SCHEMA, "errors": []},
+                False,
+            ),
+        }
+        for name, (doc, valid) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+                (output / "check.json").write_text(json.dumps(doc))
+                contract = image.ImageContract("local:contract", "colima", output)
+                self.assertEqual(contract.read_result(output, "check") == doc, valid)
+                self.assertEqual(not contract.assertions, valid)
+
+    def test_fixture_is_a_change_on_a_clean_target_branch(self):
+        def git(path, *args):
+            return subprocess.run(
+                ["git", *args], cwd=path, capture_output=True, text=True, check=True
+            ).stdout
+
         with tempfile.TemporaryDirectory() as temporary:
             for spec in image.lc.FIXTURES:
                 with self.subTest(language=spec.name):
                     path = Path(temporary) / spec.name
-                    image.prepare_fixture(spec, path)
-                    self.assertIn("clone_left:", (path / ".archfit.yaml").read_text())
-                    self.assertIn(
-                        "clones:\n    enabled: false",
-                        (path / ".archfit.yaml").read_text(),
+                    extra = {"sitecustomize.py": "raise RuntimeError('poison')\n"}
+                    image.prepare_fixture(spec, path, extra)
+                    policy = (path / ".archfit.yaml").read_text()
+                    self.assertEqual(policy, image.lc.config_text(spec))
+                    self.assertRegex(policy, r"(?m)^version: 3$")
+                    self.assertEqual(
+                        git(path, "branch", "--show-current").strip(),
+                        image.lc.CHANGE_BRANCH,
                     )
-                    self.assertIn(
-                        "clones:\n    enabled: true", (path / "deep.yaml").read_text()
+                    self.assertEqual(git(path, "status", "--porcelain"), "")
+                    for name, content in spec.forbidden.items():
+                        self.assertEqual((path / name).read_text(), content)
+                        self.assertEqual(
+                            git(path, "show", f"{image.lc.TARGET_BRANCH}:{name}"),
+                            spec.files[name],
+                        )
+                    self.assertEqual(
+                        git(path, "show", f"{image.lc.TARGET_BRANCH}:sitecustomize.py"),
+                        extra["sitecustomize.py"],
                     )
-                    self.assertGreater(
-                        len(image.clone_source(spec.name).splitlines()), 40
-                    )
-                    for name, original in spec.files.items():
-                        if Path(name).suffix in {".go", ".ts", ".js", ".py", ".rs"}:
-                            self.assertEqual((path / name).read_text(), original)
-                    if spec.name == "javascript":
-                        config = json.loads((path / "tsconfig.json").read_text())
-                        self.assertTrue(config["compilerOptions"]["allowJs"])
                     self.assertTrue(image.tree_hash(path))
 
     def test_helper_statuses_fail_closed(self):

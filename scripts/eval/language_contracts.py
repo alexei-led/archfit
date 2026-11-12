@@ -886,9 +886,9 @@ def run_change_stages(
     repeat = check(f"{result.language}-repeat")
     assert_result(
         result,
-        "a repeated check gives byte-identical JSON",
-        repeat.stdout == cold.stdout,
-        {"exit": repeat.returncode},
+        "a repeated check gives byte-identical JSON and the same exit",
+        repeat.stdout == cold.stdout and repeat.returncode == cold.returncode,
+        {"exit": repeat.returncode, "first exit": cold.returncode},
     )
 
     # A policy that differs from the target branch is unknown, so the exceptions
