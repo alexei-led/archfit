@@ -38,6 +38,44 @@ flowchart LR
 
 The application owns the stage order. Acquisition returns observations. Relationship analysis turns graph evidence into a classified relationship set. Assessment evaluates policy and evidence. Projection maps internal results to the report contract. Renderers consume that contract.
 
+## Check flow
+
+`archfit check` with a version 3 policy runs `internal/application/changecheck`. It shares no slow extraction with `report`.
+
+```mermaid
+flowchart LR
+  target[Target branch and merge base] --> policy[Policy against the target branch]
+  policy --> tree[Policy against the tree]
+  tree --> facts[Head and base facts]
+  facts --> count[Errors counted on base and head]
+  count --> project[Project the result]
+  project --> store[Store the last result]
+  ports[Git, policy files, facts, clock, store] --> target
+  classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
+  classDef process fill:#e0f2fe,stroke:#0284c7,color:#082f49
+  class target,policy,tree,facts,count,project,store process
+  class ports neutral
+```
+
+1. The target branch is `--base`, else `origin/HEAD`. The base is the merge base of HEAD and the target. When HEAD is on the target branch, the base is its first parent.
+2. The policy on the target branch is the approved one. A local policy that differs from it gives `unknown`, and no facts are read. A target with no policy file, or with a version 2 file, is not compared: the check judges with the local policy and prints one line on stderr. `--policy FILE` judges with that file, compares nothing, and stores nothing.
+3. `resolved.Policy.CheckTree` checks the policy against the files of the head. A path that matches nothing gives `unknown`.
+4. `checkfacts` reads the facts of the head and the base. `count.Assess` counts the errors of each tree, applies the exceptions on the date, and gives the status.
+5. `changecheck/project.go` builds the `internal/model/result` value. The result is stored in `.archfit-cache/last.json` for `archfit request`.
+
+The same tree, policy, engine version, and date give the same result. `changecheck` states its needs as ports, and `cmd/archfit` wires them.
+
+| Package | Responsibility |
+|---|---|
+| `internal/application/changecheck` | The check flow, its ports, and the projection into the result |
+| `internal/evidence/acquisition/checkfacts` | The facts of a tree, read from git objects and cached by tree id |
+| `internal/assessment/change` | The built-in and custom rules on one tree |
+| `internal/assessment/copies` | The `duplication` rule |
+| `internal/assessment/count` | Errors counted on base and head, exceptions with dates, the status |
+| `internal/policy/resolved` | The schema 3 policy model |
+| `internal/model/result` | The result contract |
+| `internal/output/record` | The text record, JSON, and SARIF of a result |
+
 ## Dependency rules
 
 - Dependencies point from outer layers to inner layers.
