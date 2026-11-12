@@ -1,0 +1,16 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+  store:
+    paths: [internal/store/**]
+rules:
+  - id: no-docker
+    only: { use: github.com/docker/docker, in: [store] }
+    why: One adapter owns the Docker API.
+exceptions:
+  - rule: no-docker
+    from: app
+    to: store
+    why: An only rule names its library itself.

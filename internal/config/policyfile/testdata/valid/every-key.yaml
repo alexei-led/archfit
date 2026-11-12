@@ -45,6 +45,9 @@ exceptions:
     from: scripts/**
     expires: 2027-01-31
     why: Scripts get a module next quarter.
+  - rule: process-in-cli
+    from: store
+    why: The migration tool shells out until it moves to the CLI.
 generated: ["**/*.pb.go"]
 tests: ["**/*_test.go", internal/testutil/**]
 exclude: [third_party/**]

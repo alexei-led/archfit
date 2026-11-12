@@ -131,12 +131,13 @@ func patch(schema *jsonschema.Schema) {
 		rule.DependentRequired = map[string][]string{"deny": {"instead"}}
 	}
 
-	// An unowned exception names a path and no target; every other exception
-	// names the target module.
+	// An unowned exception names a path and no target. An exception of a
+	// custom only rule has no target either, and which ids are only rules is
+	// a fact of the rules list, so only the decoder requires to for the other
+	// rules: the schema leaves to optional there.
 	if exception := schema.Definitions["Exception"]; exception != nil {
 		exception.If = requiredProperty("rule", &jsonschema.Schema{Const: policyfile.RuleUnowned})
 		exception.Then = &jsonschema.Schema{Not: &jsonschema.Schema{Required: []string{"to"}}}
-		exception.Else = &jsonschema.Schema{Required: []string{"to"}}
 	}
 
 	// A timeout is a Go duration without a sign.

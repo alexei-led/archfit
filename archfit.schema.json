@@ -293,11 +293,6 @@
           ]
         }
       },
-      "else": {
-        "required": [
-          "to"
-        ]
-      },
       "properties": {
         "rule": {
           "type": "string",
@@ -312,7 +307,7 @@
         "to": {
           "type": "string",
           "minLength": 1,
-          "description": "The module the errors reach. Required for every rule except unowned, which has no target."
+          "description": "The module the errors reach. Required for every rule except unowned and a custom only rule, which have no target: an only rule names its library itself."
         },
         "expires": {
           "type": "string",

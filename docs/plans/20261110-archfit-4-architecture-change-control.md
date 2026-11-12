@@ -1511,7 +1511,8 @@ Time: dependency-cruiser took 3.5 s with an installed tree (install: 1 min 17 s,
 **Limits.**
 
 - Thin evidence. The TypeScript repository is one monorepo, and its module map is generated, unreviewed, and in schema v1. The file-level result does not depend on the map. The Python map covers one repository, ccgram. Omni is left out: it has no `.archfit.yaml`. The prometheus map is unreviewed.
-- Not handled, and not seen on the corpus: a tsconfig `extends` of a package (needs `node_modules`), `moduleResolution: "classic"`, `.vue` and `.svelte` files as importers, and template-literal `import()`.
+- A tsconfig `extends` of a package is not read: it needs `node_modules`. It is an unknown item, not silently skipped ([#151](https://github.com/alexei-led/archfit/pull/151)).
+- Not handled, and not seen on the corpus: `moduleResolution: "classic"`, `.vue` and `.svelte` files as importers, and template-literal `import()`.
 - An existing engine bug, outside the verdict: stdlib `log` and a first-party `log` package share one node. Milestone 1 fixes it with the Go parser.
 
 **Source.** PR [#133](https://github.com/alexei-led/archfit/pull/133), merged as `9f846fc7`.
