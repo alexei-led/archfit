@@ -1,0 +1,5 @@
+repository: clean
+measurements:
+  coupling_balance: 78 (mixed)
+  cycle: 0
+  encapsulation: n/a
