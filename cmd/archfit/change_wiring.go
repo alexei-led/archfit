@@ -427,13 +427,20 @@ func (t *tree) headFacts(ctx context.Context) (evidence.CheckFacts, error) {
 	return facts, nil
 }
 
-// dirFiles returns the sources directly in dir. When a tool is missing or a
-// tree could not be read, the sources are not all known, and a directory
-// that looks empty would answer yes: that is an error, which `can` reports as
-// no verdict. An import that cannot be resolved leaves the sources known.
+// dirFiles returns the sources directly in dir. The sources are not all known
+// when a tool is missing, a tree could not be read, or a file of dir is
+// unknown and left out of the sources (a file that does not parse, a cgo file
+// with CGO_ENABLED unset): a directory missing a file could answer yes where
+// the file answers no. That is an error, which `can` reports as no verdict. An
+// import that cannot be resolved in a listed file leaves the sources known.
 func dirFiles(facts evidence.CheckFacts, dir string) ([]string, error) {
+	listed := make(map[string]bool, len(facts.Sources))
+	for _, f := range facts.Sources {
+		listed[f] = true
+	}
 	for _, u := range facts.Unknown {
-		if u.Cause != evidence.CauseImport {
+		dropped := u.Cause == evidence.CauseImport && path.Dir(u.File) == dir && !listed[u.File]
+		if u.Cause != evidence.CauseImport || dropped {
 			return nil, fmt.Errorf("the files of %s are not all known: %s: %s", dir, u.Reason, u.Fix)
 		}
 	}

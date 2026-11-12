@@ -121,6 +121,16 @@ func TestDirFilesNeedCompleteSources(t *testing.T) {
 	if err != nil || !slices.Equal(files, []string{srcA, "src/b.ts"}) {
 		t.Errorf("with an unresolved import: %q, %v; want the two files of src", files, err)
 	}
+	if _, err := dirFiles(evidence.CheckFacts{Sources: sources, Unknown: []evidence.UnknownItem{
+		{File: "src/cgo.go", Cause: evidence.CauseImport, Reason: "cgo file", Fix: "set CGO_ENABLED"},
+	}}, "src"); err == nil {
+		t.Error("a file of src left out of the sources: no error")
+	}
+	if files, err := dirFiles(evidence.CheckFacts{Sources: sources, Unknown: []evidence.UnknownItem{
+		{File: "other/cgo.go", Cause: evidence.CauseImport, Reason: "cgo file"},
+	}}, "src"); err != nil || len(files) != 2 {
+		t.Errorf("a file of another directory left out: %q, %v; want the two files of src", files, err)
+	}
 	for _, cause := range []evidence.UnknownCause{evidence.CauseTool, evidence.CauseBase} {
 		_, err := dirFiles(evidence.CheckFacts{Sources: sources, Unknown: []evidence.UnknownItem{
 			{Cause: cause, Reason: "ast-grep is not installed", Fix: "install ast-grep"},
