@@ -43,6 +43,26 @@ git push origin vX.Y.Z
 ```
 
 Do not create the GitHub release by hand. The workflow owns that step.
+
+A release candidate uses a prerelease tag `vX.Y.Z-rc.N`, created and pushed the same way:
+
+```sh
+git tag -a v4.0.0-rc.1 -F /tmp/archfit-release-notes.md
+git push origin v4.0.0-rc.1
+```
+
+The first job runs `scripts/release-channel.sh` on the tag. It gives `final` for `vX.Y.Z` and `prerelease` for
+`vX.Y.Z-rc.N`. Each publishing step uses this one answer:
+
+| Effect | `vX.Y.Z` | `vX.Y.Z-rc.N` |
+| --- | --- | --- |
+| GitHub release | Latest release | Prerelease, not the latest release |
+| Image tags | `vX.Y.Z` and `latest` | `vX.Y.Z-rc.N` only |
+| Homebrew formula | Updated | Skipped |
+
+The workflow creates no moving major tag for either form.
+A tag of a different form stops the run in the first job, before anything is published.
+`make workflows` runs `scripts/tests/release_channel_test.sh`, the test of this rule.
 The Go module path uses `/v3`. Keep the major suffix in `go.mod` and imports for v3 releases.
 
 ## Language contracts
