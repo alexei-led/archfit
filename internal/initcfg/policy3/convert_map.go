@@ -220,7 +220,7 @@ func convert(old archfit3, facts evidence.CheckFacts, generatedGlobs []string, o
 	}
 	c.file = policyfile.File{
 		Version: policyfile.Version, Layers: old.policy.Layers, Modules: map[string]policyfile.Module{},
-		Tests: tests(facts.Sources), Generated: generatedGlobs,
+		Tests: tests(factFiles(facts)), Generated: generatedGlobs,
 	}
 	c.app(owner)
 	c.topKeys()
@@ -230,7 +230,7 @@ func convert(old archfit3, facts evidence.CheckFacts, generatedGlobs []string, o
 	c.modules()
 	c.dependsOn()
 	c.rules()
-	_, p, err := encode(c.file, c.sources, convertHeader)
+	_, p, err := encode(c.file, factFiles(c.facts), convertHeader)
 	if err != nil {
 		return Conversion{}, nil, err
 	}
@@ -240,7 +240,7 @@ func convert(old archfit3, facts evidence.CheckFacts, generatedGlobs []string, o
 		c.note(d, "a draft nobody approved: not read and not deleted; apply it with Archfit 3 first, or delete it")
 	}
 	c.file.Exceptions = c.exceptions(p, waived)
-	data, final, err := encode(c.file, c.sources, convertHeader)
+	data, final, err := encode(c.file, factFiles(c.facts), convertHeader)
 	if err != nil {
 		return Conversion{}, nil, err
 	}

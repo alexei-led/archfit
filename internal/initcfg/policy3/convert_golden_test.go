@@ -26,9 +26,10 @@ type snapshot struct {
 // snapshotFile holds a snapshot, gzip-compressed JSON.
 const snapshotFile = "snapshot.json.gz"
 
-// minSnapshotLiteral is the shortest literal a snapshot keeps: the
-// duplication rule counts no literal under 12 runes, so a shorter one cannot
-// change a conversion.
+// minSnapshotLiteral is the shortest literal a snapshot keeps for its value:
+// the duplication rule counts no literal under 12 runes. A snapshot also keeps
+// one literal of every other file, because a file the facts name can add a
+// test glob (factFiles).
 const minSnapshotLiteral = 12
 
 // TestConvertGolden converts the real Archfit 3 files of archfit (main
@@ -75,8 +76,11 @@ func takeSnapshot(t *testing.T, old archfit3, src, out string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	named := map[string]bool{}
 	facts.Literals = slices.DeleteFunc(facts.Literals, func(l evidence.LiteralOccurrence) bool {
-		return len(l.Value) < minSnapshotLiteral
+		drop := len(l.Value) < minSnapshotLiteral && named[l.File]
+		named[l.File] = true
+		return drop
 	})
 	gen, err := generated(src, facts.Sources)
 	if err != nil {

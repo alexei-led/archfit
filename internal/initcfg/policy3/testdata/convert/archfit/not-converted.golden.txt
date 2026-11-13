@@ -46,7 +46,7 @@ not converted or changed:
   rules[39] (syntax_api_size_ceiling): public_api_max: written as a note: nothing checks it in Archfit 4
   rules[40] (arch_public_api_type_leak): public_api_type_leak: written as a note: nothing checks it in Archfit 4
   exceptions.coupling: 15 written for the errors of today; the Archfit 3 baseline accepted 17
-  exceptions.duplication: 64 written for the errors of today; the Archfit 3 baseline accepted 5
+  exceptions.duplication: 15 written for the errors of today; the Archfit 3 baseline accepted 5
   exceptions.cycle: 2 written for the errors of today; the Archfit 3 baseline accepted 1
   .archfit-baseline.json: 3 accepted entries of syntax_api_size_ceiling dropped: nothing checks that rule in Archfit 4
   .archfit-baseline.json metrics: dropped: Archfit 4 has no metric ratchets
