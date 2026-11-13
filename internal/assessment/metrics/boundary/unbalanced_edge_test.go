@@ -117,9 +117,6 @@ func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 	if result.Confidence != confLow {
 		t.Errorf("expected confidence low got %q", result.Confidence)
 	}
-	if result.Delta != nil {
-		t.Errorf("expected nil delta for n/a, got %v", *result.Delta)
-	}
 }
 
 func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {

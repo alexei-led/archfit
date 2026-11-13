@@ -120,7 +120,6 @@ func TestVerdict_Constants(t *testing.T) {
 }
 
 func TestMetricResult_JSONFieldNames(t *testing.T) {
-	delta := 0.5
 	mr := report.MetricResult{
 		Name:       "encapsulation",
 		Value:      8.5,
@@ -128,9 +127,8 @@ func TestMetricResult_JSONFieldNames(t *testing.T) {
 		Band:       "serviceable",
 		Confidence: "high",
 		Version:    "encapsulation.v1",
-		Mode:       "delta",
+		Mode:       "ratio",
 		Definition: "contract cross-boundary edges / all cross-boundary edges",
-		Delta:      &delta,
 	}
 
 	data, err := json.Marshal(mr)
@@ -145,7 +143,7 @@ func TestMetricResult_JSONFieldNames(t *testing.T) {
 
 	requiredFields := []string{
 		"name", "value", "display", "band", "confidence",
-		"metric_version", "mode", "definition", "delta",
+		"metric_version", "mode", "definition",
 	}
 	for _, f := range requiredFields {
 		if _, ok := m[f]; !ok {
@@ -159,7 +157,7 @@ func TestMetricResult_JSONFieldNames(t *testing.T) {
 	}
 }
 
-func TestMetricResult_DeltaOmitEmpty(t *testing.T) {
+func TestMetricResultHasNoReferenceDelta(t *testing.T) {
 	mr := report.MetricResult{
 		Name:    "encapsulation",
 		Version: "encapsulation.v1",
@@ -176,7 +174,7 @@ func TestMetricResult_DeltaOmitEmpty(t *testing.T) {
 	}
 
 	if _, ok := m["delta"]; ok {
-		t.Error("delta must be omitted when nil")
+		t.Error("stored-reference delta must not be emitted")
 	}
 }
 

@@ -38,16 +38,7 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 		Waivers: c.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold},
 		FunctionLOCThreshold: c.Metrics.FunctionLOCThresholdValue(),
 	}
-	gate := policy.CouplingGate{Mode: policy.DistributedMonolithWarn}
-	if g := c.Coupling.Gate; g != nil && g.DistributedMonolith != nil {
-		if m := g.DistributedMonolith.Mode; m != "" {
-			gate.Mode = policy.DistributedMonolithMode(m)
-		}
-		if n := g.DistributedMonolith.MaxNewSeams; n != nil {
-			gate.MaxNewSeams = *n
-		}
-	}
-	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics.MetricEntries(), Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate), UncoveredChange: policy.GateMode(c.ModuleReview.ChangeGate)}, owners, deployUnits)
+	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics.MetricEntries(), ModuleReview: policy.GateMode(c.ModuleReview.Gate), UncoveredChange: policy.GateMode(c.ModuleReview.ChangeGate)}, owners, deployUnits)
 }
 
 // CoverageOptions projects analyzer gates and applicability probes. Every probe

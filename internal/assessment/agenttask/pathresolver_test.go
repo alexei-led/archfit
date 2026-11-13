@@ -112,12 +112,7 @@ func TestNewPathResolver_ZeroKnownFilesTrustsEverything(t *testing.T) {
 			To:   finding.Endpoint{Path: fixturePkgBGo},
 		},
 	}
-	tasks := agenttask.Build(
-		[]finding.Finding{f},
-		map[string]string{ruleTypeForbidden: ruleTypeForbidden},
-		nil, nil, nil, nil,
-		resolver,
-	)
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -145,12 +140,7 @@ func TestNewPathResolver_SharedDirectoryAncestorDedup(t *testing.T) {
 		Status:    finding.StatusNew,
 		Locations: []relationship.Location{{File: fixturePkgAGo}, {File: fixturePkgBGo}, {File: fixturePkgDir}},
 	}
-	tasks := agenttask.Build(
-		[]finding.Finding{f},
-		map[string]string{ruleTypeForbidden: ruleTypeForbidden},
-		nil, nil, nil, nil,
-		resolver,
-	)
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -173,12 +163,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("widget")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("widget")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -194,12 +179,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("myapp.domain")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -215,12 +195,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("myapp.domain")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -240,12 +215,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("myapp.domain")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -267,12 +237,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 				return err == nil
 			}
 			resolver := agenttask.NewPathResolver(map[string]struct{}{"src/Core/Auth/Login.cs": {}}, nil, nil, onDisk)
-			tasks := agenttask.Build(
-				[]finding.Finding{gateFindingWithModuleEdge(node)},
-				map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-				nil, nil, nil, nil,
-				resolver,
-			)
+			tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge(node)}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
 			}
@@ -288,12 +253,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, map[string]string{fixtureCrate: fixtureCrateDir}, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("mycrate::mymod")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("mycrate::mymod")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -321,12 +281,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 				To: finding.Endpoint{Path: "src/components/Button.tsx"},
 			},
 		}
-		tasks := agenttask.Build(
-			[]finding.Finding{f},
-			map[string]string{ruleTypeForbidden: ruleTypeForbidden},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -346,12 +301,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		// no module root dir configured, files[] must come back empty rather
 		// than fabricate the bare module key.
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("ghost.module")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("ghost.module")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -366,12 +316,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"ghostmod": "legacy/pkg"}, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("ghostmod")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("ghostmod")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -390,12 +335,7 @@ func TestFilesFor_RustCrateResolution(t *testing.T) {
 	build := func(root string, crateDirs map[string]string, modKey string) []result.AgentTask {
 		knownFiles := buildKnownFiles(t, root)
 		resolver := agenttask.NewPathResolver(knownFiles, crateDirs, nil, nil)
-		return agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge(modKey)},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		return agenttask.Build([]finding.Finding{gateFindingWithModuleEdge(modKey)}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 	}
 
 	t.Run("module_file_beats_crate_dir_when_indexed", func(t *testing.T) {
@@ -472,8 +412,7 @@ func TestFilesFor_RustBareCrateResolvesToCrateDir(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge(tc.key)},
-				map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, nil, resolver)
+			tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge(tc.key)}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
 			}
@@ -505,7 +444,7 @@ func TestFilesFor_ModuleCycleFallsBackToModuleRoot(t *testing.T) {
 		},
 		MatchedBy: map[string]string{matchedByCycleModules: "sem_place, sem_types"},
 	}
-	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"no-module-cycles": "module_cycle"}, nil, nil, nil, nil, resolver)
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"no-module-cycles": "module_cycle"}, nil, nil, nil, resolver)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -542,7 +481,7 @@ func TestFilesFor_OnDiskFallback(t *testing.T) {
 
 	t.Run("with_callback_the_on_disk_file_survives", func(t *testing.T) {
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, onDisk)
-		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, nil, resolver)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -554,7 +493,7 @@ func TestFilesFor_OnDiskFallback(t *testing.T) {
 
 	t.Run("without_callback_the_index_miss_is_dropped", func(t *testing.T) {
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, nil, resolver)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -576,12 +515,7 @@ func TestFilesFor_DottedModuleRootFallback(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"domain": "myapp.domain"}, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("domain")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("domain")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -597,12 +531,7 @@ func TestFilesFor_DottedModuleRootFallback(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"domain": "myapp.domain"}, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("domain")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("domain")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -628,12 +557,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 		f := gateFindingWithModuleEdge("docs")
 		f.Locations = []relationship.Location{{File: "src/domain/api.go"}}
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{f},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -651,12 +575,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 		f := gateFindingWithModuleEdge("widget")
 		f.Locations = []relationship.Location{{File: "ghost/nope.go"}}
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build(
-			[]finding.Finding{f},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -693,12 +612,7 @@ func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"leaky": tc.moduleRoot}, onDisk)
-			tasks := agenttask.Build(
-				[]finding.Finding{gateFindingWithModuleEdge("leaky")},
-				map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-				nil, nil, nil, nil,
-				resolver,
-			)
+			tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("leaky")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
 			}
@@ -714,12 +628,7 @@ func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {
 	t.Run("escaping_crate_root", func(t *testing.T) {
 		writeFixtureFile(t, base, "outside-repo/src/mymod.rs")
 		resolver := agenttask.NewPathResolver(knownFiles, map[string]string{"leaky": "../outside-repo"}, nil, onDisk)
-		tasks := agenttask.Build(
-			[]finding.Finding{gateFindingWithModuleEdge("leaky::mymod")},
-			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil, nil,
-			resolver,
-		)
+		tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge("leaky::mymod")}, map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}

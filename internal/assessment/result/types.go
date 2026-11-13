@@ -32,14 +32,7 @@ type MetricResult struct {
 	Version    string    `json:"metric_version"`
 	Mode       string    `json:"mode"`
 	Definition string    `json:"definition"`
-	Delta      *float64  `json:"delta,omitempty"`
 	Direction  Direction `json:"direction,omitempty"`
-}
-
-// MetricSnapshot stores baseline metric values by name.
-type MetricSnapshot map[string]struct {
-	Value   float64 `json:"value"`
-	Version string  `json:"version"`
 }
 
 // Summary holds gate, warning, and waiver counts.

@@ -1,8 +1,8 @@
 # Coupling model
 
 archfit scores module and declared-external dependencies with strength, distance, and volatility.
-The score describes balance. The seam gate checks qualifying dependencies against
-a comparable baseline. See [metrics](metrics.md) for metric behavior,
+The score describes balance. The report keeps metrics and seams as measurements;
+it does not compare them with a stored reference. See [metrics](metrics.md) for metric behavior,
 [configuration](configuration.md) for policy keys, and [results](results.md) for
 report fields.
 
@@ -13,13 +13,13 @@ report fields.
 Strength measures how much knowledge crosses a boundary. Lower ordinals mean
 weaker coupling.
 
-| Strength | Ordinal | Meaning |
-| --- | ---: | --- |
-| `contract` | 1 | The dependency uses an interface or declared `public:` contract. |
-| `model` | 3 | The dependency uses a shared data model. |
-| `functional` | 8 | The dependency calls a non-public module surface. |
-| `symmetric` | 9 | Both modules contain duplicated knowledge. |
-| `intrusive` | 10 | The dependency reaches a target declared `internal:`. |
+| Strength     | Ordinal | Meaning                                                          |
+| ------------ | ------: | ---------------------------------------------------------------- |
+| `contract`   |       1 | The dependency uses an interface or declared `public:` contract. |
+| `model`      |       3 | The dependency uses a shared data model.                         |
+| `functional` |       8 | The dependency calls a non-public module surface.                |
+| `symmetric`  |       9 | Both modules contain duplicated knowledge.                       |
+| `intrusive`  |      10 | The dependency reaches a target declared `internal:`.            |
 
 Strength follows declared surfaces, approved labels, and extractor evidence.
 An `internal:` match is authoritative and means `intrusive`. A `public:` match
@@ -46,12 +46,12 @@ unknown and the scorer abstains.
 Distance measures the cost of changing modules together. The shipped v7 model is
 level-relative:
 
-| Boundary | Distance |
-| --- | ---: |
-| Same module | 2 |
-| Any module boundary | 9 |
-| Declared external system | 10 |
-| Unresolved boundary | Unknown. Abstain. |
+| Boundary                 |          Distance |
+| ------------------------ | ----------------: |
+| Same module              |                 2 |
+| Any module boundary      |                 9 |
+| Declared external system |                10 |
+| Unresolved boundary      | Unknown. Abstain. |
 
 Owner and deploy-unit labels name module boundaries. They do not change the
 distance. A cross-owner or cross-deploy-unit dependency still has D=9. Path
@@ -93,13 +93,13 @@ Unknown strength or distance abstains. Same-module edges appear in
 
 The score maps to these severity bands:
 
-| Balance | Band |
-| ---: | --- |
-| 1–2 | `critical` |
-| 3–4 | `high` |
-| 5–6 | `medium` |
-| 7–8 | `low` |
-| 9–10 | `none` |
+| Balance | Band       |
+| ------: | ---------- |
+|     1–2 | `critical` |
+|     3–4 | `high`     |
+|     5–6 | `medium`   |
+|     7–8 | `low`      |
+|    9–10 | `none`     |
 
 ### Examples
 
@@ -119,10 +119,10 @@ across a module boundary needs a balance of at least 7. The balance uses the
 formula above at D=9 and is shown as `9/10 (min 7)`.
 
 | Volatility that applies | Use of the public part | Use past the public part | Copy |
-| --- | ---: | ---: | ---: |
-| `low` | 9 or 8 | 8 | 8 |
-| `medium` | 9 or 7 | 5 ✗ | 5 ✗ |
-| `high` | 9 or 7 | 2 ✗ | 1 ✗ |
+| ----------------------- | ---------------------: | -----------------------: | ---: |
+| `low`                   |                 9 or 8 |                        8 |    8 |
+| `medium`                |                 9 or 7 |                      5 ✗ |  5 ✗ |
+| `high`                  |                 9 or 7 |                      2 ✗ |  1 ✗ |
 
 - A use of the public part is `contract` (9) or `model` (8 or 7). A use past it
   is `functional`, a copy `symmetric`.
@@ -143,11 +143,11 @@ In words: a module may use the public part of a module it is allowed to depend
 on. It may reach past the public part only when neither module is more volatile
 than `low`.
 
-## Distributed-monolith seam gate
+## Distributed-monolith seam measurements
 
-The gate counts ordered module pairs, called seams. One seam can contain many
-dependency edges. A seam qualifies when at least one import edge meets all of
-these conditions:
+The report groups dependencies into ordered module pairs, called seams. One
+seam can contain many dependency edges. A seam qualifies as a distributed-monolith
+measurement when at least one import edge meets all of these conditions:
 
 - Its strength is `functional`, `intrusive`, or pinned `symmetric`.
 - It crosses a module boundary.
@@ -157,13 +157,13 @@ these conditions:
   the edge is intrusive.
 
 Medium volatility and clone facts do not qualify. Qualification is separate from
-the balance score. The gate compares qualifying seam identities with a
-comparable baseline. It counts newly introduced seams, not imports. Owner and
-deploy labels do not change D=9 or make a seam qualify by themselves.
+the balance score. Owner and deploy labels do not change D=9 or make a seam
+qualify by themselves.
 
-`coupling_balance` is diagnostic. It does not gate directly. The seam gate can
-block when its configured limit is exceeded. `unbalanced_edge` also supports a
-baseline ratchet. See [metrics](metrics.md#deltas-and-gates) for both paths.
+The seam ledger, `coupling_balance`, and `unbalanced_edge` are report measurements.
+They have no stored-reference gate or metric ratchet. The Archfit 4 check applies
+the `coupling` rule to errors added by the change, independently of these report
+measurements. See [metrics](metrics.md#deltas-and-gates) and [rules](rules.md).
 
 ## Clones, labels, and limits
 

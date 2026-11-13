@@ -76,18 +76,6 @@ const (
 	HardGateUnmeasured HardGateState = "unmeasured"
 )
 
-// ComparisonStatus records whether this run may be compared numerically against
-// a reference. Comparison is strict: any config/model/labels/rubric mismatch is
-// non_comparable, never a numerical delta.
-type ComparisonStatus string
-
-// Comparison statuses.
-const (
-	ComparisonComparable    ComparisonStatus = "comparable"
-	ComparisonNonComparable ComparisonStatus = "non_comparable"
-	ComparisonNotRequested  ComparisonStatus = "not_requested"
-)
-
 // DimensionCount is the fixed number of architecture-state dimensions. Coverage
 // counts must sum to it.
 const DimensionCount = 9
@@ -346,23 +334,6 @@ type UnknownFact struct {
 	Owner  string
 }
 
-// MetricDelta is a signed change in one dimension metric against a comparable
-// reference.
-type MetricDelta struct {
-	Name   string
-	Before float64
-	After  float64
-	Change float64
-}
-
-// Delta is one dimension's change against the comparison reference. A
-// non-comparable reference yields reasons and no numbers.
-type Delta struct {
-	Status  ComparisonStatus
-	Reasons []string
-	Metrics []MetricDelta
-}
-
 // Coverage is a dimension's denominator: what was counted, how much of it was
 // observed, and out of how much.
 type Coverage struct {
@@ -382,7 +353,6 @@ type Dimension struct {
 	Metrics    []MetricValue
 	Findings   []FindingRef
 	Unknown    []UnknownFact
-	Delta      *Delta
 }
 
 // Dimensions holds the nine envelopes as named fields rather than a map: each

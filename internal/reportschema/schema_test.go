@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -146,6 +147,7 @@ func mustRel(t *testing.T, path string) string {
 }
 
 func TestStateSchemaRejectsRetiredReferenceFields(t *testing.T) {
+	const notRequested, statusKey = "not_requested", "status"
 	compiled := compileStateSchema(t)
 	raw, err := os.ReadFile("testdata/new_violation.state.json")
 	if err != nil {
@@ -155,8 +157,10 @@ func TestStateSchemaRejectsRetiredReferenceFields(t *testing.T) {
 		name, parent, key string
 		value             any
 	}{
-		{name: "stored comparison", key: "gate_reference", value: map[string]any{"status": "not_requested", "reasons": []any{}}},
+		{name: "stored comparison", key: "gate_reference", value: map[string]any{statusKey: notRequested, "reasons": []any{}}},
 		{name: "stored digest", parent: "identity", key: "baseline_digest", value: "retired"},
+		{name: "seam gate reasons", key: "gate_reasons", value: []any{"no comparable reference"}},
+		{name: "dimension comparison", parent: "dimensions.drift", key: "delta", value: map[string]any{statusKey: notRequested}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var document map[string]any
@@ -168,7 +172,9 @@ func TestStateSchemaRejectsRetiredReferenceFields(t *testing.T) {
 			}
 			parent := document
 			if tc.parent != "" {
-				parent = document[tc.parent].(map[string]any)
+				for _, key := range strings.Split(tc.parent, ".") {
+					parent = parent[key].(map[string]any)
+				}
 			}
 			parent[tc.key] = tc.value
 			if err := compiled.Validate(document); err == nil {

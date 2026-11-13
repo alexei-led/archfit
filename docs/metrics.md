@@ -10,17 +10,17 @@ for report metric settings.
 The state report has nine dimensions. Each reports `measured`, `partial`, or
 `unmeasured` from required evidence. These statuses do not rate quality.
 
-| Dimension | Claim |
-| --- | --- |
-| `intent` | Declared modules, layers, rules, waivers, and active-rule results. |
-| `structure` | Dependencies, direction, module placement, and cycles. |
-| `modularity` | Boundary shape, cohesion, hubs, and encapsulation. |
-| `coupling` | Strength, distance, volatility, and balanced coupling evidence. |
-| `change_locality` | How change impact relates to module boundaries. |
-| `complexity` | Declared-module dependency depth and degree. |
-| `testability` | Supplied execution coverage attributed to declared modules. |
-| `operations` | Declared owners and deploy units, with independent evidence. |
-| `drift` | Unmeasured: stored architecture-state references are no longer supported. |
+| Dimension         | Claim                                                                     |
+| ----------------- | ------------------------------------------------------------------------- |
+| `intent`          | Declared modules, layers, rules, waivers, and active-rule results.        |
+| `structure`       | Dependencies, direction, module placement, and cycles.                    |
+| `modularity`      | Boundary shape, cohesion, hubs, and encapsulation.                        |
+| `coupling`        | Strength, distance, volatility, and balanced coupling evidence.           |
+| `change_locality` | How change impact relates to module boundaries.                           |
+| `complexity`      | Declared-module dependency depth and degree.                              |
+| `testability`     | Supplied execution coverage attributed to declared modules.               |
+| `operations`      | Declared owners and deploy units, with independent evidence.              |
+| `drift`           | Unmeasured: stored architecture-state references are no longer supported. |
 
 The [evidence contract](evidence.md) defines applicability, required facts,
 denominators, and the exact status rules for each dimension.
@@ -37,12 +37,12 @@ These metrics describe the current tree. The report does not read a stored
 reference, so it has no accepted-value delta. Metrics do not gate the Archfit 4
 check. The [configuration reference](configuration.md#metrics) owns report settings.
 
-| Metric | Value and direction | Meaning |
-| --- | --- | --- |
-| `unbalanced_edge` (`unbalanced_edge.v3`) | Count. Higher is worse. | New intrusive edges across a module boundary into high volatility. External systems do not count. Zero is strong. One or more is critical. |
-| `cycle` (`cycle.v1`) | Count. Higher is worse. | Strongly connected dependency components. Cycles built only from Rust edges (intra-crate module cycles) or only from .NET edges (intra-project file cycles) receive a `poor` band: cargo and MSBuild forbid cycles between crates and projects, so the language permits the cycle. Any other cycle receives a `critical` band. `module_cycle` handles cycles between declared modules. |
-| `encapsulation` (`encapsulation.v2`) | Ratio from 0 to 1. Lower is worse. | Contract edges divided by contract plus intrusive edges across module boundaries. Other strengths and unknown edges do not enter the denominator. |
-| `coverage` (`coverage.v1`) | Ratio from 0 to 1. Higher is better. | Extracted files divided by applicable files across contributing tool-coverage records. This is analyzer coverage, not test coverage. |
+| Metric                                   | Value and direction                  | Meaning                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unbalanced_edge` (`unbalanced_edge.v3`) | Count. Higher is worse.              | New intrusive edges across a module boundary into high volatility. External systems do not count. Zero is strong. One or more is critical.                                                                                                                                                                                                                                             |
+| `cycle` (`cycle.v1`)                     | Count. Higher is worse.              | Strongly connected dependency components. Cycles built only from Rust edges (intra-crate module cycles) or only from .NET edges (intra-project file cycles) receive a `poor` band: cargo and MSBuild forbid cycles between crates and projects, so the language permits the cycle. Any other cycle receives a `critical` band. `module_cycle` handles cycles between declared modules. |
+| `encapsulation` (`encapsulation.v2`)     | Ratio from 0 to 1. Lower is worse.   | Contract edges divided by contract plus intrusive edges across module boundaries. Other strengths and unknown edges do not enter the denominator.                                                                                                                                                                                                                                      |
+| `coverage` (`coverage.v1`)               | Ratio from 0 to 1. Higher is better. | Extracted files divided by applicable files across contributing tool-coverage records. This is analyzer coverage, not test coverage.                                                                                                                                                                                                                                                   |
 
 A metric with no signal reports `n/a`, not a clean zero. `unbalanced_edge` is
 `n/a` when intrusive cross-module candidates exist but none has known volatility.
@@ -60,10 +60,10 @@ cross-boundary edges.
 
 ## Diagnostic metrics
 
-| Metric | Range or unit | Meaning |
-| --- | --- | --- |
-| `coupling_balance` | 0–100. Higher is better. | Rescaled mean balance of scored cross-module coupling facts. It is diagnostic and does not gate directly. |
-| `blast_radius` (`blast_radius.v2`) | Count of hubs | Modules that at least 30% of other declared modules can reach through dependencies. It reports impact concentration, not a defect. |
+| Metric                             | Range or unit            | Meaning                                                                                                                            |
+| ---------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `coupling_balance`                 | 0–100. Higher is better. | Rescaled mean balance of scored cross-module coupling facts. It is diagnostic and does not gate directly.                          |
+| `blast_radius` (`blast_radius.v2`) | Count of hubs            | Modules that at least 30% of other declared modules can reach through dependencies. It reports impact concentration, not a defect. |
 
 `blast_radius` has no delta or gate. It reports `n/a` when the graph
 has no useful multi-module signal.
@@ -93,8 +93,10 @@ level. Undeclared external edges do not enter the scored share.
 
 ## Deltas and gates
 
-The report keeps metric values and the seam ledger as measurements. It does
-not compare them with a stored value or accept findings through a capture.
+The report keeps metric values and the seam ledger as measurements. Neither
+metric ratchets nor a stored-reference seam gate run. The report does not compare
+measurements with a stored value, emit reference deltas or gate reasons, or accept
+findings through a capture.
 The `drift` dimension stays explicitly `unmeasured` without historical evidence.
 
 The Archfit 4 check counts rule errors on the merge base and head in one run,
@@ -106,16 +108,16 @@ change. This is separate from report metrics. See [rules](rules.md),
 
 The following report blocks explain inputs or expose limits. None gates by itself.
 
-| Block | Meaning and limit |
-| --- | --- |
-| `connascence` | Deterministic static evidence for shared knowledge. It never sets strength. Dynamic categories remain unmeasured. |
-| `dynamic_imports`, `classified_external_edges` | Dynamic import sites and excluded external edges. They inform review but do not enter internal coupling scoring. |
-| `dynamic_connascence_signals` | Review hints from dynamic imports and runtime async relations. Each signal is unmeasured and report-only. |
-| `distance_config_candidates` | Static external, dynamic, and async evidence that can prompt config review. It does not change distance or config. |
-| `volatility_corroboration` | Git commit counts by declared module. It supports review but does not set volatility. |
-| `runtime_async`, `runtime_async_edges` | Detected async integration sites. Missing evidence does not prove synchronous coupling. These sites do not affect score or distance. |
-| `local_coupling` | Same-module coupling and cohesion signals. Unknown strength abstains. These edges do not enter `coupling_balance`. |
-| `distance_context`, `classified_edges` | Distance basis and scoring inputs, abstentions, volatility provenance, drivers, module-pair concentration, and tail risk. These explain the score; they do not create another gate. |
+| Block                                          | Meaning and limit                                                                                                                                                                   |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connascence`                                  | Deterministic static evidence for shared knowledge. It never sets strength. Dynamic categories remain unmeasured.                                                                   |
+| `dynamic_imports`, `classified_external_edges` | Dynamic import sites and excluded external edges. They inform review but do not enter internal coupling scoring.                                                                    |
+| `dynamic_connascence_signals`                  | Review hints from dynamic imports and runtime async relations. Each signal is unmeasured and report-only.                                                                           |
+| `distance_config_candidates`                   | Static external, dynamic, and async evidence that can prompt config review. It does not change distance or config.                                                                  |
+| `volatility_corroboration`                     | Git commit counts by declared module. It supports review but does not set volatility.                                                                                               |
+| `runtime_async`, `runtime_async_edges`         | Detected async integration sites. Missing evidence does not prove synchronous coupling. These sites do not affect score or distance.                                                |
+| `local_coupling`                               | Same-module coupling and cohesion signals. Unknown strength abstains. These edges do not enter `coupling_balance`.                                                                  |
+| `distance_context`, `classified_edges`         | Distance basis and scoring inputs, abstentions, volatility provenance, drivers, module-pair concentration, and tail risk. These explain the score; they do not create another gate. |
 
 `classified_edges` includes clone counts. Score mode counts clone-only pairs in
 `coupling_balance`. Advisory mode omits them from that score. The seam ledger

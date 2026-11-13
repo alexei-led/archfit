@@ -150,8 +150,6 @@ func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
 	}}
 	measured.Findings = []state.FindingRef{{ID: "f1", RuleID: "dep", Kind: report.FindingKindGate, Severity: stateSevHigh, Status: configUpdateTestNew}}
 	measured.Unknown = []state.UnknownFact{{Fact: "x", Reason: "y", Owner: state.OwnerStructure}}
-	measured.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: []string{"r"},
-		Metrics: []state.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}}}
 	diagnostic.State.Dimensions.Structure = measured
 
 	got := projectReport(diagnostic, score.Scorecard{}).State.Dimensions.Structure
@@ -163,8 +161,6 @@ func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
 			Denominator: &report.MetricDenominator{Observed: 7, Total: 9}, Provenance: []string{"relationship/analysis"}}},
 		Findings: []report.FindingRef{{ID: "f1", RuleID: "dep", Kind: report.FindingKindGate, Severity: stateSevHigh, Status: configUpdateTestNew}},
 		Unknown:  []report.UnknownFact{{Fact: "x", Reason: "y", Owner: state.OwnerStructure}},
-		Delta: &report.DimensionDelta{Status: report.ComparisonNonComparable, Reasons: []string{"r"},
-			Metrics: []report.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("projected envelope =\n%+v\nwant\n%+v", got, want)

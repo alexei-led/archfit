@@ -1,16 +1,10 @@
 package result_test
 
 import (
-	"math"
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/internal/result"
-	assessmentresult "github.com/alexei-led/archfit/v3/internal/assessment/result"
 )
-
-func approxEqual(a, b float64) bool {
-	return math.Abs(a-b) <= 1e-9
-}
 
 // ---------------------------------------------------------------------------
 // BandScore
@@ -71,52 +65,6 @@ func TestApplyConfidenceCap(t *testing.T) {
 			t.Errorf("ApplyConfidenceCap(%q, %q) = %q, want %q", c.band, c.confidence, got, c.want)
 		}
 	}
-}
-
-// ---------------------------------------------------------------------------
-// ComputeDelta
-// ---------------------------------------------------------------------------
-
-func TestComputeDelta(t *testing.T) {
-	t.Run("nil baseline returns nil", func(t *testing.T) {
-		got := result.ComputeDelta(0.5, nil, "encapsulation", "encapsulation.v1")
-		if got != nil {
-			t.Errorf("expected nil, got %v", *got)
-		}
-	})
-
-	t.Run("missing name returns nil", func(t *testing.T) {
-		snap := assessmentresult.MetricSnapshot{
-			"other": {Value: 0.8, Version: "other.v1"},
-		}
-		got := result.ComputeDelta(0.5, snap, "encapsulation", "encapsulation.v1")
-		if got != nil {
-			t.Errorf("expected nil for missing name, got %v", *got)
-		}
-	})
-
-	t.Run("version mismatch returns nil", func(t *testing.T) {
-		snap := assessmentresult.MetricSnapshot{
-			"encapsulation": {Value: 0.8, Version: "encapsulation.v2"},
-		}
-		got := result.ComputeDelta(0.5, snap, "encapsulation", "encapsulation.v1")
-		if got != nil {
-			t.Errorf("expected nil for version mismatch, got %v", *got)
-		}
-	})
-
-	t.Run("match returns current minus baseline", func(t *testing.T) {
-		snap := assessmentresult.MetricSnapshot{
-			"encapsulation": {Value: 0.8, Version: "encapsulation.v1"},
-		}
-		got := result.ComputeDelta(0.6, snap, "encapsulation", "encapsulation.v1")
-		if got == nil {
-			t.Fatal("expected non-nil delta")
-		}
-		if !approxEqual(*got, -0.2) {
-			t.Errorf("expected delta -0.2, got %v", *got)
-		}
-	})
 }
 
 // ---------------------------------------------------------------------------

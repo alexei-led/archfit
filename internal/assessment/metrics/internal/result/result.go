@@ -125,20 +125,6 @@ func ApplyConfidenceCap(band, confidence string) string {
 	return band
 }
 
-// ComputeDelta returns the delta between current and baseline for the given
-// metric name and version. Returns nil if no matching baseline entry exists.
-func ComputeDelta(current float64, baseline assessmentresult.MetricSnapshot, name, version string) *float64 {
-	if baseline == nil {
-		return nil
-	}
-	snap, ok := baseline[name]
-	if !ok || snap.Version != version {
-		return nil
-	}
-	d := current - snap.Value
-	return &d
-}
-
 // NACount is the indeterminate result for a count-mode informational metric.
 func NACount(name, version, def string) assessmentresult.MetricResult {
 	return assessmentresult.MetricResult{

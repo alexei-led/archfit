@@ -158,6 +158,17 @@ class ImageContractsTest(unittest.TestCase):
         tools = state["coverage"]["tools"]
         cases = {
             "no state": ({}, stderr),
+            "retired gate reasons": (
+                {**state, "gate_reasons": ["no comparable reference"]},
+                stderr,
+            ),
+            "retired metric delta": (
+                {
+                    **state,
+                    "dimensions": {"drift": {"delta": {"status": "not_requested"}}},
+                },
+                stderr,
+            ),
             "roslyn ok": (
                 {
                     **state,
@@ -258,7 +269,10 @@ class ImageContractsTest(unittest.TestCase):
             self.assertTrue(all(row["passed"] for row in contract.assertions))
 
             for version in ("", "grimp 0.0; python 0.0"):
-                with self.subTest(version=version), tempfile.TemporaryDirectory() as bad_dir:
+                with (
+                    self.subTest(version=version),
+                    tempfile.TemporaryDirectory() as bad_dir,
+                ):
                     state["measurement"]["tool_versions"]["grimp"] = version
                     output = Path(bad_dir)
                     bad = image.ImageContract("local:contract", "colima", output)

@@ -377,6 +377,11 @@ def prepare_dotnet_fixture(path: Path) -> None:
 def dotnet_extraction_failures(state: dict[str, Any], stderr: str) -> list[str]:
     """Deterministic image extraction: one SDK, empty NuGet cache, no network (plan D7)."""
     failures = []
+    if "gate_reasons" in state:
+        failures.append("report must not contain stored-reference gate reasons")
+    for name, dimension in state.get("dimensions", {}).items():
+        if "delta" in dimension:
+            failures.append(f"{name} must not contain a stored-reference metric delta")
     tools = rows(state)
     msbuild = tools.get("dotnet-msbuild", {})
     if (

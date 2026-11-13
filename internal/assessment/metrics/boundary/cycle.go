@@ -64,7 +64,6 @@ func (m CycleMetric) Calculate(in signal.CommonInput) assessmentresult.MetricRes
 	case allDotNet:
 		display = fmt.Sprintf("%d intra-project file cycles (.NET — language-permitted, not import cycles)", cycles)
 	}
-	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
 	return assessmentresult.MetricResult{
 		Name:       m.Name(),
@@ -75,7 +74,6 @@ func (m CycleMetric) Calculate(in signal.CommonInput) assessmentresult.MetricRes
 		Version:    m.Version(),
 		Mode:       result.ModeCount,
 		Definition: "number of import cycles",
-		Delta:      delta,
 		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}
 }

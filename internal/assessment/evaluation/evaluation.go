@@ -29,9 +29,7 @@ type Input struct {
 	Symbols       symbol.Graph
 	Coverage      []evidence.Coverage
 	ChangedFiles  []string
-	Baseline      result.MetricSnapshot
 	Policy        policy.AssessmentPolicy
-	Gates         map[string]policy.MetricConfig
 	// ModuleReview is the module_review gate mode: fail makes production
 	// source no declared module owns a gate finding.
 	ModuleReview policy.GateMode
@@ -78,14 +76,13 @@ func evaluate(in Input) Result {
 	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
 	tagged := status.Assign(raw, in.Policy.Waivers, in.Now)
 	collected := signal.CollectedSignals{
-		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Baseline: in.Baseline, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
+		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
 		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size, Duplication: in.Signals.Duplication,
 	}
 	calculated := make([]result.MetricResult, 0, in.Metrics.Len())
 	for _, metric := range in.Metrics.metrics {
 		calculated = append(calculated, metric.Calculate(collected))
 	}
-	tagged = append(tagged, status.Assign(ratchetFindings(calculated, in.Gates), in.Policy.Waivers, in.Now)...)
 	gates := make([]finding.Finding, 0, len(tagged))
 	advisories := 0
 	for _, f := range tagged {
@@ -159,8 +156,7 @@ func countActive(in []finding.Finding) int {
 	return n
 }
 
-// computeVerdict is the assessment verdict. A tripped metric ratchet is a gate
-// (or advisory) finding like any other, so the verdict reads findings only.
+// computeVerdict is the assessment verdict, read from findings only.
 func computeVerdict(gates []finding.Finding, advisories int) result.Verdict {
 	for _, f := range gates {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
@@ -171,17 +167,4 @@ func computeVerdict(gates []finding.Finding, advisories int) result.Verdict {
 		return result.VerdictWarn
 	}
 	return result.VerdictPass
-}
-
-func metricMinDelta(c policy.MetricConfig) float64 {
-	if c.MinDelta != nil {
-		return *c.MinDelta
-	}
-	return 0
-}
-func metricMaxNew(c policy.MetricConfig) int {
-	if c.MaxNew != nil {
-		return *c.MaxNew
-	}
-	return 0
 }

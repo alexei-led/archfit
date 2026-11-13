@@ -58,18 +58,6 @@ const (
 	HardGateUnmeasured HardGateState = "unmeasured"
 )
 
-// ComparisonStatus records whether this run may be compared numerically against
-// a reference. Comparison is strict: any config/model/labels/rubric mismatch is
-// non_comparable, never a numerical delta.
-type ComparisonStatus string
-
-// Comparison statuses.
-const (
-	ComparisonComparable    ComparisonStatus = "comparable"
-	ComparisonNonComparable ComparisonStatus = "non_comparable"
-	ComparisonNotRequested  ComparisonStatus = "not_requested"
-)
-
 // ConfidenceUnrated marks a dimension whose evidence does not support any
 // confidence claim — the abstain rung of the existing Confidence enum.
 const ConfidenceUnrated Confidence = "unrated"
@@ -143,23 +131,6 @@ type UnknownFact struct {
 	Owner  string `json:"owner"`
 }
 
-// MetricDelta is a signed change in one dimension metric between a comparable
-// reference and this run.
-type MetricDelta struct {
-	Name   string  `json:"name"`
-	Before float64 `json:"before"`
-	After  float64 `json:"after"`
-	Change float64 `json:"change"`
-}
-
-// DimensionDelta is one dimension's change against the comparison reference.
-// A non-comparable reference yields reasons and no numbers.
-type DimensionDelta struct {
-	Status  ComparisonStatus `json:"status"`
-	Reasons []string         `json:"reasons,omitempty"`
-	Metrics []MetricDelta    `json:"metrics,omitempty"`
-}
-
 // DimensionCoverage is a dimension's denominator: what was counted, how much of
 // it was observed, and out of how much. A dimension cannot be measured without
 // a nonzero or explicitly empty denominator.
@@ -182,7 +153,6 @@ type DimensionState struct {
 	Metrics    []MetricValue     `json:"metrics"`
 	Findings   []FindingRef      `json:"findings"`
 	Unknown    []UnknownFact     `json:"unknown"`
-	Delta      *DimensionDelta   `json:"delta,omitempty"`
 }
 
 // Dimensions holds the nine architecture-state envelopes as named fields rather
@@ -346,11 +316,7 @@ type ArchitectureState struct {
 	SchemaVersion string       `json:"schema_version"`
 	Verdict       StateVerdict `json:"verdict"`
 	// Identity names what the run was judged under.
-	Identity ResultIdentity `json:"identity"`
-	// GateReasons explain why the coupling gate tripped or could not compare.
-	// The run used to print them on stderr; check reports them as repository
-	// attention.
-	GateReasons []string         `json:"gate_reasons,omitempty"`
+	Identity    ResultIdentity   `json:"identity"`
 	Decision    StateDecision    `json:"decision"`
 	Measurement StateMeasurement `json:"measurement"`
 	Dimensions  Dimensions       `json:"dimensions"`

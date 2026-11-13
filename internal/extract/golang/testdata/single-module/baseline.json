@@ -339,12 +339,6 @@
         "observed": 0,
         "total": 0
       },
-      "delta": {
-        "reasons": [
-          "no comparable architecture-state reference is stored"
-        ],
-        "status": "non_comparable"
-      },
       "findings": [],
       "gate": "not_applicable",
       "metrics": [],
