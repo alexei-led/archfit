@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/model/result"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -303,8 +302,8 @@ func TestRedirectNeverForwardsCredentials(t *testing.T) {
 	}
 }
 
-func canAnswer() *result.CanAnswer {
-	return &result.CanAnswer{From: "a", To: "b", Rule: "graph", What: "not an allowed dependency", Policy: result.Policy{Protected: true}}
+func canAnswer() *CanRecord {
+	return &CanRecord{From: "a", To: "b", Record: "a -> b: graph: not an allowed dependency\n"}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

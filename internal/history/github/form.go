@@ -2,11 +2,7 @@
 // The App owns the wire grammar; testdata vendors its canonical examples.
 package requestsend
 
-import (
-	"strings"
-
-	"github.com/alexei-led/archfit/v3/internal/output/record"
-)
+import "strings"
 
 // Line is the canonical comment line, including its final newline. The
 // application validates the reason and date before calling the sender.
@@ -21,9 +17,7 @@ func Line(r Input) string {
 // issueBody keeps the can record verbatim inside a fence longer than any
 // backtick run in the record, as required by the App's issue-form grammar.
 func issueBody(r Input) string {
-	var b strings.Builder
-	_ = record.Answer(&b, *r.Can, record.Options{})
-	body := b.String()
+	body := r.Can.Record
 	longest, run := 2, 0
 	for _, c := range body {
 		if c == '`' {

@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/alexei-led/archfit/v3/internal/model/result"
 )
 
 func TestVendoredLines(t *testing.T) {
@@ -35,18 +33,10 @@ func TestVendoredLines(t *testing.T) {
 func TestVendoredIssueForm(t *testing.T) {
 	var input struct {
 		Reason, Record string
-		Answer         struct {
-			Rule, From, To string
-			Balance        *result.Balance
-		}
+		Answer         struct{ From, To string }
 	}
 	readJSON(t, "testdata/form/can.json", &input)
-	r := Input{Reason: input.Reason, Can: &result.CanAnswer{
-		From: input.Answer.From, To: input.Answer.To, Rule: input.Answer.Rule,
-		What: "not an allowed dependency", Balance: input.Answer.Balance,
-		Next:   &result.Next{Kind: result.NextCommand, Text: `archfit request -m "<why you need it>"`},
-		Policy: result.Policy{Protected: true},
-	}}
+	r := Input{Reason: input.Reason, Can: &CanRecord{From: input.Answer.From, To: input.Answer.To, Record: input.Record}}
 	want, err := os.ReadFile("testdata/form/can.md")
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +47,7 @@ func TestVendoredIssueForm(t *testing.T) {
 }
 
 func TestRecordFence(t *testing.T) {
-	r := Input{Reason: testReason, Can: &result.CanAnswer{From: "a", To: "b", What: "uses ````literal", Policy: result.Policy{Protected: true}}}
+	r := Input{Reason: testReason, Can: &CanRecord{From: "a", To: "b", Record: "a -> b: graph: uses ````literal\n"}}
 	got := issueBody(r)
 	if !strings.Contains(got, "\n"+strings.Repeat("`", 5)+"text\n") {
 		t.Errorf("unsafe fence:\n%s", got)

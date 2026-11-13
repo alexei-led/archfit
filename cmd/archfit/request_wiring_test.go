@@ -30,7 +30,9 @@ func TestRequestWiringMapsInputAndOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantInput := requestsend.Input{Reason: input.Reason, Expires: input.Expires, Can: answer}
+	wantInput := requestsend.Input{Reason: input.Reason, Expires: input.Expires, Can: &requestsend.CanRecord{
+		From: answer.From, To: answer.To, Record: "source -> target: graph: not allowed\npolicy: not protected\n",
+	}}
 	if !reflect.DeepEqual(api.got, wantInput) {
 		t.Errorf("input = %+v, want %+v", api.got, wantInput)
 	}
