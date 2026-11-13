@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -125,6 +127,9 @@ type appDeps struct {
 	Stdin  io.Reader // nil → os.Stdin
 	Stdout io.Writer
 	Stderr io.Writer // nil → os.Stderr
+
+	// requestClient overrides the GitHub transport (nil uses the standard client).
+	requestClient *http.Client
 
 	// progress, when non-nil, is invoked at pipeline phase boundaries so a long
 	// analyze/check run reports progress to stderr. Set by AnalyzeCmd/CheckCmd;
@@ -254,6 +259,15 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 	}()
 	stdout, stderr := deps.Stdout, deps.stderr()
 	ctx := deps.runContext()
+	objects, err := gitpkg.NewObjectStore(deps.Runner)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "archfit: %v\n", err)
+		return 3
+	}
+	defer func() { _ = objects.Close() }()
+	scoped := *deps
+	scoped.Runner = objects
+	deps = &scoped
 
 	var c cli
 	parser, err := kong.New(&c,

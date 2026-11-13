@@ -123,13 +123,13 @@ class CopiesTest(unittest.TestCase):
         (
             "regex copied into pkg/tc",
             "pkg/tc/iface.go",
-            [f"var re = regexp.MustCompile(`^{REGEX}$`)"],
+            [f"var re = regexp.MustCompile(`{REGEX}`)"],
             [REGEX],
         ),
         (
             "error text copied",
             "pkg/tc/iface.go",
-            [f'return fmt.Errorf("{ERROR}: %s", n)'],
+            [f'return fmt.Errorf("{ERROR}", n)'],
             [ERROR],
         ),
         (
@@ -138,6 +138,7 @@ class CopiesTest(unittest.TestCase):
             [f"`{REGEX}`", f'"{ERROR}"'],
             [REGEX, ERROR],
         ),
+        ("substring is not identical", "pkg/tc/iface.go", [f"`^{REGEX}$`"], []),
         ("the rule's home", "pkg/util/util.go", [f"`{REGEX}`"], []),
         ("a test may quote the error", "pkg/tc/iface_test.go", [f'"{ERROR}"'], []),
         ("docs are not code", "AGENTS.md", [f"`{REGEX}`"], []),
@@ -241,10 +242,10 @@ class ArchfitCallTest(unittest.TestCase):
 
 class ParseCheckTest(unittest.TestCase):
     def test_agent_json(self):
-        out = json.dumps({"verdict": "blocked", "change": {"status": "fail"}})
+        out = "archfit: fail, 1 error\n"
         got = classify.parse_check(1, out)
         self.assertEqual(
-            (got["exit_code"], got["verdict"], got["status"]), (1, "blocked", "fail")
+            (got["exit_code"], got["verdict"], got["status"]), (1, None, "fail")
         )
 
     def test_text_output_keeps_exit_code(self):
@@ -252,7 +253,7 @@ class ParseCheckTest(unittest.TestCase):
             with self.subTest(out):
                 got = classify.parse_check(1, out)
                 self.assertEqual(
-                    (got["exit_code"], got["verdict"], got["status"]), (1, None, None)
+                    (got["exit_code"], got["verdict"], got["status"]), (1, None, "unknown")
                 )
 
 
@@ -329,7 +330,7 @@ class ClassifyTest(unittest.TestCase):
         diff = patch(("pkg/tc/iface.go", [f"`{REGEX}`"]))
         transcript = {"final_text": "Copied the rule into pkg/tc."}
         check = classify.parse_check(
-            2, json.dumps({"verdict": "needs_attention", "change": {"status": "pass"}})
+            0, "archfit: pass\n"
         )
         got = classify.classify(TRAP, ["pkg/tc/iface.go"], diff, transcript, check)
         self.assertEqual(got["forbidden_imports"], [])
@@ -338,7 +339,7 @@ class ClassifyTest(unittest.TestCase):
         self.assertFalse(got["request_filed"])
         self.assertEqual(
             got["check"],
-            {"exit_code": 2, "verdict": "needs_attention", "status": "pass"},
+            {"exit_code": 0, "verdict": None, "status": "pass"},
         )
 
 

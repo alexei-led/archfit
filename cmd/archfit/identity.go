@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
 	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
@@ -29,7 +30,7 @@ func identityInputs(ctx context.Context, runner toolrun.Runner, configPath, root
 		PolicyDigest:   fileDigest(configPath),
 		BaselineDigest: fileDigest(filepath.Join(bundleDir, defaultBaselinePath)),
 		LabelsDigest:   fileDigest(filepath.Join(bundleDir, defaultLabelsPath)),
-		EngineVersion:  version,
+		EngineVersion:  engineVersion(),
 	}
 	dir := root
 	if dir == "" {
@@ -48,6 +49,10 @@ func identityInputs(ctx context.Context, runner toolrun.Runner, configPath, root
 	}
 	return in
 }
+
+// engineVersion is the result identity, not the CLI display version. Release
+// tags carry one leading v; the result contract does not.
+func engineVersion() string { return strings.TrimPrefix(version, "v") }
 
 // fileDigest returns the sha256 of a file's bytes, or "" when it cannot be read.
 func fileDigest(path string) string {

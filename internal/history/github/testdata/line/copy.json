@@ -1,0 +1,4 @@
+{
+  "reason": "tc parses the interface name before pkg_util is loaded",
+  "expires": "2026-12-10"
+}

@@ -57,7 +57,7 @@ Check Claude Code's project and local settings for disabled hooks. For Codex, tr
 
 Run `archfit check` or `archfit can <from> <to>` after each edit. Requests use only output for the current tree. A pass, an unknown result, or an error that requires a code fix gives nothing an owner may allow.
 
-Without the App, the request prints `next: ask an owner` and exits `2`. See [Commands](commands.md#request).
+Without a GitHub remote, the request prints `next: ask an owner` and exits `2`. With a GitHub remote, it sends a comment or issue and prints its URL. If credentials are missing, follow `next: gh auth login`. A send with an unknown outcome is not retried: check GitHub before trying again. See [Commands](commands.md#request).
 
 ## Clear cached facts
 
