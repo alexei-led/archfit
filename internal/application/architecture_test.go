@@ -89,7 +89,6 @@ func TestApplicationNoConcreteAdapters(t *testing.T) {
 		"github.com/alexei-led/archfit/v3/internal/history",
 		"github.com/alexei-led/archfit/v3/internal/ownership",
 		"github.com/alexei-led/archfit/v3/internal/labels/labelsio",
-		"github.com/alexei-led/archfit/v3/internal/baseline",
 		"github.com/alexei-led/archfit/v3/internal/llm",
 		"github.com/alexei-led/archfit/v3/internal/config",
 	}

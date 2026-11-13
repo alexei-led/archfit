@@ -255,9 +255,6 @@ type StateComparison struct {
 	MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"`
 	Reasons            []string            `json:"reasons"`
 	Drift              []string            `json:"drift,omitempty"`
-	// BaselinePresent is set on gate_reference only: true when a baseline file
-	// was loaded (comparable or not), false when there was none.
-	BaselinePresent *bool `json:"baseline_present,omitempty"`
 	// OriginStatus is set only with --base: comparable when the analyzer
 	// evidence of both runs pairs, unknown otherwise.
 	OriginStatus string `json:"origin_status,omitempty"`
@@ -362,7 +359,7 @@ type Seam struct {
 	Hypothesis           string                `json:"hypothesis,omitempty"`
 	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
 	// Policy is what the policy says about the pair, the first that matches:
-	// violation (an active gate finding names it), accepted (a baselined or
+	// violation (an active gate finding names it), accepted (a
 	// waived gate finding), advisory (another active finding), allowed (a
 	// fail-gated allowlist or layer rule permits it), or observed. Every
 	// assessed seam carries one; the key is optional only so documents written
@@ -381,13 +378,12 @@ type ArchitectureState struct {
 	// GateReasons explain why the coupling gate tripped or could not compare.
 	// The run used to print them on stderr; check reports them as repository
 	// attention.
-	GateReasons   []string         `json:"gate_reasons,omitempty"`
-	Decision      StateDecision    `json:"decision"`
-	Comparison    StateComparison  `json:"comparison"`
-	GateReference *StateComparison `json:"gate_reference,omitempty"`
-	Measurement   StateMeasurement `json:"measurement"`
-	Dimensions    Dimensions       `json:"dimensions"`
-	Coverage      StateCoverage    `json:"coverage"`
+	GateReasons []string         `json:"gate_reasons,omitempty"`
+	Decision    StateDecision    `json:"decision"`
+	Comparison  StateComparison  `json:"comparison"`
+	Measurement StateMeasurement `json:"measurement"`
+	Dimensions  Dimensions       `json:"dimensions"`
+	Coverage    StateCoverage    `json:"coverage"`
 	// Findings carries the run's findings unchanged; dimension envelopes point
 	// into it by ID so finding identity has exactly one owner.
 	Findings []Finding `json:"findings"`

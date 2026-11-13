@@ -40,8 +40,8 @@ type coverageStage struct {
 func (s *coverageStage) Acquire(_ context.Context, req AnalysisRequest) (Acquired, error) {
 	s.req = req
 	return Acquired{
-		Facts:        evidence.Facts{FileLOC: map[string]int{baselineTestFrom: 1}},
-		Observations: evaluation.Observations{FileLOC: map[string]int{baselineTestFrom: 1}},
+		Facts:        evidence.Facts{FileLOC: map[string]int{cycleTestFrom: 1}},
+		Observations: evaluation.Observations{FileLOC: map[string]int{cycleTestFrom: 1}},
 		Context: AnalysisContext{
 			Scope:                 scope.Scope{Root: s.root},
 			Policy:                policy.New(policy.TopologyView{}, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil),

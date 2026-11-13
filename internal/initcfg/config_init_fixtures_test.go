@@ -12,7 +12,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
-	"github.com/alexei-led/archfit/v3/internal/baseline"
 	"github.com/alexei-led/archfit/v3/internal/config"
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
@@ -363,7 +362,6 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 	}
 
 	extractor := goextract.New(evidenceports.ExtractConfig{})
-	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	s := scope.Scope{Root: root}
 
@@ -385,8 +383,8 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 		Facts:               evaluation.Observations{Coverage: collected.Coverages, Symbols: collected.SCIPSymbols},
 		Relationships:       relationships.Relationships,
 		RelationshipSignals: relationships.Assessment,
-		Policy:              runPolicy, Accepted: base, BaseMetrics: result.MetricSnapshot(base.Metrics),
-		Scope: s, Now: now, Advisory: true,
+		Policy:              runPolicy,
+		Scope:               s, Now: now, Advisory: true,
 	})
 	if err != nil {
 		t.Fatalf("evaluation.Assess: %v", err)

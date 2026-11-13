@@ -49,8 +49,8 @@ const gateOffPosture = gateOff
 // projection of a policy declaration, a relationship classification, a computed
 // metric, a file-class walk, an acquisition coverage row, or git history.
 //
-// Where an in-claim fact has no collector — supplied test coverage or a
-// comparable persisted baseline — the envelope reports partial or unmeasured
+// Where an in-claim fact has no collector — supplied test coverage or
+// historical seam identity — the envelope reports partial or unmeasured
 // and names the missing fact. Out-of-claim facts,
 // such as observed runtime topology, remain explicit disclosures without
 // blocking a complete declared-topology claim.
@@ -64,7 +64,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Complexity:     complexityDimension(diag, in.Policy, in.Facts),
 		Testability:    testabilityDimension(in.Policy, in.Facts),
 		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
-		Drift:          driftDimension(diag, in.Drift),
+		Drift:          driftDimension(),
 	}
 	routeRatchets(&dims, routed)
 	for _, dim := range dims.Each() {
@@ -1830,82 +1830,15 @@ func corroboratingDeploySource(source modevidence.TopologySource) bool {
 	}
 }
 
-// driftDimension reports erosion against a comparable reference.
-//
-// It is measured only when the stored reference agrees with this run on all
-// four fingerprints. Anything else is unmeasured with the drifted input named:
-// a reference written under a different classification, module map, label
-// set, rubric, or measurement profile would turn a policy edit into a reported regression, and a reference
-// that predates the seam ledger records no seams at all — reading that as
-// "there were none" would report every existing seam as newly introduced.
-func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
+// driftDimension cannot measure historical seam drift without a stored input.
+func driftDimension() state.Dimension {
 	dim := state.NewDimension(state.DimensionDrift, state.OwnerDrift)
-	current := qualifyingSeamIDs(diag.Seams)
-	if !ref.SeamsComparable {
-		reasons := ref.driftReasons()
-		dim.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: reasons}
-		applyPromotion(&dim, nil, nil, map[string]string{
-			state.FactAdmissiblePersistedReference: reasons[0],
-			state.FactCompleteTwoSidedSeamIdentity: "two-sided seam identity cannot be compared without an admissible persisted reference",
-		})
-		return dim
-	}
-	stored := make(map[string]struct{}, len(ref.QualifyingSeamIDs))
-	for _, id := range ref.QualifyingSeamIDs {
-		stored[id] = struct{}{}
-	}
-	newSeams, resolvedSeams := 0, 0
-	for _, id := range current {
-		if _, known := stored[id]; !known {
-			newSeams++
-		}
-	}
-	currentSet := make(map[string]struct{}, len(current))
-	for _, id := range current {
-		currentSet[id] = struct{}{}
-	}
-	for _, id := range ref.QualifyingSeamIDs {
-		if _, still := currentSet[id]; !still {
-			resolvedSeams++
-		}
-	}
-	applyPromotion(&dim, []string{
-		state.FactAdmissiblePersistedReference,
-		state.FactCompleteTwoSidedSeamIdentity,
-	}, nil, nil)
-	// The denominator is BOTH sides' qualifying seams, not this run's. Counting
-	// only the current side is observed-over-observed: a run that resolved five
-	// seams and carries none would report 0/0 and read as "nothing to compare"
-	// rather than "five seams compared, all gone".
-	compared := len(currentSet)
-	for id := range stored {
-		if _, still := currentSet[id]; !still {
-			compared++
-		}
-	}
-	dim.Coverage = state.Coverage{
-		Basis:    "distributed-monolith seams compared against the stored reference",
-		Observed: compared, Total: compared,
-	}
-	dim.Metrics = []state.MetricValue{
-		{Name: "new_seams", Value: float64(newSeams), Unit: unitCount, Provenance: []string{provAssessment}},
-		{Name: "resolved_seams", Value: float64(resolvedSeams), Unit: unitCount, Provenance: []string{provAssessment}},
-	}
-	dim.Delta = &state.Delta{Status: state.ComparisonComparable}
+	dim.Delta = &state.Delta{Status: state.ComparisonNotRequested}
+	applyPromotion(&dim, nil, nil, map[string]string{
+		state.FactAdmissiblePersistedReference: noStoredReferenceReason,
+		state.FactCompleteTwoSidedSeamIdentity: "two-sided seam identity is not available in a report measurement",
+	})
 	return dim
-}
-
-// qualifyingSeamIDs lists this run's distributed-monolith seam IDs in stable
-// order.
-func qualifyingSeamIDs(seams []result.Seam) []string {
-	out := make([]string, 0, len(seams))
-	for _, s := range seams {
-		if s.DistributedMonolith {
-			out = append(out, s.ID)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // ---------------------------------------------------------------------------

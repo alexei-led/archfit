@@ -72,7 +72,7 @@ type Result struct {
 	ClassificationHash string                       `json:"-"`
 	LabelsHash         string                       `json:"-"`
 	MeasurementProfile *evidence.MeasurementProfile `json:"-"`
-	GateReference      *StateComparison             `json:"-"`
+
 	// Comparison records what this run was compared against, when anything was.
 	// Nil means no comparison was requested. `json:"-"` for the same reason the
 	// hashes are: it reaches the wire through the architecture-state contract.

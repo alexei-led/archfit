@@ -55,10 +55,8 @@ type unownedFile struct {
 // The finding is a gate finding when module_review.gate is fail, otherwise an
 // advisory. Its ID hashes the rule and the directory only, so it stays stable
 // while files are added to the directory. Each finding is bounded (a directory
-// and at most maxUncoveredLocations files); the count is not: a cap would make
-// `archfit baseline`, which captures every finding of one run, accept fewer
-// directories than the next check reports, and a bound applied after the
-// baseline reads accepted debt as fixed.
+// and at most maxUncoveredLocations files); the count is not: every uncovered
+// directory must remain visible.
 func uncoveredSource(ev RuleEvidence, p policy.AssessmentPolicy, gate policy.GateMode) []finding.Finding {
 	if !p.Staleness.Enabled {
 		return nil
@@ -328,7 +326,7 @@ func uncoveredChange(ev RuleEvidence, p policy.AssessmentPolicy) []finding.Findi
 // uncoveredChangeUnevaluated is the decision entry the change_gate: fail
 // posture adds when the change adds uncovered code: the change cannot pass
 // because part of it was not read. It lists the files and the glob to add, and
-// ignores waivers and the baseline: an accepted hole is still a hole.
+// ignores waivers: an accepted hole is still a hole.
 func uncoveredChangeUnevaluated(findings []finding.Finding) (state.UnevaluatedRule, bool) {
 	if len(findings) == 0 {
 		return state.UnevaluatedRule{}, false

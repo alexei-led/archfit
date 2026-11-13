@@ -15,14 +15,13 @@ type Status string
 // Status constants for finding lifecycle (spec §9).
 const (
 	StatusNew           Status = "new"
-	StatusBaseline      Status = "baseline"
 	StatusWaived        Status = "waived"
 	StatusExpiredWaiver Status = "expired_waiver"
 	StatusFixed         Status = "fixed"
 )
 
 // Origin places a finding relative to the base ref of an `analyze/check
-// --base` run. It is presentation only: no gate, verdict, or baseline reads it.
+// --base` run. It is presentation only: no gate or verdict reads it.
 type Origin string
 
 // Origin values. A run without --base leaves every origin empty.
@@ -115,7 +114,7 @@ type Finding struct {
 	// Members are the IDs of every finding a rollup stands for, sorted, the
 	// representative included. Empty for a finding that is not a rollup. Not
 	// serialized: matched_by.group_members carries a capped list for readers,
-	// while a baseline capture must accept every member.
+	// while origin comparison needs every member identity.
 	Members []string `json:"-"`
 	// Origin is set only by an `analyze/check --base` run. Not serialized here:
 	// the report projection carries it.

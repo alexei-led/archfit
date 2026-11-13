@@ -54,7 +54,6 @@ const devVersion = "dev"
 const (
 	flagHelp              = "--help"
 	defaultConfigPath     = ".archfit.yaml"            // fallback to config.Default() when absent
-	defaultBaselinePath   = ".archfit-baseline.json"   // on-disk path for the baseline file
 	defaultLabelsPath     = ".archfit-labels.yaml"     // pinned coupling labels (enrich output)
 	defaultSubdomainsPath = ".archfit-subdomains.yaml" // subdomain draft/apply file (config enrich subdomain)
 	defaultOwnersPath     = ".archfit-owners.yaml"     // owner draft/apply file (config enrich owner)

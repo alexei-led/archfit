@@ -203,7 +203,7 @@ func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 	head := decision.Fingerprints{
 		ClassificationHash: stateClassHash, ModelHash: "model-hash", LabelsHash: "labels-hash",
 		RubricVersion:      report.ScoreVersion,
-		MeasurementProfile: referenceProfile(),
+		MeasurementProfile: &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, SettingsHash: "settings", Producers: []evidence.MeasurementProducer{{Tool: "loc", SemanticsVersion: "loc.v1", Status: evidence.StatusOK}}},
 	}
 
 	t.Run("without a comparison", func(t *testing.T) {

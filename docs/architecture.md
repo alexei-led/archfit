@@ -10,7 +10,7 @@ Archfit is a Go command-line tool. Its six layers keep policy, analysis, workflo
 | `support` | Shared analysis scope | `internal/scope` |
 | `core` | Policy, relationships, assessment, syntax analysis | `internal/policy`, `internal/relationship/**`, `internal/assessment/**`, `internal/syntax` |
 | `application` | Use-case stages and report projection | `internal/application` |
-| `adapter` | Config, acquisition, tools, persistence, providers, output | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/factcache`, `internal/history`, `internal/baseline`, `internal/ownership`, `internal/labels`, `internal/llm`, `internal/output/record`, `internal/output/reporttext`, `internal/output/jsonout`, `internal/reportschema` |
+| `adapter` | Config, acquisition, tools, persistence, providers, output | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/factcache`, `internal/history`, `internal/ownership`, `internal/labels`, `internal/llm`, `internal/output/record`, `internal/output/reporttext`, `internal/output/jsonout`, `internal/reportschema` |
 | `cmd` | CLI composition, development tools, architecture tests | `cmd/**`, `internal/calibrate`, `scripts/eval`, architecture tests |
 
 The module map and import limits live in `.archfit.yaml`. See `AGENTS.md` for the generated module table and blocking rules.
@@ -26,7 +26,7 @@ flowchart LR
   assess --> project[Project report]
   project --> output[Render output]
   adapters[Config, tools, stores] --> acquire
-  stores[Baseline and labels] --> prep
+  stores[Labels] --> prep
   classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
   classDef process fill:#e0f2fe,stroke:#0284c7,color:#082f49
   classDef healthy fill:#dcfce7,stroke:#16a34a,color:#14532d

@@ -107,7 +107,6 @@ var contractThirdPartyAllowed = map[string]map[string]bool{
 // port); the core ring decides over already-gathered facts.
 var adapterPrefixes = []string{
 	modulePrefix + "internal/evidence/acquisition",
-	modulePrefix + "internal/baseline",
 	modulePrefix + "internal/toolrun",
 	modulePrefix + "internal/extract/",
 	modulePrefix + "internal/history/",
@@ -178,7 +177,7 @@ func TestCLIImportsNoDomainImplementation(t *testing.T) {
 func TestApplicationImportsNoConcreteAdapters(t *testing.T) {
 	for _, pkg := range []string{
 		"internal/evidence/acquisition", "internal/extract", "internal/toolrun", "internal/output",
-		"internal/factcache", "internal/history", "internal/ownership", "internal/baseline",
+		"internal/factcache", "internal/history", "internal/ownership",
 		"internal/labels/labelsio", "internal/llm", "internal/config",
 	} {
 		for _, file := range productionImportFilesUnder(t, modulePrefix+pkg) {
@@ -301,7 +300,7 @@ func TestInternalDoesNotImportCmd(t *testing.T) {
 
 // TestReportProjectionHasOneOwner pins that report DTOs are BUILT in exactly
 // one place. Other application files may hold a report.Document — that is the
-// use-case result they return — and baseline may read one back for persistence.
+// use-case result they return.
 // What must not spread is construction: a second file assembling report values
 // from domain values is a second projector, and the two drift.
 func TestReportProjectionHasOneOwner(t *testing.T) {
@@ -710,7 +709,6 @@ func extractorBoundaryViolations(pkgPath string, imports []string) []string {
 			violations = append(violations, imp+": run tools through toolrun.Runner")
 		case imp == toolrunPkg || imp == pkgPath:
 		case isAdapterPackage(imp) || strings.HasPrefix(imp, modulePrefix+"internal/factcache") ||
-			strings.HasPrefix(imp, modulePrefix+"internal/baseline") ||
 			strings.HasPrefix(imp, modulePrefix+"internal/evidence/acquisition"):
 			violations = append(violations, imp+": concrete adapter outside "+pkgPath)
 		}

@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+const prepareCall = "prepare"
+
+const configUpdateTestNew = "new"
+
 func TestResolveFormats(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -224,13 +224,11 @@ modules:
       - internal/factcache/**
       - internal/history/**
       - internal/ownership/**
-      - internal/baseline/**
       - internal/labels/**
     public:
       - internal/factcache
       - internal/history/**
       - internal/ownership
-      - internal/baseline
       - internal/labels/**
     volatility: medium
     subdomain: supporting
@@ -449,14 +447,6 @@ rules:
         - internal/{relationship,evidence}/**
     why: The projector copies decided values into report DTOs. Reaching into relationship or evidence internals rebuilds a decision inside the projection, where no rule test guards it.
     instead: Project decided values from internal/application into internal/model/report.
-  - id: model_no_baseline
-    deny:
-      from:
-        - internal/model/**
-      to:
-        - internal/baseline/*
-    why: Model packages are pure value types. Importing baseline persistence pulls a file format into every consumer of the model.
-    instead: Keep value types in internal/model and persistence in internal/baseline.
   - id: evidence_no_policy
     deny:
       from:
@@ -468,14 +458,6 @@ rules:
   - id: no_stage_view
     note: "No dependency from internal/** to internal/view/**. Archfit 3 named instead: Put the contract in the capability that decides it"
     why: A shared stage-view package re-creates the hub every stage depends on, and the capability owners lose their contracts.
-  - id: baseline_no_score
-    deny:
-      from:
-        - internal/baseline/**
-      to:
-        - internal/assessment/score/**
-    why: "Persistence bound to the scorer ties stored baselines to a volatile implementation: a scoring change would invalidate accepted state."
-    instead: Persist baseline values in internal/baseline; compute scores in internal/assessment/score.
   - id: output_no_score
     deny:
       from:
@@ -540,14 +522,6 @@ rules:
         - internal/ownership/**
     why: Ownership readers are adapters. Application code that imports them ties the use case to CODEOWNERS and git.
     instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
-  - id: application_no_baseline
-    deny:
-      from:
-        - internal/application/**
-      to:
-        - internal/baseline/**
-    why: Baseline file I/O is an adapter. Use-case code that reads it directly hides persistence behind verdict logic.
-    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
   - id: application_no_labelsio
     deny:
       from:
@@ -578,7 +552,7 @@ rules:
   - id: adapter_no_cli
     deny:
       from:
-        - internal/{extract,toolrun,history,output,baseline,labels,factcache,ownership,config}/**
+        - internal/{extract,toolrun,history,output,labels,factcache,ownership,config}/**
       to:
         - cmd/**
     why: "Adapters importing cmd invert the dependency: an adapter would depend on the command that selects it."
@@ -642,10 +616,6 @@ exceptions:
     from: evidence-acquisition
     to: evidence-adapters
     why: Existing dependency from internal/evidence/acquisition/coverage.go:6 reaches a non-public package; retain until that boundary changes.
-  - rule: coupling
-    from: persistence-adapters
-    to: assessment-repair
-    why: Existing dependency from internal/baseline/baseline.go:15 reaches a non-public package; retain until that boundary changes.
   - rule: coupling
     from: policy-config-adapter
     to: assessment-repair

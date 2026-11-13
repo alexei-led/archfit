@@ -20,7 +20,6 @@ type AgentTask struct {
 // FindingStatus values describe the lifecycle state of a report finding.
 const (
 	FindingStatusNew           = "new"
-	FindingStatusBaseline      = "baseline"
 	FindingStatusWaived        = "waived"
 	FindingStatusExpiredWaiver = "expired_waiver"
 	FindingStatusFixed         = "fixed"

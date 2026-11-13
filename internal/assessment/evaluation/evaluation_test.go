@@ -17,7 +17,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
 	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
-	"github.com/alexei-led/archfit/v3/internal/assessment/status"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
@@ -42,15 +41,6 @@ const (
 )
 
 var evaluatedAt = time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
-
-// acceptedSet is an in-memory status.AcceptedSet. Evaluate consumes the seam,
-// never baseline persistence.
-type acceptedSet []status.AcceptedEntry
-
-func (a acceptedSet) HasFingerprint(fp string) bool {
-	return slices.ContainsFunc(a, func(e status.AcceptedEntry) bool { return e.Fingerprint == fp })
-}
-func (a acceptedSet) Entries() []status.AcceptedEntry { return a }
 
 // stubRule emits a fixed finding slice so evaluation decisions, not rule
 // matching, are under test.
@@ -113,11 +103,9 @@ func findByID(t *testing.T, fs []finding.Finding, id string) finding.Finding {
 
 func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 	const (
-		fpNew      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-		fpAccepted = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-		fpWaived   = "cccccccccccccccccccccccccccccccc"
-		fpExpired  = "dddddddddddddddddddddddddddddddd"
-		fpGone     = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+		fpNew     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		fpWaived  = "cccccccccccccccccccccccccccccccc"
+		fpExpired = "dddddddddddddddddddddddddddddddd"
 	)
 	future := evaluatedAt.Add(24 * time.Hour).Format("2006-01-02")
 	past := evaluatedAt.Add(-24 * time.Hour).Format("2006-01-02")
@@ -125,7 +113,6 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 	tests := []struct {
 		name            string
 		findings        []finding.Finding
-		accepted        acceptedSet
 		waivers         policy.WaiverSet
 		wantStatus      map[string]finding.Status
 		wantGateNew     int
@@ -135,23 +122,13 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 		{
 			name:        "unmatched gate finding is new and fails",
 			findings:    []finding.Finding{gateFinding(fpNew, finding.SeverityHigh)},
-			accepted:    acceptedSet{},
 			wantStatus:  map[string]finding.Status{fpNew: finding.StatusNew},
 			wantGateNew: 1,
 			wantVerdict: result.VerdictFail,
 		},
 		{
-			name:        "accepted fingerprint is baselined and does not gate",
-			findings:    []finding.Finding{gateFinding(fpAccepted, finding.SeverityHigh)},
-			accepted:    acceptedSet{{Fingerprint: fpAccepted, Kind: finding.KindGate}},
-			wantStatus:  map[string]finding.Status{fpAccepted: finding.StatusBaseline},
-			wantGateNew: 0,
-			wantVerdict: result.VerdictPass,
-		},
-		{
 			name:     "unexpired waiver suppresses the gate and is counted",
 			findings: []finding.Finding{gateFinding(fpWaived, finding.SeverityHigh)},
-			accepted: acceptedSet{},
 			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: future},
 			}},
@@ -163,7 +140,6 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 		{
 			name:     "expired waiver re-gates the finding",
 			findings: []finding.Finding{gateFinding(fpExpired, finding.SeverityHigh)},
-			accepted: acceptedSet{},
 			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: past},
 			}},
@@ -171,22 +147,13 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 			wantGateNew: 1,
 			wantVerdict: result.VerdictFail,
 		},
-		{
-			name:        "accepted gate finding no longer present is reported fixed and does not gate",
-			findings:    nil,
-			accepted:    acceptedSet{{Fingerprint: fpGone, Kind: finding.KindGate, RuleID: ruleForbidden}},
-			wantStatus:  map[string]finding.Status{fpGone: finding.StatusFixed},
-			wantGateNew: 0,
-			wantVerdict: result.VerdictPass,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
-				Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: test.findings}),
-				Accepted: test.accepted,
-				Policy:   policy.AssessmentPolicy{Waivers: test.waivers},
-				Now:      evaluatedAt,
+				Rules:  evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: test.findings}),
+				Policy: policy.AssessmentPolicy{Waivers: test.waivers},
+				Now:    evaluatedAt,
 			})
 			for id, want := range test.wantStatus {
 				if s := findByID(t, got.Findings, id).Status; s != want {
@@ -280,11 +247,9 @@ func TestEvaluateMetricGating(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
-				Metrics:  evaluation.MetricsetOf(stubMetric{res: test.metric}),
-				Gates:    map[string]policy.MetricConfig{metricName: test.gate},
-				Accepted: acceptedSet{},
-				Now:      evaluatedAt,
-
+				Metrics:           evaluation.MetricsetOf(stubMetric{res: test.metric}),
+				Gates:             map[string]policy.MetricConfig{metricName: test.gate},
+				Now:               evaluatedAt,
 				IncludeAdvisories: true,
 			})
 			if got.Verdict != test.want {
@@ -308,11 +273,10 @@ func TestEvaluateMetricGating(t *testing.T) {
 
 func TestEvaluateGateFindingOutranksMetricWarn(t *testing.T) {
 	got := evaluation.Evaluate(evaluation.Input{
-		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", finding.SeverityHigh)}}),
-		Metrics:  evaluation.MetricsetOf(stubMetric{res: metricValue(new(float64(-1)), result.DirectionHigherIsBetter)}),
-		Gates:    map[string]policy.MetricConfig{metricName: {Gate: string(policy.GateWarn)}},
-		Accepted: acceptedSet{},
-		Now:      evaluatedAt,
+		Rules:   evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", finding.SeverityHigh)}}),
+		Metrics: evaluation.MetricsetOf(stubMetric{res: metricValue(new(float64(-1)), result.DirectionHigherIsBetter)}),
+		Gates:   map[string]policy.MetricConfig{metricName: {Gate: string(policy.GateWarn)}},
+		Now:     evaluatedAt,
 	})
 	if got.Verdict != result.VerdictFail {
 		t.Fatalf("Verdict = %q, want fail: a new gate finding outranks a metric warn", got.Verdict)
@@ -341,9 +305,8 @@ func TestEvaluateKeepsTheModulesOfModuleKeyedFindings(t *testing.T) {
 		Rules: evaluation.RulesetOf(stubRule{id: ruleModuleCycle, findings: []finding.Finding{
 			moduleKeyed, unownedImporter, gateFinding("edge", finding.SeverityHigh),
 		}}),
-		Policy:   policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
-		Accepted: acceptedSet{},
-		Now:      evaluatedAt,
+		Policy: policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
+		Now:    evaluatedAt,
 	})
 	if f := findByID(t, got.Findings, "mod"); f.Edge.From.Module != fromModule || f.Edge.To.Module != toModule {
 		t.Errorf("module-keyed edge = %+v, want %s -> %s kept", f.Edge, fromModule, toModule)
@@ -376,7 +339,6 @@ func TestEvaluateAdvisoryVisibilityAndWarnVerdict(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
 				AdvisoryCandidates: []relationship.AdvisoryCandidate{candidate},
-				Accepted:           acceptedSet{},
 				IncludeAdvisories:  test.includeAdvisories,
 				Now:                evaluatedAt,
 			})
@@ -393,18 +355,17 @@ func TestEvaluateAdvisoryVisibilityAndWarnVerdict(t *testing.T) {
 	}
 }
 
-// An advisory carried in as a baselined gate-pass finding is what drives the
+// An advisory carried in by a warn-gated rule is what drives the
 // verdict to warn; the candidate stream is counted separately as warnings.
-func TestEvaluateBaselinedAdvisoryDrivesWarnVerdict(t *testing.T) {
+func TestEvaluateRuleAdvisoryDrivesWarnVerdict(t *testing.T) {
 	adv := finding.Finding{
 		ID: "carried", Kind: finding.KindAdvisory, RuleID: ruleBC, Status: finding.StatusNew,
 		Severity: finding.SeverityMedium,
 		Edge:     finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}, Kind: kindImports},
 	}
 	got := evaluation.Evaluate(evaluation.Input{
-		Rules:    evaluation.RulesetOf(stubRule{id: ruleBC, findings: []finding.Finding{adv}}),
-		Accepted: acceptedSet{},
-		Now:      evaluatedAt,
+		Rules: evaluation.RulesetOf(stubRule{id: ruleBC, findings: []finding.Finding{adv}}),
+		Now:   evaluatedAt,
 	})
 	if got.Verdict != result.VerdictWarn {
 		t.Fatalf("Verdict = %q, want warn: an active advisory warns", got.Verdict)
@@ -414,26 +375,19 @@ func TestEvaluateBaselinedAdvisoryDrivesWarnVerdict(t *testing.T) {
 	}
 }
 
-func TestEvaluateFiltersAdvisoriesByWaiverAndBaseline(t *testing.T) {
+func TestEvaluateFiltersAdvisoriesByWaiver(t *testing.T) {
 	candidate := relationship.AdvisoryCandidate{
 		ID: "adv-waived", RuleID: ruleBC, Severity: relationship.SeverityHigh,
 		From: pathA, To: pathB, FromModule: "a", ToModule: "b", EdgeKind: kindImports,
 	}
 	tests := []struct {
 		name       string
-		accepted   acceptedSet
 		waivers    policy.WaiverSet
 		wantStatus finding.Status
 	}{
-		{name: "new", accepted: acceptedSet{}, wantStatus: finding.StatusNew},
+		{name: "new", wantStatus: finding.StatusNew},
 		{
-			name:       "baselined advisory",
-			accepted:   acceptedSet{{Fingerprint: "adv-waived", Kind: finding.KindAdvisory}},
-			wantStatus: finding.StatusBaseline,
-		},
-		{
-			name:     "waived advisory",
-			accepted: acceptedSet{},
+			name: "waived advisory",
 			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleBC, From: pathA, To: pathB, Expires: evaluatedAt.Add(24 * time.Hour).Format("2006-01-02")},
 			}},
@@ -444,7 +398,6 @@ func TestEvaluateFiltersAdvisoriesByWaiverAndBaseline(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
 				AdvisoryCandidates: []relationship.AdvisoryCandidate{candidate},
-				Accepted:           test.accepted,
 				Policy:             policy.AssessmentPolicy{Waivers: test.waivers},
 				IncludeAdvisories:  true,
 				Now:                evaluatedAt,
@@ -478,7 +431,6 @@ func TestEvaluateRollsUpBCAdvisoriesByModulePairAndClassification(t *testing.T) 
 		AdvisoryCandidates: []relationship.AdvisoryCandidate{
 			same("adv-2", "a/x.go", "b/x.go"), same("adv-1", pathA, pathB), differing, other,
 		},
-		Accepted:          acceptedSet{},
 		IncludeAdvisories: true,
 		Now:               evaluatedAt,
 	})
@@ -502,7 +454,7 @@ func TestEvaluateRollsUpBCAdvisoriesByModulePairAndClassification(t *testing.T) 
 	}
 }
 
-// A rollup keeps every member ID for baseline capture, past the cap on the
+// A rollup keeps every member ID for complete finding identity, past the cap on the
 // readable group_members list.
 func TestEvaluateRollupKeepsEveryMemberPastTheDisplayCap(t *testing.T) {
 	const n = 10
@@ -519,7 +471,7 @@ func TestEvaluateRollupKeepsEveryMemberPastTheDisplayCap(t *testing.T) {
 	}
 
 	got := evaluation.Evaluate(evaluation.Input{
-		AdvisoryCandidates: candidates, Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,
+		AdvisoryCandidates: candidates, IncludeAdvisories: true, Now: evaluatedAt,
 	})
 
 	rep := findByID(t, got.Findings, "adv-00")
@@ -534,7 +486,6 @@ func TestEvaluateRollupKeepsEveryMemberPastTheDisplayCap(t *testing.T) {
 func TestEvaluateEmitsStaleLabelAdvisories(t *testing.T) {
 	got := evaluation.Evaluate(evaluation.Input{
 		StaleLabelKeys:    []string{"a\x00b", "malformed-no-separator"},
-		Accepted:          acceptedSet{},
 		IncludeAdvisories: true,
 		Now:               evaluatedAt,
 	})
@@ -602,7 +553,6 @@ func TestEvaluateResolvesGateEvidenceFromRelationships(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
 				Relationships: relationship.Set{Edges: test.edges},
 				Rules:         evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", finding.SeverityCritical)}}),
-				Accepted:      acceptedSet{},
 				Now:           evaluatedAt,
 			})
 			f := findByID(t, got.Findings, "f1")
@@ -617,7 +567,7 @@ func TestEvaluateResolvesGateEvidenceFromRelationships(t *testing.T) {
 }
 
 func TestEvaluateEmptyInputIsPassWithNoFindings(t *testing.T) {
-	got := evaluation.Evaluate(evaluation.Input{Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt})
+	got := evaluation.Evaluate(evaluation.Input{IncludeAdvisories: true, Now: evaluatedAt})
 	if len(got.Findings) != 0 || len(got.Metrics) != 0 {
 		t.Fatalf("Result = %+v, want no findings and no metrics", got)
 	}
@@ -640,10 +590,10 @@ func TestEvaluateEmitsStalenessAdvisoriesFromPolicy(t *testing.T) {
 	}
 
 	off := evaluation.Evaluate(evaluation.Input{
-		Relationships: set, Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,
+		Relationships: set, IncludeAdvisories: true, Now: evaluatedAt,
 	})
 	on := evaluation.Evaluate(evaluation.Input{
-		Relationships: set, Policy: pol, Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,
+		Relationships: set, Policy: pol, IncludeAdvisories: true, Now: evaluatedAt,
 	})
 	if len(on.Findings) <= len(off.Findings) {
 		t.Fatalf("staleness findings on = %d, off = %d; want enabling the policy to add advisories",

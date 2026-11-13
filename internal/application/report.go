@@ -39,7 +39,6 @@ func projectReport(r result.Result, sc score.Scorecard) report.Document {
 // empty value means the run could not know it; the report omits it.
 type IdentityInputs struct {
 	PolicyDigest   string
-	BaselineDigest string
 	LabelsDigest   string
 	PolicyRef      *report.PolicyRef
 	BaseSHA        string
@@ -55,7 +54,7 @@ func withRunFacts(doc report.Document, in IdentityInputs, gateReasons []string) 
 	doc.State.GateReasons = slices.Clone(gateReasons)
 	doc.State.Identity = report.ResultIdentity{
 		SchemaVersion: report.IdentitySchemaVersion,
-		PolicyDigest:  in.PolicyDigest, BaselineDigest: in.BaselineDigest, LabelsDigest: in.LabelsDigest,
+		PolicyDigest:  in.PolicyDigest, LabelsDigest: in.LabelsDigest,
 		PolicyRef: in.PolicyRef, BaseSHA: in.BaseSHA, HeadTreeDigest: in.HeadTreeDigest,
 		EngineVersion:          in.EngineVersion,
 		MeasurementProfileHash: report.ProfileHash(doc.State.Comparison.MeasurementProfile),
@@ -100,9 +99,6 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		ConfigHash: r.ConfigHash, ClassificationHash: r.ClassificationHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
 		RubricVersion:      report.ScoreVersion,
 		MeasurementProfile: projectMeasurementProfile(r.MeasurementProfile),
-	}
-	if c := r.GateReference; c != nil {
-		out.GateReference = &report.StateComparison{Status: report.ComparisonStatus(c.Status), BaseRef: c.BaseRef, Reasons: append([]string{}, c.Reasons...), Drift: slices.Clone(c.Drift), BaselinePresent: c.BaselinePresent}
 	}
 	if c := r.Comparison; c != nil {
 		// The comparison verdict is decided where both sides exist (the base

@@ -348,7 +348,6 @@ func TestDimensionGatePosture(t *testing.T) {
 		{"nothing active passes", nil, state.GatePass},
 		{"active advisory warns", &finding.Finding{ID: "a", RuleID: ruleDep, Kind: finding.KindAdvisory, Status: finding.StatusNew}, state.GateWarn},
 		{"active gate finding fails", &finding.Finding{ID: "g", RuleID: ruleDep, Kind: finding.KindGate, Status: finding.StatusNew}, state.GateFail},
-		{"accepted gate finding passes", &finding.Finding{ID: "b", RuleID: ruleDep, Kind: finding.KindGate, Status: finding.StatusBaseline}, state.GatePass},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -875,95 +874,15 @@ func hasUnknownFact(unknown []state.UnknownFact, name string) bool {
 	return false
 }
 
-// TestDriftDimensionRequiresAComparableReference is the erosion contract: drift
-// is measurable only against a reference written under the same config, module
-// map, labels, and rubric. Everything else stays unmeasured with a named cause,
-// because a reference that records no seams is not evidence that there were
-// none.
-func TestDriftDimensionRequiresAComparableReference(t *testing.T) {
+func TestDriftDimensionHasNoStoredComparison(t *testing.T) {
 	t.Parallel()
-	diag := &result.Result{Seams: []result.Seam{
-		{ID: "seam-kept", DistributedMonolith: true},
-		{ID: "seam-new", DistributedMonolith: true},
-		{ID: "seam-ignored"},
-	}}
-
-	tests := []struct {
-		name          string
-		anchor        evaluation.BaselineAnchor
-		wantStatus    state.MeasurementStatus
-		wantDelta     state.ComparisonStatus
-		wantMetrics   map[string]float64
-		wantReasonIn  string
-		wantReasonOut string
-	}{
-		{
-			name:          "comparison not requested without a persisted baseline",
-			anchor:        evaluation.BaselineAnchor{},
-			wantStatus:    state.Unmeasured,
-			wantDelta:     state.ComparisonNonComparable,
-			wantReasonIn:  "no comparable architecture-state reference",
-			wantReasonOut: "stored baseline was written under different inputs",
-		},
-		{
-			name: "persisted baseline with drifted fingerprints",
-			anchor: evaluation.BaselineAnchor{
-				NonComparableReason: "the stored baseline was written under different inputs",
-				SnapshotMismatches:  []string{"config_hash differs between the two runs"},
-			},
-			wantStatus:    state.Unmeasured,
-			wantDelta:     state.ComparisonNonComparable,
-			wantReasonIn:  "config_hash",
-			wantReasonOut: "no comparable architecture-state reference is stored",
-		},
-		{
-			name: "comparable reference measures the seam delta",
-			anchor: evaluation.BaselineAnchor{
-				SeamsComparable:   true,
-				QualifyingSeamIDs: []string{"seam-kept", "seam-gone"},
-			},
-			wantStatus:  state.Measured,
-			wantDelta:   state.ComparisonComparable,
-			wantMetrics: map[string]float64{"new_seams": 1, "resolved_seams": 1},
-		},
+	diag := &result.Result{Seams: []result.Seam{{ID: "seam", DistributedMonolith: true}}}
+	dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Drift
+	if dim.Status != state.Unmeasured || len(dim.Metrics) != 0 {
+		t.Fatalf("drift = %+v, want unmeasured without fabricated deltas", dim)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			dim := evaluation.BuildDimensions(diag, evaluation.StateInput{Drift: tc.anchor}, nil).Drift
-			if dim.Status != tc.wantStatus {
-				t.Errorf("status = %q, want %q", dim.Status, tc.wantStatus)
-			}
-			if dim.Delta == nil {
-				t.Fatal("drift envelope carries no delta")
-			}
-			if dim.Delta.Status != tc.wantDelta {
-				t.Errorf("delta status = %q, want %q", dim.Delta.Status, tc.wantDelta)
-			}
-			joinedReasons := strings.Join(dim.Delta.Reasons, " ")
-			if tc.wantReasonIn != "" && !strings.Contains(joinedReasons, tc.wantReasonIn) {
-				t.Errorf("reasons %q do not name %q", joinedReasons, tc.wantReasonIn)
-			}
-			if tc.wantReasonOut != "" && strings.Contains(joinedReasons, tc.wantReasonOut) {
-				t.Errorf("reasons %q unexpectedly contain %q", joinedReasons, tc.wantReasonOut)
-			}
-			for name, want := range tc.wantMetrics {
-				got, found := 0.0, false
-				for _, m := range dim.Metrics {
-					if m.Name == name {
-						got, found = m.Value, true
-					}
-				}
-				if !found {
-					t.Errorf("metric %q missing from a measured drift envelope", name)
-					continue
-				}
-				if got != want {
-					t.Errorf("metric %q = %v, want %v", name, got, want)
-				}
-			}
-		})
+	if dim.Delta == nil || dim.Delta.Status != state.ComparisonNotRequested {
+		t.Fatalf("delta = %+v, want not requested", dim.Delta)
 	}
 }
 

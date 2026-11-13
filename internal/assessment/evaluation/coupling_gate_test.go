@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/score"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
@@ -28,8 +29,12 @@ func qualifyingSeam(id, from, to string) result.Seam {
 // comparableAnchor is a reference the gate may compare against, carrying the
 // given seam IDs as already-known. Injecting it directly is deliberate: the
 // fail-mode behaviour must be provable without a baseline file.
-func comparableAnchor(known ...string) evaluation.BaselineAnchor {
-	return evaluation.BaselineAnchor{SeamsComparable: true, QualifyingSeamIDs: known}
+func comparableAnchor(known ...string) score.SeamReference {
+	ids := make(map[string]struct{}, len(known))
+	for _, id := range known {
+		ids[id] = struct{}{}
+	}
+	return score.SeamReference{Comparable: true, QualifyingSeamIDs: ids}
 }
 
 func seamDiag(seams ...result.Seam) result.Result {
@@ -52,7 +57,7 @@ func TestApplySeamGate_BlocksOnlyOnNewSeamsInFailMode(t *testing.T) {
 	tests := []struct {
 		name        string
 		gate        policy.CouplingGate
-		anchor      evaluation.BaselineAnchor
+		anchor      score.SeamReference
 		wantVerdict result.Verdict
 		wantGates   int
 	}{
@@ -64,8 +69,8 @@ func TestApplySeamGate_BlocksOnlyOnNewSeamsInFailMode(t *testing.T) {
 		{
 			name: "fail mode without a comparable reference cannot claim a new seam",
 			gate: policy.CouplingGate{Mode: policy.DistributedMonolithFail},
-			anchor: evaluation.BaselineAnchor{
-				NonComparableReason: "legacy_score_snapshot_ignored", SnapshotMismatches: []string{"score_version"}},
+			anchor: score.SeamReference{
+				Reasons: []string{"legacy_score_snapshot_ignored", "score_version"}},
 			wantVerdict: result.VerdictPass, wantGates: 1,
 		},
 		{
@@ -140,7 +145,7 @@ func TestApplySeamGate_AbstentionIsDisclosed(t *testing.T) {
 	t.Parallel()
 	diag := seamDiag(qualifyingSeam("seam-1", "billing", "shipping"))
 	reasons := evaluation.ApplySeamGate(&diag, policy.CouplingGate{Mode: policy.DistributedMonolithFail},
-		evaluation.BaselineAnchor{NonComparableReason: "legacy_score_snapshot_ignored"})
+		score.SeamReference{Reasons: []string{"legacy_score_snapshot_ignored"}})
 
 	joined := strings.Join(reasons, "; ")
 	if !strings.Contains(joined, "no comparable reference") {

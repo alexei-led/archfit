@@ -144,3 +144,37 @@ func mustRel(t *testing.T, path string) string {
 	}
 	return rel
 }
+
+func TestStateSchemaRejectsRetiredReferenceFields(t *testing.T) {
+	compiled := compileStateSchema(t)
+	raw, err := os.ReadFile("testdata/new_violation.state.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, parent, key string
+		value             any
+	}{
+		{name: "stored comparison", key: "gate_reference", value: map[string]any{"status": "not_requested", "reasons": []any{}}},
+		{name: "stored digest", parent: "identity", key: "baseline_digest", value: "retired"},
+		{name: "stored presence", parent: "comparison", key: "baseline_present", value: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var document map[string]any
+			if err := json.Unmarshal(raw, &document); err != nil {
+				t.Fatal(err)
+			}
+			if err := compiled.Validate(document); err != nil {
+				t.Fatalf("current document is invalid: %v", err)
+			}
+			parent := document
+			if tc.parent != "" {
+				parent = document[tc.parent].(map[string]any)
+			}
+			parent[tc.key] = tc.value
+			if err := compiled.Validate(document); err == nil {
+				t.Fatalf("retired field %s.%s was accepted", tc.parent, tc.key)
+			}
+		})
+	}
+}

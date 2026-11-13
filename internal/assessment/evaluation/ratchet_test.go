@@ -19,10 +19,10 @@ func TestRatchetFindingCarriesBeforeAfterAndAWaiverStableID(t *testing.T) {
 	run := func(delta float64, waivers policy.WaiverSet) finding.Finding {
 		t.Helper()
 		got := evaluation.Evaluate(evaluation.Input{
-			Metrics:  evaluation.MetricsetOf(stubMetric{res: metricValue(&delta, result.DirectionHigherIsWorse)}),
-			Gates:    map[string]policy.MetricConfig{},
-			Accepted: acceptedSet{}, Now: evaluatedAt,
-			Policy: policy.AssessmentPolicy{Waivers: waivers},
+			Metrics: evaluation.MetricsetOf(stubMetric{res: metricValue(&delta, result.DirectionHigherIsWorse)}),
+			Gates:   map[string]policy.MetricConfig{},
+			Now:     evaluatedAt,
+			Policy:  policy.AssessmentPolicy{Waivers: waivers},
 		})
 		for _, f := range got.Findings {
 			if f.RuleID == "metric/"+metricName {
@@ -54,10 +54,10 @@ func TestRatchetWaiverMatchesWithoutFromOrTo(t *testing.T) {
 	run := func(waivers policy.WaiverSet) finding.Status {
 		t.Helper()
 		got := evaluation.Evaluate(evaluation.Input{
-			Metrics:  evaluation.MetricsetOf(stubMetric{res: metricValue(&delta, result.DirectionHigherIsWorse)}),
-			Gates:    map[string]policy.MetricConfig{},
-			Accepted: acceptedSet{}, Now: evaluatedAt,
-			Policy: policy.AssessmentPolicy{Waivers: waivers},
+			Metrics: evaluation.MetricsetOf(stubMetric{res: metricValue(&delta, result.DirectionHigherIsWorse)}),
+			Gates:   map[string]policy.MetricConfig{},
+			Now:     evaluatedAt,
+			Policy:  policy.AssessmentPolicy{Waivers: waivers},
 		})
 		for _, f := range got.Findings {
 			if f.RuleID == "metric/"+metricName {

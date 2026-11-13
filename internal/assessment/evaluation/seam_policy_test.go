@@ -65,15 +65,15 @@ func TestSeamPolicyStatus(t *testing.T) {
 			findings: []finding.Finding{pairFinding(gate, finding.StatusNew, modBilling, modStripe), pairFinding(advisory, finding.StatusNew, modBilling, modStripe)}},
 		{name: "expired waiver is active", from: modBilling, to: modStripe, want: seamViolation,
 			findings: []finding.Finding{pairFinding(gate, finding.StatusExpiredWaiver, modBilling, modStripe)}},
-		{name: "baselined new cross-module dependency is accepted, not allowed", from: modOrders, to: modBilling,
+		{name: "waived new cross-module dependency is accepted, not allowed", from: modOrders, to: modBilling,
 			rules: []policy.RuleDef{allowlistRule}, want: seamAccepted,
-			findings: []finding.Finding{pairFinding(gate, finding.StatusBaseline, modOrders, modBilling)}},
+			findings: []finding.Finding{pairFinding(gate, finding.StatusWaived, modOrders, modBilling)}},
 		{name: "waived gate finding", from: modBilling, to: modStripe, want: seamAccepted,
 			findings: []finding.Finding{pairFinding(gate, finding.StatusWaived, modBilling, modStripe), pairFinding(advisory, finding.StatusNew, modBilling, modStripe)}},
 		{name: "advisory only", from: modAPI, to: modOrders, rules: []policy.RuleDef{layerRule}, want: seamAdvisory,
 			findings: []finding.Finding{pairFinding(advisory, finding.StatusNew, modAPI, modOrders)}},
-		{name: "a baselined advisory names nothing", from: modOrders, to: modBilling, rules: []policy.RuleDef{allowlistRule}, want: seamAllowed,
-			findings: []finding.Finding{pairFinding(advisory, finding.StatusBaseline, modOrders, modBilling), pairFinding(advisory, finding.StatusWaived, modOrders, modBilling)}},
+		{name: "a waived advisory names nothing", from: modOrders, to: modBilling, rules: []policy.RuleDef{allowlistRule}, want: seamAllowed,
+			findings: []finding.Finding{pairFinding(advisory, finding.StatusWaived, modOrders, modBilling)}},
 		{name: "a fixed finding names nothing", from: modBilling, to: modStripe, want: seamObserved,
 			findings: []finding.Finding{pairFinding(gate, finding.StatusFixed, modBilling, modStripe)}},
 		{name: "a finding on the reverse pair does not count", from: modStripe, to: modBilling, want: seamObserved,
@@ -119,7 +119,7 @@ func TestSeamPolicyPlacesFindingsByTheGraphModule(t *testing.T) {
 	unowned := finding.Finding{Kind: finding.KindGate, Status: finding.StatusNew, Edge: finding.EdgeEvidence{
 		From: finding.Endpoint{Path: modMember}, To: finding.Endpoint{Module: modBilling},
 	}}
-	crate := finding.Finding{Kind: finding.KindGate, Status: finding.StatusBaseline, Edge: finding.EdgeEvidence{
+	crate := finding.Finding{Kind: finding.KindGate, Status: finding.StatusWaived, Edge: finding.EdgeEvidence{
 		From: finding.Endpoint{Path: modPlaceRust, Module: "core"}, To: finding.Endpoint{Path: modTypesRust, Module: "core"},
 	}}
 	diag := &result.Result{
@@ -145,7 +145,7 @@ func TestSeamPolicyFollowRuleHypothesis(t *testing.T) {
 		want     string
 	}{
 		{name: "violation", want: "follow_rule", findings: []finding.Finding{pairFinding(gate, finding.StatusNew, modBilling, modStripe)}},
-		{name: "accepted", want: original, findings: []finding.Finding{pairFinding(gate, finding.StatusBaseline, modBilling, modStripe)}},
+		{name: "accepted", want: original, findings: []finding.Finding{pairFinding(gate, finding.StatusWaived, modBilling, modStripe)}},
 		{name: "advisory", want: original, findings: []finding.Finding{pairFinding(advisory, finding.StatusNew, modBilling, modStripe)}},
 		{name: "allowed", want: original, rules: []policy.RuleDef{layerRule}},
 		{name: "observed", want: original},

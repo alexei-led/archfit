@@ -3,7 +3,6 @@ package application
 import (
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -11,11 +10,12 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
-	"github.com/alexei-led/archfit/v3/internal/assessment/status"
-	"github.com/alexei-led/archfit/v3/internal/baseline"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
+
+const cycleTestFrom = "a.go"
+const cycleTestTo = "b.go"
 
 func TestProjectReportCycleFindingMatchesPublishedSchema(t *testing.T) {
 	rs, err := rules.New(policy.RuleConfig{Rules: []policy.RuleDef{{ID: "no-cycles", Type: "cycle"}}})
@@ -23,8 +23,8 @@ func TestProjectReportCycleFindingMatchesPublishedSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	rels := relationship.Set{Edges: []relationship.Edge{
-		{FromID: "file:" + baselineTestFrom, ToID: "file:" + baselineTestTo, FromPath: baselineTestFrom, ToPath: baselineTestTo, Kind: "imports"},
-		{FromID: "file:" + baselineTestTo, ToID: "file:" + baselineTestFrom, FromPath: baselineTestTo, ToPath: baselineTestFrom, Kind: "imports"},
+		{FromID: "file:" + cycleTestFrom, ToID: "file:" + cycleTestTo, FromPath: cycleTestFrom, ToPath: cycleTestTo, Kind: "imports"},
+		{FromID: "file:" + cycleTestTo, ToID: "file:" + cycleTestFrom, FromPath: cycleTestTo, ToPath: cycleTestFrom, Kind: "imports"},
 	}}
 	diagnostic := result.New()
 	diagnostic.Findings = rs[0].Check(rels, rules.Evidence{})
@@ -35,26 +35,18 @@ func TestProjectReportCycleFindingMatchesPublishedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted := baseline.Baseline{Accepted: []baseline.AcceptedFinding{{
-		Fingerprint: diagnostic.Findings[0].ID, RuleID: diagnostic.Findings[0].RuleID, Kind: finding.KindGate,
-	}}}
-	removed := status.Assign(rs[0].Check(relationship.Set{}, rules.Evidence{}), accepted, policy.WaiverSet{}, time.Time{}, finding.KindGate)
-	if len(removed) != 1 || removed[0].Status != finding.StatusFixed {
-		t.Fatalf("removed cycle findings = %+v, want one fixed finding", removed)
-	}
 	for _, tc := range []struct {
 		name     string
 		findings []finding.Finding
 	}{
 		{name: "live cycle", findings: diagnostic.Findings},
-		{name: "removed cycle", findings: removed},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			diagnostic := result.New()
 			diagnostic.Findings = append(diagnostic.Findings, tc.findings...)
 			diagnostic.Findings = append(diagnostic.Findings, finding.Finding{
 				ID: "located", RuleID: "edge", Kind: finding.KindGate, Status: finding.StatusNew,
-				Locations: []relationship.Location{{File: baselineTestFrom, Line: 7}},
+				Locations: []relationship.Location{{File: cycleTestFrom, Line: 7}},
 			})
 			document := projectReport(diagnostic, score.Scorecard{})
 			raw, err := json.Marshal(document.State)
@@ -68,7 +60,7 @@ func TestProjectReportCycleFindingMatchesPublishedSchema(t *testing.T) {
 			if err := compiled.Validate(instance); err != nil {
 				t.Errorf("projected findings violate the published schema: %v", err)
 			}
-			if got := document.State.Findings[1].Locations; len(got) != 1 || got[0].File != baselineTestFrom || got[0].Line != 7 {
+			if got := document.State.Findings[1].Locations; len(got) != 1 || got[0].File != cycleTestFrom || got[0].Line != 7 {
 				t.Errorf("projected locations = %+v, want original file and line", got)
 			}
 		})

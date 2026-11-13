@@ -153,7 +153,6 @@ func TestProjectedStatePassesTheConsumerTextRules(t *testing.T) {
 	r.State.Dimensions.Intent.Unknown = []state.UnknownFact{{Fact: long, Reason: long, Owner: "intent"}}
 	r.State.Dimensions.Drift.Delta = &state.Delta{Status: textStatusNonComparable, Reasons: []string{long}}
 	r.Comparison = &result.StateComparison{Status: textStatusNonComparable, BaseRef: "main", Reasons: []string{long}, OriginStatus: decision.OriginUnknown, OriginReasons: []string{long}}
-	r.GateReference = &result.StateComparison{Status: textStatusNonComparable, Reasons: []string{long}}
 
 	doc := projectReport(r, score.Scorecard{})
 	data, err := json.Marshal(doc.State)

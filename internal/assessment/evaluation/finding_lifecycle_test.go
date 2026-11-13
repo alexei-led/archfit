@@ -20,7 +20,7 @@ func (findingPopulationMetric) Calculate(in signal.CollectedSignals) result.Metr
 	return result.MetricResult{Name: "finding_population", Value: float64(len(in.Common.Findings))}
 }
 
-func TestEvaluateAcceptedAdvisoryLifecycle(t *testing.T) {
+func TestEvaluateAdvisoryLifecycleWithoutStoredState(t *testing.T) {
 	const nativeID = "native-advisory"
 	for _, tc := range []struct {
 		name       string
@@ -34,10 +34,6 @@ func TestEvaluateAcceptedAdvisoryLifecycle(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := evaluation.Input{
-				Accepted: acceptedSet{
-					{Fingerprint: fpWarnAdv, RuleID: ruleWarn, Kind: finding.KindAdvisory},
-					{Fingerprint: nativeID, RuleID: ruleBC, Kind: finding.KindAdvisory},
-				},
 				Metrics:           evaluation.MetricsetOf(findingPopulationMetric{}),
 				IncludeAdvisories: true, Now: evaluatedAt,
 			}
@@ -48,28 +44,28 @@ func TestEvaluateAcceptedAdvisoryLifecycle(t *testing.T) {
 				in.AdvisoryCandidates = []relationship.AdvisoryCandidate{{ID: nativeID, RuleID: ruleBC, Severity: relationship.SeverityHigh}}
 			}
 			got := evaluation.Evaluate(in)
-			if len(got.Findings) != 2 {
-				t.Errorf("findings = %+v, want exactly one finding per accepted ID", got.Findings)
-			}
 			active := 0
 			for id, live := range map[string]bool{fpWarnAdv: tc.warnLive, nativeID: tc.nativeLive} {
-				want := finding.StatusFixed
-				if live {
-					want = finding.StatusBaseline
-					active++
-				}
 				count := 0
 				for _, f := range got.Findings {
 					if f.ID == id {
 						count++
-						if f.Status != want || f.Kind != finding.KindAdvisory {
-							t.Errorf("finding %s = %s/%s, want advisory/%s", id, f.Kind, f.Status, want)
+						if f.Status != finding.StatusNew || f.Kind != finding.KindAdvisory {
+							t.Errorf("finding %s = %s/%s, want advisory/new", id, f.Kind, f.Status)
 						}
 					}
 				}
-				if count != 1 {
-					t.Errorf("finding %s emitted %d times, want once", id, count)
+				wantCount := 0
+				if live {
+					wantCount = 1
+					active++
 				}
+				if count != wantCount {
+					t.Errorf("finding %s emitted %d times, want %d", id, count, wantCount)
+				}
+			}
+			if len(got.Findings) != active {
+				t.Errorf("findings = %+v, want only the %d live findings", got.Findings, active)
 			}
 			if got.Warnings != active || got.GateFindings != 0 {
 				t.Errorf("warnings/gate findings = %d/%d, want %d/0", got.Warnings, got.GateFindings, active)
@@ -107,7 +103,7 @@ func TestEvaluateAdvisoryWaiverExpiry(t *testing.T) {
 				Rules:              evaluation.RulesetOf(stubRule{id: ruleWarn, findings: []finding.Finding{warnRuleFinding("waived-warn-advisory")}}),
 				AdvisoryCandidates: []relationship.AdvisoryCandidate{{ID: "native-advisory", RuleID: ruleBC, Severity: relationship.SeverityHigh}},
 				Policy:             policy.AssessmentPolicy{Waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{{Expires: tc.expiry.Format("2006-01-02")}}}},
-				Accepted:           acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,
+				IncludeAdvisories:  true, Now: evaluatedAt,
 			})
 			if len(got.Findings) != 2 {
 				t.Fatalf("findings = %+v, want both advisory sources", got.Findings)
@@ -121,35 +117,5 @@ func TestEvaluateAdvisoryWaiverExpiry(t *testing.T) {
 				t.Errorf("advisory waiver changed gate behavior: %+v", got)
 			}
 		})
-	}
-}
-
-func TestEvaluateRemovedCouplingAdvisoriesKeepEachAcceptedID(t *testing.T) {
-	accepted := acceptedSet{
-		{Fingerprint: "removed-bc-a", RuleID: ruleBC, Kind: finding.KindAdvisory},
-		{Fingerprint: "removed-bc-b", RuleID: ruleBC, Kind: finding.KindAdvisory},
-	}
-	got := evaluation.Evaluate(evaluation.Input{
-		Accepted: accepted, IncludeAdvisories: true, Now: evaluatedAt,
-	})
-	if len(got.Findings) != len(accepted) {
-		t.Errorf("findings = %+v, want one fixed finding per accepted ID", got.Findings)
-	}
-	for _, entry := range accepted {
-		count := 0
-		for _, f := range got.Findings {
-			if f.ID == entry.Fingerprint {
-				count++
-				if f.Status != finding.StatusFixed || f.Kind != finding.KindAdvisory {
-					t.Errorf("finding %s = %s/%s, want advisory/fixed", f.ID, f.Kind, f.Status)
-				}
-			}
-		}
-		if count != 1 {
-			t.Errorf("accepted ID %s emitted %d times, want once", entry.Fingerprint, count)
-		}
-	}
-	if got.Warnings != 0 || got.GateFindings != 0 || got.Verdict != result.VerdictPass {
-		t.Errorf("removed advisories affect decision: %+v", got)
 	}
 }

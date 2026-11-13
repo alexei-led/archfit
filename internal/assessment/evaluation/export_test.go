@@ -9,9 +9,9 @@ import (
 )
 
 // ApplySeamGate exposes the seam-gate escalation over an explicit ledger and
-// reference, so the block condition can be pinned without a baseline file.
-func ApplySeamGate(diag *result.Result, gate policy.CouplingGate, anchor BaselineAnchor) []string {
-	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(gate), anchor.seamReference())
+// reference, so the block condition can be pinned without a stored input.
+func ApplySeamGate(diag *result.Result, gate policy.CouplingGate, reference score.SeamReference) []string {
+	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(gate), reference)
 	applySeamGate(diag, trip)
 	return trip.Reasons
 }

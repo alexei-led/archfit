@@ -34,7 +34,6 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		Coverage:           coverage,
 		ChangedFiles:       in.Scope.Changed,
 		Baseline:           in.BaseMetrics,
-		Accepted:           in.Accepted,
 		Policy:             in.Policy.Assessment,
 		Gates:              in.Policy.Gates.Metrics,
 		ModuleReview:       in.Policy.Gates.ModuleReview,

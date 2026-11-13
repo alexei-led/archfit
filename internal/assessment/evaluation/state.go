@@ -27,10 +27,6 @@ type stateInput struct {
 	// decides only against a comparable reference; against any other it is
 	// unmeasured, never passed and never blocked.
 	Ratchets RatchetReference
-	// Drift is the stored architecture-state reference and its comparability.
-	// It is the same anchor the seam gate reads, so the drift dimension and the
-	// gate can never disagree about whether a comparison was admissible.
-	Drift BaselineAnchor
 }
 
 // classified is the one pass over the run's findings that the architecture
@@ -49,7 +45,7 @@ type classified struct {
 // The split is computed here, in the capability that owns finding identity, so
 // the state aggregator never has to look at a finding's kind-vs-status rules —
 // or at anything a score touched. "Active" is the existing lifecycle predicate
-// (new or expired_waiver): a baseline-accepted or waived finding was already
+// (new or expired_waiver): a waived finding was already
 // decided and must not re-open the verdict or warn a dimension.
 //
 // Findings are referenced, never copied into a second list, so the diagnostic
@@ -106,8 +102,8 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 		}
 	}
 	if in.Policy.Gates.UncoveredChange == policy.GateFail {
-		// Recomputed from the evidence, not read from the findings: a waiver, the
-		// baseline, or --no-advisories must not turn unread code into a pass.
+		// Recomputed from the evidence, not read from the findings: a waiver
+		// or --no-advisories must not turn unread code into a pass.
 		uncovered := uncoveredChange(RuleEvidence{
 			FileClasses: inScopeFileClasses(in.Facts), UnanalysedFiles: in.Facts.UnanalysedFiles,
 			SourceSelectors: in.Facts.SourceSelectors, CrateOwners: in.Facts.CrateOwners,
