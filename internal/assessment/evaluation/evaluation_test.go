@@ -1,6 +1,6 @@
 // Behavior tests for the assessment evaluation seam. They pin what Evaluate
 // decides — findings, waivers, statuses, advisory filtering and rollup, metric
-// gating, and verdict — so the capability migration can move
+// measurement, and verdict — so the capability migration can move
 // ownership without moving semantics.
 package evaluation_test
 
@@ -54,8 +54,7 @@ func (r stubRule) Check(relationship.Set, rules.Evidence) []finding.Finding {
 	return append([]finding.Finding(nil), r.findings...)
 }
 
-// stubMetric returns a canned MetricResult so verdict gating is exercised
-// without a real calculator.
+// stubMetric supplies a measurement without invoking a real calculator.
 type stubMetric struct{ res result.MetricResult }
 
 func (m stubMetric) Name() string    { return m.res.Name }
@@ -67,16 +66,31 @@ func (m stubMetric) Calculate(signal.CollectedSignals) result.MetricResult {
 var _ rules.Rule = stubRule{}
 var _ metrics.Metric = stubMetric{}
 
+func TestEvaluateMetricsAreMeasurements(t *testing.T) {
+	for _, value := range []float64{0, 2, 1000} {
+		t.Run(fmt.Sprint(value), func(t *testing.T) {
+			got := evaluation.Evaluate(evaluation.Input{
+				Metrics: evaluation.MetricsetOf(stubMetric{res: result.MetricResult{
+					Name: metricName, Value: value, Direction: result.DirectionHigherIsWorse,
+				}}),
+				Now: evaluatedAt,
+			})
+			if len(got.Metrics) != 1 || got.Metrics[0].Name != metricName || got.Metrics[0].Value != value {
+				t.Fatalf("metric measurement = %+v, want %s=%v", got.Metrics, metricName, value)
+			}
+			if got.Verdict != result.VerdictPass || len(got.Findings) != 0 || got.GateFindings != 0 || got.Warnings != 0 {
+				t.Fatalf("measurement changed the verdict: %+v", got)
+			}
+		})
+	}
+}
+
 func gateFinding(id string, sev finding.Severity) finding.Finding {
 	return finding.Finding{
 		ID: id, Kind: finding.KindGate, RuleID: ruleForbidden, Status: finding.StatusNew, Severity: sev,
 		Edge:      finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}, Kind: kindImports},
 		Locations: []relationship.Location{{File: pathA, Line: 3}},
 	}
-}
-
-func metricValue(delta *float64, dir result.Direction) result.MetricResult {
-	return result.MetricResult{Name: metricName, Value: 1, Delta: delta, Direction: dir}
 }
 
 // findingIDs returns the IDs of every finding carrying ruleID.
@@ -170,116 +184,6 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 				t.Errorf("Verdict = %q, want %q", got.Verdict, test.wantVerdict)
 			}
 		})
-	}
-}
-
-func TestEvaluateMetricGating(t *testing.T) {
-	tests := []struct {
-		name   string
-		metric result.MetricResult
-		gate   policy.MetricConfig
-		want   result.Verdict
-		// wantKind is the finding a tripped ratchet emits: a gate finding for a
-		// blocking ratchet, an advisory for gate warn, none otherwise. The exit
-		// code reads findings, so asserting only Verdict would miss the path.
-		wantKind string
-	}{
-		{
-			name:   "unmeasured delta never gates",
-			metric: metricValue(nil, result.DirectionHigherIsBetter),
-			want:   result.VerdictPass,
-		},
-		{
-			name:   "improving metric never gates",
-			metric: metricValue(new(float64(4)), result.DirectionHigherIsBetter),
-			want:   result.VerdictPass,
-		},
-		{
-			name:     "worsening higher-is-better metric fails when gate is unset",
-			metric:   metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			want:     result.VerdictFail,
-			wantKind: finding.KindGate,
-		},
-		{
-			name:   "worsening metric inside min_delta tolerance passes",
-			metric: metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			gate:   policy.MetricConfig{MinDelta: new(float64(2))},
-			want:   result.VerdictPass,
-		},
-		{
-			name:     "worsening metric beyond min_delta tolerance fails",
-			metric:   metricValue(new(float64(-3)), result.DirectionHigherIsBetter),
-			gate:     policy.MetricConfig{MinDelta: new(float64(2))},
-			want:     result.VerdictFail,
-			wantKind: finding.KindGate,
-		},
-		{
-			name:     "gate warn downgrades a breach to warn",
-			metric:   metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			gate:     policy.MetricConfig{Gate: string(policy.GateWarn)},
-			want:     result.VerdictWarn,
-			wantKind: finding.KindAdvisory,
-		},
-		{
-			name:   "gate off skips the breach entirely",
-			metric: metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			gate:   policy.MetricConfig{Gate: string(policy.GateOff)},
-			want:   result.VerdictPass,
-		},
-		{
-			name:     "rising higher-is-worse metric fails",
-			metric:   metricValue(new(float64(1)), result.DirectionHigherIsWorse),
-			want:     result.VerdictFail,
-			wantKind: finding.KindGate,
-		},
-		{
-			name:   "rising higher-is-worse metric inside max_new passes",
-			metric: metricValue(new(float64(2)), result.DirectionHigherIsWorse),
-			gate:   policy.MetricConfig{MaxNew: new(2)},
-			want:   result.VerdictPass,
-		},
-		{
-			name:   "falling higher-is-worse metric passes",
-			metric: metricValue(new(float64(-2)), result.DirectionHigherIsWorse),
-			want:   result.VerdictPass,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := evaluation.Evaluate(evaluation.Input{
-				Metrics:           evaluation.MetricsetOf(stubMetric{res: test.metric}),
-				Gates:             map[string]policy.MetricConfig{metricName: test.gate},
-				Now:               evaluatedAt,
-				IncludeAdvisories: true,
-			})
-			if got.Verdict != test.want {
-				t.Errorf("Verdict = %q, want %q", got.Verdict, test.want)
-			}
-			if len(got.Metrics) != 1 || got.Metrics[0].Name != metricName {
-				t.Errorf("Metrics = %+v, want one %s result", got.Metrics, metricName)
-			}
-			kind := ""
-			for _, f := range got.Findings {
-				if f.RuleID == "metric/"+metricName {
-					kind = f.Kind
-				}
-			}
-			if kind != test.wantKind {
-				t.Errorf("ratchet finding kind = %q, want %q (findings %+v)", kind, test.wantKind, got.Findings)
-			}
-		})
-	}
-}
-
-func TestEvaluateGateFindingOutranksMetricWarn(t *testing.T) {
-	got := evaluation.Evaluate(evaluation.Input{
-		Rules:   evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", finding.SeverityHigh)}}),
-		Metrics: evaluation.MetricsetOf(stubMetric{res: metricValue(new(float64(-1)), result.DirectionHigherIsBetter)}),
-		Gates:   map[string]policy.MetricConfig{metricName: {Gate: string(policy.GateWarn)}},
-		Now:     evaluatedAt,
-	})
-	if got.Verdict != result.VerdictFail {
-		t.Fatalf("Verdict = %q, want fail: a new gate finding outranks a metric warn", got.Verdict)
 	}
 }
 

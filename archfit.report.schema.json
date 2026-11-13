@@ -97,30 +97,6 @@
         "total"
       ]
     },
-    "DimensionDelta": {
-      "properties": {
-        "status": {
-          "type": "string"
-        },
-        "reasons": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "metrics": {
-          "items": {
-            "$ref": "#/$defs/MetricDelta"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "status"
-      ]
-    },
     "DimensionState": {
       "properties": {
         "name": {
@@ -163,9 +139,6 @@
             "$ref": "#/$defs/UnknownFact"
           },
           "type": "array"
-        },
-        "delta": {
-          "$ref": "#/$defs/DimensionDelta"
         }
       },
       "additionalProperties": false,
@@ -394,30 +367,6 @@
       "required": [
         "file",
         "line"
-      ]
-    },
-    "MetricDelta": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "before": {
-          "type": "number"
-        },
-        "after": {
-          "type": "number"
-        },
-        "change": {
-          "type": "number"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "name",
-        "before",
-        "after",
-        "change"
       ]
     },
     "MetricDenominator": {
@@ -1102,12 +1051,6 @@
     },
     "identity": {
       "$ref": "#/$defs/ResultIdentity"
-    },
-    "gate_reasons": {
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
     },
     "decision": {
       "$ref": "#/$defs/StateDecision"

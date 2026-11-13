@@ -57,7 +57,7 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) assessmentresult.M
 	// never a false-green 1.0 (matches this package's "absent inputs yield n/a"
 	// contract).
 	if in.Relationships.Empty() {
-		return m.naResult(in.Baseline)
+		return m.naResult()
 	}
 
 	var depEdges, allCross, classifiedCross, contractCross, intrusiveCross int
@@ -88,7 +88,7 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) assessmentresult.M
 	// imports. Report n/a rather than a vacuous 1.0 — an empty graph is absence of
 	// evidence, not earned encapsulation.
 	if depEdges == 0 {
-		return m.naResult(in.Baseline)
+		return m.naResult()
 	}
 	// Dependency edges exist but none cross a module boundary. This is not earned
 	// encapsulation — it is absence of a boundary signal: either the modules are
@@ -98,11 +98,11 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) assessmentresult.M
 	// (e.g. a Rust crate's module nodes with no owner/strength data) read as perfectly
 	// encapsulated. Report n/a instead — the boundary baseline is unmeasured.
 	if allCross == 0 {
-		return m.naResult(in.Baseline)
+		return m.naResult()
 	}
 	// Coupling exists but no edge strength could be classified → no signal.
 	if classifiedCross == 0 {
-		return m.naResult(in.Baseline)
+		return m.naResult()
 	}
 	// No intrusive edge to contrast against → the ratio is trivially ~1.0 and
 	// non-discriminating. This is the compiler-boundary case (Go/TS: every cross-
@@ -110,11 +110,11 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) assessmentresult.M
 	// earned). Report n/a rather than a false 10/10; the realistic modularity signal
 	// lives in change-amplification, hidden-coupling, and cycles.
 	if intrusiveCross == 0 {
-		return m.naResult(in.Baseline)
+		return m.naResult()
 	}
 
 	value := float64(contractCross) / float64(classifiedCross)
-	return m.encResult(value, classificationConfidence(classifiedCross, allCross), in.Baseline, contractCross, intrusiveCross)
+	return m.encResult(value, classificationConfidence(classifiedCross, allCross), contractCross, intrusiveCross)
 }
 
 // isClassifiedStrength reports whether a strength takes a stance on boundary
@@ -149,10 +149,9 @@ func classificationConfidence(classified, all int) string {
 	}
 }
 
-func (m EncapsulationMetric) encResult(value float64, confidence string, baseline assessmentresult.MetricSnapshot, contractCross, intrusiveCross int) assessmentresult.MetricResult {
+func (m EncapsulationMetric) encResult(value float64, confidence string, contractCross, intrusiveCross int) assessmentresult.MetricResult {
 	score := value * 10.0
 	band := result.ApplyConfidenceCap(result.BandScore(score), confidence)
-	delta := result.ComputeDelta(value, baseline, m.Name(), m.Version())
 	definition := "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)"
 	// 0 contract with real intrusive evidence reads as "no interface discipline
 	// anywhere," which can misread as under-configuration (no public:/internal:
@@ -178,16 +177,14 @@ func (m EncapsulationMetric) encResult(value float64, confidence string, baselin
 		Version:    m.Version(),
 		Mode:       result.ModeRatio,
 		Definition: definition,
-		Delta:      delta,
 		Direction:  assessmentresult.DirectionHigherIsBetter,
 	}
 }
 
 // naResult reports the encapsulation metric as indeterminate: cross-boundary
 // coupling exists but no edge strength could be classified, so there is no honest
-// score. Band is result.BandNA (not critical), and Delta is nil so the verdict logic does
-// not treat an absent score as a regression.
-func (m EncapsulationMetric) naResult(_ assessmentresult.MetricSnapshot) assessmentresult.MetricResult {
+// score. Band is result.BandNA (not critical).
+func (m EncapsulationMetric) naResult() assessmentresult.MetricResult {
 	return assessmentresult.MetricResult{
 		Name:       m.Name(),
 		Value:      0,
@@ -197,7 +194,6 @@ func (m EncapsulationMetric) naResult(_ assessmentresult.MetricSnapshot) assessm
 		Version:    m.Version(),
 		Mode:       result.ModeRatio,
 		Definition: "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
-		Delta:      nil,
 		Direction:  assessmentresult.DirectionHigherIsBetter,
 	}
 }

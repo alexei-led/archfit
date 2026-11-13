@@ -47,22 +47,15 @@ func adapt[In any](c Calculator[In], project func(signal.CollectedSignals) In) M
 	return wrapped[In]{c: c, project: project}
 }
 
-// entry pairs a metric with whether it can ratchet: only metrics that compute a
-// delta against the stored snapshot can trip one. blast_radius is informational.
-type entry struct {
-	metric   Metric
-	ratchets bool
-}
-
 // registry is the one ordered list of metrics, in the order the engine reports
 // them (golden output depends on it).
-func registry() []entry {
-	return []entry{
-		{adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon), true},
-		{adapt(boundary.UnbalancedEdgeMetric{}, signal.CollectedSignals.AsCommon), true},
-		{adapt(boundary.CycleMetric{}, signal.CollectedSignals.AsCommon), true},
-		{adapt(boundary.CoverageMetric{}, signal.CollectedSignals.AsCommon), true},
-		{adapt(modularity.BlastRadiusMetric{}, signal.CollectedSignals.AsCommon), false},
+func registry() []Metric {
+	return []Metric{
+		adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(boundary.UnbalancedEdgeMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(boundary.CycleMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(boundary.CoverageMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(modularity.BlastRadiusMetric{}, signal.CollectedSignals.AsCommon),
 	}
 }
 
@@ -80,20 +73,9 @@ func enabled(metricsCfg map[string]policy.MetricEntry, name string) bool {
 func New(metricsCfg map[string]policy.MetricEntry) []Metric {
 	all := registry()
 	out := make([]Metric, 0, len(all))
-	for _, e := range all {
-		if enabled(metricsCfg, e.metric.Name()) {
-			out = append(out, e.metric)
-		}
-	}
-	return out
-}
-
-// RatchetNames lists the enabled metrics that can trip a ratchet.
-func RatchetNames(metricsCfg map[string]policy.MetricEntry) []string {
-	var out []string
-	for _, e := range registry() {
-		if e.ratchets && enabled(metricsCfg, e.metric.Name()) {
-			out = append(out, e.metric.Name())
+	for _, metric := range all {
+		if enabled(metricsCfg, metric.Name()) {
+			out = append(out, metric)
 		}
 	}
 	return out

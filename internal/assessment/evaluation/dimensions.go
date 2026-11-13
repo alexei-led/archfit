@@ -66,7 +66,6 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
 		Drift:          driftDimension(),
 	}
-	routeRatchets(&dims, routed)
 	for _, dim := range dims.Each() {
 		if refs := routed[dim.Name]; len(refs) > 0 {
 			dim.Findings = refs
@@ -89,8 +88,8 @@ func gateFor(d state.Dimension) state.GateState {
 		return state.GateFail
 	}
 	// A hard-gate finding fails its dimension even when the dimension is
-	// unmeasured: a tripped ratchet was compared, and a rule violation was
-	// found in the edges that were observed, so the blocker is real either way.
+	// unmeasured: a rule violation was found in the observed edges, so the
+	// blocker is real regardless of evidence completeness.
 	for _, ref := range d.Findings {
 		if ref.Kind == finding.KindGate {
 			return state.GateFail
@@ -117,7 +116,7 @@ func gateFor(d state.Dimension) state.GateState {
 // hide it from every dimension at once.
 func dimensionForRule(ruleID string, ruleTypes map[string]string) string {
 	switch ruleID {
-	case finding.RuleIDBCImbalanced, finding.RuleIDDuplicatedKnowledge, finding.RuleIDCouplingGate, ruleIDStaleLabel:
+	case finding.RuleIDBCImbalanced, finding.RuleIDDuplicatedKnowledge, ruleIDStaleLabel:
 		return state.DimensionCoupling
 	}
 	switch ruleTypes[ruleID] {
@@ -1048,8 +1047,8 @@ func couplingDimension(diag *result.Result) state.Dimension {
 			count("high_or_worse_edges", tail.HighOrWorseEdges, provRelationship),
 			// Edges that pass the bc_score.v7 qualification (strong strength,
 			// declared high volatility, module boundary, no cohesive role). A
-			// diagnostic fact about edges, not the seam policy, which counts
-			// logical module pairs and is owned by the coupling gate.
+			// diagnostic fact about edges, separate from the logical module
+			// pairs counted in the seam ledger.
 			count("qualifying_edges", tail.DistributedMonolithEdges, provRelationship))
 	}
 	dim.Metrics = append(dim.Metrics, seamMetrics(diag.Seams)...)
@@ -1833,9 +1832,8 @@ func corroboratingDeploySource(source modevidence.TopologySource) bool {
 // driftDimension cannot measure historical seam drift without a stored input.
 func driftDimension() state.Dimension {
 	dim := state.NewDimension(state.DimensionDrift, state.OwnerDrift)
-	dim.Delta = &state.Delta{Status: state.ComparisonNotRequested}
 	applyPromotion(&dim, nil, nil, map[string]string{
-		state.FactAdmissiblePersistedReference: noStoredReferenceReason,
+		state.FactAdmissiblePersistedReference: "stored architecture-state references are no longer supported",
 		state.FactCompleteTwoSidedSeamIdentity: "two-sided seam identity is not available in a report measurement",
 	})
 	return dim
@@ -1970,32 +1968,4 @@ func classOf(index map[string]fileclass.FileClass, file string) fileclass.FileCl
 		return class
 	}
 	return fileclass.Production
-}
-
-// routeRatchets moves each metric ratchet finding to the dimension that
-// publishes its metric, read from the built envelopes so the routing cannot
-// drift from the metric lists. A metric no envelope publishes (n/a) is intent's.
-func routeRatchets(dims *state.Dimensions, routed map[string][]state.FindingRef) {
-	keys := make([]string, 0)
-	for key := range routed {
-		if finding.IsMetricRatchet(key) {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		owner := state.DimensionIntent
-		name := strings.TrimPrefix(key, finding.RuleIDMetricPrefix)
-	search:
-		for _, dim := range dims.Each() {
-			for _, m := range dim.Metrics {
-				if m.Name == name {
-					owner = dim.Name
-					break search
-				}
-			}
-		}
-		routed[owner] = append(routed[owner], routed[key]...)
-		delete(routed, key)
-	}
 }

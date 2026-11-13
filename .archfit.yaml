@@ -646,10 +646,6 @@ exceptions:
     why: Existing duplicate at internal/model/rule/rule.go:18; this literal already lives in internal/output/agentout/agentout.go:94; retain until consolidated.
   - rule: duplication
     from: assessment-repair
-    to: config-lifecycle
-    why: Existing duplicate at internal/assessment/score/gate.go:117; this literal already lives in internal/initcfg/evidence_pack.go:476; retain until consolidated.
-  - rule: duplication
-    from: assessment-repair
     to: evidence-adapters
     why: Existing duplicate at internal/assessment/evaluation/dimensions.go:1075; this literal already lives in internal/extract/astgrep/syntax.go:427; retain until the modules stop sharing the code.
   - rule: duplication

@@ -23,10 +23,6 @@ type stateInput struct {
 	// RequiredToolFailure is the required-analyzer gate result. It blocks
 	// without producing a finding, so it cannot be inferred from the findings.
 	RequiredToolFailure bool
-	// Ratchets is the stored reference as the metric ratchets see it. A ratchet
-	// decides only against a comparable reference; against any other it is
-	// unmeasured, never passed and never blocked.
-	Ratchets RatchetReference
 }
 
 // classified is the one pass over the run's findings that the architecture
@@ -70,21 +66,12 @@ func classifyFindings(findings []finding.Finding, ruleTypes map[string]string) c
 			out.diagnostics = append(out.diagnostics, ref)
 		}
 		dim := dimensionForRule(f.RuleID, ruleTypes)
-		if finding.IsMetricRatchet(f.RuleID) {
-			// The owning dimension is the one that publishes the metric, which
-			// only the built dimensions know; buildDimensions places it.
-			dim = f.RuleID
-		}
 		out.byDimension[dim] = append(out.byDimension[dim], ref)
 	}
 	return out
 }
 
 // buildState assembles the assessment-owned architecture state.
-//
-// It runs after finalize, never before: the coupling gate promotes advisories to
-// gate findings and can append the synthetic trip finding, so a split taken
-// earlier would undercount blockers.
 //
 // The verdict itself is not decided here — the metric-blind aggregator owns it,
 // and this function deliberately hands it only statuses, gate results, and
@@ -96,11 +83,6 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 	st.RequiredToolFailure = in.RequiredToolFailure
 	st.Dimensions = buildDimensions(diag, in, split.byDimension)
 	unevaluated := unevaluatedRequiredRules(diag, in.Policy, in.Facts)
-	if u, ok := in.Ratchets.unevaluated(in.Policy.Gates.Metrics); ok {
-		if _, fired := firedRules(diag.Findings)[u.RuleID]; !fired {
-			unevaluated = append(unevaluated, u)
-		}
-	}
 	if in.Policy.Gates.UncoveredChange == policy.GateFail {
 		// Recomputed from the evidence, not read from the findings: a waiver
 		// or --no-advisories must not turn unread code into a pass.

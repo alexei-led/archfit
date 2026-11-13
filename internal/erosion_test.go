@@ -4,7 +4,7 @@
 // on a fixture that violates it — a structural rule nobody has watched fail is
 // a rule nobody knows still works.
 //
-// The eight names and their owners:
+// The named checks and their owners:
 //
 //	no_scalar_decision        TestErosion_NoScalarDecision          (this file)
 //	no_dead_archfit_rule      TestErosion_NoDeadArchfitRule         (this file)
@@ -13,7 +13,6 @@
 //	label_evidence_required   TestErosion_LabelEvidenceRequired     (cmd/archfit)
 //	policy_query_agreement    TestErosion_PolicyQueryAgreesWithCheck (cmd/archfit, policy_test.go)
 //	                          TestErosion_PolicyQueryAgreesWithCheck{TypeScript,Python} (cmd/archfit, policy_agreement_lang_test.go)
-//	ratchet_requires_comparable_reference TestErosion_RatchetRequiresComparableReference (cmd/archfit)
 package arch_test
 
 import (
@@ -41,7 +40,6 @@ var decisionPath = []decisionTarget{
 	{path: "assessment/evaluation/state.go"},      // the finding split feeding it
 	{path: "assessment/evaluation/dimensions.go"}, // the nine envelopes it reads
 	{path: "assessment/evaluation/selectors.go"},  // rule-selector vacuity behind unevaluated rules
-	{path: "assessment/score/gate.go"},            // the distributed-monolith seam gate
 	{path: "application/analysis.go", funcs: []string{"outcomeFor"}},
 }
 

@@ -164,7 +164,7 @@ type EnrichService struct {
 // diagnostic never leaves this method: enrichment reviews coupling evidence,
 // not findings.
 func (s EnrichService) capture(ctx context.Context, req EnrichmentRequest) (EnrichmentResult, error) {
-	analysisReq := AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, CaptureRelationships: true, SuppressGateReasons: true}
+	analysisReq := AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, CaptureRelationships: true}
 	acquired, err := s.Stages.Evidence.Acquire(ctx, analysisReq)
 	if err != nil {
 		return EnrichmentResult{}, err

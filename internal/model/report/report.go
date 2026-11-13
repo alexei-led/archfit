@@ -77,9 +77,7 @@ const (
 // Direction records whether a rising metric value is an improvement or a
 // regression. It is a property of the metric's definition, not a user choice
 // (Technical Details, docs/archived/plans/20260702-wave1-gate-integrity.md): the metric
-// that produces a MetricResult stamps its own Direction, and computeVerdict
-// reads it to interpret Delta's sign instead of assuming ratio semantics for
-// every metric.
+// that produces a MetricResult stamps its own Direction for report readers.
 type Direction string
 
 // Direction constants.
@@ -99,7 +97,6 @@ type MetricResult struct {
 	Version    string    `json:"metric_version"`
 	Mode       string    `json:"mode"`
 	Definition string    `json:"definition"`
-	Delta      *float64  `json:"delta,omitempty"`
 	Direction  Direction `json:"direction,omitempty"`
 }
 

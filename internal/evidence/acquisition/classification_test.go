@@ -35,7 +35,6 @@ func TestClassificationHash(t *testing.T) {
 		{"explicit default duplicated_knowledge", func(p *policy.PolicySnapshot) {
 			p.Relationship.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyScore
 		}, false},
-		{"gate mode is governance", func(p *policy.PolicySnapshot) { p.Gates.Coupling.Mode = policy.DistributedMonolithFail }, false},
 		{"minimum severity is governance", func(p *policy.PolicySnapshot) { p.Relationship.MinimumSeverity = "high" }, false},
 		{"waivers are governance", func(p *policy.PolicySnapshot) { p.Assessment.Waivers = policy.WaiverSet{} }, false},
 		{"volatility cascade", func(p *policy.PolicySnapshot) { p.Relationship.VolatilityCascadeEnabled = true }, true},

@@ -20,7 +20,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
-	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -110,9 +109,6 @@ func TestReportConfigRemovesGating(t *testing.T) {
 			gates := snapshot.Gates
 			if len(gates.Rules.Rules) != 0 || len(snapshot.Assessment.Waivers.Waivers) != 0 {
 				t.Errorf("rules %v, waivers %v: want none", gates.Rules.Rules, snapshot.Assessment.Waivers.Waivers)
-			}
-			if gates.Coupling.Mode != policy.DistributedMonolithWarn {
-				t.Errorf("coupling gate mode %q, want warn: only fail blocks", gates.Coupling.Mode)
 			}
 			if len(gates.Metrics) != 0 || gates.ModuleReview != "" || gates.UncoveredChange != "" {
 				t.Errorf("metric gates %v, module review %q, uncovered change %q: want defaults", gates.Metrics, gates.ModuleReview, gates.UncoveredChange)

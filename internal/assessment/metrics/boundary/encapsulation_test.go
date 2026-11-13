@@ -159,68 +159,6 @@ func TestEncapsulation_ZeroContractIsRealNotNA(t *testing.T) {
 	}
 }
 
-func TestEncapsulation_DeltaComputed(t *testing.T) {
-	// Baseline has encapsulation=0.8; current value=0.6 → delta=-0.2
-	baseline := assessmentresult.MetricSnapshot{
-		"encapsulation": {Value: 0.8, Version: "encapsulation.v2"},
-	}
-
-	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
-	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
-	nodeC := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathC}
-	nodeD := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathD}
-	nodeE := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathE}
-
-	// 3 contract + 2 intrusive = value 0.6
-	edges := []metricstest.Edge{
-		{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports},
-		{From: nodeA.ID(), To: nodeC.ID(), Kind: metricstest.EdgeKindImports},
-		{From: nodeA.ID(), To: nodeD.ID(), Kind: metricstest.EdgeKindImports},
-		{From: nodeA.ID(), To: nodeE.ID(), Kind: metricstest.EdgeKindImports},
-		{From: nodeB.ID(), To: nodeC.ID(), Kind: metricstest.EdgeKindImports},
-	}
-	g := metricstest.NewFixture([]metricstest.Node{nodeA, nodeB, nodeC, nodeD, nodeE}, edges)
-
-	idx := metricstest.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
-			Strength: relationship.StrengthContract,
-			Distance: relationship.DistanceCrossModuleDiffOwner,
-		},
-		metricstest.ImportKey(nodeA.ID(), nodeC.ID()): metricstest.Classification{
-			Strength: relationship.StrengthContract,
-			Distance: relationship.DistanceCrossModuleDiffOwner,
-		},
-		metricstest.ImportKey(nodeA.ID(), nodeD.ID()): metricstest.Classification{
-			Strength: relationship.StrengthContract,
-			Distance: relationship.DistanceCrossModuleDiffOwner,
-		},
-		metricstest.ImportKey(nodeA.ID(), nodeE.ID()): metricstest.Classification{
-			Strength: relationship.StrengthIntrusive,
-			Distance: relationship.DistanceCrossModuleDiffOwner,
-		},
-		metricstest.ImportKey(nodeB.ID(), nodeC.ID()): metricstest.Classification{
-			Strength: relationship.StrengthIntrusive,
-			Distance: relationship.DistanceCrossModuleDiffOwner,
-		},
-	}
-
-	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{
-		Relationships: metricstest.Classify(g, idx),
-		Baseline:      baseline,
-	})
-
-	if !metricstest.ApproxEqual(result.Value, 0.6) {
-		t.Errorf("expected value 0.6 got %v", result.Value)
-	}
-	if result.Delta == nil {
-		t.Fatal("expected non-nil delta")
-	}
-	if !metricstest.ApproxEqual(*result.Delta, -0.2) {
-		t.Errorf("expected delta -0.2 got %v", *result.Delta)
-	}
-}
-
 func TestEncapsulation_AllUnknownIsNA(t *testing.T) {
 	// Cross-boundary edges exist but every strength is unknown (the common case
 	// for a project with no public/internal API surface declared). The metric
@@ -257,9 +195,6 @@ func TestEncapsulation_AllUnknownIsNA(t *testing.T) {
 	}
 	if result.Confidence != confLow {
 		t.Errorf("expected confidence low got %q", result.Confidence)
-	}
-	if result.Delta != nil {
-		t.Errorf("expected nil delta for n/a, got %v", *result.Delta)
 	}
 }
 

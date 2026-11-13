@@ -1,7 +1,6 @@
 package application
 
 import (
-	"slices"
 	"strconv"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
@@ -46,10 +45,8 @@ type IdentityInputs struct {
 	EngineVersion  string
 }
 
-// withRunFacts stamps the document's state with what the run was judged under
-// and why the coupling gate said what it said.
-func withRunFacts(doc report.Document, in IdentityInputs, gateReasons []string) report.Document {
-	doc.State.GateReasons = slices.Clone(gateReasons)
+// withRunFacts stamps the document's state with what the run was judged under.
+func withRunFacts(doc report.Document, in IdentityInputs) report.Document {
 	doc.State.Identity = report.ResultIdentity{
 		SchemaVersion: report.IdentitySchemaVersion,
 		PolicyDigest:  in.PolicyDigest, LabelsDigest: in.LabelsDigest,
@@ -169,15 +166,6 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 	}
 	for _, u := range in.Unknown {
 		out.Unknown = append(out.Unknown, report.UnknownFact{Fact: u.Fact, Reason: u.Reason, Owner: u.Owner})
-	}
-	if in.Delta != nil {
-		delta := &report.DimensionDelta{
-			Status: report.ComparisonStatus(in.Delta.Status), Reasons: in.Delta.Reasons,
-		}
-		for _, m := range in.Delta.Metrics {
-			delta.Metrics = append(delta.Metrics, report.MetricDelta{Name: m.Name, Before: m.Before, After: m.After, Change: m.Change})
-		}
-		out.Delta = delta
 	}
 	return out
 }
@@ -381,7 +369,7 @@ func projectLocalCoupling(in []evidence.LocalCouplingModule) []report.LocalCoupl
 func projectMetrics(in []result.MetricResult) []report.MetricResult {
 	out := make([]report.MetricResult, 0, len(in))
 	for _, m := range in {
-		out = append(out, report.MetricResult{Name: m.Name, Value: m.Value, Display: m.Display, Band: m.Band, Confidence: m.Confidence, Version: m.Version, Mode: m.Mode, Definition: m.Definition, Delta: m.Delta, Direction: report.Direction(m.Direction)})
+		out = append(out, report.MetricResult{Name: m.Name, Value: m.Value, Display: m.Display, Band: m.Band, Confidence: m.Confidence, Version: m.Version, Mode: m.Mode, Definition: m.Definition, Direction: report.Direction(m.Direction)})
 	}
 	return out
 }
