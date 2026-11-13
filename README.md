@@ -60,7 +60,7 @@ go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
 Run these commands from your repository:
 
 ```sh
-archfit doctor                # this checkout: the tools archfit needs
+archfit doctor --fix          # this checkout: the tools archfit needs, and the hooks
 archfit init                  # write .archfit.yaml and the block for agents
 archfit rules                 # the rules for the files you change
 archfit can pkg/tc pkg/util   # before a new dependency between modules

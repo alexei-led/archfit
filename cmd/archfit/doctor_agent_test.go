@@ -49,9 +49,7 @@ func hookStates(loop agentLoop) map[string]string {
 func TestDoctorAgentLoop(t *testing.T) {
 	dir := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA, "")
 	gitFixture(t, dir, "config", "core.hooksPath", filepath.Join(".git", "hooks"))
-	codexHomeDir := t.TempDir()
-	t.Setenv("CODEX_HOME", codexHomeDir)
-	t.Chdir(dir)
+	codexHomeDir := chdirIsolated(t, dir)
 
 	notInstalled := hookInactive + " (" + reasonNotInstalled + ")"
 	for key, state := range hookStates(doctorJSON(t).AgentLoop) {
@@ -117,8 +115,7 @@ func assertStates(t *testing.T, when string, got, want map[string]string) {
 func TestDoctorAgentLoopPolicyGuard(t *testing.T) {
 	dir := scopeRepo(t, lintCleanModules+hookRuleSection, hookCleanA)
 	commitFiles(t, dir, map[string]string{defaultConfigPath: lintCleanModules})
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Chdir(dir)
+	chdirIsolated(t, dir)
 
 	scope := doctorJSON(t).AgentLoop.Scope
 	if scope.Mode != report.ScopeModeMergeBase || len(scope.PolicyChanged) != 1 || scope.PolicyChanged[0] != defaultConfigPath {
@@ -129,7 +126,7 @@ func TestDoctorAgentLoopPolicyGuard(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doctor: exit %d\n%s", code, stderr)
 	}
-	order := []string{"TOOL", "\nLLM (off-gate", "\nAgent loop", "policy guard: changed on this branch: " + defaultConfigPath}
+	order := []string{"TOOL", "\nLLM (off-gate", "\nHooks (install them: archfit doctor --fix)", "policy guard: changed on this branch: " + defaultConfigPath}
 	last := -1
 	for _, want := range order {
 		at := strings.Index(stdout, want)
@@ -181,7 +178,13 @@ func TestDoctorClaudeHooksDisabled(t *testing.T) {
 			if tc.local != "" {
 				writeFixtureFile(t, dir, filepath.Join(".claude", local), `{"disableAllHooks": `+tc.local+`}`)
 			}
-			runner := &toolrun.RunnerMock{DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false }}
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false },
+				// git check-ignore: not a repository, nothing ignored.
+				RunFunc: func(context.Context, toolrun.ToolCmd) (toolrun.Output, error) {
+					return toolrun.Output{ExitCode: 128}, nil
+				},
+			}
 			st := harnessStatusOf(context.Background(), &appDeps{Runner: runner}, dir, harnessClaude)
 			for _, hook := range st.Hooks {
 				want := hookStatus{Event: hook.Event, Status: hookActive}
