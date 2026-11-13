@@ -50,6 +50,7 @@ This project is indexed by GitNexus as **archfit** (11188 symbols, 36851 relatio
 <!-- gitnexus:end -->
 
 <!-- archfit:start -->
+
 Run `archfit rules` before you start and `archfit check` before you finish.
 Do what `next:` says. `archfit: pass` means done.
 Before a new dependency between modules: `archfit can <file> <target>`.

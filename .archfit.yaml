@@ -18,6 +18,7 @@ modules:
     public:
       - internal/application/canquery
       - internal/application/changecheck
+      - internal/application/importcheck
       - internal/application/rulesquery
       - internal/application/repostate
       - internal/application/request
