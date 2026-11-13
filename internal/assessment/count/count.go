@@ -194,6 +194,21 @@ func judge(p resolved.Policy, facts evidence.CheckFacts, added evidence.AddedLin
 	return slices.Concat(change.Evaluate(p, facts).Errors, copies.Find(facts.Literals, p, added, proposed))
 }
 
+// Covered reports whether an exception of p that holds on today covers an
+// error of rule from the module from to to: the exception check would apply
+// to it. `archfit can` applies none (internal/application/canquery); the
+// post-tool-use hook asks this before it reports a no. For an only rule, to
+// is the library and only from counts.
+func Covered(p resolved.Policy, rule, from, to string, today time.Time) bool {
+	if rule == resolved.RuleDuplication && to < from {
+		from, to = to, from
+	}
+	e := change.Error{Key: change.Key{Rule: rule, From: from, To: to}}
+	return slices.ContainsFunc(p.Exceptions, func(x resolved.Exception) bool {
+		return !isExpired(x, today) && matches(p, x, e)
+	})
+}
+
 // uncovered returns errs without those a holding exception matches.
 func uncovered(p resolved.Policy, holding []resolved.Exception, errs []change.Error) []change.Error {
 	return slices.DeleteFunc(slices.Clone(errs), func(e change.Error) bool {
