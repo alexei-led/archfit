@@ -171,14 +171,14 @@ func objectFiles(t *testing.T, root string) []string {
 }
 
 func TestHooksWithReadOnlyObjects(t *testing.T) {
-	t.Parallel()
 	for _, event := range []string{hookEventPreCommit, hookEventPostToolUse} {
 		t.Run(event, func(t *testing.T) {
-			t.Parallel()
-			dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
+			dir := hookFixture(t, nil)
+			writeFiles(t, dir, map[string]string{chaosFile: chaosImportsRuntime})
 			if event == hookEventPreCommit {
-				gitFixture(t, dir, "add", filePkgAA)
+				gitFixture(t, dir, "add", chaosFile)
 			}
+			t.Chdir(dir)
 			writeFiles(t, dir, map[string]string{
 				".archfit-cache/probe": "cache is not staged",
 				"untracked.txt":        "not committed",
@@ -190,12 +190,12 @@ func TestHooksWithReadOnlyObjects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			code, stdout, stderr := runHook(t, string(input), "run", event, "-c", filepath.Join(dir, defaultConfigPath))
+			code, stdout, stderr := runHook(t, string(input), "run", event)
 			if event == hookEventPreCommit {
-				if code != 1 || !strings.Contains(stderr, "no_b_impl") {
+				if code != 1 || !strings.Contains(stderr, "no-chaos-to-runtime") {
 					t.Fatalf("pre-commit: exit %d, stdout %s, stderr %s", code, stdout, stderr)
 				}
-			} else if code != 2 || !strings.Contains(stderr, "no_b_impl") {
+			} else if code != 2 || !strings.Contains(stderr, "no-chaos-to-runtime") {
 				t.Fatalf("post-tool-use: exit %d, stdout %s, stderr %s", code, stdout, stderr)
 			}
 			if after := objectFiles(t, objects); !reflect.DeepEqual(after, before) {
