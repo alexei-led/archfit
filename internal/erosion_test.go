@@ -26,8 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
 )
 
 // decisionPath names the sources that turn evidence into the architecture
@@ -125,30 +124,21 @@ func TestErosion_NoDeadArchfitRule(t *testing.T) {
 	deadRuleDetectionFires(t)
 }
 
-// deadRuleDetectionFires is this gate's paired violating-input fixture.
-//
-// A synthetic dead rule cannot be added to .archfit.yaml — the gate would then
-// fail on every run — so the fixture lints this repository with the self-config
-// carrying one rule aimed at a package that does not exist and one aimed at
-// real source, through the production predicate the gate decides on. Without
-// it, a lint that reported nothing would leave the gate passing over a config
-// full of dead rules.
+// Check both a dead and a live selector through the production tree check.
 func deadRuleDetectionFires(t *testing.T) {
 	t.Helper()
-	cfg := loadSelfConfig(t)
-	cfg.Rules = []policy.RuleDef{
-		{ID: "fixture_dead", Type: "forbidden_dependency", Gate: "fail", From: globInternal, To: "internal/no-such-package-erosion-fixture/**"},
-		{ID: "fixture_live", Type: "forbidden_dependency", Gate: "fail", From: globInternal, To: "internal/assessment/**"},
+	p := selfPolicy3(t)
+	const fixture = "fixture"
+	p.Rules = []resolved.Rule{
+		{ID: "fixture_dead", Form: resolved.FormDeny, From: []string{"internal/**"}, To: []string{"internal/no-such-package-erosion-fixture/**"}, Why: fixture, Instead: fixture},
+		{ID: "fixture_live", Form: resolved.FormDeny, From: []string{"internal/**"}, To: []string{"internal/assessment/**"}, Why: fixture, Instead: fixture},
 	}
-	dead := map[string]bool{}
-	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintDeadSelector) {
-		dead[d.Path] = true
+	err := p.CheckTree(selfTreeFiles(t))
+	if err == nil || !strings.Contains(err.Error(), "fixture_dead") {
+		t.Errorf("dead selector not reported: %v", err)
 	}
-	if !dead["rules[fixture_dead].to"] {
-		t.Error("a rule aimed at a package that does not exist was not reported dead — it would read as live")
-	}
-	if dead["rules[fixture_live].to"] {
-		t.Error("a rule aimed at real source was reported dead — the check cannot see real source")
+	if err != nil && strings.Contains(err.Error(), "fixture_live") {
+		t.Errorf("live selector reported dead: %v", err)
 	}
 }
 

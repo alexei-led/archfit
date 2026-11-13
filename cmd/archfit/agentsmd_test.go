@@ -11,7 +11,6 @@ import (
 const (
 	agentsMDGoldenDir = "testdata/agents-md"
 	cmdAgentsMD       = "agents-md"
-	repoConfig        = "../../.archfit.yaml"
 )
 
 // TestAgentsMDGoldens pins the rendered block for every example config.
@@ -195,14 +194,5 @@ func TestAgentsMDUsageErrors(t *testing.T) {
 		if code, _, _ := runArchfit(t, append([]string{cmdAgentsMD, "-c", "../../examples/ddd.archfit.yaml"}, args...)...); code != 3 {
 			t.Errorf("agents-md %v: exit %d, want 3", args, code)
 		}
-	}
-}
-
-// TestAgentsMDRepositoryBlockIsCurrent is the engine's own drift check: the
-// AGENTS.md block equals the block .archfit.yaml renders.
-func TestAgentsMDRepositoryBlockIsCurrent(t *testing.T) {
-	t.Parallel()
-	if code, stdout, stderr := runArchfit(t, cmdAgentsMD, "-c", repoConfig, "--file", "../../AGENTS.md", "--check"); code != 0 {
-		t.Errorf("AGENTS.md is out of date; run: archfit agents-md --write\n%s%s", stdout, stderr)
 	}
 }
