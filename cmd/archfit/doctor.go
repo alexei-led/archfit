@@ -82,10 +82,16 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		}
 	}
 	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
+	loop := agentLoopStatus(ctx, deps, cfg.TargetBranch)
+	// The Claude harness config is resolved at the repository root by agentLoopStatus.
+	plugin := claudePluginStatus(filepath.Dir(filepath.Dir(loop.Harnesses[0].Config)))
 	if c.Format == formatJSON {
-		if err := writeDoctorJSON(deps, doctorReport{
-			SchemaVersion: doctorSchemaVersion, Tools: rows, AgentLoop: agentLoopStatus(ctx, deps, cfg.TargetBranch),
-		}); err != nil {
+		if err := writeDoctorJSON(deps, struct {
+			doctorReport
+			ClaudePlugin harnessStatus `json:"claude_plugin"`
+		}{doctorReport{
+			SchemaVersion: doctorSchemaVersion, Tools: rows, AgentLoop: loop,
+		}, plugin}); err != nil {
 			return err
 		}
 		return errors.Join(invalid...)
@@ -128,7 +134,8 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set ai provider + model to enable LLM commands)")
 	}
 
-	writeAgentLoop(deps.Stdout, agentLoopStatus(ctx, deps, cfg.TargetBranch))
+	writeAgentLoop(deps.Stdout, loop)
+	writeClaudePlugin(deps.Stdout, plugin)
 
 	if c.Fix {
 		// The hooks come first: a toolchain install that fails (brew offline)
@@ -216,7 +223,7 @@ func locateTool(ctx context.Context, runner toolrun.Runner, t registry.Tool) (st
 }
 
 // writeDoctorJSON writes the doctor report as one indented JSON document.
-func writeDoctorJSON(deps *appDeps, doc doctorReport) error {
+func writeDoctorJSON(deps *appDeps, doc any) error {
 	enc := json.NewEncoder(deps.Stdout)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")

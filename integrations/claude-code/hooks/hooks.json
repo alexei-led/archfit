@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v archfit >/dev/null 2>&1; then exec archfit hook run session-start --harness claude; else echo \"archfit hook: archfit not found; hook skipped\" >&2; exit 0; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v archfit >/dev/null 2>&1; then exec archfit hook run post-tool-use --harness claude; else echo \"archfit hook: archfit not found; hook skipped\" >&2; exit 0; fi"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v archfit >/dev/null 2>&1; then exec archfit hook run stop --harness claude; else echo \"archfit hook: archfit not found; hook skipped\" >&2; exit 0; fi"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v archfit >/dev/null 2>&1; then exec archfit hook run stop --harness claude; else echo \"archfit hook: archfit not found; hook skipped\" >&2; exit 0; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

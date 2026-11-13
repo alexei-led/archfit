@@ -23,4 +23,6 @@ metadata:
    - `unknown` (exit 2): do what `next:` says (install a tool, git fetch)
      and run it again. If it names the policy, stop and ask an owner.
 4. Never edit `.archfit.yaml`. Never copy code to get around a rule.
-5. `archfit doctor --fix` installs the hooks that run steps 2 and 3.
+5. Claude: `/plugin marketplace add alexei-led/archfit`, then
+   `/plugin install archfit@archfit`. Remove: `/plugin uninstall archfit@archfit`.
+   Or use `archfit doctor --fix` per checkout, not both. See docs/agents.md.
