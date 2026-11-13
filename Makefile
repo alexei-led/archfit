@@ -102,9 +102,13 @@ test-coverage: test ## open HTML coverage report
 	go tool cover -html=coverage.out
 
 ## archfit: run architecture drift gate on this repo
+## It accepts pass (0) and unknown (2, printed): a policy change on a branch is unknown until it
+## lands, and the App's required check is the verdict authority. Only fail (1) and tool error (3) block.
 .PHONY: archfit
 archfit: build ## run archfit check against this repo's architecture policy
-	$(BIN_DIR)/$(BINARY) check
+	@$(BIN_DIR)/$(BINARY) check; rc=$$?; \
+	if [ $$rc -eq 0 ] || [ $$rc -eq 2 ]; then exit 0; fi; \
+	exit $$rc
 
 ## arch-lint: run the architecture change gate
 .PHONY: arch-lint
