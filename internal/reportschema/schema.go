@@ -1,5 +1,5 @@
-// Package reportschema generates a JSON Schema for archfit's primary output,
-// the `archfit.architecture-state.v1` document that `--format json` emits at the
+// Package reportschema generates a JSON Schema for the repository report,
+// the `archfit.architecture-state.v1` document that `report --format json` emits at the
 // document root.
 //
 // It exists because the output contract had no machine-readable form: consumers
@@ -7,7 +7,7 @@
 // while archfit.schema.json describes the CONFIG and cannot stand in for it.
 // The schema is derived from the Go structs in internal/model/report, so the
 // published contract and the emitting types cannot drift apart silently; the
-// repo-committed schema at archfit.state.schema.json is pinned by the no-drift
+// repo-committed schema at archfit.report.schema.json is pinned by the no-drift
 // test and regenerated with `make schema`.
 package reportschema
 
@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	schemaID    = "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.state.schema.json"
+	schemaID    = "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.report.schema.json"
 	schemaDraft = "https://json-schema.org/draft/2020-12/schema"
 )
 

@@ -21,8 +21,8 @@ func projectReport(r result.Result, sc score.Scorecard) report.Document {
 		FileFacts: projectFileFacts(r.FileFacts), DynamicImports: projectDynamicImports(r.DynamicImports), Connascence: projectConnascence(r.Connascence),
 		DynamicConnascenceSignals: projectDynamicConnascenceSignals(r.DynamicConnascenceSignals), RuntimeAsync: projectRuntimeAsyncModules(r.RuntimeAsync),
 		RuntimeAsyncEdges: projectRuntimeAsyncEdges(r.RuntimeAsyncEdges), DeprecatedDeps: projectDeprecatedDeps(r.DeprecatedDeps),
-		SemanticStrengthOverlay: projectSemanticStrengthOverlay(r.SemanticStrengthOverlay), SyntaxFacts: projectSyntaxFacts(r.SyntaxFacts),
-		AgentTasks: projectAgentTasks(r.AgentTasks), AdvisoryTasks: projectAdvisoryTasks(r.AdvisoryTasks),
+		SyntaxFacts: projectSyntaxFacts(r.SyntaxFacts),
+		AgentTasks:  projectAgentTasks(r.AgentTasks), AdvisoryTasks: projectAdvisoryTasks(r.AdvisoryTasks),
 		ToolCoverage: projectCoverage(r.ToolCoverage), CoverageGaps: projectCoverageGaps(r.CoverageGaps), OwnerSource: r.OwnerSource,
 		PrimaryExtractorTools: r.PrimaryExtractorTools, ConfigWarnings: r.ConfigWarnings,
 		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: projectDistanceContext(r.DistanceContext),
@@ -329,17 +329,6 @@ func projectDeprecatedDeps(in []evidence.DeprecatedDep) []report.DeprecatedDep {
 	out := make([]report.DeprecatedDep, len(in))
 	for i, v := range in {
 		out[i] = report.DeprecatedDep{File: v.File, Kind: v.Kind, Subject: v.Subject, Note: v.Note}
-	}
-	return out
-}
-
-func projectSemanticStrengthOverlay(in *evidence.SemanticStrengthOverlay) *report.SemanticStrengthOverlay {
-	if in == nil {
-		return nil
-	}
-	out := &report.SemanticStrengthOverlay{ByLanguage: make(map[string]report.SemanticStrengthOverlayStats, len(in.ByLanguage))}
-	for lang, v := range in.ByLanguage {
-		out.ByLanguage[lang] = report.SemanticStrengthOverlayStats{CandidateEdges: v.CandidateEdges, Applied: v.Applied, Missed: v.Missed, Before: v.Before, After: v.After}
 	}
 	return out
 }

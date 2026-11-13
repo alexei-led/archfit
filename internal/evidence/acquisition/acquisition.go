@@ -26,10 +26,9 @@ type Input struct {
 // Result is the acquired dependency graph plus analyzer coverage and symbol
 // evidence needed by later relationship and assessment stages.
 type Result struct {
-	Graph                   *graph.Graph
-	Coverages               []evidence.Coverage
-	SCIPSymbols             symbol.Graph
-	SemanticStrengthOverlay *evidence.SemanticStrengthOverlay
+	Graph       *graph.Graph
+	Coverages   []evidence.Coverage
+	SCIPSymbols symbol.Graph
 }
 
 type connascenceResolver interface {
@@ -49,7 +48,6 @@ func Collect(ctx context.Context, in Input) (Result, error) {
 	if scipCov.Tool != "" {
 		coverages = append(coverages, scipCov)
 	}
-	scipStrengthOverlayRan := tracksSemanticStrengthOverlay(scipCov)
 
 	var scipConnascence map[string][]graph.ConnascenceHint
 	if cr, ok := in.Resolver.(connascenceResolver); ok {
@@ -68,7 +66,6 @@ func Collect(ctx context.Context, in Input) (Result, error) {
 
 	var allFacts []graph.Facts
 	var extractErrs []error
-	overlay := newSemanticStrengthOverlay()
 	for _, ex := range in.Extractors {
 		f, cov, err := ex.Extract(ctx, in.Scope)
 		if err != nil {
@@ -80,7 +77,7 @@ func Collect(ctx context.Context, in Input) (Result, error) {
 			extractErrs = append(extractErrs, err)
 			continue
 		}
-		overlay.merge(enrichEdges(ctx, in.Resolver, scipStrengthOverlayRan, scipStrength, scipData, scipConnascence, f))
+		enrichEdges(ctx, in.Resolver, scipStrength, scipData, scipConnascence, f)
 		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
 	}
@@ -89,11 +86,10 @@ func Collect(ctx context.Context, in Input) (Result, error) {
 	}
 	g := graph.Build(allFacts)
 	coverages = append(coverages, in.ExtraCoverage...)
-	return Result{Graph: g, Coverages: coverages, SCIPSymbols: scipSymbols, SemanticStrengthOverlay: overlay.report()}, nil
+	return Result{Graph: g, Coverages: coverages, SCIPSymbols: scipSymbols}, nil
 }
 
-func enrichEdges(ctx context.Context, sr evidenceports.SymbolResolver, scipStrengthOverlayRan bool, scipStrength, scipData map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) *semanticStrengthOverlay {
-	overlay := newSemanticStrengthOverlay()
+func enrichEdges(ctx context.Context, sr evidenceports.SymbolResolver, scipStrength, scipData map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) {
 	for i, e := range facts.Edges {
 		fromFile := stripPrefix(e.From)
 		toPath := stripPrefix(e.To)
@@ -109,10 +105,6 @@ func enrichEdges(ctx context.Context, sr evidenceports.SymbolResolver, scipStren
 		if e.Language == graph.LangGo && e.StrengthHint != "" {
 			continue
 		}
-		trackOverlay := scipStrengthOverlayRan && isSemanticOverlayLanguage(e.Language)
-		if trackOverlay {
-			overlay.addCandidate(e.Language, e.StrengthHint)
-		}
 		st, found := scipStrength[key]
 		if found {
 			facts.Edges[i].StrengthHint = st
@@ -120,11 +112,7 @@ func enrichEdges(ctx context.Context, sr evidenceports.SymbolResolver, scipStren
 		if ds := scipData[key]; ds != "" {
 			facts.Edges[i].DataStrengthHint = ds
 		}
-		if trackOverlay {
-			overlay.finishCandidate(e.Language, facts.Edges[i].StrengthHint, found)
-		}
 	}
-	return overlay
 }
 
 func appendGraphConnascenceHints(dst []graph.ConnascenceHint, hints ...graph.ConnascenceHint) []graph.ConnascenceHint {

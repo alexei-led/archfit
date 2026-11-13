@@ -5,10 +5,7 @@ With a version 3 policy, run `archfit check` as shown in
 returns `0` for `pass`, `1` for `fail`, and `2` for `unknown`, wrong usage, or
 a tool error.
 
-The rest of this page is for a version 2 policy (Archfit 3). There,
-`archfit check` returns `0` for `healthy`, `1` for `blocked`, `2` for
-`needs_attention`, and `3` for a command, config, or runtime error. Treat exit
-`3` as a failure.
+The Go coverage example and the later baseline/cache notes describe version 2 (Archfit 3). Use the current text-record gate below for a version 3 policy.
 
 ## Run the check without the Action
 
@@ -86,29 +83,14 @@ separate change. Do not generate one in this workflow.
 
 ## Adopt the gate
 
-During adoption, fail on exits `1` and `3` and on any change that is not `pass`.
-Exit `2` alone is not a pass: an `unknown` change also exits `2`.
+Run the same text-record gate for workers and CI. Only exit `0` (`pass`) passes. Exit `1` is `fail`; exit `2` is `unknown`, wrong usage, or a tool error. Follow each `next:` line to fix the code or restore evidence; never allow exit `2` as a successful check.
 
 ```yaml
 - name: Architecture check
-  run: |
-    archfit check -c .archfit.yaml --format agent > archfit.json || [ "$?" -eq 2 ]
-    jq -e '.change.status == "pass"' archfit.json
+  run: archfit check
 ```
 
-Exit `2` can report incomplete evidence or repository attention. Read the result and add
-the missing evidence before you require a fully healthy run.
-
-Use this strict gate when the pipeline requires complete evidence:
-
-```yaml
-- name: Architecture check
-  run: archfit check -c .archfit.yaml
-```
-
-You can also use `archfit check --require-tools` to fail when a required
-analyzer is missing. A tool with `gate: off` remains optional. See
-[configuration](configuration.md) for tool gates.
+For a pull request, pass `--base "origin/${{ github.base_ref }}"` after fetching the target history, as in [the standalone check](#run-the-check-without-the-action). No JSON parser or format flag is needed.
 
 ## Pull request checks
 

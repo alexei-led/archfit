@@ -1,6 +1,6 @@
 # Results and JSON contracts
 
-This page explains the output of `archfit check` and `archfit can` with a version 3 policy: the text record, the statuses, the exit codes, JSON, and SARIF. A version 2 policy (Archfit 3) has other outputs: see [Version 2 (Archfit 3)](#version-2-archfit-3).
+This page explains the output of `archfit check` and `archfit can` with a version 3 policy: the text record, the statuses, the exit codes, JSON, and SARIF. For the removed version 2 formats, see [Retired Archfit 3 outputs](#retired-archfit-3-outputs).
 
 ## The record
 
@@ -147,20 +147,10 @@ Both commands keep their JSON document, with the git tree id of the working tree
 
 ## The report
 
-`archfit report --format json` writes the `archfit.architecture-state.v1` document of [`archfit.state.schema.json`](../archfit.state.schema.json). On a version 3 policy it has a `repository` object: `state` (`clean`, `drift`, or `expired`), `drift` and `expired` (the errors, in the fields of the record), `expiring` (exceptions within 14 days of their date), `not_checked` (the notes), `balances` (each allowed dependency), `unread` (the places the check could not read, which `state` does not cover), and `protected`. A reader that shows `state` shows `unread` beside it. The report decides nothing and exits `0` whatever it shows. Until the Archfit 3 outputs are removed, the document still carries their `verdict` and `decision`: read `repository` instead. See [commands](commands.md#report).
+`archfit report --format json` writes the `archfit.architecture-state.v1` document of [`archfit.report.schema.json`](../archfit.report.schema.json). On a version 3 policy it has a `repository` object: `state` (`clean`, `drift`, or `expired`), `drift` and `expired` (the errors, in the fields of the record), `expiring` (exceptions within 14 days of their date), `not_checked` (the notes), `balances` (each allowed dependency), `unread` (the places the check could not read, which `state` does not cover), and `protected`. A reader that shows `state` shows `unread` beside it. The report decides nothing and exits `0` whatever it shows. The document still carries the Archfit 3 `verdict` and `decision` fields: read `repository` instead. See [commands](commands.md#report).
 
-## Version 2 (Archfit 3)
+## Retired Archfit 3 outputs
 
-With a version 2 policy, `archfit check`, `analyze`, and the other Archfit 3 commands write the Archfit 3 outputs: `text`, `markdown`, `json` (`archfit.architecture-state.v1`), `sarif`, `scorecard`, and `agent` (`archfit.agent-result.v1`), with the verdicts `healthy`, `needs_attention`, and `blocked`. The full reference is the [Results page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md). Convert the repository with `archfit init` (see [migration](migration.md)).
+The agent digest, console, Markdown, scorecard, and architecture-map renderers are removed. `check` and `can` use the text record by default; the check also supports JSON and SARIF through the record renderer. `report` keeps text and JSON. The report schema is now `archfit.report.schema.json`, including its `$id`; the old state-schema filename and agent-result schema are no longer published.
 
-### Baseline comparison
-
-`archfit.architecture-state.v1` compares findings with the stored baseline and with `--base`. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md#baseline-comparison).
-
-### Config comparison
-
-`archfit config compare` writes `archfit.config-compare.v1`. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md#config-comparison).
-
-### JSON contracts
-
-The JSON Schemas of version 2 are [`archfit.state.schema.json`](../archfit.state.schema.json) and [`archfit.agent-result.schema.json`](../archfit.agent-result.schema.json). See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md#json-contracts).
+For the version 2 output contracts, stored-baseline comparison, and config comparison, see the [Results page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/results.md). Current `check` requires a version 3 policy; convert a version 2 repository with `archfit init` (see [migration](migration.md)).

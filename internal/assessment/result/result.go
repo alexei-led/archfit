@@ -57,7 +57,6 @@ type Result struct {
 	RuntimeAsync              []evidence.RuntimeAsyncModule       `json:"runtime_async,omitempty"`
 	RuntimeAsyncEdges         []evidence.RuntimeAsyncEdge         `json:"runtime_async_edges,omitempty"`
 	DeprecatedDeps            []evidence.DeprecatedDep            `json:"deprecated_deps,omitempty"`
-	SemanticStrengthOverlay   *evidence.SemanticStrengthOverlay   `json:"semantic_strength_overlay,omitempty"`
 	SyntaxFacts               []evidence.SyntaxFact               `json:"syntax_facts,omitempty"`
 	AgentTasks                []AgentTask                         `json:"agent_tasks"`
 	AdvisoryTasks             []AdvisoryTask                      `json:"advisory_tasks"`

@@ -149,10 +149,10 @@ fmt: ## format Go source with gofmt and goimports
 
 ## schema: regenerate the published JSON Schemas from the Go structs
 .PHONY: schema
-schema: ## regenerate archfit.schema.json + archfit.state.schema.json + archfit.agent-result.schema.json + archfit.result.schema.json (run when config, report, agent-result, or result structs change)
+schema: ## regenerate archfit.schema.json + archfit.report.schema.json + archfit.result.schema.json (run when config, report, or result structs change)
 	ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 	go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
-	ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/reportschema/ -run 'Test(State|AgentResult|Result)SchemaNoDrift' -count=1
+	ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/reportschema/ -run 'Test(State|Result)SchemaNoDrift' -count=1
 	go test ./internal/reportschema/ -count=1
 
 ## mock: regenerate moq mocks via go generate

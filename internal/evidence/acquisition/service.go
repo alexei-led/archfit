@@ -218,9 +218,8 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		Clones:         collected.DuplicationClusters,
 		DynamicImports: collected.DynamicImports, RuntimeAsyncSites: collected.RuntimeAsyncSites,
 		RuntimeConfidence: collected.RuntimeConfidence, DeprecatedDeps: collected.DeprecatedDeps,
-		SemanticStrengthOverlay: graphResult.SemanticStrengthOverlay,
-		RustModuleGraphCrates:   rustModuleGraphCrates,
-		RustTargetCrates:        rustTargetCrates,
+		RustModuleGraphCrates: rustModuleGraphCrates,
+		RustTargetCrates:      rustTargetCrates,
 	}
 
 	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner, graphResult.Graph.CrateRoots()...)
@@ -325,7 +324,7 @@ func assessmentObservationsOf(
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
-		DeprecatedDeps: f.DeprecatedDeps, SemanticStrengthOverlay: f.SemanticStrengthOverlay,
+		DeprecatedDeps:      f.DeprecatedDeps,
 		DeclaredDeployUnits: declaredDeployUnits, CorroboratedDeployUnits: corroboratedDeployUnits,
 		OwnerProvenance: ownerProvenance, CrateOwners: crateOwners,
 	}

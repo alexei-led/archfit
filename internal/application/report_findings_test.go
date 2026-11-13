@@ -31,7 +31,7 @@ func TestProjectReportCycleFindingMatchesPublishedSchema(t *testing.T) {
 	if len(diagnostic.Findings) != 1 || len(diagnostic.Findings[0].Locations) != 0 {
 		t.Fatalf("cycle findings = %+v, want one finding without file locations", diagnostic.Findings)
 	}
-	compiled, err := jsonschema.NewCompiler().Compile("../../archfit.state.schema.json")
+	compiled, err := jsonschema.NewCompiler().Compile("../../archfit.report.schema.json")
 	if err != nil {
 		t.Fatal(err)
 	}

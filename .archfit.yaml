@@ -293,13 +293,7 @@ modules:
     public:
       - internal/output/record
       - internal/output/reporttext
-      - internal/output/agentout
-      - internal/output/archmap
-      - internal/output/console
       - internal/output/jsonout
-      - internal/output/markdown
-      - internal/output/sarif
-      - internal/output/scorecard
       - internal/reportschema
     volatility: medium
     subdomain: supporting
