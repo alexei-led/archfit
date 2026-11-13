@@ -5,7 +5,6 @@ import (
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/assessment/status"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
@@ -50,7 +49,7 @@ func TestUncoveredChangeNamesEachWayACodeIsUnread(t *testing.T) {
 	ev.OutOfScopeFiles = map[string]struct{}{genSkipFile: {}, webAppFile: {}}
 	ev.UncoveredCauses = map[string]string{genSkipFile: "exclude: gen/**", webAppFile: "languages.typescript.enabled: false"}
 
-	got := uncoveredChangeFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), "", nil))
+	got := uncoveredChangeFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), ""))
 	want := map[string]struct{ reason, cause string }{
 		uncoveredFile: {"unowned", ""},
 		genSkipFile:   {"excluded", "exclude: gen/**"},
@@ -87,7 +86,7 @@ func TestUncoveredChangeIgnoresFilesTheChangeDidNotAdd(t *testing.T) {
 	t.Parallel()
 	ev := changeEvidence() // no added files
 	ev.FileClasses[uncoveredFile] = fileclass.Production
-	if got := uncoveredChangeFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), "", nil)); len(got) != 0 {
+	if got := uncoveredChangeFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), "")); len(got) != 0 {
 		t.Errorf("findings %v without added files, want none", keys(got))
 	}
 }
@@ -98,8 +97,7 @@ func TestUncoveredChangeCanBeSwitchedOff(t *testing.T) {
 	ev := changeEvidence(uncoveredFile)
 	ev.FileClasses[uncoveredFile] = fileclass.Production
 	res := evaluation.Evaluate(evaluation.Input{
-		Evidence: ev, Policy: uncoveredPolicy(billingModules()), UncoveredChange: policy.GateOff, Accepted: status.Empty{},
-		IncludeAdvisories: true, Now: evaluatedAt,
+		Evidence: ev, Policy: uncoveredPolicy(billingModules()), UncoveredChange: policy.GateOff, IncludeAdvisories: true, Now: evaluatedAt,
 	})
 	if got := uncoveredChangeFindings(res); len(got) != 0 {
 		t.Errorf("findings %v under change_gate: off, want none", keys(got))

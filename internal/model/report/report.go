@@ -103,13 +103,6 @@ type MetricResult struct {
 	Direction  Direction `json:"direction,omitempty"`
 }
 
-// MetricSnapshot is the baseline snapshot of metric values keyed by metric name.
-// Stored in the baseline file so delta can be computed on the next run.
-type MetricSnapshot map[string]struct {
-	Value   float64 `json:"value"`
-	Version string  `json:"version"`
-}
-
 // Summary holds the gate/warning/exception counts for the top-level summary block (spec §12).
 type Summary struct {
 	GateFindings int `json:"gate_findings"`

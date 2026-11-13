@@ -20,17 +20,16 @@ const dirtySuffix = report.DirtySuffix
 // identityInputs reads the facts a result's identity block needs: the sha256
 // of the three policy files as they are on disk, the commit the change is
 // compared against, and the tree that was measured. A fact that cannot be read
-// (no git, no baseline file) stays empty rather than guessed.
+// (for example, no git) stays empty rather than guessed.
 //
 // The policy digests follow the config bundle. The git facts follow the
 // analysis root (--root, else the config's directory): an external policy
 // directory may belong to another repository or to none.
 func identityInputs(ctx context.Context, runner toolrun.Runner, configPath, root, bundleDir, baseRef string) application.IdentityInputs {
 	in := application.IdentityInputs{
-		PolicyDigest:   fileDigest(configPath),
-		BaselineDigest: fileDigest(filepath.Join(bundleDir, defaultBaselinePath)),
-		LabelsDigest:   fileDigest(filepath.Join(bundleDir, defaultLabelsPath)),
-		EngineVersion:  engineVersion(),
+		PolicyDigest:  fileDigest(configPath),
+		LabelsDigest:  fileDigest(filepath.Join(bundleDir, defaultLabelsPath)),
+		EngineVersion: engineVersion(),
 	}
 	dir := root
 	if dir == "" {

@@ -5,7 +5,7 @@ With a version 3 policy, run `archfit check` as shown in
 returns `0` for `pass`, `1` for `fail`, and `2` for `unknown`, wrong usage, or
 a tool error.
 
-The Go coverage example and the later baseline/cache notes describe version 2 (Archfit 3). Use the current text-record gate below for a version 3 policy.
+The Go coverage example describes version 2 (Archfit 3). Use the current text-record gate below for a version 3 policy.
 
 ## Run the check without the Action
 
@@ -75,11 +75,9 @@ records the commit. Archfit checks file hashes for freshness. The sidecar is
 unsigned and does not prove who produced the report.
 
 The example installs only Archfit and the Go SDK. Add each optional analyzer
-tool required by your `.archfit.yaml`, or disable that analyzer. Keep the tool
-versions and build settings stable when you create or reanchor a baseline.
-The example allows exit `2` while adopting the gate. Remove that allowance
-when the project requires complete evidence, and never read exit `2` alone as a pass. Review and commit baselines in a
-separate change. Do not generate one in this workflow.
+tool required by your `.archfit.yaml`, or disable that analyzer.
+The historical example allows exit `2` while adopting the gate. Do not copy
+that allowance into an Archfit 4 workflow: exit `2` is never a pass.
 
 ## Adopt the gate
 
@@ -124,9 +122,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
 
-A new push to a pull request cancels the older run. A push or a dispatched
-baseline run on the same ref does not cancel another run, so it cannot drop
-that run's upload.
+A new push to a pull request cancels the older run. A push on the same ref
+does not cancel another run, so it cannot drop that run's upload.
 
 ## Cache
 
@@ -166,15 +163,15 @@ Both steps run after a failed gate. The upload step needs the SARIF file, so
 check that the generation step ran before the job was cancelled.
 Use the separate `check` step to enforce policy. Successful SARIF generation exits `0` even when the report contains blockers.
 
-## Keep a baseline stable
+## Compare the change
 
-Commit `.archfit-baseline.json` and let CI read it. Do not regenerate it in the
-same job that checks a change.
+Archfit 4 reads the merge base and the head in one run. It counts errors under
+one policy and applies its exceptions. A higher count is an error added by
+the change. See [results](results.md) for the verdict and [migration](migration.md)
+for converting accepted findings from Archfit 3.
 
-Capture or reanchor a baseline in a separate reviewed change. Use the same
-platform, analyzer versions, toolchain, and build settings as the gate. A
-different measurement environment can make the baseline non-comparable. See
-[the Archfit 3 migration](archived/migration-v2-to-v3.md) for baseline version changes.
+There is no stored reference to capture or re-anchor. CI must fetch the target
+history instead. Missing comparison evidence gives `unknown`, not `pass`.
 
 ## Complete engine image and App adoption
 

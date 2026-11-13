@@ -218,7 +218,7 @@ func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 			t.Errorf("stage request = %+v, want the user intent forwarded", got)
 		}
 		// Analyze/check are the only use cases that may hard-gate on a missing
-		// required analyzer; baseline/explain/enrich/compare must not.
+		// required analyzer; report-only stages must not.
 		if !got.ApplyToolGate {
 			t.Errorf("stage request = %+v, want the tool gate enabled for analyze/check", got)
 		}

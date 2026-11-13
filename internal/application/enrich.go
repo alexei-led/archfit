@@ -169,11 +169,7 @@ func (s EnrichService) capture(ctx context.Context, req EnrichmentRequest) (Enri
 	if err != nil {
 		return EnrichmentResult{}, err
 	}
-	base, err := s.Stages.loadBaseline(ctx, analysisReq, acquired.Context)
-	if err != nil {
-		return EnrichmentResult{}, err
-	}
-	out, err := s.Stages.assess(ctx, analysisReq, acquired, base)
+	out, err := s.Stages.assess(ctx, analysisReq, acquired)
 	if err != nil {
 		return EnrichmentResult{}, err
 	}

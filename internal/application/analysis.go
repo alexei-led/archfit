@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
@@ -85,7 +83,7 @@ type AnalysisRequest struct {
 	// AddedBase: see Request.
 	AddedBase string
 	// ApplyToolGate lets a missing required analyzer stamp the verdict fail and
-	// hard-gate the run. Only analyze/check set it: baseline, explain, enrich,
+	// hard-gate the run. Only analyze/check set it: explain, enrich,
 	// config compare, and the --base sub-run render a verdict but consume no
 	// exit code from it, so a coverage gap must not rewrite what they report.
 	ApplyToolGate bool
@@ -101,7 +99,6 @@ type AnalysisRequest struct {
 	BundleDir           string
 	Root                string
 	EvaluatedAt         time.Time
-	EmptyBaseline       bool
 	SuppressGateReasons bool
 	// WarnLabel prefixes the ACQUISITION stage's stderr warnings, so a sub-run's
 	// degradation is not misread as the head run's. Health warnings do not use
@@ -226,15 +223,11 @@ type AnalyzerFamilies struct {
 	Patterns, Syntax, SCIP, Clones, CargoModules, Roslyn bool
 }
 
-// StageExecutor sequences one analysis run. It owns the stage order, the single
-// baseline read, the scoring boundary, and the base-tree comparison, so analyze,
-// check, baseline, explain, and compare cannot diverge.
+// StageExecutor sequences evidence acquisition, assessment, scoring, and the
+// base-tree comparison for report measurements.
 type StageExecutor struct {
 	Preparer PolicyPreparer
 	Evidence EvidenceStage
-	// Baseline is optional: a nil loader, or a request with EmptyBaseline, runs
-	// against an empty accepted set.
-	Baseline BaselineLoader
 	Stderr   io.Writer
 	Progress func(stage string)
 
@@ -256,16 +249,12 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 	if err := s.Preparer.Prepare(ctx); err != nil {
 		return AnalysisResult{}, fmt.Errorf("policy preparation: %w", err)
 	}
-	base, err := s.loadBaseline(ctx, req, AnalysisContext{ConfigSource: req.ConfigSource, BundleDir: req.BundleDir})
-	if err != nil {
-		return AnalysisResult{}, err
-	}
 	acquired, err := s.Evidence.Acquire(ctx, req)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("evidence acquisition: %w", err)
 	}
 	discloseRawCoverageReasons(s.stderr(), req.WarnLabel, acquired.Context.MarkedCoverage)
-	assessed, err := s.assess(ctx, req, acquired, base)
+	assessed, err := s.assess(ctx, req, acquired)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("assessment: %w", err)
 	}
@@ -285,46 +274,15 @@ func relate(acquired Acquired) relationship.AnalysisResult {
 	})
 }
 
-func (s StageExecutor) loadBaseline(ctx context.Context, req AnalysisRequest, runCtx AnalysisContext) (Baseline, error) {
-	if req.EmptyBaseline || s.Baseline == nil {
-		return Baseline{}, nil
-	}
-	bundleDir := runCtx.BundleDir
-	if bundleDir == "" && runCtx.ConfigSource == "" {
-		return Baseline{}, nil
-	}
-	if bundleDir == "" {
-		bundleDir = filepath.Dir(runCtx.ConfigSource)
-	}
-	b, err := s.Baseline.Load(ctx, bundleDir)
-	if err != nil {
-		return Baseline{}, err
-	}
-	return b, nil
-}
-
 // assess runs relationship analysis, assessment, scoring, and the base-tree
 // comparison in the one order every use case shares.
-func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired Acquired, base Baseline) (AnalysisResult, error) {
+func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired Acquired) (AnalysisResult, error) {
 	runCtx := acquired.Context
 	facts := acquired.Observations
 	s.reportPhase("Analyzing dependencies")
 	relationships := relate(acquired)
-	// A ratchet compares only against a reference that compares with this run:
-	// a metric delta across a policy, model, rubric or profile change is not a
-	// code change. Against any other reference no delta is computed at all.
-	reference := base.Comparison(runCtx)
-	ratchets := evaluation.RatchetReference{
-		Present: base.Present, Comparable: reference.Status == result.StateComparisonComparable,
-		Metrics: result.MetricSnapshot(base.Metrics), Drift: reference.Drift,
-	}
-	var baseMetrics result.MetricSnapshot
-	if ratchets.Comparable {
-		baseMetrics = ratchets.Metrics
-	}
 	assessed, err := evaluation.Assess(evaluation.AssessInput{
 		Facts: facts, Relationships: relationships.Relationships, RelationshipSignals: relationships.Assessment, Policy: runCtx.Policy,
-		Accepted: base.Accepted, BaseMetrics: baseMetrics,
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory:     !req.NoAdvisories,
 		ConfigSource: runCtx.ConfigSource, ScanRoot: runCtx.ScanRoot, ConfigHash: runCtx.ConfigHash,
@@ -339,7 +297,6 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	}
 	diag := assessed.Diagnostic
 	diag.MeasurementProfile = runCtx.MeasurementProfile
-	diag.GateReference = base.Comparison(runCtx)
 	attachRelationshipEvidence(&diag, relationships.Evidence)
 	diag.DistanceContext = buildDistanceContext(diag, runCtx.Policy, runCtx.DeployUnitDetectedModules)
 	if req.DiscloseHealthWarnings {
@@ -350,8 +307,6 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	s.reportPhase("Scoring architecture")
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
 		Policy: runCtx.Policy, Facts: facts,
-		Anchor:        seamAnchor(base, runCtx),
-		Ratchets:      ratchets,
 		ConfigSource:  cmp.Or(req.ValidationConfig, runCtx.ConfigSource),
 		ScanRoot:      cmp.Or(req.ValidationRoot, runCtx.ScanRoot),
 		Root:          runCtx.Scope.Root,
@@ -376,73 +331,6 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		out.relationships = relationships.Relationships
 	}
 	return out, nil
-}
-
-// seamAnchor projects the persisted baseline into the seam gate's reference.
-//
-// The reference is comparable only when the stored snapshot was written under
-// the same classification, module map, labels, rubric, and measurement
-// profile. Everything else abstains
-// with a named cause: a baseline that records no seams because it predates the
-// ledger is not evidence that there were none, and reading it that way would
-// report every existing seam as newly introduced.
-func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor {
-	if base.State == nil {
-		return evaluation.BaselineAnchor{}
-	}
-	cmp := base.Comparison(runCtx)
-	if cmp.Status != result.StateComparisonComparable {
-		return evaluation.BaselineAnchor{
-			NonComparableReason: "the stored baseline was written under different inputs",
-			SnapshotMismatches:  cmp.Reasons,
-		}
-	}
-	return evaluation.BaselineAnchor{SeamsComparable: true, QualifyingSeamIDs: base.State.QualifyingSeamIDs}
-}
-
-// headFingerprints are this run's policy and measurement comparison inputs.
-func headFingerprints(runCtx AnalysisContext) decision.Fingerprints {
-	return decision.Fingerprints{
-		ClassificationHash: runCtx.ClassificationHash, ModelHash: runCtx.ModelHash,
-		LabelsHash: runCtx.LabelsHash, RubricVersion: report.ScoreVersion,
-		MeasurementProfile: runCtx.MeasurementProfile,
-	}
-}
-
-// Comparison decides whether the stored reference may be compared with this
-// run, and which input classes drifted when it may not (decision.DriftClass).
-// It is the one comparability answer: the seam gate and gate_reference read it.
-func (b Baseline) Comparison(runCtx AnalysisContext) *result.StateComparison {
-	cmp := baselineComparison(b, runCtx)
-	present := b.Present
-	cmp.BaselinePresent = &present
-	return cmp
-}
-
-func baselineComparison(base Baseline, runCtx AnalysisContext) *result.StateComparison {
-	return storedComparison(base, headFingerprints(runCtx))
-}
-
-// storedComparison is the one answer to whether a stored baseline compares
-// with a run's fingerprints: the gate reference and a re-anchor both read it.
-func storedComparison(base Baseline, head decision.Fingerprints) *result.StateComparison {
-	if base.State == nil {
-		if !base.Present {
-			return decision.NonComparableState("baseline", "no baseline file was loaded")
-		}
-		return decision.NonComparableState("baseline", "stored baseline has no architecture-state snapshot")
-	}
-	cmp := decision.CompareFingerprints("baseline", head, decision.Fingerprints{
-		ClassificationHash: base.State.ClassificationHash, ModelHash: base.State.ModelHash,
-		LabelsHash: base.State.LabelsHash, RubricVersion: base.State.RubricVersion,
-		MeasurementProfile: base.State.MeasurementProfile,
-	})
-	if base.State.QualifyingSeamIDs == nil {
-		cmp.Status = result.StateComparisonNonComparable
-		cmp.Reasons = append(cmp.Reasons, "stored baseline qualifying_seam_ids snapshot is missing or null")
-		cmp.Drift = append(cmp.Drift, string(decision.DriftReferenceIncomplete))
-	}
-	return cmp
 }
 
 func (s StageExecutor) discloseGate(scored evaluation.Scored) {

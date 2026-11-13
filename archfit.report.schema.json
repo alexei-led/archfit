@@ -702,9 +702,6 @@
         "policy_digest": {
           "type": "string"
         },
-        "baseline_digest": {
-          "type": "string"
-        },
         "labels_digest": {
           "type": "string"
         },
@@ -994,9 +991,6 @@
           },
           "type": "array"
         },
-        "baseline_present": {
-          "type": "boolean"
-        },
         "origin_status": {
           "type": "string",
           "enum": [
@@ -1274,9 +1268,6 @@
       "$ref": "#/$defs/StateDecision"
     },
     "comparison": {
-      "$ref": "#/$defs/StateComparison"
-    },
-    "gate_reference": {
       "$ref": "#/$defs/StateComparison"
     },
     "measurement": {

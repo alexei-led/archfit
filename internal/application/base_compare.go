@@ -94,7 +94,7 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	sub := StageExecutor{Preparer: s.Preparer, Evidence: s.NewBaseEvidence(baseRoot), Stderr: s.Stderr}
 	baseReq := AnalysisRequest{
 		ConfigSource: runCtx.ConfigSource, BundleDir: bundleDir, Root: baseRoot,
-		EvaluatedAt: runCtx.Now, EmptyBaseline: true,
+		EvaluatedAt:  runCtx.Now,
 		NoAdvisories: req.NoAdvisories, SuppressGateReasons: true, WarnLabel: baseWarnLabel,
 		DependencyRoot: runCtx.Scope.Root,
 	}
@@ -108,7 +108,7 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	// withoutBaseRoot keeps the temporary checkout path out of the disclosure, as
 	// it does for the evidence that crosses into head output.
 	discloseRawCoverageReasons(s.stderr(), baseWarnLabel, withoutBaseRoot(acquired.Context.MarkedCoverage, baseRoot))
-	out, err := sub.assess(ctx, baseReq, acquired, Baseline{})
+	out, err := sub.assess(ctx, baseReq, acquired)
 	if err != nil {
 		return BaseEvidence{}, err
 	}

@@ -6,7 +6,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
 	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
-	"github.com/alexei-led/archfit/v3/internal/assessment/status"
 	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
@@ -138,7 +137,6 @@ type AssessInput struct {
 	Relationships       relationship.Set
 	RelationshipSignals relationship.AssessmentSignals
 	Policy              policy.PolicySnapshot
-	Accepted            status.AcceptedSet
 	BaseMetrics         result.MetricSnapshot
 	Scope               scope.Scope
 	Now                 time.Time
@@ -189,10 +187,6 @@ func Assess(in AssessInput) (Assessed, error) {
 	if err != nil {
 		return Assessed{}, err
 	}
-	if in.Accepted == nil {
-		// No persisted baseline: nothing was accepted, so every finding is new.
-		in.Accepted = status.Empty{}
-	}
 	diag := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
 	diag.SeamEndpointModules = seamEndpointModules(in.Relationships)
 	diag.OwnerSource = in.OwnerSource
@@ -208,7 +202,6 @@ func Assess(in AssessInput) (Assessed, error) {
 type ScoreInput struct {
 	Policy policy.PolicySnapshot
 	Facts  Observations
-	Anchor BaselineAnchor
 	// Ratchets is the stored reference as the metric ratchets see it.
 	Ratchets       RatchetReference
 	ConfigSource   string
@@ -262,7 +255,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	// the marked copy cannot move a measured metric.
 	diag.ToolCoverage = in.MarkedCoverage
 	finalized := finalize(diag, FinalizeInput{
-		Gate: gate, Baseline: in.Anchor, RuleTypes: ruleTypes, ModulePublic: modulePublic,
+		Gate: gate, RuleTypes: ruleTypes, ModulePublic: modulePublic,
 		ValidationCommands: []string{validationCommand(in.ConfigSource, in.ScanRoot, in.ValidationArgs...)},
 		KnownFiles:         knownFiles, CrateRootDirs: in.CrateRootDirs,
 		ModuleRootDirs: policy.ModuleRootDirs(in.Policy.Topology.Modules),
@@ -278,7 +271,6 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	diag.State = buildState(diag, stateInput{
 		Policy: in.Policy, Facts: in.Facts, RuleTypes: ruleTypes, RequiredToolFailure: hardGate,
 		Ratchets: in.Ratchets,
-		Drift:    in.Anchor,
 	})
 	return Scored{Score: finalized.Score, GateReasons: finalized.GateReasons, HardGate: hardGate}
 }

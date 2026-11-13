@@ -110,11 +110,11 @@ func (co checkout) repositoryState(ctx context.Context) (report.RepositoryState,
 	return state.Report(defaultConfigPath, protected), nil
 }
 
-// measure runs the report pipeline on the whole checkout, with no baseline.
+// measure runs the report pipeline on the whole checkout, without stored references.
 func (co checkout) measure(ctx context.Context, deps *appDeps, cfg config.Config) (report.Document, error) {
 	deps.progress = func(string) {}
 	file := co.policyPath("")
-	resp, err := application.Service{Stages: newReportOnlyStages(file, co.root, cfg, deps)}.Execute(ctx, application.Request{
+	resp, err := application.Service{Stages: newAnalysisStages(file, co.root, cfg, deps)}.Execute(ctx, application.Request{
 		ConfigSource: file, BundleDir: co.root, Formats: []string{formatJSON},
 		Identity: identityInputs(ctx, deps.Runner, file, co.root, co.root, ""),
 	})

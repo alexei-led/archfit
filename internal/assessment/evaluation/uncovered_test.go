@@ -7,7 +7,6 @@ import (
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/assessment/status"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
@@ -34,9 +33,9 @@ func billingModules() map[string]policy.ModuleDef {
 	return map[string]policy.ModuleDef{moduleBilling: {Paths: []string{ownedGlob}}}
 }
 
-func evaluateUncovered(ev evaluation.RuleEvidence, p policy.AssessmentPolicy, gate policy.GateMode, accepted acceptedSet) evaluation.Result {
+func evaluateUncovered(ev evaluation.RuleEvidence, p policy.AssessmentPolicy, gate policy.GateMode) evaluation.Result {
 	return evaluation.Evaluate(evaluation.Input{
-		Evidence: ev, Policy: p, ModuleReview: gate, Accepted: accepted,
+		Evidence: ev, Policy: p, ModuleReview: gate,
 		IncludeAdvisories: true, Now: evaluatedAt,
 	})
 }
@@ -132,7 +131,7 @@ func TestUncoveredSourceReportsProductionSourceOnly(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := subjects(uncoveredFindings(evaluateUncovered(tc.ev, uncoveredPolicy(tc.mods), "", acceptedSet{})))
+			got := subjects(uncoveredFindings(evaluateUncovered(tc.ev, uncoveredPolicy(tc.mods), "")))
 			if fmt.Sprint(got) != fmt.Sprint(tc.wants) {
 				t.Fatalf("uncovered dirs = %v, want %v", got, tc.wants)
 			}
@@ -145,7 +144,7 @@ func TestUncoveredSourceDisabledWithoutModuleReview(t *testing.T) {
 	p := uncoveredPolicy(billingModules())
 	p.Staleness.Enabled = false
 	ev := evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{uncoveredFile: fileclass.Production}}
-	if got := uncoveredFindings(evaluateUncovered(ev, p, policy.GateFail, acceptedSet{})); len(got) != 0 {
+	if got := uncoveredFindings(evaluateUncovered(ev, p, policy.GateFail)); len(got) != 0 {
 		t.Fatalf("findings = %v, want none while module_review is off", got)
 	}
 }
@@ -165,7 +164,7 @@ func TestUncoveredSourceGateMode(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(string(tc.gate), func(t *testing.T) {
 			t.Parallel()
-			res := evaluateUncovered(ev, uncoveredPolicy(billingModules()), tc.gate, acceptedSet{})
+			res := evaluateUncovered(ev, uncoveredPolicy(billingModules()), tc.gate)
 			got := uncoveredFindings(res)
 			if len(got) != 1 || got[0].Kind != tc.wantKind {
 				t.Fatalf("findings = %+v, want one %s finding", got, tc.wantKind)
@@ -174,25 +173,6 @@ func TestUncoveredSourceGateMode(t *testing.T) {
 				t.Errorf("GateFindings = %d, want %d", res.GateFindings, tc.wantGates)
 			}
 		})
-	}
-}
-
-func TestUncoveredSourceAcceptedFindingDoesNotBlock(t *testing.T) {
-	t.Parallel()
-	ev := evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{uncoveredFile: fileclass.Production}}
-	p := uncoveredPolicy(billingModules())
-	first := uncoveredFindings(evaluateUncovered(ev, p, policy.GateFail, acceptedSet{}))
-	if len(first) != 1 {
-		t.Fatalf("findings = %+v, want one", first)
-	}
-	accepted := acceptedSet{{Fingerprint: first[0].ID, RuleID: ruleUncovered}}
-	res := evaluateUncovered(ev, p, policy.GateFail, accepted)
-	got := uncoveredFindings(res)
-	if len(got) != 1 || got[0].Status == finding.StatusNew {
-		t.Fatalf("findings = %+v, want the accepted finding not new", got)
-	}
-	if res.GateFindings != 0 {
-		t.Errorf("GateFindings = %d, want 0 for accepted debt", res.GateFindings)
 	}
 }
 
@@ -205,8 +185,8 @@ func TestUncoveredSourceIDIsStableAndBounded(t *testing.T) {
 		grown.FileClasses[fmt.Sprintf("%s/f%d.go", uncoveredDir, i)] = fileclass.Production
 	}
 	grown.FileClasses[uncoveredFile] = fileclass.Production
-	a := uncoveredFindings(evaluateUncovered(small, p, "", acceptedSet{}))
-	b := uncoveredFindings(evaluateUncovered(grown, p, "", acceptedSet{}))
+	a := uncoveredFindings(evaluateUncovered(small, p, ""))
+	b := uncoveredFindings(evaluateUncovered(grown, p, ""))
 	if len(a) != 1 || len(b) != 1 || a[0].ID != b[0].ID || a[0].Why != b[0].Why {
 		t.Fatalf("finding moved when files were added: %+v vs %+v", a, b)
 	}
@@ -225,7 +205,7 @@ func TestModuleReviewFailBlocksOnlyUncoveredSource(t *testing.T) {
 		"ghost":       {Paths: []string{"ghost/**"}},
 	})
 	ev := evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{uncoveredFile: fileclass.Production}}
-	res := evaluateUncovered(ev, p, policy.GateFail, acceptedSet{})
+	res := evaluateUncovered(ev, p, policy.GateFail)
 	for _, f := range res.Findings {
 		if f.RuleID != ruleUncovered && f.Kind != finding.KindAdvisory {
 			t.Errorf("%s kind = %q, want advisory: only uncovered source blocks", f.RuleID, f.Kind)
@@ -236,13 +216,7 @@ func TestModuleReviewFailBlocksOnlyUncoveredSource(t *testing.T) {
 	}
 }
 
-// TestUncoveredSourceBaselineAcceptsEveryDirectory pins the baseline round
-// trip on a large unowned tree: capture accepts every finding of one run, so
-// the next check on the same tree has no blocker, and one new package is the
-// one blocker. A count bound breaks it either way: capture would accept fewer
-// directories than check reports, or a bound after the baseline would read
-// accepted debt as fixed.
-func TestUncoveredSourceBaselineAcceptsEveryDirectory(t *testing.T) {
+func TestUncoveredSourceReportsEveryDirectory(t *testing.T) {
 	t.Parallel()
 	const dirs = 250
 	p := uncoveredPolicy(billingModules())
@@ -250,27 +224,14 @@ func TestUncoveredSourceBaselineAcceptsEveryDirectory(t *testing.T) {
 	for i := range dirs {
 		ev.FileClasses[fmt.Sprintf("pkg%03d/x.go", i)] = fileclass.Production
 	}
-	captured := uncoveredFindings(evaluateUncovered(ev, p, policy.GateFail, acceptedSet{}))
-	if len(captured) != dirs {
-		t.Fatalf("captured = %d, want every one of the %d directories", len(captured), dirs)
-	}
-	accepted := make(acceptedSet, 0, len(captured))
-	for _, f := range captured {
-		accepted = append(accepted, status.AcceptedEntry{Fingerprint: f.ID, RuleID: ruleUncovered})
-	}
-	if res := evaluateUncovered(ev, p, policy.GateFail, accepted); res.GateFindings != 0 {
-		t.Fatalf("GateFindings on the baselined tree = %d, want 0", res.GateFindings)
+	res := evaluateUncovered(ev, p, policy.GateFail)
+	if got := uncoveredFindings(res); len(got) != dirs || res.GateFindings != dirs {
+		t.Fatalf("findings/gates = %d/%d, want %d/%d", len(got), res.GateFindings, dirs, dirs)
 	}
 	ev.FileClasses["pkg999/x.go"] = fileclass.Production
-	res := evaluateUncovered(ev, p, policy.GateFail, accepted)
-	got := uncoveredFindings(res)
-	for _, f := range got {
-		if f.Status == finding.StatusFixed {
-			t.Fatalf("accepted directory %s reads fixed although it is still unowned", f.MatchedBy[matchedSubject])
-		}
-	}
-	if !slices.Contains(subjects(got), "pkg999") || res.GateFindings != 1 {
-		t.Fatalf("GateFindings = %d, want the new directory as the one blocker", res.GateFindings)
+	res = evaluateUncovered(ev, p, policy.GateFail)
+	if got := uncoveredFindings(res); len(got) != dirs+1 || res.GateFindings != dirs+1 || !slices.Contains(subjects(got), "pkg999") {
+		t.Fatalf("findings/gates = %d/%d, want every directory including pkg999", len(got), res.GateFindings)
 	}
 }
 
@@ -299,7 +260,7 @@ func TestUncoveredSourceSuggestsAGlobThatOwnsTheDirectory(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ev := evaluation.RuleEvidence{FileClasses: tc.files, SourceSelectors: tc.selectors}
-			got := uncoveredFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), "", acceptedSet{}))
+			got := uncoveredFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), ""))
 			if len(got) != 1 {
 				t.Fatalf("findings = %d, want 1", len(got))
 			}
@@ -312,7 +273,7 @@ func TestUncoveredSourceSuggestsAGlobThatOwnsTheDirectory(t *testing.T) {
 			}
 			mods := billingModules()
 			mods["owner"] = policy.ModuleDef{Paths: []string{glob}}
-			if after := uncoveredFindings(evaluateUncovered(ev, uncoveredPolicy(mods), "", acceptedSet{})); len(after) != 0 {
+			if after := uncoveredFindings(evaluateUncovered(ev, uncoveredPolicy(mods), "")); len(after) != 0 {
 				t.Errorf("after adding %q the directory is still unowned: %v", glob, subjects(after))
 			}
 		})

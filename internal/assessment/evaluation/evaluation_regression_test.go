@@ -33,13 +33,12 @@ func warnRuleFinding(id string) finding.Finding {
 
 // TestEvaluateHidesWarnRuleAdvisoriesWithoutAdvisories pins the --no-advisories
 // contract for `gate: warn` rules. They are advisories, not gate findings: they
-// must not appear in findings[] when advisories are off, or `archfit baseline
-// --no-advisories` persists an entry the flag says it excludes.
+// must not appear in findings[] when advisories are off.
 func TestEvaluateHidesWarnRuleAdvisoriesWithoutAdvisories(t *testing.T) {
 	in := func(include bool) evaluation.Input {
 		return evaluation.Input{
-			Rules:    evaluation.RulesetOf(stubRule{id: ruleWarn, findings: []finding.Finding{warnRuleFinding(fpWarnAdv)}}),
-			Accepted: acceptedSet{}, IncludeAdvisories: include, Now: evaluatedAt,
+			Rules:             evaluation.RulesetOf(stubRule{id: ruleWarn, findings: []finding.Finding{warnRuleFinding(fpWarnAdv)}}),
+			IncludeAdvisories: include, Now: evaluatedAt,
 		}
 	}
 	off := evaluation.Evaluate(in(false))
@@ -78,7 +77,7 @@ func TestEvaluateCountsRuleAndCouplingAdvisoriesInWarnings(t *testing.T) {
 			ID: "adv-1", RuleID: ruleBC, Severity: relationship.SeverityHigh,
 			From: pathA, To: pathB, FromModule: moduleA, ToModule: moduleB, EdgeKind: kindImports,
 		}},
-		Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,
+		IncludeAdvisories: true, Now: evaluatedAt,
 	})
 	if got.Warnings != 2 {
 		t.Errorf("warnings = %d, want both the coupling and the warn-rule advisory", got.Warnings)
@@ -104,7 +103,7 @@ func TestEvaluateLabelsFindingEndpointsWithoutAMatchingEdge(t *testing.T) {
 	got := evaluation.Evaluate(evaluation.Input{
 		Relationships: set,
 		Rules:         evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{f}}),
-		Accepted:      acceptedSet{}, Now: evaluatedAt,
+		Now:           evaluatedAt,
 	})
 	out := findByID(t, got.Findings, fpGate)
 	if out.Edge.From.Module != moduleA || out.Edge.To.Module != moduleB {
@@ -120,9 +119,9 @@ func TestEvaluateLabelsFindingEndpointsFromConfiguredModules(t *testing.T) {
 		moduleB: {Paths: []string{assessPathsB}},
 	}
 	got := evaluation.Evaluate(evaluation.Input{
-		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding(fpGate, finding.SeverityHigh)}}),
-		Policy:   policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
-		Accepted: acceptedSet{}, Now: evaluatedAt,
+		Rules:  evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding(fpGate, finding.SeverityHigh)}}),
+		Policy: policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
+		Now:    evaluatedAt,
 	})
 	out := findByID(t, got.Findings, fpGate)
 	if out.Edge.From.Module != moduleA || out.Edge.To.Module != moduleB {
@@ -151,7 +150,7 @@ func TestEvaluateRolledUpAdvisoryReportsTheFirstLocationsOwner(t *testing.T) {
 			member("adv-1", "a/first.go", "b/first.go", shared),
 			member("adv-2", "a/second.go", "b/second.go", shared, relationship.Location{File: "a/zzz.go", Line: 9}),
 		},
-		Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,
+		IncludeAdvisories: true, Now: evaluatedAt,
 	})
 	rep := findByID(t, got.Findings, "adv-1")
 	if len(rep.Locations) == 0 || rep.Locations[0] != shared {

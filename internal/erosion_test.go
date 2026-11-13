@@ -11,7 +11,6 @@
 //	dimension_status_required TestErosion_DimensionStatusRequired   (cmd/archfit)
 //	config_hash_required      TestErosion_ConfigHashRequired        (cmd/archfit)
 //	label_evidence_required   TestErosion_LabelEvidenceRequired     (cmd/archfit)
-//	baseline_idempotent       TestErosion_BaselineIdempotent        (cmd/archfit)
 //	policy_query_agreement    TestErosion_PolicyQueryAgreesWithCheck (cmd/archfit, policy_test.go)
 //	                          TestErosion_PolicyQueryAgreesWithCheck{TypeScript,Python} (cmd/archfit, policy_agreement_lang_test.go)
 //	ratchet_requires_comparable_reference TestErosion_RatchetRequiresComparableReference (cmd/archfit)
@@ -43,7 +42,7 @@ var decisionPath = []decisionTarget{
 	{path: "assessment/evaluation/dimensions.go"}, // the nine envelopes it reads
 	{path: "assessment/evaluation/selectors.go"},  // rule-selector vacuity behind unevaluated rules
 	{path: "assessment/score/gate.go"},            // the distributed-monolith seam gate
-	{path: "application/analysis.go", funcs: []string{"outcomeFor", "seamAnchor"}},
+	{path: "application/analysis.go", funcs: []string{"outcomeFor"}},
 }
 
 // decisionTarget is one file or directory on the decision path. An empty funcs

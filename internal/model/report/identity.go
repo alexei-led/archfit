@@ -24,8 +24,7 @@ type ResultIdentity struct {
 	SchemaVersion string `json:"schema_version"`
 	// PolicyDigest is the sha256 of the policy file's bytes (.archfit.yaml).
 	PolicyDigest string `json:"policy_digest,omitempty"`
-	// BaselineDigest is the sha256 of the baseline file's bytes.
-	BaselineDigest string `json:"baseline_digest,omitempty"`
+
 	// LabelsDigest is the sha256 of the approved-labels file's bytes.
 	LabelsDigest string `json:"labels_digest,omitempty"`
 	// PolicyRef is the ref and commit whose policy files were used, when the
@@ -67,7 +66,7 @@ func ProfileHash(p *MeasurementProfile) string {
 func (i ResultIdentity) Line() string {
 	parts := []string{"engine " + i.EngineVersion}
 	for _, d := range []struct{ name, digest string }{
-		{"policy", i.PolicyDigest}, {"baseline", i.BaselineDigest}, {"labels", i.LabelsDigest},
+		{"policy", i.PolicyDigest}, {"labels", i.LabelsDigest},
 		{"tree", i.HeadTreeDigest}, {"profile", i.MeasurementProfileHash},
 	} {
 		parts = append(parts, d.name+" "+shortDigest(d.digest))

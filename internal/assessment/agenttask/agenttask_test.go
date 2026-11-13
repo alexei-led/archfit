@@ -48,7 +48,7 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 	findings := []finding.Finding{
 		gateFinding("f-new", ruleForbidden, finding.StatusNew),
 		gateFinding("f-expired", ruleForbidden, finding.StatusExpiredWaiver),
-		gateFinding("f-baselined", ruleForbidden, finding.StatusBaseline),
+		gateFinding("f-waived", ruleForbidden, finding.StatusWaived),
 		gateFinding("f-fixed", ruleForbidden, finding.StatusFixed),
 		func() finding.Finding {
 			f := gateFinding("f-advisory", "bc/imbalanced_coupling", finding.StatusNew)

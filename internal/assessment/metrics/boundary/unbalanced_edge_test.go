@@ -122,45 +122,11 @@ func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 	}
 }
 
-func TestUnbalancedEdge_BaselinedFindingSuppressesCount(t *testing.T) {
-	// Qualifying edge (intrusive + far + volatile), but the matching finding
-	// is already baselined — StatusNew/"" are the only statuses that count as
-	// new_high, so a baselined edge must not add to the count even though it
-	// still qualifies structurally.
-	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
-	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
-	e := metricstest.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports}
-
-	idx := metricstest.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
-			Strength:   relationship.StrengthIntrusive,
-			Distance:   relationship.DistanceCrossModuleDiffOwner,
-			Volatility: relationship.VolatilityHigh,
-		},
-	}
-	findings := []finding.Finding{
-		{
-			Edge:   finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}},
-			Status: finding.StatusBaseline,
-		},
-	}
-
-	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx), Findings: findings})
-
-	if result.Value != 0 {
-		t.Errorf("expected value 0 (baselined edge must not count as new_high) got %v", result.Value)
-	}
-	if result.Band != bandStrong {
-		t.Errorf("expected band strong got %q", result.Band)
-	}
-}
-
 func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	// Two findings share the same edge pair with different statuses. The
 	// first (StatusNew, priority 4) is listed before the second
-	// (StatusBaseline, priority 1) — a naive "last write wins" index would
-	// keep StatusBaseline and drop the count to 0; the actual statusPriority
+	// (StatusWaived, priority 2) — a naive "last write wins" index would
+	// keep StatusWaived and drop the count to 0; the actual statusPriority
 	// logic must keep the higher-priority StatusNew regardless of order.
 	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
 	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
@@ -176,14 +142,14 @@ func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	edgeEv := finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}}
 	findings := []finding.Finding{
 		{Edge: edgeEv, Status: finding.StatusNew},
-		{Edge: edgeEv, Status: finding.StatusBaseline},
+		{Edge: edgeEv, Status: finding.StatusWaived},
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
 	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx), Findings: findings})
 
 	if result.Value != 1 {
-		t.Errorf("expected value 1 (higher-priority StatusNew must win over StatusBaseline) got %v", result.Value)
+		t.Errorf("expected value 1 (higher-priority StatusNew must win over StatusWaived) got %v", result.Value)
 	}
 	if result.Band != bandCritical {
 		t.Errorf("expected band critical got %q", result.Band)

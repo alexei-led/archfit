@@ -30,7 +30,6 @@ type Input struct {
 	Coverage      []evidence.Coverage
 	ChangedFiles  []string
 	Baseline      result.MetricSnapshot
-	Accepted      status.AcceptedSet
 	Policy        policy.AssessmentPolicy
 	Gates         map[string]policy.MetricConfig
 	// ModuleReview is the module_review gate mode: fail makes production
@@ -59,8 +58,8 @@ type Result struct {
 func evaluate(in Input) Result {
 	raw := checkRules(in.Rules, in.Relationships, in.Evidence)
 	adv := candidateFindings(in.AdvisoryCandidates)
-	// An uncovered-source gate finding joins the rule findings, so baseline
-	// acceptance and waivers treat it as any other blocker; the advisory form
+	// An uncovered-source gate finding joins the rule findings, so
+	// waivers treat it as any other blocker; the advisory form
 	// stays with the staleness advisories.
 	for _, f := range uncoveredSource(in.Evidence, in.Policy, in.ModuleReview) {
 		if f.Kind == finding.KindGate {
@@ -77,7 +76,7 @@ func evaluate(in Input) Result {
 	}
 	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
 	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
-	tagged := status.Assign(raw, in.Accepted, in.Policy.Waivers, in.Now, finding.KindGate, adv...)
+	tagged := status.Assign(raw, in.Policy.Waivers, in.Now)
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Baseline: in.Baseline, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
 		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size, Duplication: in.Signals.Duplication,
@@ -86,11 +85,7 @@ func evaluate(in Input) Result {
 	for _, metric := range in.Metrics.metrics {
 		calculated = append(calculated, metric.Calculate(collected))
 	}
-	// A tripped ratchet is a finding like any other: it takes its status from
-	// the waivers (never from the accepted set, which a capture cannot fill —
-	// it runs with no baseline, so it has no delta to trip), and then joins the
-	// gate and advisory populations below.
-	tagged = append(tagged, status.Assign(ratchetFindings(calculated, in.Gates), status.Empty{}, in.Policy.Waivers, in.Now, finding.KindGate)...)
+	tagged = append(tagged, status.Assign(ratchetFindings(calculated, in.Gates), in.Policy.Waivers, in.Now)...)
 	gates := make([]finding.Finding, 0, len(tagged))
 	advisories := 0
 	for _, f := range tagged {
@@ -101,7 +96,7 @@ func evaluate(in Input) Result {
 			advisories++
 		}
 	}
-	taggedAdvisories := status.Assign(adv, in.Accepted, in.Policy.Waivers, in.Now, finding.KindAdvisory, raw...)
+	taggedAdvisories := status.Assign(adv, in.Policy.Waivers, in.Now)
 	adv = adv[:0]
 	for _, f := range taggedAdvisories {
 		if f.Kind == finding.KindAdvisory {

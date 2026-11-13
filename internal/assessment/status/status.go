@@ -9,117 +9,18 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
-// AcceptedEntry is one accepted finding from a prior run: the fingerprint that
-// identifies it, the rule that produced it, the finding kind (gate or advisory;
-// empty means "gate" for backward compatibility), and the severity recorded when
-// it was accepted (empty for baselines written before severity was tracked).
-type AcceptedEntry struct {
-	Fingerprint string
-	RuleID      string
-	Kind        string
-	Severity    string
-}
-
-// AcceptedSet is the read-only view of previously accepted findings that
-// status assignment needs. The persistence layer (internal/baseline)
-// implements it; status never touches storage concerns — the dependency
-// points outward-in.
-type AcceptedSet interface {
-	// HasFingerprint reports whether the fingerprint was accepted.
-	HasFingerprint(fingerprint string) bool
-	// Entries returns all accepted findings, in stored order.
-	Entries() []AcceptedEntry
-}
-
-// Empty is the accepted set of a run with no persisted baseline: nothing was
-// ever accepted, so every finding is new and nothing can be reported fixed.
-type Empty struct{}
-
-// HasFingerprint always reports false.
-func (Empty) HasFingerprint(string) bool { return false }
-
-// Entries returns no accepted findings.
-func (Empty) Entries() []AcceptedEntry { return nil }
-
-// Assign labels each finding with its lifecycle status by comparing against the
-// accepted set and exception set. It also emits a finding per accepted
-// fingerprint that is no longer present in the current run (status=fixed).
-//
-// forKind scopes fixed-finding emission: only baseline entries whose Kind field
-// matches forKind are emitted as fixed. Entries with an empty Kind field are
-// treated as "gate" (backward compatibility with pre-Kind baseline files).
-// otherCurrent supplies findings from other passes for disappearance detection;
-// they are not classified or included in the returned findings.
-//
-// Algorithm per finding f:
-//  1. Fingerprint in base.Accepted → StatusBaseline
-//  2. Matches a waiver (rule, from glob, to glob) and not expired → StatusWaived
-//  3. Matches a waiver but expiry has passed → StatusExpiredWaiver
-//  4. No match → StatusNew (default)
-//
-// now is the reference time for expiry checks; pass time.Now() in production.
-func Assign(
-	findings []finding.Finding,
-	accepted AcceptedSet,
-	waivers policy.WaiverSet,
-	now time.Time,
-	forKind string,
-	otherCurrent ...finding.Finding,
-) []finding.Finding {
-	// Build a set of current fingerprints for fixed-finding detection.
-	current := make(map[string]struct{}, len(findings)+len(otherCurrent))
-	for _, f := range findings {
-		current[f.ID] = struct{}{}
-	}
-	for _, f := range otherCurrent {
-		current[f.ID] = struct{}{}
-	}
-
-	// Copy findings so we don't mutate the caller's slice.
+// Assign labels findings using the waiver set without changing the input slice.
+// now is the reference time for expiry checks.
+func Assign(findings []finding.Finding, waivers policy.WaiverSet, now time.Time) []finding.Finding {
 	out := make([]finding.Finding, len(findings))
 	copy(out, findings)
-
 	for i := range out {
-		out[i].Status = assignOne(&out[i], accepted, waivers, now)
+		out[i].Status = assignOne(&out[i], waivers, now)
 	}
-
-	// Emit fixed findings only for accepted entries whose kind matches this pass.
-	// Empty Kind in the entry means "gate" (backward compat).
-	for _, a := range accepted.Entries() {
-		if _, present := current[a.Fingerprint]; present {
-			continue
-		}
-		entryKind := a.Kind
-		if entryKind == "" {
-			entryKind = "gate"
-		}
-		if entryKind != forKind {
-			continue
-		}
-		out = append(out, finding.Finding{
-			ID:     a.Fingerprint,
-			Kind:   entryKind,
-			RuleID: a.RuleID,
-			Status: finding.StatusFixed,
-		})
-	}
-
 	return out
 }
 
-// assignOne returns the status for a single finding.
-func assignOne(
-	f *finding.Finding,
-	accepted AcceptedSet,
-	waivers policy.WaiverSet,
-	now time.Time,
-) finding.Status {
-	// 1. Accepted-set check.
-	if accepted.HasFingerprint(f.ID) {
-		return finding.StatusBaseline
-	}
-
-	// 2–3. Waiver check.
+func assignOne(f *finding.Finding, waivers policy.WaiverSet, now time.Time) finding.Status {
 	hasExpiredMatch := false
 	for _, w := range waivers.Waivers {
 		if !matchWaiver(w, f) {
@@ -134,8 +35,6 @@ func assignOne(
 	if hasExpiredMatch {
 		return finding.StatusExpiredWaiver
 	}
-
-	// 4. Default.
 	return finding.StatusNew
 }
 

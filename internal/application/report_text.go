@@ -133,9 +133,6 @@ func boundReportText(doc *report.Document) {
 		rule.Reason = reportText(rule.Reason, maxReportTextRunes)
 	}
 	boundComparisonText(&st.Comparison)
-	if st.GateReference != nil {
-		boundComparisonText(st.GateReference)
-	}
 	for _, dim := range []*report.DimensionState{
 		&st.Dimensions.Intent, &st.Dimensions.Structure, &st.Dimensions.Modularity, &st.Dimensions.Coupling,
 		&st.Dimensions.ChangeLocality, &st.Dimensions.Complexity, &st.Dimensions.Testability,

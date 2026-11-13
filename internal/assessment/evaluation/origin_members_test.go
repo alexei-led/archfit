@@ -45,9 +45,9 @@ func TestOriginExplainsGroupedMemberEvidence(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assessed := evaluation.Evaluate(evaluation.Input{AdvisoryCandidates: candidates, Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt})
+			assessed := evaluation.Evaluate(evaluation.Input{AdvisoryCandidates: candidates, IncludeAdvisories: true, Now: evaluatedAt})
 			diag := result.Result{Findings: assessed.Findings, Verdict: assessed.Verdict}
-			base := evaluation.Evaluate(evaluation.Input{AdvisoryCandidates: candidates[:tc.baseCount], Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt})
+			base := evaluation.Evaluate(evaluation.Input{AdvisoryCandidates: candidates[:tc.baseCount], IncludeAdvisories: true, Now: evaluatedAt})
 			verdict := diag.Verdict
 			evaluation.AttachOrigins(&diag, evaluation.OriginInput{
 				BaseRef: "base", BaseFindings: decision.BaseFindings(base.Findings),

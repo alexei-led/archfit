@@ -148,8 +148,6 @@ func statusPriority(s finding.Status) int {
 		return 3
 	case finding.StatusWaived:
 		return 2
-	case finding.StatusBaseline:
-		return 1
 	default:
 		return 0
 	}

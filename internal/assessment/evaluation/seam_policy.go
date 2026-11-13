@@ -18,7 +18,7 @@ const languageTypeScript = "typescript"
 const (
 	// seamViolation: an active gate finding names the pair.
 	seamViolation = "violation"
-	// seamAccepted: a gate finding on the pair is baselined or waived.
+	// seamAccepted: a gate finding on the pair is waived.
 	// Accepted debt is not permission.
 	seamAccepted = "accepted"
 	// seamAdvisory: another active finding names the pair.
@@ -34,7 +34,7 @@ const (
 // report publishes and the permission predicate `archfit policy can-import`
 // uses. It runs after finalize, which adds the seam-gate findings. A finding
 // names the pair of its edge endpoints, each placed under the module the seam
-// ledger uses for it; a fixed finding, or a baselined or waived advisory,
+// ledger uses for it; a fixed finding, or a waived advisory,
 // names nothing.
 func attachSeamPolicy(diag *result.Result, p policy.PolicySnapshot) {
 	type pair struct{ from, to string }

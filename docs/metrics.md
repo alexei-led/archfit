@@ -3,7 +3,7 @@
 Metrics describe code structure and evidence. They do not replace rules or
 determine architecture-state completeness. See [rules](rules.md) for rule gates,
 [results](results.md) for verdicts and output fields, and [configuration](configuration.md)
-for metric thresholds and gate settings.
+for report metric settings.
 
 ## Architecture-state dimensions
 
@@ -20,7 +20,7 @@ The state report has nine dimensions. Each reports `measured`, `partial`, or
 | `complexity` | Declared-module dependency depth and degree. |
 | `testability` | Supplied execution coverage attributed to declared modules. |
 | `operations` | Declared owners and deploy units, with independent evidence. |
-| `drift` | Change in distributed-monolith seams against a comparable baseline. |
+| `drift` | Unmeasured: stored architecture-state references are no longer supported. |
 
 The [evidence contract](evidence.md) defines applicability, required facts,
 denominators, and the exact status rules for each dimension.
@@ -28,14 +28,14 @@ denominators, and the exact status rules for each dimension.
 Dimension metrics report facts within each claim. `complexity` includes chain
 depth and module fan-in/fan-out percentiles. `testability` includes supplied
 covered and total execution units. `operations` includes owner and deploy-unit
-counts. `drift` includes new and resolved seams. Function-size metrics are
+counts. `drift` has no historical seam delta. Function-size metrics are
 diagnostic. They do not determine `complexity` completeness.
 
-## Baseline metrics
+## Report metrics
 
-These metrics can carry deltas. A regression can block `check` when its gate is
-`fail` or unset. `warn` reports an advisory. `off` disables the metric gate.
-The [configuration reference](configuration.md#metrics) owns settings.
+These metrics describe the current tree. The report does not read a stored
+reference, so it has no accepted-value delta. Metrics do not gate the Archfit 4
+check. The [configuration reference](configuration.md#metrics) owns report settings.
 
 | Metric | Value and direction | Meaning |
 | --- | --- | --- |
@@ -65,7 +65,7 @@ cross-boundary edges.
 | `coupling_balance` | 0–100. Higher is better. | Rescaled mean balance of scored cross-module coupling facts. It is diagnostic and does not gate directly. |
 | `blast_radius` (`blast_radius.v2`) | Count of hubs | Modules that at least 30% of other declared modules can reach through dependencies. It reports impact concentration, not a defect. |
 
-`blast_radius` has no baseline delta or gate. It reports `n/a` when the graph
+`blast_radius` has no delta or gate. It reports `n/a` when the graph
 has no useful multi-module signal.
 
 The `coupling_balance` metric version is `bc_score.v7`. It linearly rescales
@@ -93,20 +93,14 @@ level. Undeclared external edges do not enter the scored share.
 
 ## Deltas and gates
 
-Metrics compare with a stored baseline only when their metric versions and
-comparison context match. `cycle` and `unbalanced_edge` worsen when counts
-increase. `encapsulation` and `coverage` worsen when ratios decrease.
-Configured `max_new` or `min_delta` thresholds define tolerated change.
+The report keeps metric values and the seam ledger as measurements. It does
+not compare them with a stored value or accept findings through a capture.
+The `drift` dimension stays explicitly `unmeasured` without historical evidence.
 
-`unbalanced_edge` is a live metric and supports baseline ratchets. A blocking
-delta becomes a finding with before, after, and threshold values. A rule-only
-waiver can accept that finding for a limited period. A baseline capture cannot
-evaluate a delta because it has no prior baseline.
-
-`coupling_balance` does not ratchet. The `distributed_monolith` coupling gate
-counts new qualifying seams against a comparable reference. Other hard gates can
-block on current structure. See [commands](commands.md) for exit codes and
-[results](results.md) for finding fields.
+The Archfit 4 check counts rule errors on the merge base and head in one run,
+then applies policy exceptions. A new error or a higher count belongs to the
+change. This is separate from report metrics. See [rules](rules.md),
+[commands](commands.md) for exit codes, and [results](results.md) for finding fields.
 
 ## Supporting evidence
 
@@ -130,6 +124,4 @@ includes only pairs with import edges.
 Coverage, tool availability, abstained edges, confidence, and incomplete facts
 can limit a claim. A missing fact is not a zero. See [evidence](evidence.md)
 for the required-fact boundaries and [configuration](configuration.md) for
-supplied test-coverage inputs and metric policy. Metric gates use direction-aware
-thresholds. See [configuration](configuration.md#metrics) for defaults and
-field behavior.
+supplied test-coverage inputs and report metric settings.

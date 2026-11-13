@@ -931,17 +931,6 @@
       "why": "balanced coupling: functional integration strength × cross_module_different_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)"
     }
   ],
-  "gate_reference": {
-    "base_ref": "baseline",
-    "baseline_present": false,
-    "drift": [
-      "reference_incomplete"
-    ],
-    "reasons": [
-      "no baseline file was loaded"
-    ],
-    "status": "non_comparable"
-  },
   "identity": {
     "engine_version": "dev",
     "measurement_profile_hash": "\u003cMEASUREMENT_PROFILE_HASH\u003e",

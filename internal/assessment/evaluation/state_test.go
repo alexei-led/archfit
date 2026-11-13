@@ -27,12 +27,10 @@ func TestBuildStateClassifiesFindings(t *testing.T) {
 	}{
 		{"new gate finding blocks", finding.Finding{ID: "1", Kind: finding.KindGate, Status: finding.StatusNew}, true, false},
 		{"expired waiver on a gate finding blocks", finding.Finding{ID: "2", Kind: finding.KindGate, Status: finding.StatusExpiredWaiver}, true, false},
-		{"accepted gate finding blocks nothing", finding.Finding{ID: "3", Kind: finding.KindGate, Status: finding.StatusBaseline}, false, false},
 		{"waived gate finding blocks nothing", finding.Finding{ID: "4", Kind: finding.KindGate, Status: finding.StatusWaived}, false, false},
 		{"fixed gate finding blocks nothing", finding.Finding{ID: "5", Kind: finding.KindGate, Status: finding.StatusFixed}, false, false},
 		{"new advisory is a diagnostic", finding.Finding{ID: "6", Kind: finding.KindAdvisory, Status: finding.StatusNew}, false, true},
 		{"expired waiver on an advisory is a diagnostic", finding.Finding{ID: "7", Kind: finding.KindAdvisory, Status: finding.StatusExpiredWaiver}, false, true},
-		{"accepted advisory is not a diagnostic", finding.Finding{ID: "8", Kind: finding.KindAdvisory, Status: finding.StatusBaseline}, false, false},
 		{"waived advisory is not a diagnostic", finding.Finding{ID: "9", Kind: finding.KindAdvisory, Status: finding.StatusWaived}, false, false},
 	}
 	for _, tc := range tests {

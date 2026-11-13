@@ -14,65 +14,14 @@ import (
 // individually addressable.
 const FindingIDCouplingGate = "coupling-gate"
 
-// BaselineAnchor is the assessment-relevant projection of a persisted baseline.
-// The stage adapter reads the baseline file; assessment only decides whether
-// the stored anchor is comparable with this binary's scoring.
-//
-// It carries no score anchor: schema v2 retired the scalar drop check, so a
-// stored coupling score can no longer move any decision. What it carries
-// instead is whether the stored seam snapshot may be compared at all.
-type BaselineAnchor struct {
-	// SnapshotMismatches names stored inputs that differ from this binary.
-	// They become non-comparability reasons rather than a silent skip.
-	SnapshotMismatches []string
-	// SeamsComparable reports that the persisted baseline carries a seam
-	// snapshot taken under the same classification, module map, labels, rubric,
-	// and measurement profile.
-	// False is the safe default: a baseline written before the seam ledger
-	// existed has no seams, and treating its absence as "no seams then" would
-	// report every current seam as newly introduced.
-	SeamsComparable bool
-	// QualifyingSeamIDs are the reference's own distributed-monolith seam IDs.
-	QualifyingSeamIDs []string
-	// NonComparableReason explains, in one line, why SeamsComparable is false.
-	NonComparableReason string
-}
-
-// defaultNonComparableReason is the abstention cause when no baseline exists at
-// all. It is stated rather than left empty: "not comparable" with no reason is
-// indistinguishable from a bug.
-const defaultNonComparableReason = "no comparable architecture-state reference is stored"
-
-// driftReasons explains, in stable order, why this anchor is not comparable.
-// The slice is never empty — every caller renders reasons[0].
-func (a BaselineAnchor) driftReasons() []string {
-	reason := a.NonComparableReason
-	if reason == "" {
-		reason = defaultNonComparableReason
-	}
-	return append([]string{reason}, a.SnapshotMismatches...)
-}
-
-// seamReference projects the anchor into the gate's comparison reference. A
-// non-comparable anchor always carries at least one reason: an abstaining gate
-// has to say why.
-func (a BaselineAnchor) seamReference() score.SeamReference {
-	if !a.SeamsComparable {
-		return score.SeamReference{Reasons: a.driftReasons()}
-	}
-	ids := make(map[string]struct{}, len(a.QualifyingSeamIDs))
-	for _, id := range a.QualifyingSeamIDs {
-		ids[id] = struct{}{}
-	}
-	return score.SeamReference{Comparable: true, QualifyingSeamIDs: ids}
-}
+// The legacy seam gate has no stored input; task 34 removes it.
+const noStoredReferenceReason = "stored architecture-state references are no longer supported"
 
 // FinalizeInput carries the explicit values assessment needs to score, gate,
 // and build repair tasks. Every field is a value the stage already resolved:
 // assessment neither reads configuration nor touches the filesystem.
 type FinalizeInput struct {
 	Gate               policy.CouplingGate
-	Baseline           BaselineAnchor
 	RuleTypes          map[string]string
 	ModulePublic       map[string][]string
 	ValidationCommands []string
@@ -99,7 +48,7 @@ type Finalized struct {
 // Only the seam ledger decides the coupling gate.
 func finalize(diag *result.Result, in FinalizeInput) Finalized {
 	card := score.Synthesize(*diag)
-	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(in.Gate), in.Baseline.seamReference())
+	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(in.Gate), score.SeamReference{Reasons: []string{noStoredReferenceReason}})
 	applySeamGate(diag, trip)
 	resolver := agenttask.NewPathResolver(in.KnownFiles, in.CrateRootDirs, in.ModuleRootDirs, in.OnDisk)
 	diag.AgentTasks = agenttask.Build(diag.Findings, in.RuleTypes, in.ModulePublic, in.ValidationCommands, diag.SyntaxFacts, diag.Seams, resolver)
