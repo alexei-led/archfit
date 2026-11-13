@@ -121,7 +121,7 @@ uv run --with jsonschema==4.26.0 python scripts/eval/corpus_sweep.py \
   --repos spotinfo,storybook,ccgram,herdr \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
   --format-repos spotinfo,storybook,ccgram,herdr \
-  --ai-repos '' --strict --max-workers 1 \
+  --strict --max-workers 1 \
   --output-dir /tmp/archfit-corpus-eval \
   --summary-file /tmp/archfit-corpus-results.json
 ```
