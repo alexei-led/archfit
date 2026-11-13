@@ -2,6 +2,8 @@
 """Fast checks for failure disclosure and real-source image fixture construction."""
 
 import json
+import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -260,6 +262,97 @@ class ImageContractsTest(unittest.TestCase):
                 image.python314_case(contract)
             self.assertEqual(commands.call_count, 2)
             self.assertTrue(all(row["passed"] for row in contract.assertions))
+
+    def test_readonly_report_trusts_only_the_host_owned_fixture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            contract = image.ImageContract("local:contract", "colima", output)
+            scripts = []
+            state = {
+                "schema_version": "archfit.architecture-state.v1",
+                "coverage": {
+                    "tools": [
+                        {
+                            "tool": "dotnet-msbuild",
+                            "status": "partial",
+                            "reason": "Broken/Broken.csproj: Archfit.Fixture.Missing.Sdk",
+                        },
+                        {"tool": "roslyn", "status": "partial"},
+                    ]
+                },
+                "seams": [
+                    {
+                        "from_module": "repository",
+                        "to_module": "contracts",
+                        "strength": "model",
+                    },
+                    {
+                        "from_module": "repository",
+                        "to_module": "domain",
+                        "strength": "intrusive",
+                    },
+                ],
+            }
+            stderr = (
+                "3 of 7 projects partial, 1 failed; "
+                "Broken/Broken.csproj failed: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk'; "
+                "Legacy/Legacy.csproj partial: net8.0: reference pack Microsoft.NETCore.App.Ref 8.0; "
+                "Tests/Tests.csproj partial: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk'; "
+                "Unresolved/Unresolved.csproj partial: 3 unresolved symbols"
+            )
+
+            def run(name, uid, script, fixture, **kwargs):
+                if kwargs.get("copy") is False:
+                    scripts.append(script)
+                result = output / name
+                result.mkdir()
+                (result / "report.json").write_text(json.dumps(state))
+                (result / "report.rc").write_text("0")
+                (result / "report.stderr").write_text(stderr)
+                return result
+
+            with patch.object(contract, "run", side_effect=run):
+                image.dotnet_extraction_cases(contract)
+            self.assertTrue(all(row["passed"] for row in contract.assertions))
+            self.assertEqual(len(scripts), 1)
+            trust = shlex.split(scripts[0].partition(";")[0])
+            self.assertEqual(
+                trust,
+                ["git", "config", "--global", "--add", "safe.directory", "/trusted"],
+            )
+            fixture = output / "fixture-dotnet"
+            home = output / "home"
+            home.mkdir()
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith("GIT_")
+            }
+            env.update(
+                {
+                    "HOME": str(home),
+                    "GIT_CONFIG_GLOBAL": str(home / ".gitconfig"),
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "GIT_TEST_ASSUME_DIFFERENT_OWNER": "1",
+                }
+            )
+            command = ["git", "-C", str(fixture), "rev-parse", "--show-toplevel"]
+            before = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertEqual(before.returncode, 128)
+            self.assertIn("dubious ownership", before.stderr)
+            trust[-1] = str(fixture)
+            subprocess.run(trust, env=env, check=True, capture_output=True, text=True)
+            after = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertEqual(after.returncode, 0, after.stderr)
+            self.assertEqual(after.stdout.strip(), str(fixture.resolve()))
+            trusted = subprocess.run(
+                ["git", "config", "--global", "--get-all", "safe.directory"],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertEqual(trusted.stdout.strip(), str(fixture))
 
 
 if __name__ == "__main__":

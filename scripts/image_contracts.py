@@ -421,7 +421,10 @@ def dotnet_extraction_cases(contract: ImageContract) -> None:
     output = contract.run(
         "dotnet-archfit-readonly",
         "27182:27182",
-        saved_command(
+        # The host owns the read-only bind. Trust only this known fixture,
+        # in this disposable container's HOME, never all repositories.
+        "git config --global --add safe.directory /trusted; "
+        + saved_command(
             "report",
             f"{report} -C /trusted",
         ),
