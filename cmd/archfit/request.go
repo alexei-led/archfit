@@ -16,14 +16,15 @@ import (
 
 	"github.com/alexei-led/archfit/v3/internal/application/request"
 	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
+	requestsend "github.com/alexei-led/archfit/v3/internal/history/github"
 	"github.com/alexei-led/archfit/v3/internal/model/result"
 	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
 )
 
 // RequestCmd is `archfit request` (internal/application/request): ask an
 // owner to change the policy for the errors of the last check, or for the
-// dependency of the last `archfit can` answer. Milestone 1 has no App: the
-// command prints the request and exits 2 (D5).
+// dependency of the last `archfit can` answer. It posts to GitHub when a
+// GitHub remote is present, otherwise prints the request (D5).
 type RequestCmd struct {
 	Message string `short:"m" help:"Why you need the change. On a terminal archfit asks for it when -m is not given." placeholder:"WHY"`
 	Expires string `help:"Ask for an exception until DATE (YYYY-MM-DD), at most 365 days ahead. Without it the request asks for a permanent change." placeholder:"DATE"`
@@ -38,12 +39,14 @@ so you write only the reason.
 Only an error whose next step is archfit request joins the request. Run
 archfit check again after an edit: a request never uses an older tree.
 
-Without the App the request is printed, not sent: show it to an owner.
+With one open pull request, post the request as a comment. Before a pull
+request exists, only a can answer may open an issue. Uses GH_TOKEN, then
+GITHUB_TOKEN, then gh auth token. Without a GitHub remote the request is
+printed, not sent: show it to an owner.
 
 Exit codes:
-  0  the request is sent (with the App)
-  2  not sent: no App, no check output for this tree, nothing to ask,
-     wrong usage, or a tool error
+  0  sent: prints the comment or issue URL
+  2  not sent, unknown send outcome, wrong usage, or a tool error
 
 Examples:
   archfit request -m "netem needs the shared retry helper"
@@ -63,13 +66,23 @@ func (c *RequestCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return noVerdict(err)
 	}
+	sender := requestsend.New(co.root, co.runner)
+	sender.Client = deps.requestClient
 	svc := request.Service{
-		Last: lastReader{co}, Checkout: checkoutReader{co}, Clock: clockFunc(co.now),
+		Sender: requestWiring{sender: sender},
+		Last:   lastReader{co}, Checkout: checkoutReader{co}, Clock: clockFunc(co.now),
 		Reason: terminalReason(deps),
 	}
 	out, err := svc.Ask(ctx, request.Input{Reason: c.Message, Expires: c.Expires})
 	if err != nil {
 		return noVerdict(err)
+	}
+	if out.URL != "" {
+		_, err := fmt.Fprintln(deps.Stdout, out.URL)
+		if err != nil {
+			return noVerdict(err)
+		}
+		return nil
 	}
 	protected, err := protection{co}.Protected(ctx)
 	if err != nil {

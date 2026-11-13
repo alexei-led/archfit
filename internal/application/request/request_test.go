@@ -229,7 +229,7 @@ func TestSender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ask: %v", err)
 	}
-	if out.Number != 431 {
+	if out.Number != 431 || out.URL != "https://github.com/acme/shop/issues/431" {
 		t.Errorf("number = %d, want 431", out.Number)
 	}
 	if len(sender.got) != 1 || sender.got[0].Reason != reasonGraph || len(sender.got[0].Errors) != 1 {
@@ -389,7 +389,7 @@ type fakeSender struct {
 	got    []request.Request
 }
 
-func (s *fakeSender) Send(_ context.Context, r request.Request) (int, error) {
+func (s *fakeSender) Send(_ context.Context, r request.Request) (request.Delivery, error) {
 	s.got = append(s.got, r)
-	return s.number, s.err
+	return request.Delivery{Number: s.number, URL: "https://github.com/acme/shop/issues/431"}, s.err
 }

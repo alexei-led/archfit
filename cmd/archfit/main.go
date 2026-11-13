@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -179,6 +180,9 @@ type appDeps struct {
 	Stdin  io.Reader // nil → os.Stdin
 	Stdout io.Writer
 	Stderr io.Writer // nil → os.Stderr
+
+	// requestClient overrides the GitHub transport (nil uses the standard client).
+	requestClient *http.Client
 
 	// progress, when non-nil, is invoked at pipeline phase boundaries so a long
 	// analyze/check run reports progress to stderr. Set by AnalyzeCmd/CheckCmd;
