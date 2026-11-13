@@ -31,8 +31,10 @@ func New(runner toolrun.Runner, cfg evidenceports.ExtractConfig) *Extractor {
 	return &Extractor{runner: runner, cfg: cfg}
 }
 
+// Name returns the canonical language ID.
 func (e *Extractor) Name() string { return graph.LangPython }
 
+// CoverageTool returns the Python parser's report producer name.
 func (e *Extractor) CoverageTool() string { return ToolName }
 
 // Applicable uses the parser's own package discovery, including configured packages.
@@ -41,6 +43,7 @@ func Applicable(root, pkg string) bool {
 	return err != nil || len(read) > 0
 }
 
+// Extract projects resolved imports into the report graph, disclosing missing evidence.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
 	cov := evidence.Coverage{Tool: ToolName, Status: evidence.StatusAbsent}
 	if e.cfg.Mode == evidenceports.ModeOff {

@@ -13,6 +13,11 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
+const (
+	fileAppInit     = "src/app/__init__.py"
+	fileFlatAppInit = "app/__init__.py"
+)
+
 type pythonReportRunner struct {
 	toolrun.Runner
 	t *testing.T
@@ -40,7 +45,7 @@ func TestPythonReportUsesParser(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{
 		"pyproject.toml":             "",
-		"src/app/__init__.py":        "",
+		fileAppInit:                  "",
 		"src/app/core.py":            "from app.plugins import adapter\nimport os\nimport app.missing\n",
 		"src/app/plugins/adapter.py": "",
 	})
@@ -84,8 +89,8 @@ func TestPythonReportFailureAndApplicability(t *testing.T) {
 		files map[string]string
 		want  string
 	}{
-		{"missing parser", evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}, map[string]string{"app/__init__.py": ""}, evidence.StatusAbsent},
-		{"disabled", evidenceports.ExtractConfig{Mode: evidenceports.ModeOff}, map[string]string{"app/__init__.py": ""}, evidence.StatusAbsent},
+		{"missing parser", evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}, map[string]string{fileFlatAppInit: ""}, evidence.StatusAbsent},
+		{"disabled", evidenceports.ExtractConfig{Mode: evidenceports.ModeOff}, map[string]string{fileFlatAppInit: ""}, evidence.StatusAbsent},
 		{"loose scripts", evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}, map[string]string{"script.py": "import os\n"}, evidence.StatusAbsent},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

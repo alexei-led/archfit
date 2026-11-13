@@ -165,7 +165,7 @@ var scriptTree = map[string]string{
 	"web/package.json":    `{"dependencies": {"lodash": "4"}}`,
 	"gen/g.ts":            "import { b } from '../web/b';\n",
 	"node_modules/x/i.ts": "import y from 'y';\n",
-	"src/app/__init__.py": "",
+	fileAppInit:           "",
 	fileAppX:              "import os\nfrom app import y\nimport app.nope\nS = 'a python literal'\n",
 	fileAppY:              "",
 }
@@ -181,7 +181,7 @@ func TestReadCheckTypeScriptAndPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSources := []string{fileMainGo, "src/app/__init__.py", fileAppX, fileAppY, fileWebA, fileWebB}
+	wantSources := []string{fileMainGo, fileAppInit, fileAppX, fileAppY, fileWebA, fileWebB}
 	if !slices.Equal(got.Sources, wantSources) {
 		t.Errorf("sources = %q, want %q", got.Sources, wantSources)
 	}

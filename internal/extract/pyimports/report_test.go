@@ -13,6 +13,8 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
+const missingReportPackage = "missing_report_package"
+
 func TestReportQueryUsesTheResolverInventory(t *testing.T) {
 	t.Parallel()
 	root := writeTree(t, map[string]string{
@@ -28,9 +30,9 @@ func TestReportQueryUsesTheResolverInventory(t *testing.T) {
 		{"file namespace", srcA, "src/app/plugins/b.py", nil, nil},
 		{"missing target", srcA, "app.gone", nil, evidenceports.ErrNotDecidable},
 		{"external", srcA, "os", nil, evidenceports.ErrNotDecidable},
-		{"loose importer", "loose.py", "app.a", nil, evidenceports.ErrNotDecidable},
-		{"excluded importer", srcA, "app.a", []string{"src/app/a.py"}, evidenceports.ErrNotExtracted},
-		{"shadowed body", "src/app/shadow.py", "app.a", nil, evidenceports.ErrNotDecidable},
+		{"loose importer", "loose.py", modA, nil, evidenceports.ErrNotDecidable},
+		{"excluded importer", srcA, modA, []string{"src/app/a.py"}, evidenceports.ErrNotExtracted},
+		{"shadowed body", "src/app/shadow.py", modA, nil, evidenceports.ErrNotDecidable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -89,8 +91,8 @@ func TestReportFailuresDoNotClaimCompleteEvidence(t *testing.T) {
 	t.Run("missing configured package", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		_, cov, err := New(&toolrun.RunnerMock{}, evidenceports.ExtractConfig{PyPackage: "gone"}).Extract(context.Background(), scope.Scope{Root: root})
-		if err != nil || cov.Status != evidence.StatusPartial || !strings.Contains(cov.Reason, "gone") {
+		_, cov, err := New(&toolrun.RunnerMock{}, evidenceports.ExtractConfig{PyPackage: missingReportPackage}).Extract(context.Background(), scope.Scope{Root: root})
+		if err != nil || cov.Status != evidence.StatusPartial || !strings.Contains(cov.Reason, missingReportPackage) {
 			t.Fatalf("coverage=%+v err=%v, want missing configured source", cov, err)
 		}
 	})

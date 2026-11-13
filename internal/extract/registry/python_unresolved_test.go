@@ -17,7 +17,7 @@ func TestPythonReportUnresolvedIsNeverClean(t *testing.T) {
 	requireAstGrep(t)
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{
-		"pyproject.toml": "", "app/__init__.py": "",
+		"pyproject.toml": "", fileFlatAppInit: "",
 		"app/core.py": "import app.generated_missing\n",
 	})
 	ex := registry.New("python", toolrun.New(), evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}, nil)
