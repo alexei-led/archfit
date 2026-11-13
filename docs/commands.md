@@ -37,9 +37,9 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 
 | Code | `check` | `can` | `rules`, `init`, `report` | `request` |
 | --- | --- | --- | --- | --- |
-| `0` | `pass` | yes | done | sent (with the App, milestone 2) |
+| `0` | `pass` | yes | done | sent: comment or issue URL |
 | `1` | `fail` | no | – | – |
-| `2` | `unknown`, wrong usage, or a tool error | `unknown`, wrong usage, or a tool error | wrong usage or a tool error | not sent: no App, no `check` output for this tree, nothing to ask, wrong usage, or a tool error |
+| `2` | `unknown`, wrong usage, or a tool error | `unknown`, wrong usage, or a tool error | wrong usage or a tool error | not sent, unknown send outcome, no output for this tree, wrong usage, or a tool error |
 
 A flag or argument that the command line parser rejects, such as an unknown flag, still exits `3`, and so does a run stopped by `SIGINT` or `SIGTERM`. These two move to `2` when the Archfit 3 commands are removed.
 
@@ -199,7 +199,13 @@ The notes of the policy are listed as "not checked". Dates show the days left, s
 
 Only an error whose `next` is `archfit request` joins the request: an error of a rule an owner may allow. An error that says `fix the code`, or `wait for an owner: #n`, does not.
 
-Without the App, `archfit request` prints the request it built and exits `2`. The last line is `next: ask an owner`. A request built from `check` output adds a note: the App joins it to a pull request, so open one first if there is none. A request built from a `can` answer comes before a pull request.
+With a GitHub remote, `archfit request` posts `/archfit request <why> [--expires DATE]` as a comment on the one open pull request for the current branch. The target repository is `origin`, or a configured GitHub `upstream` for a fork. The head uses the push remote's owner, falling back to the `origin` owner. Several matching pull requests means nothing is sent: the error names their numbers. A detached HEAD or a branch without an upstream has no matching pull request.
+
+Without a pull request, only a request from `archfit can` opens an issue. Its body holds the request line and the `can` record; the App marks the numbers "as reported" until a pull request confirms them. With `check` output, nothing is opened: `next: open a pull request first`.
+
+Credentials are tried in order: `GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`. No credentials means exit `2` and `next: gh auth login`. Tokens are never printed. Success exits `0` and prints the comment or issue URL. API errors exit `2` without printing a successful request or changing the last result. HTTP calls time out after 30 seconds. A POST is never retried; when the send outcome is unknown (for example, a lost connection after sending), check GitHub before trying again.
+
+Without a GitHub remote, the request is printed and exits `2`; show it to an owner. The last line is `next: ask an owner`:
 
 ```text
 $ archfit request -m "netem needs the shared retry helper"
@@ -209,11 +215,11 @@ request: netem needs the shared retry helper
 next: ask an owner     (open a pull request first if there is none)
 ```
 
-| Flag | Meaning |
-| --- | --- |
-| `-m <why>` | The reason. Required. On a terminal, `archfit request` asks for it when `-m` is not given. The reason must not end in `--expires` or `--expires <word>`: give the date with the flag. |
-| `--expires <date>` | Ask for an exception until this day, `YYYY-MM-DD`: a date after today and after the `check`, at most 365 days ahead. Without it the request asks for a permanent change. |
-| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
+| Flag                    | Meaning                                                                                                                                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-m <why>`              | The reason. Required. On a terminal, `archfit request` asks for it when `-m` is not given. Use one line of at most 500 characters. The reason must not end in `--expires` or `--expires <word>`: give the date with the flag. |
+| `--expires <date>`      | Ask for an exception until this day, `YYYY-MM-DD`: a date after today and after the `check`, at most 365 days ahead. Without it the request asks for a permanent change.                                                      |
+| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory.                                                                                                                                                                              |
 
 `archfit request` exits `2` with the reason on stderr when there is no `check` or `can` output for this tree (`run archfit check first`), when the output is `pass` or has nothing an owner may allow (`nothing to ask`), when it is `unknown`, or when `-m` or `--expires` is wrong.
 

@@ -1,0 +1,13 @@
+{
+  "reason": "netem needs the shared retry helper",
+  "record": "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7)\n  next: archfit request -m \"<why you need it>\"\n",
+  "answer": {
+    "rule": "graph",
+    "from": "pkg_tc",
+    "to": "pkg_util",
+    "balance": {
+      "value": 9,
+      "min": 7
+    }
+  }
+}

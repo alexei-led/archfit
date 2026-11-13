@@ -1,0 +1,11 @@
+repo: https://github.com/coupling-dev/archfit-app
+commit: e1933460e828a6fbf8445782346581a52dca5fff
+
+045f7a48c5cad9cc7f767ee4f7fe8c11854621f5beca52a1b9750ac85f30b9f7  line/copy.json  <- internal/wire/request/testdata/line/copy.json
+a25b0ae3a5e0110d71edf4faae14426ea2468be968791192be1aa8263aa1c643  line/copy.txt  <- internal/wire/request/testdata/line/copy.txt
+40db5444b0168522042be9cae248d3398310dc1d2c7537393a462a7db07cc8e7  line/graph.json  <- internal/wire/request/testdata/line/graph.json
+a8f084195d3146268f7ed0a005599815bcbab7314bc586eb1d768990ab808200  line/graph.txt  <- internal/wire/request/testdata/line/graph.txt
+66ae36f8759dc928e8511e47aafc4c9c76e1f35165f2afa8943f90a363894010  line/quotes.json  <- internal/wire/request/testdata/line/quotes.json
+76be39899e6c8126d4b1908f49f9fa73cf793ad4d7f97390b136ac3d6f6c882b  line/quotes.txt  <- internal/wire/request/testdata/line/quotes.txt
+9b469e5e5751b9742301fdc5488f4579d445ad017a13997cb7af13f9b495813d  form/can.json  <- internal/wire/request/testdata/form/can.json
+4293b25f20cb1aee5c9182dbaf985eafda154069a474612eb4dcaf6cdb080710  form/can.md  <- internal/wire/request/testdata/form/can.md
