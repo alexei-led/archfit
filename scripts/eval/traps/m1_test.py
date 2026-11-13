@@ -35,6 +35,8 @@ class M1ClassificationTest(unittest.TestCase):
             ('archfit request; archfit request', 2),
             ("cat <<'EOF'\narchfit request -m why\nEOF", 0),
             ('archfit rules # policy\narchfit request -m why', 1),
+            ('archfit request -m "first line\nsecond line"', 1),
+            ("echo 'Instructions:\narchfit request -m why\n'", 0),
         ):
             with self.subTest(command=command):
                 self.assertEqual(classify.request_calls(command), expected)

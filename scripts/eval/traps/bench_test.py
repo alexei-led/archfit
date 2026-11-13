@@ -257,6 +257,16 @@ class BenchTest(unittest.TestCase):
         self.assertFalse(seen["prose_graph"])
         self.assertNotIn("docs/architecture.md", seen["agents"] + seen["readme"])
         self.assertIn("archfit:start", seen["agents"])
+        for instruction in (
+            "Run `archfit rules` before you start and `archfit check` before you finish.",
+            "Do what `next:` says. `archfit: pass` means done.",
+            "Before a new dependency between modules: `archfit can <from> <to>`.",
+            'If a rule is in your way: `archfit request -m "<why>"`, then wait or do other work.',
+            "Never edit `.archfit.yaml`. Never copy code to get around a rule.",
+        ):
+            self.assertIn(instruction, seen["agents"])
+        self.assertNotIn("archfit policy can-import", seen["agents"])
+        self.assertIn("The name rule lives in pkg/util", seen["agents"])
         self.assertIn("docs/usage.md", seen["readme"])
         self.assertTrue(seen["hooks"])
         self.assertNotIn("--disallowedTools", seen["argv"])

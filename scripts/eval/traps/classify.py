@@ -131,18 +131,22 @@ def request_calls(command: str) -> int:
     """Count shell command-position requests, not mentions in arguments."""
     count = 0
     heredocs: list[tuple[str, bool]] = []
+    pending = ""
     for line in command.splitlines():
         if heredocs:
             delimiter, strip_tabs = heredocs[0]
             if (line.lstrip("\t") if strip_tabs else line) == delimiter:
                 heredocs.pop(0)
             continue
+        pending += line + "\n"
         try:
-            lexer = shlex.shlex(line, posix=False, punctuation_chars=";&|()<>")
+            lexer = shlex.shlex(pending, posix=False, punctuation_chars=";&|()<>\n")
+            lexer.whitespace = lexer.whitespace.replace("\n", "")
             lexer.whitespace_split = True
             tokens = list(lexer)
         except ValueError:
             continue
+        pending = ""
         start = True
         for i, token in enumerate(tokens):
             if token == "<<" and i + 1 < len(tokens):
@@ -153,7 +157,7 @@ def request_calls(command: str) -> int:
                 parsed = shlex.split(delimiter)
                 if parsed:
                     heredocs.append((parsed[0], strip_tabs))
-            if token and all(c in ";&|()" for c in token):
+            if token and all(c in ";&|()\n" for c in token):
                 start = True
             elif start:
                 if token.rsplit("/", 1)[-1] == "archfit" and i + 1 < len(tokens) and tokens[i + 1] == "request":
