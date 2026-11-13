@@ -8,13 +8,16 @@
 
 ### Changes
 
+- `archfit doctor` shows the tools in two groups: needed for the check (`git`; `ast-grep` for TypeScript, JavaScript and Python, and for the literals of every language but Go; `cargo` for Rust; `dotnet` for C#), and optional, for the report. A Go repository needs only `git`. JSON tool rows carry `group` and `languages`.
+- `archfit doctor --fix` installs the hooks of each harness it finds (Claude Code, Codex, git), and warns when git ignores a harness settings file. `archfit hook` leaves the command list.
+- The hooks run the version 3 `can` and `check`. `post-tool-use` shows the record of `can` for an import it answers `no` for. `stop` runs `check` and stops once per set of errors. `pre-commit` runs `check` on the staged content against `HEAD`. A hook that fails for its own reasons shows why and stops nothing: `pre-commit` no longer exits `3`.
 - Build with Go 1.27.4 (CI, release image, `scip-go`). It fixes a `net/http` vulnerability, GO-2026-6859, which `govulncheck` reports for Go 1.27.3.
 - `policy can-import` answers `unconstrained` for a Go file under `testdata`, `vendor`, or a directory that starts with `.` or `_`, with the reason: the go command and the check never read it.
 - The starter `no-module-cycles` rule, and the commented `no-layer-back-edges` rule, carry a `rationale`. Since v3.3.0 a blocking rule without one is a `config lint --strict` error, so a config that `config init` had just written failed the lint.
 
 ### Upgrade
 
-No action. A config written by an earlier `config init` needs a `rationale:` line on each blocking rule to pass `config lint --strict`.
+Run `archfit doctor --fix` in each checkout to rewrite installed hooks: `hook run` no longer takes `-c`, and an installed hook that passes it fails. On a version 2 policy the hooks show `unknown` and stop nothing until `archfit init` converts the policy. A config written by an earlier `config init` needs a `rationale:` line on each blocking rule to pass `config lint --strict`.
 
 ## v3.4.0
 

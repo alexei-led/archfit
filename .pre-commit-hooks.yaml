@@ -1,10 +1,10 @@
 # The archfit git hook for pre-commit (https://pre-commit.com). It needs the
 # archfit binary on PATH (language: system) and a .archfit.yaml at the root.
-# It blocks a commit whose change needs a repair or an owner decision. It
-# judges the staged content only: unstaged edits and untracked files do not count.
+# It runs archfit check on the staged content against HEAD and stops a commit
+# that fails. Unstaged edits and untracked files do not count.
 - id: archfit
-  name: archfit architecture guardrails
-  description: Block a commit that adds an architecture violation (archfit check --format agent).
+  name: archfit architecture check
+  description: Stop a commit that adds an error to the architecture policy (archfit check on the staged content).
   entry: archfit hook run pre-commit
   language: system
   pass_filenames: false

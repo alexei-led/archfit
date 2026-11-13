@@ -68,6 +68,7 @@ The same tree, policy, engine version, and date give the same result. When the w
 | Package | Responsibility |
 |---|---|
 | `internal/application/changecheck` | The check flow, its ports, and the projection into the result |
+| `internal/application/importcheck` | The `can` answers for the imports an edit added, for the post-tool-use hook |
 | `internal/evidence/acquisition/checkfacts` | The facts of a tree, read from git objects and cached by tree id |
 | `internal/assessment/change` | The built-in and custom rules on one tree |
 | `internal/assessment/copies` | The `duplication` rule |

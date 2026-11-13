@@ -1,104 +1,50 @@
 # Coding agent workflows
 
 Pick the section for your role. A worker with a shell runs archfit itself. A
-PR-only agent reads the result that the App posts. An owner changes policy. An
-unattended session cannot get an approval and must yield when it needs one.
+PR-only agent reads the result that the App posts. An owner changes the policy.
+An unattended session cannot get an answer from an owner and must stop when it
+needs one.
 
 ## Worker with a shell
 
-Run this loop in every session:
+`archfit init` writes these five lines for agents into `AGENTS.md`:
 
-1. Before a cross-module import, run `archfit policy can-import <file> <target>`.
-2. Make the change.
-3. Before you finish, run `archfit check --format agent`. Read `change.status`
-   and follow `next_action`.
-
-Never edit `.archfit.yaml`, `.archfit-baseline.json`, or `.archfit-labels.yaml`.
-Never add a waiver. These files are the policy. A branch that edits them cannot
-grade itself: the change is `unknown` with `reason: policy_changed_on_branch`.
-If the policy is wrong, stop and ask the owner (see
-[Sessions without a human](#sessions-without-a-human)).
-
-### Before an import
-
-Find the source module and check the proposed import:
-
-```sh
-archfit policy where path/to/source.go
-archfit policy can-import path/to/source.go path/to/target
+```text
+Run `archfit rules` before you start and `archfit check` before you finish.
+Do what `next:` says. `archfit: pass` means done.
+Before a new dependency between modules: `archfit can <from> <to>`.
+If a rule is in your way: `archfit request -m "<why>"`, then wait or do other work.
+Never edit `.archfit.yaml`. Never copy code to get around a rule.
 ```
 
-`where` reports the module, layer, allowlists, and matching rules. Use it for
-module facts instead of reading the config. `can-import` returns `denied`,
-`not_decided`, `allowed`, or `unconstrained`.
+That is the whole loop:
 
-- `denied`: do not add the import. Use the reported repair goal and constraints.
-  `instead` repeats what the rule's owners declared to do instead. `candidates`
-  lists each declared alternative that names a package a module owns, with the
-  module, whether it is in that module's public surface, and the rule pass's
-  answer for the same import from your file (`policy_check`). A candidate comes
-  only from the owners' own text, never from a guess. A permitted placement is
-  not proof that it does the same thing: read it before you move code there.
-- `not_decided`: a whole-graph rule or missing evidence can still block it.
-  Add the import only if needed, then run `check`.
-- `allowed`: the current allowlist or layer order permits the import, and no
-  configured whole-graph rule could still block it.
-- `unconstrained`: no rule decides the import. This is not permission.
+1. Run `archfit rules` before you start. It lists the rules for the files you
+   change, in plain words.
+2. Before a new dependency between modules, run `archfit can <from> <to>`.
+3. Make the change.
+4. Before you finish, run `archfit check`. Do what each `next:` line says.
+   `archfit: pass` means done.
 
-When a rule declares alternatives, a denial can also carry `instead` (the
-owner's text on what to use) and `candidates` (the declared alternatives that
-resolve to a module or package, each with its own `policy_check` result). Use a
-candidate only when its `policy_check` is `allowed`. A permitted placement does
-not prove that the candidate behaves like the denied target. Without declared
-alternatives both fields are absent: do not guess one.
+The record names the file and line, the rule, what is wrong, why, what to do
+instead, and the next step. See [results](results.md) for the record and the
+exit codes, and [rules](rules.md) for what each rule checks.
 
-### Check and repair
+### When a rule is in your way
 
-Run the agent format after a change:
+Ask an owner. Write only the reason:
 
 ```sh
-archfit check -c .archfit.yaml --format agent
+archfit request -m "<why you need it>"
 ```
 
-Use `--base HEAD` to scope blockers to uncommitted changes. The result has two
-parts. `change` says whether your change may land. `repository` lists what is
-wrong outside it. Read `change.status` and follow `next_action`; both come from
-`change` only:
+`request` takes the errors of the last `check`. Then wait, or do other work.
+Do not copy code to get around a rule. A copy is an error of the `duplication`
+rule.
 
-| `change.status` | `next_action`      | Action                                                                    |
-| --------------- | ------------------ | ------------------------------------------------------------------------- |
-| `fail`          | `repair`           | Change the source within the listed goal and constraints. Run `validate`. |
-| `fail`          | `ask_owner`        | Stop and ask the architecture owner to decide.                            |
-| `unknown`       | `restore_evidence` | Install or fix the named analyzer, then run `validate`.                   |
-| `pass`          | `none`             | Finish. Exit `2` with `none` is a valid result.                           |
-
-`unknown` never means pass: a required analyzer failed or a required rule has no
-producer evidence.
-
-`repository.attention` lists items the change did not cause: an existing
-violation, a metric ratchet that cannot be evaluated, a rule selector that
-matches nothing. Report them to the owner. Do not act on them.
-`identity` names the policy, baseline, labels, tree, and engine the result was
-judged under.
-
-Use `edit` to find source files. Do not edit the target of a forbidden edge.
-An empty `edit` means the source file is unknown. Use `edge.from` to identify
-the source.
-
-Do not change the config, baseline, waivers, or labels to make a check pass.
-Do not change `baseline` or `waived` findings without an explicit request.
-See [results](results.md) for the output contracts and [rules](rules.md) for
-policy behavior.
-
-Read repair advice within its evidence and role limits:
-
-- API ceiling findings request source review. Only the architecture owner may
-  change the threshold.
-- Metric ratchets compare against the accepted baseline. That difference alone
-  does not establish which PR introduced it.
-- Clone advisories request inspection of whether similar code represents shared
-  knowledge that must evolve together. Extraction and label acceptance are not
-  default repairs.
+Never edit `.archfit.yaml` to make a check pass. The policy on the target
+branch is the one that counts: a branch that changes the policy gets `unknown`
+until an owner approves the change.
 
 ### Hooks
 
@@ -113,50 +59,47 @@ It writes the hooks of each harness it finds, at the repository root:
 the git pre-commit hook. It keeps every other key and hook in the settings
 file. Running it again changes nothing. A pre-commit hook that archfit did not
 write, or one in a hooks directory outside the repository, stays: doctor prints
-the line to add to it. When git ignores a settings
-file, doctor warns: other checkouts and worktrees do not get those hooks.
+the line to add to it. When git ignores a settings file, doctor warns: other
+checkouts and worktrees do not get those hooks.
 
-The installed hooks call `archfit hook run <event>`:
+The hooks run steps 2 and 4 of the loop for you. They read `.archfit.yaml` at
+the repository root, as `check` does:
 
 | Event | Claude Code | Codex | What it does |
 | --- | --- | --- | --- |
-| `session-start` | `SessionStart` | `SessionStart` | Records `HEAD` as the session base in `.archfit-cache/session/<session_id>.json`. Prints three lines for the agent: run `policy can-import` before a cross-module import, run `check --format agent` before finishing, never edit the policy files. |
-| `post-tool-use` | `PostToolUse` after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` | `PostToolUse` after `apply_patch`, `Bash` | Finds the files that differ from the session base with git, reads the imports their added lines introduce (Go, relative TypeScript and JavaScript, Python), and asks `can-import` about each. A denial exits `2` with the file, the target, the rule, why, and what to use instead on stderr. Each denial is reported once while it stays; an import removed and added again is reported again. A relative import of a file that does not exist yet is judged once the file exists. |
-| `stop` | `Stop`, `SubagentStop` | `Stop` | Runs `check --format agent --base <session base>` with the policy guard of `check`. A `fail` change blocks the stop once, with the blockers on stderr. The same blockers on the same tree do not block again, until a stop passes. A `SubagentStop` is blocked once and never suppresses the main agent's stop. An `unknown` change shows a message and does not block. |
-| `pre-commit` | — | — | Checks the staged content against `HEAD`. Exit `1` blocks the commit. |
+| `session-start` | `SessionStart` | `SessionStart` | Records `HEAD` as the session base in `.archfit-cache/session/<session_id>.json`. Prints the five lines above. |
+| `post-tool-use` | `PostToolUse` after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash` | `PostToolUse` after `apply_patch`, `Bash` | When the working tree changed, asks `archfit can` about each import on a line added since the session base. A `no` exits `2` with the file, the line and the record of `can`. A `no` that an exception covers is silent, as `check` passes it. Each `no` is shown once while it stays. A `yes` or an `unknown` is silent. |
+| `stop` | `Stop`, `SubagentStop` | `Stop` | Runs `archfit check`. A `fail` stops the agent once, with the record. The same errors do not stop it again, until a stop passes. A `SubagentStop` is stopped once and never uses up the stop of the main agent. An `unknown` shows the record and does not stop. |
+| `pre-commit` | — | — | Runs `archfit check` on the staged content against `HEAD`: the errors the commit adds, and an exception past its date. A `fail` stops the commit with the record. An `unknown` shows the record. |
 
 The hooks read changes with git, never from the tool payload, so an edit made
-through a shell command counts. A commit made during the session does not hide
-a violation: the stop compares with the session base, not with `HEAD`. The
-hooks ignore their own writes under `.archfit-cache/`. An archfit error in
-`post-tool-use` or `stop` fails open with a message and never blocks the
-agent.
+through a shell command counts. They ignore their own writes under
+`.archfit-cache/`. A hook that fails for its own reasons (no git repository, a
+git error) shows why and never stops the agent or the commit.
+
+The `post-tool-use` hook answers as `can` does: it does not see a cycle the
+import would close. The `stop` hook runs `check`, which sees it.
 
 Codex runs a project hook only after you trust it. After `doctor --fix`, start
 Codex and approve the hooks, or run it once with
 `--dangerously-bypass-hook-trust`.
 
-Check the loop with `archfit doctor`. Its agent loop section lists the
-harnesses it finds and each hook as `active` or `inactive` (not installed,
-switched off by `disableAllHooks` in the Claude Code project settings, or, for
-Codex, not trusted yet). It also shows the target branch, the scope `check`
-would use, and whether a policy file differs from the target.
-`archfit doctor --format json` reports the same under `agent_loop`.
-
-Generate or check the `AGENTS.md` block with `archfit agents-md --write` and
-`archfit agents-md --check`. The generated block includes current project
-modules and architecture rules.
+Check the hooks with `archfit doctor`. It lists the harnesses it finds and
+each hook as `active` or `inactive` (not installed, switched off by
+`disableAllHooks` in the Claude Code project settings, or, for Codex, not
+trusted yet). `archfit doctor --format json` reports the same under
+`agent_loop`.
 
 #### Other harnesses
 
-For pi, Cursor, Aider, or a custom runner, call these commands from the
+For pi, Cursor, Aider, or a custom runner, call the commands from the
 harness's own hook system or from the agent's instructions:
 
 | When | Command |
 | --- | --- |
-| At session start | `archfit doctor` |
-| After an edit | `archfit policy can-import <file> <target>` |
-| Before finishing | `archfit check --base <sha> --format agent`, where `<sha>` is the commit the session started from |
+| At session start | `archfit rules` |
+| Before a new dependency | `archfit can <from> <to>` |
+| Before finishing | `archfit check` |
 
 The git pre-commit hook works with every harness. Install it with
 `archfit doctor --fix`, or through the pre-commit framework in
@@ -180,56 +123,57 @@ pre-commit install
 
 You cannot run archfit. Read the result the App leaves on the pull request:
 
-- Read the PR comment. It shows the change status, the blockers, and the next
-  step.
+- Read the pull-request comment. It shows the status of the change, the
+  errors, and the next step.
 - Read the `archfit/gate` check. `success` is the only state that means the
   change may land.
-- Follow the next step in the comment. Push a fix to the source, not to the
-  policy.
-- Never edit `.archfit.yaml`, `.archfit-baseline.json`, or
-  `.archfit-labels.yaml` to make a check pass. Never add a waiver.
-- If the comment asks for an owner decision, say so in the PR and stop. Do not
-  push another change to look for a way around it.
+- Do what `next:` says. Push a fix to the code, not to the policy.
+- Never edit `.archfit.yaml` to make a check pass.
+- If a rule is in your way, reply on the pull request with
+  `/archfit request <why>`, then wait. Do not push a copy of the code to get
+  around the rule.
 
 ## Owner
 
-The owner decides policy. Workers and PR-only agents do not. The commands below
-are owner work. Each links to the page that holds the detail.
+The owner writes the policy and answers requests. Workers and PR-only agents
+do not. Each row links to the page that holds the detail.
 
-| Task | Command or page |
+| Owner work | Command or page |
 | --- | --- |
-| Create, update, and check the config | `archfit config init`, `config update`, `config lint`. See [commands](commands.md) and [configuration](configuration.md). |
-| Preview a policy change | `archfit config compare <candidate>`. The report has a `policy_change` section that shows what the candidate loosens or tightens. See [commands](commands.md#config-compare-candidate) and [results](results.md#config-comparison). |
-| Accept reviewed findings, move the baseline | `archfit baseline`. See [the Archfit 3 migration](archived/migration-v2-to-v3.md) for re-anchor. |
-| Accept a finding with an owner and an expiry | Waivers. See [rules](rules.md#waivers). |
-| Add reviewed AI annotations | `archfit config enrich <kind>`. See [commands](commands.md#config-enrich-kind) and [AI](ai.md). |
-| Write the agent instructions block | `archfit agents-md --write` |
+| Set up a repository, or convert an Archfit 3 one | `archfit init`. See [getting started](getting-started.md). |
+| Read the policy as a worker sees it | `archfit rules`. See [commands](commands.md). |
+| Preview a policy change | `archfit check --policy <candidate>`. See [commands](commands.md#check). |
+| See the state of the repository | `archfit report`. See [commands](commands.md#report). |
+| Write the policy | See [configuration](configuration.md) and [rules](rules.md). |
 | Install the session hooks | `archfit doctor --fix` |
 
-Review a policy edit as a policy change, not as code. A PR that edits a
-protected file reports `unknown` until the owner merges it or the policy
-reaches the target branch.
+Read a policy edit as a policy change, not as code. A pull request that
+changes `.archfit.yaml` gets `unknown` until an owner approves it.
 
 ## Sessions without a human
 
-An unattended agent cannot get an approval in the session. Two results need one:
+An unattended agent cannot get an answer from an owner in the session. Two
+results need one:
 
-- `ask_owner` means a repair is not possible within the current policy. The
-  owner must decide.
-- `unknown` means the evidence is missing or the policy changed on the branch.
-  `restore_evidence` is yours to fix. A policy change is not.
+- A `fail` whose `next:` is `archfit request`: the policy does not allow the
+  change. Only an owner can change that.
+- An `unknown` whose cause is `policy`: the policy differs from the target
+  branch. An owner approves a policy change.
+
+An `unknown` whose `next:` names a tool or a `git fetch` is yours to clear.
 
 When you reach one you cannot clear:
 
 1. Stop. Do not retry the same change.
-2. Report the blocker, the rule, and what you need from the owner.
-3. Leave the policy files as they are.
+2. Report the error, the rule, and what you need from the owner. With a shell,
+   run `archfit request -m "<why>"`.
+3. Leave `.archfit.yaml` as it is.
 
-Never loosen policy to finish. An edit to the config, baseline, labels, or a
-waiver does not complete the task. It makes the change `unknown`.
+Never loosen the policy to finish. An edit to `.archfit.yaml` does not
+finish the work. It makes the change `unknown`.
 
-A `pending` gate on the PR means the App waits for an owner approval or a fresh
-run. It does not ask you to push again. Wait, or report the state.
+A `waiting` check on the pull request means a request is open. It does not ask
+you to push again. Wait, or report the state.
 
 ## Install the portable skill
 

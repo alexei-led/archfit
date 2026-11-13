@@ -48,13 +48,13 @@ The other commands, and `check` with no policy file or a version 2 policy, use t
 | Code | `check` meaning (version 2 policy) | Other command behavior |
 | --- | --- | --- |
 | `0` | `healthy` | Success for report-only and setup commands. `analyze` also exits `0` for `needs_attention` and `blocked`. |
-| `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `hook run pre-commit` found an in-scope repair or owner decision; `agents-md --check` found a missing or stale block. |
-| `2` | `needs_attention` | `policy can-import` found a target with no decision. `hook run stop` and `hook run post-tool-use` use `2` to give the agent feedback under the harness protocol. |
-| `3` | Config, usage, or runtime error | General command error. `hook run pre-commit` uses `3` when archfit cannot run. A run stopped by `SIGINT` or `SIGTERM` also exits `3`: archfit stops its tools, removes its temporary copies, and reports the results as incomplete. A second signal exits at once. |
+| `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `agents-md --check` found a missing or stale block. |
+| `2` | `needs_attention` | `policy can-import` found a target with no decision. |
+| `3` | Config, usage, or runtime error | General command error. A run stopped by `SIGINT` or `SIGTERM` also exits `3`: archfit stops its tools, removes its temporary copies, and reports the results as incomplete. A second signal exits at once. |
 
 `check` exits `2` when there is no blocker, but evidence or diagnostics need attention. `--require-tools` makes missing required tools affect the verdict. `analyze` stays report-only.
 
-The agent hooks (`hook run session-start`, `post-tool-use`, `stop`) follow the Claude Code and Codex protocol. They exit `1` for malformed input, `2` to give the agent feedback (a denied import, or a stop to block), and `0` otherwise. An archfit error in `post-tool-use` or `stop` fails open and returns a `systemMessage`.
+The hooks (`hook run`) follow the protocol of their host, not the table above. The agent hooks (`session-start`, `post-tool-use`, `stop`) exit `2` to give the agent feedback (a `no` from `can`, or a `fail` that stops the agent), `1` for malformed input, and `0` otherwise. `pre-commit` exits `1` on a `fail`, which stops the commit, and `0` otherwise. A hook that fails for its own reasons shows why and exits `0`.
 
 ## Shared flags
 
@@ -463,14 +463,20 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 
 ### `hook run <event>`
 
-`archfit hook run <event> [flags]` is what the installed hooks call. Events are `session-start`, `post-tool-use`, `stop`, and `pre-commit`. The first three read the hook event (`session_id`, `cwd`, `stop_hook_active`) on stdin and keep the session in `.archfit-cache/session/<session_id>.json`. `stop` and `pre-commit` stop a change only when `change.status` is `fail`; `post-tool-use` reports an import that `policy can-import` denies once while it stays: an import removed and added again is reported again. A pass forgets a stop's block, so the same blockers coming back block again; a `SubagentStop` is blocked once and never suppresses the main agent's stop.
+`archfit hook run <event> [flags]` is what the installed hooks call. Events are `session-start`, `post-tool-use`, `stop`, and `pre-commit`. Every hook reads `.archfit.yaml` at the repository root, as `check` does. The first three read the hook event (`session_id`, `cwd`, `hook_event_name`, `stop_hook_active`) on stdin and keep the session in `.archfit-cache/session/<session_id>.json`.
+
+| Event | Runs | Stops when |
+| --- | --- | --- |
+| `session-start` | Records `HEAD` as the session base and prints the five lines that `init` writes for agents. | never |
+| `post-tool-use` | `can` on each import on a line added since the session base, when the working tree changed. | `can` answers `no`, no exception covers it, and the session has not shown it yet. |
+| `stop` | `check` | The change fails, with errors other than the set it stopped on last. A pass or an `unknown` forgets that set. |
+| `pre-commit` | `check` on the staged content against `HEAD` | The commit adds an error, or an exception is past its date. |
 
 | Flag | Meaning |
 | --- | --- |
 | `--harness <name>` | `claude` (default) or `codex`. Both use the same protocol. |
-| `-c, --config <file>` | Config path, relative to the root of the repository that holds the event `cwd`, so an agent that changed directory still finds it. `pre-commit` reads it relative to its working directory, which git sets to the root. |
 
-`pre-commit` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default. `archfit hook claude` and `archfit hook git` are removed: run `archfit doctor --fix` again, or call `hook run stop` and `hook run pre-commit`.
+`pre-commit` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default. `archfit hook claude` and `archfit hook git` are removed, and so is `-c`: run `archfit doctor --fix` again to rewrite installed hooks.
 
 ### `agents-md`
 
