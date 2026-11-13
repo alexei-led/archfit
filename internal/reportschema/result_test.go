@@ -20,6 +20,8 @@ const (
 	goldenCan        = "can"
 	goldenGraph      = "graph"
 	goldenPass       = "pass"
+	goldenClean      = "repository_clean"
+	goldenDrift      = "repository_drift"
 )
 
 // TestResultSchemaNoDrift verifies that the committed archfit.result.schema.json
@@ -53,7 +55,10 @@ func TestResultSchemaAcceptsEveryGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{goldenCan, "deny", "duplication", "expired_exception", goldenGraph, goldenPass, "policy_differs", "waiting"}
+	want := []string{
+		goldenCan, "deny", "duplication", "expired_exception", goldenGraph, goldenPass, "policy_differs",
+		goldenClean, goldenDrift, "repository_expired", "waiting",
+	}
 	names := make([]string, 0, len(paths))
 	for _, path := range paths {
 		names = append(names, strings.TrimSuffix(filepath.Base(path), ".json"))
@@ -104,6 +109,16 @@ func TestResultSchemaRejectsBrokenDocuments(t *testing.T) {
 			firstError(d)["exception"].(map[string]any)["expires"] = "soon"
 		}},
 		{"answer maybe", goldenCan, func(d map[string]any) { d["answer"] = "maybe" }},
+		{"unknown repository state", goldenClean, func(d map[string]any) { repository(d)["state"] = "policy_changed" }},
+		{"null drift", goldenClean, func(d map[string]any) { repository(d)["drift"] = nil }},
+		{"missing expiring", goldenClean, func(d map[string]any) { delete(repository(d), "expiring") }},
+		{"extra key in the repository", goldenClean, func(d map[string]any) { repository(d)["unread"] = []any{} }},
+		{"bad expiring date", goldenClean, func(d map[string]any) {
+			repository(d)["expiring"].([]any)[0].(map[string]any)["expires"] = "in 9 days"
+		}},
+		{"drift without from_change", goldenDrift, func(d map[string]any) {
+			delete(repository(d)["drift"].([]any)[0].(map[string]any), "from_change")
+		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -147,6 +162,10 @@ func TestResultSchemaDeclaresTheStatuses(t *testing.T) {
 	if !strings.Contains(status.Description, "The App sets waiting") {
 		t.Errorf("status description = %q, want it to say the App sets waiting", status.Description)
 	}
+}
+
+func repository(d map[string]any) map[string]any {
+	return d["repository"].(map[string]any)
 }
 
 func readJSON(t *testing.T, path string) any {

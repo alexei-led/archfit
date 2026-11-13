@@ -31,7 +31,12 @@ const (
 	defBalance   = "Balance"
 	defException = "Exception"
 	defPolicy    = "Policy"
+	defRepo      = "Repository"
+	defExpiring  = "ExpiringException"
 )
+
+// propRule is the rule property of an error and of an exception.
+const propRule = "rule"
 
 // GenerateResult produces the JSON Schema bytes for the Archfit 4 result
 // contract: the result.Result document that `archfit check --format json`
@@ -121,12 +126,15 @@ func patchResultDefinitions(defs jsonschema.Definitions) error {
 	between(defBalance, "min", 1, 10)
 	pattern(defException, "expires", datePattern)
 	pattern(defPolicy, "digest", digestPattern)
+	enum(defRepo, "state", string(result.RepositoryClean), string(result.RepositoryDrift), string(result.RepositoryExpired))
+	pattern(defExpiring, "expires", datePattern)
 
 	one := uint64(1)
 	for _, f := range [][2]string{
 		{defResult, "summary"}, {defResult, "engine"}, {defCanAnswer, "from"}, {defCanAnswer, "to"}, {defCanAnswer, "engine"},
-		{defError, "path"}, {defError, "rule"}, {defError, "what"}, {defError, "key"},
-		{defUnknown, "what"}, {defNext, "text"}, {defPolicy, "path"}, {defException, "rule"},
+		{defError, "path"}, {defError, propRule}, {defError, "what"}, {defError, "key"},
+		{defUnknown, "what"}, {defNext, "text"}, {defPolicy, "path"}, {defException, propRule},
+		{defExpiring, propRule}, {defExpiring, "from"},
 	} {
 		property(f[0], f[1]).MinLength = &one
 	}
