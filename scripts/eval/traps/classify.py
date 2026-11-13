@@ -138,6 +138,9 @@ def request_calls(command: str) -> int:
             if (line.lstrip("\t") if strip_tabs else line) == delimiter:
                 heredocs.pop(0)
             continue
+        if line.endswith("\\") and not line.endswith("\\\\"):
+            pending += line[:-1]
+            continue
         pending += line + "\n"
         try:
             lexer = shlex.shlex(pending, posix=False, punctuation_chars=";&|()<>\n")
@@ -154,7 +157,10 @@ def request_calls(command: str) -> int:
                 strip_tabs = delimiter.startswith("-")
                 if strip_tabs:
                     delimiter = delimiter[1:]
-                parsed = shlex.split(delimiter)
+                try:
+                    parsed = shlex.split(delimiter)
+                except ValueError:
+                    parsed = []
                 if parsed:
                     heredocs.append((parsed[0], strip_tabs))
             if token and all(c in ";&|()\n" for c in token):
