@@ -188,8 +188,10 @@ def language_cases(contract: ImageContract) -> None:
             script = saved_command("primary", CHECK)
             if spec.name == "go":
                 script = NO_GO + script
-                script += f"git checkout {lc.TARGET_BRANCH}; " + saved_command(
-                    "clean", CHECK
+                files = " ".join(shlex.quote(name) for name in spec.forbidden)
+                script += (
+                    f"git checkout {lc.TARGET_BRANCH} -- {files}; "
+                    + saved_command("clean", CHECK)
                 )
             output = contract.run(
                 f"{spec.name}-{uid.split(':')[0]}",
