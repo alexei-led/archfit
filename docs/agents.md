@@ -48,7 +48,27 @@ until an owner approves the change.
 
 ### Hooks
 
-Install the hooks once in each checkout:
+For Claude Code, install the user-level plugin once. It works in fresh clones
+and worktrees when the `archfit` binary is on `PATH`:
+
+```text
+/plugin marketplace add alexei-led/archfit
+/plugin install archfit@archfit
+```
+
+Remove it with `/plugin uninstall archfit@archfit`. Remove the marketplace with
+`/plugin marketplace remove archfit`. Restart Claude Code or reload plugins.
+If the binary is missing, the plugin reports it and does not block.
+
+Use either the plugin or repository Claude hooks, not both: with both,
+SessionStart messages and checks can run twice. If `doctor --fix` already
+installed repository Claude hooks, remove the `archfit hook run` entries from
+`.claude/settings.json` while keeping other settings and hooks. Alternatively,
+uninstall the plugin before using the repository hooks. `doctor --fix` also
+installs Codex and git hooks; it will reinstall the Claude hooks when Claude
+is detected.
+
+To install repository hooks instead, run this in each checkout:
 
 ```sh
 archfit doctor --fix
@@ -85,10 +105,13 @@ Codex and approve the hooks, or run it once with
 `--dangerously-bypass-hook-trust`.
 
 Check the hooks with `archfit doctor`. It lists the harnesses it finds and
-each hook as `active` or `inactive` (not installed, switched off by
+each repository hook as `active` or `inactive` (not installed, switched off by
 `disableAllHooks` in the Claude Code project settings, or, for Codex, not
 trusted yet). `archfit doctor --format json` reports the same under
-`agent_loop`.
+`agent_loop`. It also reports the Claude plugin as `disabled`, `absent`, or
+`unknown` from installation and settings records. An enabled, installed plugin reports `unknown`: managed restrictions
+and session loading cannot be verified from those records. JSON puts this row
+under `claude_plugin`.
 
 #### Other harnesses
 
