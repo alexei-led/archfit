@@ -17,7 +17,7 @@ import (
 // via the hardcoded defaultConfigPath) and returns stdout.
 func runDoctorCmd(t *testing.T, dir string) string {
 	t.Helper()
-	t.Chdir(dir)
+	chdirIsolated(t, dir)
 	var buf bytes.Buffer
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
@@ -31,6 +31,19 @@ func runDoctorCmd(t *testing.T, dir string) string {
 		t.Fatalf("DoctorCmd.Run: %v", err)
 	}
 	return buf.String()
+}
+
+// chdirIsolated runs the test in dir with HOME and CODEX_HOME in temporary
+// directories, so doctor never reads or writes the user's ~/.codex or ~/.claude.
+// It returns the CODEX_HOME it sets, which does not exist yet.
+func chdirIsolated(t *testing.T, dir string) string {
+	t.Helper()
+	home := t.TempDir()
+	codex := filepath.Join(home, ".codex")
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", codex)
+	t.Chdir(dir)
+	return codex
 }
 
 // A forbidden_dependency rule missing from:/to: globs is rejected at config
@@ -132,7 +145,7 @@ func TestDoctorCmd_RoslynHelperRow(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			t.Chdir(t.TempDir())
+			chdirIsolated(t, t.TempDir())
 			var buf bytes.Buffer
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false },
@@ -156,26 +169,37 @@ func TestDoctorCmd_RoslynHelperRow(t *testing.T) {
 
 const helperIdentity = "archfit-roslyn 1.0.0; Microsoft.CodeAnalysis 5.6.0; SDK 10.0.403"
 
-// doctorRow matches one doctor table row: the name, then the status and the
-// detail each starting a column.
+// doctorRow matches one doctor table row: the name, then the status, the
+// languages that use the tool, and the detail, each starting a column.
 func doctorRow(name, status, detail string) *regexp.Regexp {
-	return regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + ` +` + regexp.QuoteMeta(status) + ` +` + regexp.QuoteMeta(detail))
+	return regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + ` +` + regexp.QuoteMeta(status) + ` +[a-z]+(?:, [a-z]+)* +` + regexp.QuoteMeta(detail))
 }
 
-// TestDoctorCmd_ColumnsAlign pins that every row starts STATUS and the detail at
-// the header's columns, the longest tool name included.
+// TestDoctorCmd_ColumnsAlign pins the two tool tables: in each, every row
+// starts STATUS, FOR and the detail at the header's columns, the longest tool
+// name included.
 func TestDoctorCmd_ColumnsAlign(t *testing.T) {
 	out := runDoctorCmd(t, t.TempDir())
 	lines := strings.Split(out, "\n")
-	header := lines[0]
-	statusCol, detailCol := strings.Index(header, "STATUS"), strings.Index(header, "PATH / INSTALL")
-	for _, line := range lines[2:] {
-		if line == "" {
-			break
+	var titles []string
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "TOOL ") {
+			continue
 		}
-		if !strings.HasPrefix(line[statusCol:], "missing ") || line[detailCol-1] != ' ' || line[detailCol] == ' ' {
-			t.Errorf("row is not aligned with the header:\n%s\n%s", header, line)
+		titles = append(titles, lines[i-1])
+		statusCol, forCol, detailCol := strings.Index(line, "STATUS"), strings.Index(line, "FOR"), strings.Index(line, "PATH / INSTALL")
+		for _, row := range lines[i+2:] {
+			if row == "" {
+				break
+			}
+			if !strings.HasPrefix(row[statusCol:], "missing ") || row[forCol-1] != ' ' || row[forCol] == ' ' ||
+				row[detailCol-1] != ' ' || row[detailCol] == ' ' {
+				t.Errorf("row is not aligned with the header:\n%s\n%s", line, row)
+			}
 		}
+	}
+	if want := []string{"Needed for the check:", "Optional, for the report:"}; !slices.Equal(titles, want) {
+		t.Errorf("tables = %q, want %q", titles, want)
 	}
 }
 
@@ -204,7 +228,7 @@ func TestDoctorCmd_DotNetSDKVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			t.Chdir(dir)
+			chdirIsolated(t, dir)
 			t.Setenv("ARCHFIT_DOTNET_ROSLYN", "")
 			if err := os.Unsetenv("ARCHFIT_DOTNET_ROSLYN"); err != nil {
 				t.Fatal(err)

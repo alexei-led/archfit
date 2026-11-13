@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,14 +22,32 @@ const installSubcmd = "install"
 // it also installs the analyzer toolchains archfit can install automatically
 // (the former `install` command, folded in so `doctor` both diagnoses and fixes).
 type DoctorCmd struct {
-	Fix    bool     `name:"fix" aliases:"install" help:"Install missing analyzer toolchains (archfit installs what it can)."`
+	Fix    bool     `name:"fix" aliases:"install" help:"Install the hooks of the harnesses found here (Claude Code, Codex, git) and the missing toolchains archfit can install."`
 	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable. .NET has no automatic install: install the .NET SDK and build the helper with make dotnet-roslyn." enum:"go,ts,py,rust"`
-	DryRun bool     `name:"dry-run" short:"n" help:"With --fix: print install commands without running them."`
+	DryRun bool     `name:"dry-run" short:"n" help:"With --fix: print the install commands and the hook files without changing anything."`
 	Format string   `name:"format" help:"Output format: text or json. json prints the tool rows and the agent loop (archfit.doctor.v1)." enum:"text,json" default:"text"`
 }
 
 func (*DoctorCmd) Help() string {
-	return "Checks local analyzer tools and prints a status table, then the agent loop: which harness is here, which archfit hooks it would run (an uninstalled or untrusted hook is inactive), the target branch and scope a check resolves, and whether a policy file differs from the target. With --fix, installs the toolchains archfit can install automatically. For complete setup notes, see " + languagesDocsURL + "."
+	return `This checkout: the tools archfit uses and the hooks of the agent loop.
+
+The tools come in two groups: needed for the check (git, and ast-grep, cargo
+or dotnet for the languages that use them) and optional, for the report. A
+missing tool of the first group makes the check unknown for the code it
+cannot read.
+
+Then the hooks: for Claude Code, Codex and git, whether the harness is here
+and whether each archfit hook runs. A settings file that git ignores is
+named: other checkouts and worktrees do not get its hooks.
+
+With --fix, doctor writes the hooks of each harness it finds, at the root of
+the repository: .claude/settings.json, .codex/hooks.json, and the pre-commit
+hook. It keeps every other setting and hook, and never replaces a pre-commit
+hook that archfit did not write. Running it twice changes nothing. Outside a
+git repository it writes nothing and says so. It also installs the
+toolchains archfit can install (--lang).
+
+For setup notes, see ` + languagesDocsURL + `.`
 }
 
 func (c *DoctorCmd) Run(deps *appDeps) error {
@@ -37,19 +56,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: "error: doctor --format json only reports; run doctor --fix without it"}
 	}
 
-	// Cross-language tools stay literal here; per-language tools (compilers,
-	// scip indexers) come from the language registry so adding a language adds
-	// its doctor probes in one place.
-	tools := []registry.Tool{
-		{Name: "git", Command: "git", InstallHint: "https://git-scm.com/downloads"},
-		{Name: "uv", Command: "uv", InstallHint: "https://docs.astral.sh/uv/getting-started/installation"},
-		{Name: "ast-grep", Command: "ast-grep", InstallHint: languagesDocsURL + "#install-analyzers"},
-		// Optional semantic depth tools — their absence degrades coupling_balance precision.
-		{Name: toolJscpd, Command: toolJscpd, InstallHint: languagesDocsURL + "#install-analyzers"},
-	}
-	for _, lang := range registry.All() {
-		tools = append(tools, lang.DoctorTools...)
-	}
+	check, report := registry.ToolGroups()
 
 	// Versions are probed where analysis runs: here, where a global.json
 	// selects the .NET SDK.
@@ -60,23 +67,18 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	// A tool configured to an unusable value fails doctor after the full
 	// report, as it fails analysis: a missing tool is not an error, a wrong one is.
 	var invalid []error
-	rows := make([]toolRow, 0, len(tools))
-	for _, t := range tools {
-		path, found, err := locateTool(ctx, deps.Runner, t)
-		if err == nil && found && t.Version != nil {
-			var version string
-			if version, err = t.Version(ctx, deps.Runner, path, dir); err == nil {
-				path += " (" + version + ")"
+	rows := make([]toolRow, 0, len(check)+len(report))
+	for _, group := range []struct {
+		name  string
+		tools []registry.ToolUse
+	}{{toolGroupCheck, check}, {toolGroupReport, report}} {
+		for _, t := range group.tools {
+			row, err := probeTool(ctx, deps.Runner, t, dir)
+			if err != nil {
+				invalid = append(invalid, fmt.Errorf("%s: %w", t.Name, err))
 			}
-		}
-		switch {
-		case err != nil:
-			invalid = append(invalid, fmt.Errorf("%s: %w", t.Name, err))
-			rows = append(rows, toolRow{Name: t.Name, Status: "invalid", Error: err.Error()})
-		case found:
-			rows = append(rows, toolRow{Name: t.Name, Status: "ok", Path: path})
-		default:
-			rows = append(rows, toolRow{Name: t.Name, Status: "missing", InstallHint: t.InstallHint})
+			row.Group = group.name
+			rows = append(rows, row)
 		}
 	}
 	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
@@ -89,18 +91,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		return errors.Join(invalid...)
 	}
 
-	nameWidth := len("TOOL")
-	for _, t := range tools {
-		nameWidth = max(nameWidth, len(t.Name))
-	}
-	row := func(name, status, detail string) {
-		_, _ = fmt.Fprintf(deps.Stdout, "%-*s %-8s %s\n", nameWidth, name, status, detail)
-	}
-	row("TOOL", "STATUS", "PATH / INSTALL")
-	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
-	for _, r := range rows {
-		row(r.Name, r.Status, r.Path+r.InstallHint+r.Error)
-	}
+	writeToolGroups(deps.Stdout, rows)
 
 	// Off-gate LLM setup (config init/update/enrich, analyze/explain --ai-summary): provider config + key + cache.
 	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; config init/update/enrich, analyze/explain --ai-summary — never used by the gate):\n")
@@ -143,8 +134,75 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		if err := c.runFix(ctx, deps); err != nil {
 			return err
 		}
+		if err := c.installHooks(ctx, deps); err != nil {
+			return err
+		}
 	}
 	return errors.Join(invalid...)
+}
+
+// The two tool groups of design 11.8.
+const (
+	toolGroupCheck  = "check"
+	toolGroupReport = "report"
+)
+
+// toolGroupTitles head the two tables of the text report.
+var toolGroupTitles = map[string]string{
+	toolGroupCheck:  "Needed for the check:",
+	toolGroupReport: "\nOptional, for the report:",
+}
+
+// probeTool finds one tool and reads its version. err is a configured value
+// the tool cannot use; the row says so too.
+func probeTool(ctx context.Context, runner toolrun.Runner, t registry.ToolUse, dir string) (toolRow, error) {
+	row := toolRow{Name: t.Name, Languages: t.Languages}
+	path, found, err := locateTool(ctx, runner, t.Tool)
+	if err == nil && found && t.Version != nil {
+		var version string
+		if version, err = t.Version(ctx, runner, path, dir); err == nil {
+			path += " (" + version + ")"
+		}
+	}
+	switch {
+	case err != nil:
+		row.Status, row.Error = "invalid", err.Error()
+	case found:
+		row.Status, row.Path = "ok", path
+	default:
+		row.Status, row.InstallHint = "missing", t.InstallHint
+	}
+	return row, err
+}
+
+// toolLanguages is the FOR column of a row: the languages that use the tool.
+func toolLanguages(r toolRow) string {
+	if len(r.Languages) == 0 {
+		return "all"
+	}
+	return strings.Join(r.Languages, ", ")
+}
+
+// writeToolGroups prints one table per group, with the columns aligned across
+// both tables.
+func writeToolGroups(w io.Writer, rows []toolRow) {
+	nameWidth, forWidth := len("TOOL"), len("FOR")
+	for _, r := range rows {
+		nameWidth, forWidth = max(nameWidth, len(r.Name)), max(forWidth, len(toolLanguages(r)))
+	}
+	row := func(name, status, langs, detail string) {
+		_, _ = fmt.Fprintf(w, "%-*s %-8s %-*s %s\n", nameWidth, name, status, forWidth, langs, detail)
+	}
+	group := ""
+	for _, r := range rows {
+		if r.Group != group {
+			group = r.Group
+			_, _ = fmt.Fprintln(w, toolGroupTitles[group])
+			row("TOOL", "STATUS", "FOR", "PATH / INSTALL")
+			_, _ = fmt.Fprintln(w, strings.Repeat("-", 60))
+		}
+		row(r.Name, r.Status, toolLanguages(r), r.Path+r.InstallHint+r.Error)
+	}
 }
 
 // locateTool finds one doctor tool: through its own probe when it has one,

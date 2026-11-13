@@ -17,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/application"
 	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // doctorSchemaVersion versions the `archfit doctor --format json` document.
@@ -46,11 +47,16 @@ type doctorReport struct {
 // toolRow is one analyzer or helper tool: ok (found), missing, or invalid (a
 // configured value it cannot use, which fails doctor as it fails analysis).
 type toolRow struct {
-	Name        string `json:"name"`
-	Status      string `json:"status"`
-	Path        string `json:"path,omitempty"`
-	InstallHint string `json:"install_hint,omitempty"`
-	Error       string `json:"error,omitempty"`
+	Name string `json:"name"`
+	// Group is check (the check needs the tool) or report (optional, for the
+	// report).
+	Group string `json:"group"`
+	// Languages are the languages that use the tool; absent: every language.
+	Languages   []string `json:"languages,omitempty"`
+	Status      string   `json:"status"`
+	Path        string   `json:"path,omitempty"`
+	InstallHint string   `json:"install_hint,omitempty"`
+	Error       string   `json:"error,omitempty"`
 }
 
 // agentLoop is whether the agent feedback loop runs in this repository: the
@@ -63,11 +69,14 @@ type agentLoop struct {
 // harnessStatus is one harness: whether it is here and which of archfit's
 // hooks it would run.
 type harnessStatus struct {
-	Name       string       `json:"name"`
-	Detected   bool         `json:"detected"`
-	DetectedBy string       `json:"detected_by,omitempty"`
-	Config     string       `json:"config,omitempty"`
-	Hooks      []hookStatus `json:"hooks"`
+	Name       string `json:"name"`
+	Detected   bool   `json:"detected"`
+	DetectedBy string `json:"detected_by,omitempty"`
+	Config     string `json:"config,omitempty"`
+	// Ignored is true when git ignores the settings file, so other checkouts
+	// and worktrees of the repository do not get the hooks.
+	Ignored bool         `json:"ignored,omitempty"`
+	Hooks   []hookStatus `json:"hooks"`
 }
 
 // hookStatus is one hook archfit installs for a harness.
@@ -116,6 +125,7 @@ func agentLoopStatus(ctx context.Context, deps *appDeps, targetBranch string) ag
 func harnessStatusOf(ctx context.Context, deps *appDeps, repo, harness string) harnessStatus {
 	st := harnessStatus{Name: harness, Config: filepath.Join(repo, harnessConfigFile(harness))}
 	st.Detected, st.DetectedBy = detectHarness(ctx, deps, repo, harness)
+	st.Ignored = gitIgnores(ctx, deps, repo, harnessConfigFile(harness))
 	positions, readErr := installedHooks(st.Config)
 	var trusted map[string]bool
 	disabledBy := ""
@@ -145,6 +155,23 @@ func harnessStatusOf(ctx context.Context, deps *appDeps, repo, harness string) h
 		st.Hooks = append(st.Hooks, hs)
 	}
 	return st
+}
+
+// gitIgnores reports whether the .gitignore rules of repo ignore the
+// repository-relative path, tracked or not: git check-ignore prints the path
+// it ignores. Outside a git repository nothing is ignored.
+func gitIgnores(ctx context.Context, deps *appDeps, repo, rel string) bool {
+	rel = filepath.ToSlash(rel)
+	out, err := deps.Runner.Run(ctx, toolrun.ToolCmd{
+		Name: gitBinary, Args: []string{"check-ignore", "--no-index", "--", rel}, WorkDir: repo,
+	})
+	return err == nil && out.ExitCode == 0 && strings.TrimSpace(string(out.Stdout)) == rel
+}
+
+// ignoredWarning is the line doctor prints for a harness whose settings file
+// git ignores (design 11.3).
+func ignoredWarning(config string) string {
+	return "warning: git ignores " + config + ": other checkouts and worktrees of this repository do not get these hooks"
 }
 
 // claudeHooksDisabledBy names the project settings file whose disableAllHooks
@@ -351,7 +378,7 @@ func scopeStatusOf(ctx context.Context, deps *appDeps, targetBranch string) scop
 
 // writeAgentLoop prints the agent loop section of the text report.
 func writeAgentLoop(w io.Writer, loop agentLoop) {
-	_, _ = fmt.Fprintln(w, "\nAgent loop (install hooks: archfit hook install --harness claude|codex|git):")
+	_, _ = fmt.Fprintln(w, "\nHooks (install them: archfit doctor --fix):")
 	for _, h := range loop.Harnesses {
 		detected := "not detected"
 		if h.Detected {
@@ -362,6 +389,9 @@ func writeAgentLoop(w io.Writer, loop agentLoop) {
 			_, _ = fmt.Fprintf(w, ", %s", h.Config)
 		}
 		_, _ = fmt.Fprintln(w)
+		if h.Ignored {
+			_, _ = fmt.Fprintln(w, "    "+ignoredWarning(h.Config))
+		}
 		for _, hook := range h.Hooks {
 			status := hook.Status
 			if hook.Reason != "" {

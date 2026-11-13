@@ -383,9 +383,26 @@ func gitPreCommitScript(configPath string) []byte {
 		"exec " + hookRunLine(hookEventPreCommit, "", configPath) + "\n")
 }
 
+// errForeignHook marks a pre-commit hook that archfit did not write. It stays
+// as it is.
+var errForeignHook = errors.New("a pre-commit hook is in place")
+
 // installGitHook writes the pre-commit hook and returns its path. A hook
 // archfit did not write is never replaced.
 func installGitHook(ctx context.Context, runner toolrun.Runner, dir, configPath string) (string, error) {
+	path, err := gitHookTarget(ctx, runner, dir, configPath)
+	if err != nil {
+		return "", err
+	}
+	if err := writeFileAtomic(path, gitPreCommitScript(configPath), 0o755); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// gitHookTarget is the pre-commit hook file installGitHook writes, or why it
+// does not: errForeignHook for a hook archfit did not write.
+func gitHookTarget(ctx context.Context, runner toolrun.Runner, dir, configPath string) (string, error) {
 	hooksDir, err := gitHooksDir(ctx, runner, dir)
 	if err != nil {
 		return "", err
@@ -394,11 +411,8 @@ func installGitHook(ctx context.Context, runner toolrun.Runner, dir, configPath 
 	current, err := os.ReadFile(path) //nolint:gosec // the hook file of the repository the user named
 	switch {
 	case err == nil && !bytes.Contains(current, []byte(gitHookMarker)):
-		return "", fmt.Errorf("%s exists and archfit did not write it: add %q to it, or remove it and run this again", path, hookRunLine(hookEventPreCommit, "", configPath))
+		return "", fmt.Errorf("%w: %s exists and archfit did not write it: add %q to it, or remove it and run this again", errForeignHook, path, hookRunLine(hookEventPreCommit, "", configPath))
 	case err != nil && !errors.Is(err, fs.ErrNotExist):
-		return "", err
-	}
-	if err := writeFileAtomic(path, gitPreCommitScript(configPath), 0o755); err != nil {
 		return "", err
 	}
 	return path, nil

@@ -21,8 +21,8 @@ import (
 )
 
 // Tool names one external binary archfit can probe, with a one-line
-// install hint shown when it is missing. Cross-language (shared) tools stay
-// literal in doctor.go; language-specific ones are sourced from the registry.
+// install hint shown when it is missing. `archfit doctor` shows the tools in
+// two groups (ToolGroups): needed for the check, and optional for the report.
 type Tool struct {
 	Name        string
 	Command     string
@@ -88,8 +88,13 @@ type Descriptor struct {
 	// InstallHint is the one-line install command for PrimaryTool, shown in the
 	// coverage-gap block when the analyzer is absent.
 	InstallHint string
-	// DoctorTools are the language-specific binaries `archfit doctor` probes.
-	DoctorTools []Tool
+	// CheckTools are the binaries the check needs for this language
+	// (CheckFacts): without one, the check gives unknown for the code it
+	// cannot read.
+	CheckTools []Tool
+	// ReportTools are the optional binaries the report uses for this language:
+	// the analyzers of the analyze pipeline. The check never runs them.
+	ReportTools []Tool
 }
 
 // languages is the single ordered source of truth for supported
@@ -130,7 +135,7 @@ var languages = []Descriptor{
 		CheckFacts:  goCheckFacts,
 		PrimaryTool: ToolGoPackages,
 		InstallHint: "https://go.dev/dl (runtime SDK; go/packages is linked into archfit)",
-		DoctorTools: []Tool{
+		ReportTools: []Tool{
 			{"go", "go", "https://go.dev/dl", nil, nil},
 			{SCIPGo, SCIPGo, analyzerSetupURL, nil, nil},
 		},
@@ -148,7 +153,8 @@ var languages = []Descriptor{
 		CheckFacts:  tsCheckFacts,
 		PrimaryTool: ToolDepCruiser,
 		InstallHint: analyzerSetupURL,
-		DoctorTools: []Tool{
+		CheckTools:  []Tool{astGrep},
+		ReportTools: []Tool{
 			{"node", "node", "https://nodejs.org", nil, nil},
 			{ToolDepCruiser, "depcruise", analyzerSetupURL, nil, nil},
 			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL, nil, nil},
@@ -165,7 +171,9 @@ var languages = []Descriptor{
 		CheckFacts:  pyCheckFacts,
 		PrimaryTool: ToolGrimp,
 		InstallHint: "install uv (selects Python 3.14 + grimp==3.17), or put a separate Python 3.14+ environment with grimp==3.17 on PATH",
-		DoctorTools: []Tool{
+		CheckTools:  []Tool{astGrep},
+		ReportTools: []Tool{
+			{"uv", "uv", "https://docs.astral.sh/uv/getting-started/installation", nil, nil},
 			{"python3", "python3", "https://www.python.org/downloads", nil, nil},
 			{SCIPPython, SCIPPython, analyzerSetupURL, nil, nil},
 		},
@@ -182,8 +190,8 @@ var languages = []Descriptor{
 		CheckFacts:  rustCheckFacts,
 		PrimaryTool: ToolCargo,
 		InstallHint: "https://rustup.rs (rustup installs cargo)",
-		DoctorTools: []Tool{
-			{ToolCargo, ToolCargo, "https://rustup.rs", nil, nil},
+		CheckTools:  []Tool{{ToolCargo, ToolCargo, "https://rustup.rs", nil, nil}, astGrep},
+		ReportTools: []Tool{
 			{SCIPRust, SCIPRust, "rustup component add rust-analyzer", nil, nil},
 			{ToolCargoModules, ToolCargoModules, analyzerSetupURL, nil, nil},
 		},
@@ -201,11 +209,56 @@ var languages = []Descriptor{
 		CheckFacts:  dotnetCheckFacts,
 		PrimaryTool: ToolDotNetMSBuild,
 		InstallHint: dotnetSDKURL + " (the .NET SDK provides dotnet msbuild)",
-		DoctorTools: []Tool{
-			{Name: cmdDotNet, Command: cmdDotNet, InstallHint: dotnetSDKURL, Version: dotnetSDKVersion},
+		// The check reads project references with MSBuild and turns the Roslyn
+		// type graph off (dotnetCheckFacts); the report reads the type graph.
+		CheckTools: []Tool{{Name: cmdDotNet, Command: cmdDotNet, InstallHint: dotnetSDKURL, Version: dotnetSDKVersion}, astGrep},
+		ReportTools: []Tool{
 			{Name: "archfit-roslyn", InstallHint: "build it with `make dotnet-roslyn` and set ARCHFIT_DOTNET_ROSLYN to its directory (the image sets it)", Locate: locateRoslynHelper, Version: roslynHelperVersion},
 		},
 	},
+}
+
+// The tools of every language.
+var (
+	// gitTool is needed by every check: it reads the base and the working tree.
+	gitTool = Tool{Name: "git", Command: "git", InstallHint: "https://git-scm.com/downloads"}
+	// astGrep reads the TypeScript, JavaScript and Python imports of the
+	// check, and the literals of every language but Go.
+	astGrep = Tool{Name: ToolAstGrep, Command: ToolAstGrep, InstallHint: analyzerSetupURL}
+	// jscpd finds copied code for a diagnostic of the report.
+	jscpd = Tool{Name: "jscpd", Command: "jscpd", InstallHint: analyzerSetupURL}
+)
+
+// ToolUse is one tool of a doctor group and the languages that use it. No
+// languages means every language.
+type ToolUse struct {
+	Tool
+	Languages []string
+}
+
+// ToolGroups returns the tools `archfit doctor` shows: those the check needs,
+// git first, and those the report may use, each once and in registry order.
+func ToolGroups() (check, report []ToolUse) {
+	check = []ToolUse{{Tool: gitTool}}
+	for _, lang := range languages {
+		check = addUse(check, lang.ID, lang.CheckTools)
+		report = addUse(report, lang.ID, lang.ReportTools)
+	}
+	return check, append(report, ToolUse{Tool: jscpd})
+}
+
+// addUse adds the tools of one language to a group: a tool already there gets
+// the language added.
+func addUse(group []ToolUse, lang string, tools []Tool) []ToolUse {
+	for _, t := range tools {
+		i := slices.IndexFunc(group, func(u ToolUse) bool { return u.Name == t.Name })
+		if i < 0 {
+			group = append(group, ToolUse{Tool: t, Languages: []string{lang}})
+			continue
+		}
+		group[i].Languages = append(group[i].Languages, lang)
+	}
+	return group
 }
 
 // All returns the ordered language descriptors.

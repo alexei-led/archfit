@@ -85,11 +85,11 @@ type cli struct {
 	Init     RepoInitCmd `cmd:"" group:"setup" help:"Set up a repository: a version 3 policy and the instruction block for agents. Converts an Archfit 3 repository; never changes a version 3 policy."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
-	Hook     HookCmd     `cmd:"" group:"analysis" help:"Agent and git hooks: install them for Claude Code, Codex, or git; they report a denied import and block a stop or a commit on an architecture repair."`
+	Hook     HookCmd     `cmd:"" hidden:"" help:"The hook entry points that doctor --fix installs for Claude Code, Codex and git."`
 	Policy   PolicyCmd   `cmd:"" group:"analysis" help:"Pre-edit queries: which module owns a path, and whether a file may import a target."`
 	Map      MapCmd      `cmd:"" group:"analysis" help:"Draw the modules and seams with their policy status (Mermaid or text)."`
 
-	Doctor   DoctorCmd   `cmd:"" group:"setup" help:"Check analyzer/tool availability (use --fix to install missing tools)."`
+	Doctor   DoctorCmd   `cmd:"" group:"setup" help:"This checkout: the tools archfit uses and the hooks. --fix installs the hooks of the harnesses found here."`
 	Config   ConfigCmd   `cmd:"" group:"setup" help:"Create, sync, compare, and enrich the .archfit.yaml config."`
 	AgentsMD AgentsMDCmd `cmd:"" name:"agents-md" group:"setup" help:"Render the archfit block of agent instructions into AGENTS.md (--write, --check)."`
 	Skill    SkillCmd    `cmd:"" group:"setup" help:"Install the archfit agent skill that ships in this binary."`
@@ -114,7 +114,7 @@ func (cli) Help() string {
 	return `archfit keeps code changes aligned with the architecture you intended. It turns dependency facts into deterministic gates, scorecards, SARIF, and agent repair tasks so CI can catch architecture drift before review.
 
 First run:
-  archfit doctor                                    # check analyzers (doctor --fix installs them)
+  archfit doctor                                    # tools and hooks (doctor --fix installs the hooks)
   archfit config init --root .                      # scaffold .archfit.yaml (config init --ai-classify to draft via AI)
   archfit check --config .archfit.yaml              # CI gate
   archfit baseline --config .archfit.yaml           # accept current findings as the baseline
@@ -126,7 +126,7 @@ Config work:
 CI / agent loop:
   archfit policy can-import internal/a/a.go internal/b   # before an edit: denied, allowed, ...
   archfit check --config .archfit.yaml --format agent    # after an edit: one next_action
-  archfit hook install --harness claude                  # run both for the agent (or codex, git)
+  archfit doctor --fix                                   # install the hooks: Claude Code, Codex, git
   archfit check --config .archfit.yaml --base origin/main --format json
   # on exit 1, read agent_tasks[] and rerun the validation command
   archfit analyze --markdown --config .archfit.yaml > archfit-report.md
@@ -155,7 +155,7 @@ func commandGroups() []kong.Group {
 		{
 			Key:         commandGroupSetup,
 			Title:       "Setup & config",
-			Description: "Create configs (config init), sync structure (config update), compare two configs on one tree (config compare), install analyzers (doctor --fix), and draft off-gate AI annotations (config enrich).",
+			Description: "Create configs (config init), sync structure (config update), compare two configs on one tree (config compare), install the hooks and analyzers (doctor --fix), and draft off-gate AI annotations (config enrich).",
 		},
 	}
 }
