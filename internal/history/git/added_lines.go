@@ -109,11 +109,20 @@ func addAll(ctx context.Context, runner toolrun.Runner, root string, env []strin
 
 // cacheRace reports the git add failure of a cache file that vanished between
 // the scan and the stat: "unable to stat" without --ignore-errors, "unable to
-// index file" with it.
+// index file" with it. Every such line must name a cache path: one other file
+// that could not be indexed is a real failure, cache file or not.
 func cacheRace(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, cacheDir) &&
-		(strings.Contains(msg, "unable to stat") || strings.Contains(msg, "unable to index file"))
+	found := false
+	for line := range strings.SplitSeq(err.Error(), "\n") {
+		if !strings.Contains(line, "unable to stat") && !strings.Contains(line, "unable to index file") {
+			continue
+		}
+		if !strings.Contains(line, cacheDir) {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // copyIndex copies the index at from to to with its modification time. Git
