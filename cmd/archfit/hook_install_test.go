@@ -119,7 +119,7 @@ func TestInstallGitHookKeepsForeignHooks(t *testing.T) {
 	for _, foreign := range []string{"", "#!/bin/sh\nmake lint\n"} {
 		t.Run(foreign, func(t *testing.T) {
 			t.Parallel()
-			dir := hookRepo(t, hookModules, hookCleanA, "")
+			dir := hookRepo(t, hookModules, hookCleanA)
 			gitFixture(t, dir, "config", "core.hooksPath", ".githooks")
 			path := filepath.Join(dir, ".githooks", hookEventPreCommit)
 			if foreign != "" {

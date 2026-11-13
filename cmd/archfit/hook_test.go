@@ -33,10 +33,9 @@ modules:
 `
 )
 
-// hookRepo writes the coupled fixture with headA committed as pkg/a/a.go,
-// then leaves worktreeA (when not empty) as an uncommitted change. Returns the
-// repo root.
-func hookRepo(t *testing.T, cfg, headA, worktreeA string) string {
+// hookRepo writes the coupled fixture with headA committed as pkg/a/a.go
+// and returns the repository root.
+func hookRepo(t *testing.T, cfg, headA string) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
@@ -50,9 +49,6 @@ func hookRepo(t *testing.T, cfg, headA, worktreeA string) string {
 	}
 	gitInitFixtureRepo(t, dir)
 	gitCommitFixture(t, dir)
-	if worktreeA != "" {
-		writeFixtureFile(t, dir, filePkgAA, worktreeA)
-	}
 	return dir
 }
 

@@ -87,7 +87,7 @@ func runArchfit(t *testing.T, args ...string) (int, string, string) {
 
 func scopeRepo(t *testing.T, cfg, a string) string {
 	t.Helper()
-	dir := hookRepo(t, cfg, a, "")
+	dir := hookRepo(t, cfg, a)
 	gitFixture(t, dir, "branch", "-M", branchMain)
 	gitFixture(t, dir, "checkout", "-q", "-b", "feature")
 	return dir

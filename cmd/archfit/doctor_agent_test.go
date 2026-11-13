@@ -47,7 +47,7 @@ func hookStates(loop agentLoop) map[string]string {
 // installed, or a Codex hook Codex does not trust yet, is inactive; an
 // installed one is active, a trusted Codex hook with its hash not verified.
 func TestDoctorAgentLoop(t *testing.T) {
-	dir := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA, "")
+	dir := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA)
 	gitFixture(t, dir, "config", "core.hooksPath", filepath.Join(".git", "hooks"))
 	codexHomeDir := chdirIsolated(t, dir)
 
