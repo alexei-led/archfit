@@ -145,7 +145,7 @@ func TestClaudePluginHooks(t *testing.T) {
 }
 
 func TestDoctorPluginResolvesRepositoryRoot(t *testing.T) {
-	repo := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA, "")
+	repo := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA)
 	home := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", home)
 	chdirIsolated(t, repo)

@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -35,10 +33,9 @@ modules:
 `
 )
 
-// hookRepo writes the coupled fixture with headA committed as pkg/a/a.go,
-// then leaves worktreeA (when not empty) as an uncommitted change. Returns the
-// repo root.
-func hookRepo(t *testing.T, cfg, headA, worktreeA string) string {
+// hookRepo writes the coupled fixture with headA committed as pkg/a/a.go
+// and returns the repository root.
+func hookRepo(t *testing.T, cfg, headA string) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
@@ -52,9 +49,6 @@ func hookRepo(t *testing.T, cfg, headA, worktreeA string) string {
 	}
 	gitInitFixtureRepo(t, dir)
 	gitCommitFixture(t, dir)
-	if worktreeA != "" {
-		writeFixtureFile(t, dir, filePkgAA, worktreeA)
-	}
 	return dir
 }
 
@@ -168,8 +162,8 @@ func systemMessageOf(t *testing.T, stdout string) string {
 func TestHookRunRejectsAnUnknownEvent(t *testing.T) {
 	t.Parallel()
 	code, stdout, stderr := runHook(t, "{}", "run", "pre-tool-use")
-	if code != 3 || stdout != "" || !strings.Contains(stderr, "pre-tool-use") {
-		t.Errorf("exit = %d, stdout = %q, stderr = %q; want 3 and the event named on stderr", code, stdout, stderr)
+	if code != exitUnknown || stdout != "" || !strings.Contains(stderr, "pre-tool-use") {
+		t.Errorf("exit = %d, stdout = %q, stderr = %q; want 2 and the event named on stderr", code, stdout, stderr)
 	}
 }
 
@@ -199,41 +193,5 @@ func TestSessionFileName(t *testing.T) {
 		if got := sessionFileName(id); got != want {
 			t.Errorf("sessionFileName(%q) = %q, want %q", id, got, want)
 		}
-	}
-}
-
-// TestIdentityGitFactsFollowTheAnalysisRoot: with an external policy directory
-// the tree digest names the analyzed checkout, never the repository that holds
-// the config.
-func TestIdentityGitFactsFollowTheAnalysisRoot(t *testing.T) {
-	t.Parallel()
-	root := hookRepo(t, hookModules, hookCleanA, "")
-	policyDir := t.TempDir()
-	writeFixtureFile(t, policyDir, defaultConfigPath, hookModules)
-	gitInitFixtureRepo(t, policyDir)
-	gitCommitFixture(t, policyDir)
-
-	_, out, stderr := runArchfit(t, cmdCheck, "-c", filepath.Join(policyDir, defaultConfigPath), "--root", root, "--progress=none", "--format="+formatJSON)
-	var state struct {
-		Identity struct {
-			HeadTreeDigest string `json:"head_tree_digest"`
-			PolicyDigest   string `json:"policy_digest"`
-		} `json:"identity"`
-	}
-	if err := json.Unmarshal([]byte(out), &state); err != nil {
-		t.Fatalf("decode: %v\nstderr: %s", err, stderr)
-	}
-	tree := func(dir string) string {
-		raw, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD^{tree}").Output() //nolint:gosec // fixture directory from t.TempDir
-		if err != nil {
-			t.Fatal(err)
-		}
-		return strings.TrimSpace(string(raw))
-	}
-	if want := tree(root); state.Identity.HeadTreeDigest != want {
-		t.Errorf("head_tree_digest = %q, want the analysis root's tree %q (config repo tree is %q)", state.Identity.HeadTreeDigest, want, tree(policyDir))
-	}
-	if sum := sha256.Sum256([]byte(hookModules)); state.Identity.PolicyDigest != hex.EncodeToString(sum[:]) {
-		t.Errorf("policy_digest = %q, want the digest of the external config", state.Identity.PolicyDigest)
 	}
 }

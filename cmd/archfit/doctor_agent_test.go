@@ -14,7 +14,7 @@ import (
 // doctorJSON runs doctor --format json in the working directory and decodes it.
 func doctorJSON(t *testing.T) doctorReport {
 	t.Helper()
-	code, stdout, stderr := runArchfit(t, "doctor", "--format", formatJSON)
+	code, stdout, stderr := runArchfit(t, cmdDoctor, "--format", formatJSON)
 	if code != 0 {
 		t.Fatalf("doctor --format json: exit %d\n%s", code, stderr)
 	}
@@ -47,7 +47,7 @@ func hookStates(loop agentLoop) map[string]string {
 // installed, or a Codex hook Codex does not trust yet, is inactive; an
 // installed one is active, a trusted Codex hook with its hash not verified.
 func TestDoctorAgentLoop(t *testing.T) {
-	dir := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA, "")
+	dir := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA)
 	gitFixture(t, dir, "config", "core.hooksPath", filepath.Join(".git", "hooks"))
 	codexHomeDir := chdirIsolated(t, dir)
 
@@ -59,9 +59,7 @@ func TestDoctorAgentLoop(t *testing.T) {
 	}
 
 	for _, harness := range []string{harnessClaude, harnessCodex, harnessGit} {
-		if code, _, stderr := runHook(t, "", "install", flagHarness, harness, flagDir, dir); code != 0 {
-			t.Fatalf("install %s: exit %d\n%s", harness, code, stderr)
-		}
+		installFixtureHooks(t, dir, harness)
 	}
 	untrusted := hookInactive + " (" + reasonNotTrusted + ")"
 	trusted := hookActive + " (" + reasonHashNotVerified + ")"
@@ -122,7 +120,7 @@ func TestDoctorAgentLoopPolicyGuard(t *testing.T) {
 		t.Errorf("scope = %+v, want merge_base with %s changed on the branch", scope, defaultConfigPath)
 	}
 
-	code, stdout, stderr := runArchfit(t, "doctor")
+	code, stdout, stderr := runArchfit(t, cmdDoctor)
 	if code != 0 {
 		t.Fatalf("doctor: exit %d\n%s", code, stderr)
 	}
@@ -140,9 +138,9 @@ func TestDoctorAgentLoopPolicyGuard(t *testing.T) {
 // TestDoctorJSONRejectsFix: --format json only reports.
 func TestDoctorJSONRejectsFix(t *testing.T) {
 	t.Parallel()
-	code, stdout, stderr := runArchfit(t, "doctor", "--format", formatJSON, "--fix")
-	if code != 3 || stdout != "" || !strings.Contains(stderr, "only reports") {
-		t.Errorf("exit %d, stdout %q, stderr %q; want 3", code, stdout, stderr)
+	code, stdout, stderr := runArchfit(t, cmdDoctor, "--format", formatJSON, "--fix")
+	if code != exitUnknown || stdout != "" || !strings.Contains(stderr, "only reports") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want 2", code, stdout, stderr)
 	}
 }
 
@@ -172,9 +170,7 @@ func TestDoctorClaudeHooksDisabled(t *testing.T) {
 			if tc.project != "" {
 				writeFixtureFile(t, dir, harnessConfigFile(harnessClaude), `{"disableAllHooks": `+tc.project+`}`)
 			}
-			if code, _, stderr := runHook(t, "", "install", flagHarness, harnessClaude, flagDir, dir); code != 0 {
-				t.Fatalf("install: exit %d\n%s", code, stderr)
-			}
+			installFixtureHooks(t, dir, harnessClaude)
 			if tc.local != "" {
 				writeFixtureFile(t, dir, filepath.Join(".claude", local), `{"disableAllHooks": `+tc.local+`}`)
 			}

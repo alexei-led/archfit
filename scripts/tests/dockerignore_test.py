@@ -24,7 +24,6 @@ REQUIRED = (
     "internal/extract/runtime/async_libs.yaml",
     "internal/extract/scip/scip.proto",
     "internal/extract/scip/scip_reader.py",
-    "skills/skills.go",
     "skills/archfit/SKILL.md",
     "tools/manifest.json",
     "tools/dotnet/archfit-roslyn/src/archfit-roslyn.csproj",

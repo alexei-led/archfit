@@ -10,6 +10,8 @@ import (
 
 const prepareCall = "prepare"
 
+const configUpdateTestNew = "new"
+
 type preparationRecorder struct {
 	calls []string
 	err   error
@@ -63,29 +65,5 @@ func TestBaselineServicePreparationFailureStopsAnalysis(t *testing.T) {
 	}
 	if len(calls) != 0 {
 		t.Fatalf("writer calls = %v, want none", calls)
-	}
-}
-
-func TestExplainServicePreparesBeforeAnalysis(t *testing.T) {
-	stage := &preparationRecorder{}
-	_, err := (ExplainService{Stages: stage.stages()}).Execute(t.Context(), ExplainRequest{Fingerprint: "abc"})
-	// An empty measurement has no findings, so the fingerprint cannot resolve —
-	// what this test pins is that preparation and acquisition ran in order first.
-	if err == nil || !strings.Contains(err.Error(), "no finding with fingerprint prefix") {
-		t.Fatalf("Execute error = %v, want an unresolved-fingerprint error", err)
-	}
-	if got, want := strings.Join(stage.calls, ","), "prepare,acquire"; got != want {
-		t.Fatalf("stage calls = %q, want %q", got, want)
-	}
-}
-
-func TestExplainServicePreparationFailureStopsAnalysis(t *testing.T) {
-	stage := &preparationRecorder{err: errors.New("invalid policy")}
-	_, err := (ExplainService{Stages: stage.stages()}).Execute(t.Context(), ExplainRequest{Fingerprint: "abc"})
-	if err == nil || !strings.Contains(err.Error(), "invalid policy") {
-		t.Fatalf("Execute error = %v, want preparation failure", err)
-	}
-	if got := strings.Join(stage.calls, ","); got != prepareCall {
-		t.Fatalf("stage calls = %q, want prepare only", got)
 	}
 }

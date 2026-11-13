@@ -498,15 +498,6 @@ type ExecutionError struct{ Message string }
 
 func (e *ExecutionError) Error() string { return e.Message }
 
-// ValidateFormats reports a mutually exclusive output-format combination
-// without running the use case, so a caller can fail a usage error before it
-// prints progress or reads a config file it does not need. Execute validates
-// again — this is a fail-fast entry point, not the authority.
-func ValidateFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) error {
-	_, err := resolveFormats(jsonFlag, markdownFlag, sarifFlag, formats)
-	return err
-}
-
 // resolveFormats validates shorthand and repeatable output format flags.
 func resolveFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([]string, error) {
 	shorthands := 0
@@ -574,7 +565,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	}
 
 	return Response{
-		Document: withRunFacts(ProjectReport(out.Diagnostic, out.Score), req.Identity, out.gateReasons),
+		Document: withRunFacts(projectReport(out.Diagnostic, out.Score), req.Identity, out.gateReasons),
 		Formats:  formats,
 		Outcome:  outcomeFor(out),
 	}, nil

@@ -3,7 +3,7 @@ package report
 import "sort"
 
 // This file owns report-facing projection DTOs. They are distinct from the
-// extractor-neutral facts in internal/model/evidence; application.ProjectReport
+// extractor-neutral facts in internal/model/evidence; application.projectReport
 // performs the explicit conversion between the two contracts.
 
 // Coverage records what a single tool extracted.

@@ -507,11 +507,6 @@ func TestRustModuleSelectorsFollowModuleRuleScope(t *testing.T) {
 		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != generic {
 			t.Errorf("unevaluated reason = %q, want the generic abstention", got)
 		}
-		for _, d := range evaluation.LintPolicy(in.Policy, in.Facts) {
-			if strings.HasPrefix(d.Path, "rules[") {
-				t.Errorf("lint reports %+v, want a module selector it cannot judge left alone", d)
-			}
-		}
 	})
 }
 

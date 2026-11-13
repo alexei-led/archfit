@@ -216,18 +216,21 @@ def tree_hash(path: Path) -> dict[str, str]:
 
 
 def python314_case(contract: ImageContract) -> None:
+    fixture = contract.output / "fixture-python314"
+    shutil.copytree(ROOT / "testdata/python314", fixture)
+    prepare_report_repository(fixture)
     # Preserve the pre-upgrade src-layout/3.14-grammar release regression.
     for uid in ("65532:65532", "27182:27182"):
         output = contract.run(
             f"python314-{uid.split(':')[0]}",
             uid,
             saved_command(
-                "check",
-                "archfit check --root /tmp/repo --config /tmp/repo/.archfit.yaml --json --quiet",
+                "report",
+                "archfit report -C /tmp/repo --format json",
             ),
-            ROOT / "testdata/python314",
+            fixture,
         )
-        state = contract.read_state(output, "check")
+        state = contract.read_state(output, "report")
         producers = (
             state.get("comparison", {})
             .get("measurement_profile", {})
@@ -237,8 +240,8 @@ def python314_case(contract: ImageContract) -> None:
         pin = f"grimp {lc.TOOL_MANIFEST['python']['grimp']}; python {lc.TOOL_MANIFEST['versions']['python']}"
         contract.expect(
             f"{output.name}: src-layout Python 3.14 forbidden import",
-            (output / "check.rc").is_file()
-            and (output / "check.rc").read_text().strip() == "1"
+            (output / "report.rc").is_file()
+            and (output / "report.rc").read_text().strip() == "0"
             and state.get("decision", {}).get("hard_gates") == "fail"
             and not state.get("decision", {}).get("unevaluated_required_rules", [])
             and rows(state).get("grimp", {}).get("status") == "ok"
@@ -332,9 +335,28 @@ DOTNET_PROJECT_STATUSES = {
 DOTNET_COMPLETE = ("Domain", "Application", "Infrastructure")
 
 
+def prepare_report_repository(path: Path) -> None:
+    commands = []
+    lc.git(path, commands, "report-init", "init", "-q")
+    lc.git(path, commands, "report-add", "add", "-A")
+    lc.git(
+        path,
+        commands,
+        "report-commit",
+        "-c",
+        "user.name=Archfit Acceptance",
+        "-c",
+        "user.email=acceptance@example.invalid",
+        "commit",
+        "-qm",
+        "report fixture",
+    )
+
+
 def prepare_dotnet_fixture(path: Path) -> None:
     shutil.copytree(DOTNET_FIXTURE, path, ignore=shutil.ignore_patterns("bin", "obj"))
     (path / ".archfit.yaml").write_text(DOTNET_CONFIG)
+    prepare_report_repository(path)
     for file in path.rglob("*"):
         file.chmod(0o755 if file.is_dir() else 0o644)
 
@@ -382,32 +404,35 @@ def dotnet_extraction_cases(contract: ImageContract) -> None:
     fixture = contract.output / "fixture-dotnet"
     prepare_dotnet_fixture(fixture)
     before = tree_hash(fixture)
-    analyze = "archfit analyze --json --quiet --refresh"
+    report = "archfit report --format json"
     for uid in ("65532:65532", "27182:27182"):
         output = contract.run(
             f"dotnet-archfit-{uid.split(':')[0]}",
             uid,
             saved_command(
-                "analyze",
-                f"{analyze} --root /tmp/repo --config /tmp/repo/.archfit.yaml",
+                "report",
+                f"{report} -C /tmp/repo",
             ),
             fixture,
             timeout=900,
         )
-        report_extraction(contract, output, "analyze")
+        report_extraction(contract, output, "report")
     # D6: the snapshot makes the original tree safe to analyze while read-only.
     output = contract.run(
         "dotnet-archfit-readonly",
         "27182:27182",
-        saved_command(
-            "analyze",
-            f"{analyze} --root /trusted --config /trusted/.archfit.yaml",
+        # The host owns the read-only bind. Trust only this known fixture,
+        # in this disposable container's HOME, never all repositories.
+        "git config --global --add safe.directory /trusted; "
+        + saved_command(
+            "report",
+            f"{report} -C /trusted",
         ),
         fixture,
         timeout=900,
         copy=False,
     )
-    report_extraction(contract, output, "analyze")
+    report_extraction(contract, output, "report")
     contract.expect(
         "dotnet: analysis of the readonly original leaves it unchanged",
         tree_hash(fixture) == before,
@@ -418,7 +443,7 @@ def report_extraction(contract: ImageContract, output: Path, label: str) -> None
     state = contract.read_state(output, label)
     rc = output / f"{label}.rc"
     contract.expect(
-        f"{output.name}: analyze succeeds",
+        f"{output.name}: report succeeds",
         rc.is_file() and rc.read_text().strip() == "0",
     )
     stderr_file = output / f"{label}.stderr"

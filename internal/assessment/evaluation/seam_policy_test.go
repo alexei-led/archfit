@@ -134,37 +134,6 @@ func TestSeamPolicyPlacesFindingsByTheGraphModule(t *testing.T) {
 	}
 }
 
-// TestSeamAllowedAgreesWithCanImport pins the seam status to the edge answer
-// of `archfit policy can-import`: with no finding on the pair and no
-// whole-graph rule (which can-import leaves not_decided for one edge and the
-// run decides), a seam is allowed exactly when can-import answers allowed for
-// an edge across it.
-func TestSeamAllowedAgreesWithCanImport(t *testing.T) {
-	t.Parallel()
-	pkg := map[string]string{modAPI: "internal/api", modOrders: "internal/orders", modBilling: "internal/billing", modStripe: "internal/stripe"}
-	for _, rules := range [][]policy.RuleDef{{layerRule}, {allowlistRule}, {layerRule, allowlistRule}} {
-		p := hexagonalPolicy(rules...)
-		for _, pair := range [][2]string{{modAPI, modBilling}, {modOrders, modBilling}, {modAPI, modStripe}, {modOrders, modAPI}} {
-			edge := relationship.Edge{
-				FromID: "package:" + pkg[pair[0]], ToID: "package:" + pkg[pair[1]], FromPath: pkg[pair[0]], ToPath: pkg[pair[1]],
-				FromModule: pair[0], ToModule: pair[1], Kind: edgeImports, Language: goLanguage,
-			}
-			judged, err := JudgeEdge(JudgeInput{Relationships: relationship.Set{Edges: []relationship.Edge{edge}}, Policy: p})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if judged.Answer == AnswerDenied {
-				continue
-			}
-			diag := &result.Result{Seams: []result.Seam{{FromModule: pair[0], ToModule: pair[1]}}}
-			attachSeamPolicy(diag, p)
-			if (judged.Answer == AnswerAllowed) != (diag.Seams[0].Policy == seamAllowed) {
-				t.Errorf("rules %v, %s -> %s: can-import %q, seam policy %q", rules, pair[0], pair[1], judged.Answer, diag.Seams[0].Policy)
-			}
-		}
-	}
-}
-
 func TestSeamPolicyFollowRuleHypothesis(t *testing.T) {
 	t.Parallel()
 	gate, advisory := finding.KindGate, finding.KindAdvisory

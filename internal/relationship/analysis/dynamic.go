@@ -14,18 +14,6 @@ import (
 // hundreds of lazy imports from bloating the output.
 const dynamicImportSiteCap = 5
 
-// BuildDynamicImports groups report-only dynamic/lazy import sites per module
-// (module-map key, or the file's directory when unmapped) into DynamicImport
-// rollups. Output is deterministic: modules sorted by name, sites already sorted
-// by the detector, the per-module sample capped at dynamicImportSiteCap. Returns
-// an empty (non-nil) slice when no sites were found. Never touches the graph,
-// metrics, or the verdict — this is evidence only.
-// It is exported so config update can show the same review-only distance hints
-// as analyze without running the full engine pipeline.
-func BuildDynamicImports(sites []evidence.DynamicImportSite, mm policy.ModuleMap) []evidence.DynamicImport {
-	return buildDynamicImports(sites, mm)
-}
-
 func buildDynamicImports(sites []evidence.DynamicImportSite, mm policy.ModuleMap) []evidence.DynamicImport {
 	byModule := make(map[string][]evidence.DynamicImportSite)
 	for _, s := range sites {
@@ -55,15 +43,6 @@ func buildDynamicImports(sites []evidence.DynamicImportSite, mm policy.ModuleMap
 		})
 	}
 	return out
-}
-
-// BuildRuntimeAsyncEdges groups async-integration sites by source module,
-// runtime target, and integration kind. The result is relationship-level evidence
-// for future runtime-distance scoring, but remains report-only today. It is
-// exported so config update can show the same review-only distance hints as analyze.
-// It is the same rollup Analyze attaches to AnalysisEvidence.RuntimeEdges.
-func BuildRuntimeAsyncEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []evidence.RuntimeAsyncEdge {
-	return runtimeEdges(sites, confidence, mm)
 }
 
 const (
@@ -102,13 +81,6 @@ func dynamicConnascenceUnmeasured(unmeasured []string) []string {
 		return nil
 	}
 	return out
-}
-
-// BuildDynamicConnascenceSignals maps dynamic/lazy imports and runtime async
-// edges to report-only dynamic connascence review signals. It is exported so
-// config update can derive the same distance-config candidate sources as analyze.
-func BuildDynamicConnascenceSignals(dyn []evidence.DynamicImport, runtimeEdges []evidence.RuntimeAsyncEdge, unmeasured []string) *evidence.DynamicConnascenceSignals {
-	return buildDynamicConnascenceSignals(dyn, runtimeEdges, unmeasured)
 }
 
 func buildDynamicConnascenceSignals(dyn []evidence.DynamicImport, runtimeEdges []evidence.RuntimeAsyncEdge, unmeasured []string) *evidence.DynamicConnascenceSignals {
@@ -187,10 +159,10 @@ const (
 	distanceCandidateActionDeployUnit               = "deploy_unit"
 )
 
-// BuildDistanceConfigCandidates turns report-only runtime/dynamic evidence into
+// buildDistanceConfigCandidates turns report-only runtime/dynamic evidence into
 // report-only config review hints. The candidates deliberately do not feed
 // classify, score, findings, baselines, or gate verdicts.
-func BuildDistanceConfigCandidates(
+func buildDistanceConfigCandidates(
 	dyn []evidence.DynamicImport,
 	runtimeEdges []evidence.RuntimeAsyncEdge,
 	dynamicSignals *evidence.DynamicConnascenceSignals,

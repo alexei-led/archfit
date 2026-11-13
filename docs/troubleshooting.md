@@ -1,80 +1,64 @@
 # Troubleshooting
 
-Use `archfit doctor` when analysis misses tools or evidence. It reports tools that archfit can find on `PATH`.
+Start with `archfit doctor` for tool and hook status, then follow the failed command's `next:` line.
 
-## Analysis is incomplete
+## Unexpected exit status
 
-| Symptom | Cause | Action |
-| --- | --- | --- |
-| A dimension shows `n/a` or partial coverage. | An analyzer is missing, timed out, or could not resolve source files. | Read the coverage details. Install the named tool or fix the source paths. |
-| No source files match module paths. | The root or configured globs do not match the repository. | Check `--root` and each module's `paths`. |
-| TypeScript imports remain unresolved. | Aliases or project dependencies are unavailable. | Check `tsconfig` paths and install project dependencies. |
-| `grimp` reports import/source gaps. | Source could not be read or parsed, a first-party package was not scanned, or graph extraction failed. | Check package selection, source permissions, and syntax. Use Python 3.14; project dependency installation is unnecessary. |
-| `sg` exists but pattern analysis fails. | Another program named `sg` appears first on `PATH`. | Run `sg --version`. Install ast-grep if the command is not ast-grep. |
+| Exit | Meaning                                                    | Action                                                                              |
+| ---- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `0`  | Pass, yes, or done.                                        | No repair is needed. `report` can show errors and still exit 0: it decides nothing. |
+| `1`  | The change fails a rule, or a dependency is not allowed.   | Follow `next:`: fix the code or ask an owner.                                       |
+| `2`  | Unknown, wrong usage, a tool error, or an interrupted run. | Read stderr and the record. Fix the named cause, then run again.                    |
 
-See [Language support](languages.md#analyzer-tools) for tool requirements.
+Unknown commands and flags also exit `2`. Missing evidence never passes. See [Commands](commands.md#exit-codes).
 
-## A command returns an unexpected status
+## Missing or version 2 policy
 
-`analyze` is report-only. It can print findings and still return `0` after a successful run. Use `check` for a gate.
+Run `archfit init` in the repository. It creates a version 3 policy or converts an Archfit 3 one. Read the result, then open a pull request with it. `check` no longer runs an Archfit 3 check.
 
-| Exit code | Meaning |
-| --- | --- |
-| `0` | Healthy, or a report-only command completed. |
-| `1` | A hard gate blocked the change. |
-| `2` | The result needs attention or lacks complete evidence. |
-| `3` | Configuration, tool, or runtime error. |
+A path glob that matches nothing, an unknown module, or a malformed rule stops the check. Workers must not change the policy to pass: use `archfit request -m "<why>"` when the approved architecture must change.
 
-Read [Commands](commands.md#exit-codes) for command-specific behavior.
+See [Migration](migration.md) and [Configuration](configuration.md).
 
-## Refresh analysis data
+## Policy differs from the target
 
-`--refresh` bypasses cached extractor results and stores fresh results. Use it after you install or update an analyzer:
+A code change cannot judge itself under a policy it changes. Open a separate policy pull request for an owner, or bring the approved target policy into the branch when it is stale.
 
-```sh
-archfit check --refresh -c .archfit.yaml
-```
+An owner can preview a candidate with `archfit check --policy candidate.yaml`. A preview gives no verdict and saves no output for `archfit request`.
 
-The `--refresh` flag is available on `analyze`, `check`, `baseline`, and `explain`. It is also available on `config enrich`. `config compare` has no refresh flag. Run `archfit analyze --refresh -c .archfit.yaml` before a comparison to refresh the shared cache.
+## Target branch cannot be resolved
 
-To remove all cached facts and AI responses, delete `.archfit-cache/` beside the configuration file. The next run starts with an empty cache.
+Fetch the target history, then run `archfit check --base origin/main` (use the repository's target branch name). CI needs enough history to find the merge base. See [CI](ci.md).
 
-## Configuration update reports no known issues
+## Incomplete evidence
 
-`no_known_issues` means that the checks found no known problem. It does not mean that the configuration is complete or correct. Review module paths, ownership, layers, volatility, and source coverage yourself.
+| Symptom                                         | Action                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| A file is listed as not read.                   | Fix its syntax, permissions, language settings, or the missing tool named in the record.                |
+| No source file matches a module path.           | Check the repository selected by `-C` and the policy's `paths`. Ask an owner if the policy must change. |
+| A report measurement is partial or unavailable. | Read `evidence not complete:`. Optional report tools do not affect the check.                           |
+| `sg` exists but extraction fails.               | Run `sg --version`: another program named `sg` may precede ast-grep on `PATH`.                          |
 
-## Configuration update lists `name_drift` or `removed_modules`
+Run `archfit doctor` to see the check and report tool groups. See [Language support](languages.md#analyzer-tools).
 
-These entries need review. An automatic rename or removal can discard `owner`, `subdomain`, `volatility`, `layer`, or `public` values. Edit these module entries by hand.
+## Installed tool is missing
 
-## Configuration update rejects `--json`
+Archfit uses the current process's `PATH`. Use `command -v <tool>` and `which -a <tool>` to find which executable runs first. Fix the order if it selects an old or incorrect tool.
 
-The JSON review cannot run with write or refresh options. Run the review and apply commands separately:
+`archfit doctor --fix` installs supported missing toolchains and hooks, not every optional report tool.
 
-```sh
-archfit config update --json -c .archfit.yaml
-archfit config update --apply -c .archfit.yaml
-```
+## Hooks do not run
 
-## `config compare` reports no differences
+Run `archfit doctor` to see the detected harnesses and why each hook is inactive. Then run `archfit doctor --fix`.
 
-Read the coverage evidence status. `not_comparable` means that analyzer evidence differs between the runs. The command can report no differences even when the evidence is not comparable.
+Check Claude Code's project and local settings for disabled hooks. For Codex, trust the installed hooks. Settings ignored by Git do not reach other clones or worktrees. Archfit leaves foreign pre-commit hooks and shared hooks directories alone; doctor prints what to add instead.
 
-A higher candidate score does not prove a better configuration. Check for `scored_fraction_fell`, `abstained_edges_rose`, or `external_edges_rose`. These signals mean that the candidate measured less coupling evidence.
+## Stale request output
 
-## A tool is installed but missing
+Run `archfit check` or `archfit can <from> <to>` after each edit. Requests use only output for the current tree. A pass, an unknown result, or an error that requires a code fix gives nothing an owner may allow.
 
-archfit uses tools found on the current process `PATH`. Check which executable runs first:
+Without a GitHub remote, the request prints `next: ask an owner` and exits `2`. With a GitHub remote, it sends a comment or issue and prints its URL. If credentials are missing, follow `next: gh auth login`. A send with an unknown outcome is not retried: check GitHub before trying again. See [Commands](commands.md#request).
 
-```sh
-command -v <tool>
-which -a <tool>
-```
+## Clear cached facts
 
-Fix the `PATH` order when the command finds an old or incorrect tool. See [Getting started](getting-started.md#check-the-tools) to run the tool check.
-
-## AI commands fail or send text you do not want to share
-
-AI commands are optional. Deterministic `check` does not need a model. Use environment variables for provider keys. Do not store keys in `.archfit.yaml`.
-
-Provider requests can include repository text. Do not run provider-backed commands when that text contains data you must keep private.
+To clear local cached extraction results, delete only `.archfit-cache/facts/` at the repository root. The next run rebuilds them. The check has no `--refresh` flag.

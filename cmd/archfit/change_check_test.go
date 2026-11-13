@@ -398,10 +398,10 @@ func TestVersion3UsageAndToolErrorsExit2(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "a version 2 format", args: []string{cmdCheck, "-C", dir, flagFormat, "markdown"}, want: "--format markdown needs a version 2 policy"},
+		{name: "a version 2 format", args: []string{cmdCheck, "-C", dir, flagFormat, "markdown"}, want: "--format must be one of"},
 		{name: "two formats", args: []string{cmdCheck, "-C", dir, flagFormat, formatJSON, flagFormat, formatSarif}, want: "--format takes one value"},
-		{name: "a version 2 flag", args: []string{cmdCheck, "-C", dir, "--json"}, want: "[--json]: these flags need a version 2 policy"},
-		{name: "-c names a version 3 file", args: []string{cmdCheck, "-c", filepath.Join(dir, defaultConfigPath)}, want: "a version 3 check reads .archfit.yaml"},
+		{name: "a version 2 flag", args: []string{cmdCheck, "-C", dir, "--json"}, want: "unknown flag --json"},
+		{name: "-c names a version 3 file", args: []string{cmdCheck, "-c", filepath.Join(dir, defaultConfigPath)}, want: "unknown flag -c"},
 		{name: "not a git repository", args: []string{cmdCheck, "-C", plain}, want: notARepo},
 		{name: "can with one argument", args: []string{cmdCan, pkgTC, "-C", dir}, want: "usage: name a file"},
 		{name: "rules mixing forms", args: []string{cmdRules, "--graph", pkgTC, "-C", dir}, want: "usage: --graph takes no path"},
@@ -415,42 +415,6 @@ func TestVersion3UsageAndToolErrorsExit2(t *testing.T) {
 				t.Errorf("= %d, stdout %q, stderr %q; want 2, no stdout, stderr holding %q", got.code, got.stdout, got.stderr, tc.want)
 			}
 		})
-	}
-}
-
-// TestCheckDispatchesOnThePolicyVersion (D1): a version 2 policy keeps the
-// Archfit 3 check and its exit codes; a version 3 flag there is its usage
-// error (3).
-func TestCheckDispatchesOnThePolicyVersion(t *testing.T) {
-	t.Parallel()
-	v2 := writeViolatingRepo(t)
-	old := runCLI(t, fixtureDate, cmdCheck, "-c", v2, flagFormat, formatJSON)
-	if old.code != 1 || !strings.Contains(old.stdout, `"schema_version"`) {
-		t.Errorf("version 2: exit %d, want 1 with the Archfit 3 JSON:\n%s\n%s", old.code, old.stdout, old.stderr)
-	}
-
-	// A file that is not version 3 keeps the Archfit 3 path and its exit 3,
-	// even when it does not parse or names no version.
-	broken := filepath.Join(t.TempDir(), defaultConfigPath)
-	for _, data := range []string{"version: 2\nmodules: [\n", version1, "modules: {}\n"} {
-		if err := os.WriteFile(broken, []byte(data), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if got := runCLI(t, fixtureDate, cmdCheck, "-c", broken); got.code != 3 {
-			t.Errorf("-c with %q: exit %d, want 3; stderr %q", data, got.code, got.stderr)
-		}
-	}
-	if got := runCLI(t, fixtureDate, cmdCheck, "-c", t.TempDir()); got.code != 3 {
-		t.Errorf("-c naming a directory: exit %d, want 3; stderr %q", got.code, got.stderr)
-	}
-
-	requireGitBinary(t)
-	repo := t.TempDir()
-	gitRun(t, repo, "init", "-q")
-	writeFiles(t, repo, map[string]string{defaultConfigPath: minimalValidYAML})
-	got := runCLI(t, fixtureDate, cmdCheck, "-C", repo)
-	if got.code != 3 || !strings.Contains(got.stderr, "-C and --verbose need a version 3 policy") {
-		t.Errorf("version 2 with -C: exit %d, stderr %q; want 3", got.code, got.stderr)
 	}
 }
 

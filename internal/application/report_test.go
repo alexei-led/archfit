@@ -25,7 +25,7 @@ func TestProjectReportPreservesAssessmentAndScorecardContracts(t *testing.T) {
 			Name: score.DimCouplingBalance, Value: 46, Band: score.BandMixed, Confidence: score.ConfidenceHigh,
 		}},
 	}
-	document := ProjectReport(diagnostic, scorecard)
+	document := projectReport(diagnostic, scorecard)
 	if string(document.Verdict) != string(OutcomeWarn) || document.Base != blockBaseRef || document.Head != stateHeadRef {
 		t.Fatalf("assessment identity projection lost data: %+v", document)
 	}

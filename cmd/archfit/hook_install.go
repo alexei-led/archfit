@@ -69,61 +69,6 @@ func harnessConfigFile(harness string) string {
 	return filepath.Join(".claude", "settings.json")
 }
 
-// HookInstallCmd writes the hook configuration for one harness.
-type HookInstallCmd struct {
-	Harness string `required:"" enum:"claude,codex,git" help:"Harness to install for: claude (.claude/settings.json), codex (.codex/hooks.json), or git (the pre-commit hook)."`
-	Dir     string `help:"Repository to install into." default:"." type:"path"`
-}
-
-func (*HookInstallCmd) Help() string {
-	return `Write the archfit hooks into the configuration of one harness. archfit
-doctor --fix runs this for every harness it finds.
-
-  claude  merges into <dir>/.claude/settings.json: SessionStart, PostToolUse
-          (after Edit, Write, MultiEdit, NotebookEdit, Bash), Stop, and
-          SubagentStop, each running archfit hook run <event> --harness claude
-  codex   merges into <dir>/.codex/hooks.json: SessionStart, PostToolUse
-          (after apply_patch and Bash), and Stop. Codex runs a hook only after
-          you trust it: start codex and approve the hooks.
-  git     writes the pre-commit hook in the hooks directory git uses
-          (core.hooksPath when set), running archfit hook run pre-commit
-
-Every other key and hook in a settings file stays. An archfit hook run entry
-already there is replaced, so installing twice changes nothing, and an entry of
-the removed archfit hook claude command is dropped. A pre-commit hook archfit
-did not write is left alone: the command exits 3 and names it. The hooks
-read .archfit.yaml at the root of the repository, as archfit check does.
-
-It prints one line per file it wrote. Exit 0, or 3 on an error.
-
-Examples:
-  archfit hook install --harness claude
-  archfit hook install --harness codex --dir ../service`
-}
-
-func (c *HookInstallCmd) Run(deps *appDeps) error {
-	var (
-		path string
-		err  error
-	)
-	if c.Harness == harnessGit {
-		path, err = installGitHook(deps.runContext(), deps.Runner, c.Dir)
-	} else {
-		path, err = installHarnessHooks(c.Dir, c.Harness)
-	}
-	if err != nil {
-		return &exitError{code: 3, msg: "error: " + err.Error()}
-	}
-	_, _ = fmt.Fprintf(deps.Stdout, "wrote %s\n", path)
-	if warning := missingPolicyWarning(deps.runContext(), deps.Runner, c.Dir); warning != "" {
-		_, _ = fmt.Fprintln(deps.stderr(), warning)
-	}
-	if c.Harness == harnessCodex {
-		_, _ = fmt.Fprintln(deps.Stdout, codexTrustNotice)
-	}
-	return nil
-}
-
 // gitRevParse is the git subcommand the hook adapters ask for paths and refs.
 const gitRevParse = "rev-parse"
 

@@ -126,8 +126,8 @@ func freshHashFor(t *testing.T, ev workflowEvidence) string {
 		t.Fatal(err)
 	}
 	captured := relate(acquired).Relationships
-	hashes := pairEvidence(captured, map[string]struct{}{EnrichmentPairKey(workflowModA, workflowModB): {}})
-	return hashes[EnrichmentPairKey(workflowModA, workflowModB)]
+	hashes := pairEvidence(captured, map[string]struct{}{enrichmentPairKey(workflowModA, workflowModB): {}})
+	return hashes[enrichmentPairKey(workflowModA, workflowModB)]
 }
 
 func TestEnrichServiceWorkflowOrderPreservesApprovedAndStampsEvidence(t *testing.T) {
@@ -156,12 +156,12 @@ func TestEnrichServiceWorkflowOrderPreservesApprovedAndStampsEvidence(t *testing
 	}
 	saved := map[string]EnrichmentLabel{}
 	for _, l := range store.saved {
-		saved[EnrichmentPairKey(l.From, l.To)] = l
+		saved[enrichmentPairKey(l.From, l.To)] = l
 	}
-	if got := saved[EnrichmentPairKey(workflowModA, workflowModB)]; got.Strength != mergeContract || got.Status != EnrichmentLabelStatusApproved {
+	if got := saved[enrichmentPairKey(workflowModA, workflowModB)]; got.Strength != mergeContract || got.Status != EnrichmentLabelStatusApproved {
 		t.Fatalf("a fresh approved label was clobbered by a draft: %+v", got)
 	}
-	if got := saved[EnrichmentPairKey(workflowModA, workflowModC)]; got.Strength != "model" || got.EvidenceHash == "" {
+	if got := saved[enrichmentPairKey(workflowModA, workflowModC)]; got.Strength != "model" || got.EvidenceHash == "" {
 		t.Fatalf("new draft = %+v, want the judged strength stamped with current evidence", got)
 	}
 }

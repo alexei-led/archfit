@@ -132,7 +132,7 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	if err != nil {
 		return BaselineResponse{}, fmt.Errorf("baseline analysis: %w", err)
 	}
-	doc := ProjectReport(out.Diagnostic, out.Score)
+	doc := projectReport(out.Diagnostic, out.Score)
 	snapshot := BaselineSnapshot{Metrics: documentMetrics(doc), State: baselineState(out.Diagnostic)}
 	// Status is assigned per edge before BC advisories are rolled up, so a
 	// rollup is accepted only when every edge it stands for is accepted.

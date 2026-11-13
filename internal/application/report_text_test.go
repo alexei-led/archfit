@@ -72,7 +72,7 @@ func TestCoverageReasonsReachTheReportAsOneBoundedLine(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := ProjectReport(out.Diagnostic, out.Score).State.Coverage.Tools[0].Reason
+			got := projectReport(out.Diagnostic, out.Score).State.Coverage.Tools[0].Reason
 			if strings.ContainsAny(got, "\n\r\t\x1b") {
 				t.Errorf("reason keeps a control character: %q", got)
 			}
@@ -124,7 +124,7 @@ func TestReportSafeTextIsUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ProjectReport(out.Diagnostic, out.Score).State.Coverage.Tools[0].Reason; got != reason {
+	if got := projectReport(out.Diagnostic, out.Score).State.Coverage.Tools[0].Reason; got != reason {
 		t.Errorf("reason = %q, want it unchanged", got)
 	}
 	if stderr.Len() != 0 {
@@ -155,7 +155,7 @@ func TestProjectedStatePassesTheConsumerTextRules(t *testing.T) {
 	r.Comparison = &result.StateComparison{Status: textStatusNonComparable, BaseRef: "main", Reasons: []string{long}, OriginStatus: decision.OriginUnknown, OriginReasons: []string{long}}
 	r.GateReference = &result.StateComparison{Status: textStatusNonComparable, Reasons: []string{long}}
 
-	doc := ProjectReport(r, score.Scorecard{})
+	doc := projectReport(r, score.Scorecard{})
 	data, err := json.Marshal(doc.State)
 	if err != nil {
 		t.Fatal(err)

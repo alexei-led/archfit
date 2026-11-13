@@ -33,9 +33,7 @@ const (
 // The trace calls exactly what the harness would.
 func installedRuns(t *testing.T, dir, harness string) map[string][]string {
 	t.Helper()
-	if code, stdout, stderr := runHook(t, "", "install", flagHarness, harness, flagDir, dir); code != 0 {
-		t.Fatalf("hook install --harness %s: exit %d\n%s%s", harness, code, stdout, stderr)
-	}
+	installFixtureHooks(t, dir, harness)
 	raw, err := os.ReadFile(filepath.Join(dir, harnessConfigFile(harness))) //nolint:gosec // fixture path
 	if err != nil {
 		t.Fatal(err)
@@ -207,9 +205,7 @@ func TestHookTraceGitOnly(t *testing.T) {
 	dir := hookFixture(t, nil)
 	// A user's global core.hooksPath must not take the fixture's hook.
 	gitRun(t, dir, "config", "core.hooksPath", filepath.Join(".git", "hooks"))
-	if code, stdout, stderr := runHook(t, "", "install", flagHarness, harnessGit, flagDir, dir); code != 0 {
-		t.Fatalf("hook install --harness git: exit %d\n%s%s", code, stdout, stderr)
-	}
+	installFixtureHooks(t, dir, harnessGit)
 	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
 	gitRun(t, dir, "add", "-A")
 	before := gitOutput(t, dir, "rev-parse", "HEAD")

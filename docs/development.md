@@ -121,7 +121,7 @@ uv run --with jsonschema==4.26.0 python scripts/eval/corpus_sweep.py \
   --repos spotinfo,storybook,ccgram,herdr \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
   --format-repos spotinfo,storybook,ccgram,herdr \
-  --ai-repos '' --strict --max-workers 1 \
+  --strict --max-workers 1 \
   --output-dir /tmp/archfit-corpus-eval \
   --summary-file /tmp/archfit-corpus-results.json
 ```
@@ -168,8 +168,6 @@ Use chapter or section references for the book. Do not copy book text into repor
 Separate book-derived measures, implementation policy, report-only evidence, and unsupported claims.
 Explain each mismatch with source evidence and a reproducible case.
 
-The evaluation skill owns the detailed review procedure:
-[`skills/archfit-eval`](../skills/archfit-eval/SKILL.md).
 Keep dated corpus measurements and review reports in the archive.
 Write fresh output under `/tmp` or `.archfit-cache/`.
 

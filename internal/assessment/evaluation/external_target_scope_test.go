@@ -1,14 +1,12 @@
 package evaluation_test
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
@@ -93,31 +91,5 @@ func TestExternalNameTargetsAreEvaluated(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-// TestBraceGlobOfExternalNamesIsNotADeadSelector pins config lint to the rule
-// scope above: a brace glob whose every alternative names an external package
-// is an external ban, and one with a misspelt first-party alternative is still
-// judged first-party.
-func TestBraceGlobOfExternalNamesIsNotADeadSelector(t *testing.T) {
-	modules := map[string]policy.ModuleDef{"Domain": {Paths: []string{csDomainGlob}}}
-	rules := []policy.RuleDef{
-		{ID: "frameworks", Type: ruleForbidden, Gate: gateFail, From: csDomainGlob, To: frameworksBan},
-		{ID: "efcore", Type: ruleForbidden, Gate: gateFail, From: csDomainGlob, To: efCoreTarget},
-		{ID: "misspelt", Type: ruleForbidden, Gate: gateFail, From: csDomainGlob, To: "{src/Domian/**,src/Nope/**}"},
-	}
-	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
-	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
-		policy.GatePolicy{Rules: policy.RuleConfig{Rules: rules}}, nil, nil)
-	facts := evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{csDomainFile: fileclass.Production}}
-	var dead []string
-	for _, d := range evaluation.LintPolicy(snapshot, facts) {
-		if d.Code == evaluation.LintDeadSelector {
-			dead = append(dead, d.Path)
-		}
-	}
-	if want := []string{"rules[misspelt].to"}; !slices.Equal(dead, want) {
-		t.Fatalf("dead selectors = %v, want %v", dead, want)
 	}
 }

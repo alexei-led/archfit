@@ -41,8 +41,7 @@ tools/dotnet/archfit-roslyn/tests/
 **/.DS_Store
 
 # Repository automation, documentation and generated schemas: nothing here is
-# read by the binary build. skills/**/*.md deliberately stays: those files are
-# embedded into the binary by skills/skills.go.
+# read by the binary build. The skill remains a document, not a Go embed.
 .github/
 examples/
 Makefile

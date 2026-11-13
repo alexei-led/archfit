@@ -10,7 +10,7 @@ the two tables.
         --repo archfit=. --repo pumba=/tmp/corpus/pumba
 
 Each --repo is LABEL=DIR and the DIR holds .archfit.yaml. Run it on disposable
-copies: analyze writes .archfit-cache next to the config. Standard library only.
+copies: report writes .archfit-cache at the repository root. Standard library only.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ def run_analyze(archfit: str, label: str, directory: str) -> dict[str, Any]:
     env = dict(os.environ)
     env.setdefault("RUSTUP_TOOLCHAIN", PINNED_RUST_TOOLCHAIN)
     proc = subprocess.run(
-        [archfit, "analyze", "--config", ".archfit.yaml", "--format", "json"],
+        [archfit, "report", "--format", "json"],
         cwd=directory,
         env=env,
         capture_output=True,
@@ -101,7 +101,7 @@ def run_analyze(archfit: str, label: str, directory: str) -> dict[str, Any]:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"{label}: analyze exit {proc.returncode}: {proc.stderr.strip()[-400:]}"
+            f"{label}: report exit {proc.returncode}: {proc.stderr.strip()[-400:]}"
         )
     return json.loads(proc.stdout)
 

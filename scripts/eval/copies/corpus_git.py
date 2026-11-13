@@ -2,14 +2,13 @@
 
 A unit of change is one commit on the first-parent line of the default branch, compared with its
 first parent: a merge stands for its whole pull request, a squash commit for its pull request, a
-direct push for itself. The module of a path comes from `archfit policy where`, so the shipped
+direct push for itself. The module of a path comes from `archfit rules`, so the shipped
 policy mapping decides it. Standard library only.
 """
 
 from __future__ import annotations
 
 import fnmatch
-import json
 import re
 import subprocess
 from collections.abc import Callable, Iterable
@@ -123,7 +122,9 @@ def tree_files(repo: Path | str, rev: str, keep: Callable[[str], bool]) -> list[
     return [p for p in out.split("\0") if p and keep(p)]
 
 
-def changes(repo: Path, unit: Unit, tracked: Callable[[str], bool]) -> list[tuple[str, str, str | None]]:
+def changes(
+    repo: Path, unit: Unit, tracked: Callable[[str], bool]
+) -> list[tuple[str, str, str | None]]:
     """(status, path, old path) for tracked files; the root commit adds its whole tree."""
     if unit.parent is None:
         return [("A", p, None) for p in tree_files(repo, unit.sha, tracked)]
@@ -214,13 +215,18 @@ class Owner:
     module: str | None
     excluded: bool
     depends_on: tuple[str, ...] | None = None  # None: the policy declares no list
-    selector: str | None = None  # the name `public` patterns match: package, dotted module, or path
+    selector: str | None = (
+        None  # the name `public` patterns match: package, dotted module, or path
+    )
     public: tuple[str, ...] | None = None  # None: the whole module is public
 
     def is_public(self, path: str) -> bool:
         if self.public is None:
             return True
-        return any(fnmatch.fnmatchcase(self.selector or path, pattern) for pattern in self.public)
+        return any(
+            fnmatch.fnmatchcase(self.selector or path, pattern)
+            for pattern in self.public
+        )
 
     @property
     def production(self) -> bool:
@@ -248,49 +254,66 @@ class PolicyMap:
         return self.owners([path])[path]
 
 
-def archfit_resolver(
-    archfit: str, config: Path | str, root: Path | str, chunk: int = 300
-) -> Resolver:
-    """Resolve paths with `archfit policy where`, the shipped mapping."""
+def archfit_resolver(archfit: str, config: Path | str, root: Path | str) -> Resolver:
+    """Read the policy through rules, one path at a time to avoid grouped headers.
+
+    The 4.0 rules command reads only the repository policy. A different candidate
+    must be reviewed in its own checkout, not silently substituted here.
+    """
+    if Path(config).resolve() != (Path(root) / ".archfit.yaml").resolve():
+        raise ValueError("rules reads .archfit.yaml at the repository root")
 
     def resolve(paths: list[str]) -> dict[str, Owner]:
         out: dict[str, Owner] = {}
-        for start in range(0, len(paths), chunk):
-            batch = paths[start : start + chunk]
+        for path in paths:
             result = subprocess.run(
-                [
-                    archfit,
-                    "policy",
-                    "where",
-                    "-c",
-                    str(config),
-                    "--root",
-                    str(root),
-                    "--",
-                    *batch,
-                ],
+                [archfit, "rules", "-C", str(root), "--", path],
                 capture_output=True,
                 text=True,
                 check=False,
             )
             if result.returncode != 0:
                 raise RuntimeError(
-                    f"archfit policy where: exit {result.returncode}: {result.stderr.strip()[:300]}"
+                    f"archfit rules: exit {result.returncode}: {result.stderr.strip()[:300]}"
                 )
-            answers = json.loads(result.stdout)["paths"]
-            if len(answers) != len(batch):
-                raise RuntimeError(
-                    f"archfit policy where: {len(answers)} answers for {len(batch)} paths"
+            header, _, details = result.stdout.partition("\n")
+            prefix = path + ": "
+            if not header.startswith(prefix):
+                raise ValueError(f"rules gave no ownership record for {path!r}")
+            ownership = header[len(prefix) :]
+            if ownership in {"declared tests", "declared generated"}:
+                out[path] = Owner(None, True)
+                continue
+            if ownership == "in no module":
+                out[path] = Owner(None, False)
+                continue
+            if not ownership.startswith("module "):
+                raise ValueError(f"unknown rules ownership: {ownership!r}")
+            fields = dict(
+                line.strip().split(": ", 1)
+                for line in details.splitlines()
+                if line.startswith(("  public: ", "  allowed dependencies: "))
+            )
+            if "public" not in fields or "allowed dependencies" not in fields:
+                raise ValueError(f"incomplete rules record for {path!r}")
+            public = fields["public"]
+            public_paths = tuple(public.split(", "))
+            if public_paths is not None:
+                public_paths = tuple(
+                    pattern
+                    if any(c in pattern for c in "*?[{")
+                    or PurePosixPath(pattern).suffix
+                    else pattern.rstrip("/") + "/**"
+                    for pattern in public_paths
                 )
-            for path, answer in zip(batch, answers):
-                deps, public = answer.get("depends_on"), answer.get("public")
-                out[path] = Owner(
-                    answer.get("module"),
-                    bool(answer.get("excluded")),
-                    None if deps is None else tuple(deps),
-                    answer.get("selector"),
-                    None if public is None else tuple(public),
-                )
+            deps = fields["allowed dependencies"]
+            out[path] = Owner(
+                ownership.removeprefix("module "),
+                False,
+                () if deps == "none" else tuple(deps.split(", ")),
+                path,
+                public_paths,
+            )
         return out
 
     return resolve

@@ -58,8 +58,7 @@ const gitBinary = "git"
 // HookCmd groups the host hooks. It is not in the command list (design
 // 11.1): doctor --fix installs the hooks, and they call hook run.
 type HookCmd struct {
-	Install HookInstallCmd `cmd:"" help:"Write the archfit hooks into the configuration of a harness: claude, codex, or git."`
-	Run     HookRunCmd     `cmd:"" help:"Run one hook event: session-start, post-tool-use, stop, or pre-commit. The installed hooks call it."`
+	Run HookRunCmd `cmd:"" help:"Run one hook event: session-start, post-tool-use, stop, or pre-commit. The installed hooks call it."`
 }
 
 // HookRunCmd runs one hook event.

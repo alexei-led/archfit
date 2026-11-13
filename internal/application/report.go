@@ -12,9 +12,9 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
-// ProjectReport converts an assessment result plus its synthesised scorecard
+// projectReport converts an assessment result plus its synthesised scorecard
 // into the single stable external report contract renderers consume.
-func ProjectReport(r result.Result, sc score.Scorecard) report.Document {
+func projectReport(r result.Result, sc score.Scorecard) report.Document {
 	doc := report.Document{
 		SchemaVersion: r.SchemaVersion, Verdict: report.Verdict(r.Verdict), Base: r.Base, Head: r.Head,
 		ConfigHash: r.ConfigHash, Metrics: projectMetrics(r.Metrics), Findings: projectFindings(r.Findings),
@@ -59,22 +59,6 @@ func withRunFacts(doc report.Document, in IdentityInputs, gateReasons []string) 
 		PolicyRef: in.PolicyRef, BaseSHA: in.BaseSHA, HeadTreeDigest: in.HeadTreeDigest,
 		EngineVersion:          in.EngineVersion,
 		MeasurementProfileHash: report.ProfileHash(doc.State.Comparison.MeasurementProfile),
-	}
-	return doc
-}
-
-// AttachScope attaches how the check resolved the change to the document, and
-// the same tree measured under the target tip's policy when the branch changed
-// a policy file. It also records the target in the identity, as the policy the
-// result is to be compared with.
-func AttachScope(doc report.Document, res ScopeResolution, underTargetPolicy *report.Document) report.Document {
-	doc.Scope = &report.CheckScope{
-		Mode: res.Mode, Target: res.Target, TargetSHA: res.TargetSHA, Base: res.Base,
-		Unresolved: res.Unresolved, PolicyChanged: slices.Clone(res.PolicyChanged), PolicyStale: slices.Clone(res.PolicyStale),
-		TargetPolicy: underTargetPolicy,
-	}
-	if res.TargetSHA != "" {
-		doc.State.Identity.PolicyRef = &report.PolicyRef{Ref: res.Target, SHA: res.TargetSHA}
 	}
 	return doc
 }
