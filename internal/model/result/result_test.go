@@ -115,11 +115,11 @@ func TestWaitingAsksNothingOfTheAuthor(t *testing.T) {
 // errors, beside the state that names it.
 func TestRepositoryState(t *testing.T) {
 	cases := []struct {
-		golden          string
-		state           result.RepositoryState
-		drift, expiring int
+		golden                  string
+		state                   result.RepositoryState
+		drift, expiring, unread int
 	}{
-		{golden: "repository_clean", state: result.RepositoryClean, expiring: 1},
+		{golden: "repository_clean", state: result.RepositoryClean, expiring: 1, unread: 1},
 		{golden: "repository_drift", state: result.RepositoryDrift, drift: 1},
 		{golden: "repository_expired", state: result.RepositoryExpired},
 	}
@@ -131,12 +131,12 @@ func TestRepositoryState(t *testing.T) {
 			if r == nil {
 				t.Fatal("no repository state")
 			}
-			if r.State != c.state || len(r.Drift) != c.drift || len(r.Expiring) != c.expiring {
-				t.Errorf("repository = %+v, want state %s, %d drift, %d expiring", r, c.state, c.drift, c.expiring)
+			if r.State != c.state || len(r.Drift) != c.drift || len(r.Expiring) != c.expiring || len(r.Unread) != c.unread {
+				t.Errorf("repository = %+v, want state %s, %d drift, %d expiring, %d unread", r, c.state, c.drift, c.expiring, c.unread)
 			}
 			for _, e := range r.Drift {
-				if e.FromChange {
-					t.Errorf("drift %s is from the change", e.Key)
+				if e.FromChange || e.Next.Kind != result.NextFix {
+					t.Errorf("drift %s: from_change %t, next %+v; want false and a fix: archfit request asks only for a change", e.Key, e.FromChange, e.Next)
 				}
 			}
 			if expired := len(got.Errors) == 1 && got.Errors[0].Rule == "exception"; expired != (c.state == result.RepositoryExpired) {

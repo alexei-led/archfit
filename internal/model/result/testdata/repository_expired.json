@@ -26,7 +26,8 @@
   "repository": {
     "state": "expired",
     "drift": [],
-    "expiring": []
+    "expiring": [],
+    "unread": []
   },
   "policy": {
     "path": ".archfit.yaml",

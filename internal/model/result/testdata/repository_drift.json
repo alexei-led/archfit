@@ -18,9 +18,8 @@
           "min": 7
         },
         "next": {
-          "kind": "command",
-          "text": "archfit request -m \"<why you need it>\"",
-          "note": "do not copy the code"
+          "kind": "fix",
+          "text": "fix the code, or ask an owner to add an exception"
         },
         "from": "pkg_tc",
         "to": "pkg_util",
@@ -28,7 +27,8 @@
         "from_change": false
       }
     ],
-    "expiring": []
+    "expiring": [],
+    "unread": []
   },
   "policy": {
     "path": ".archfit.yaml",

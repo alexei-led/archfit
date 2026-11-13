@@ -341,7 +341,7 @@ package internal/model/result
   const internal/model/result.ReplyNo internal/model/result.Reply
   const internal/model/result.ReplyUnknown internal/model/result.Reply
   const internal/model/result.ReplyYes internal/model/result.Reply
-  type internal/model/result.Repository struct{State internal/model/result.RepositoryState "json:\"state\""; Drift []internal/model/result.Error "json:\"drift\""; Expiring []internal/model/result.ExpiringException "json:\"expiring\""}
+  type internal/model/result.Repository struct{State internal/model/result.RepositoryState "json:\"state\""; Drift []internal/model/result.Error "json:\"drift\""; Expiring []internal/model/result.ExpiringException "json:\"expiring\""; Unread []internal/model/result.UnreadPlace "json:\"unread\""}
   const internal/model/result.RepositoryClean internal/model/result.RepositoryState
   const internal/model/result.RepositoryDrift internal/model/result.RepositoryState
   const internal/model/result.RepositoryExpired internal/model/result.RepositoryState
@@ -354,6 +354,7 @@ package internal/model/result
   const internal/model/result.StatusUnknown internal/model/result.Status
   const internal/model/result.StatusWaiting internal/model/result.Status
   type internal/model/result.Unknown struct{Path string "json:\"path,omitempty\""; Line int "json:\"line,omitempty\""; Cause internal/model/result.Cause "json:\"cause\""; What string "json:\"what\""; Why string "json:\"why,omitempty\""; Next internal/model/result.Next "json:\"next\""}
+  type internal/model/result.UnreadPlace struct{Path string "json:\"path,omitempty\""; Line int "json:\"line,omitempty\""; Reason string "json:\"reason\""; Fix string "json:\"fix,omitempty\""}
 package internal/model/rule
   func internal/model/rule.IsMetricRatchet(ruleID string) bool
   const internal/model/rule.RuleIDBCImbalancedCoupling untyped string

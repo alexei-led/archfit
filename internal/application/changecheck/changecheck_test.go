@@ -819,10 +819,18 @@ func (w *world) pushWith(policyText, today string, head evidence.CheckFacts) {
 	w.today = today
 }
 
+// unresolved is an import of a file the last commit did not touch, which the
+// parent could not resolve either: it gives no reason for unknown.
+var unresolved = evidence.UnknownItem{
+	File: "web/app.ts", Line: 3, Specifier: "./x", Reason: "import ./x does not resolve", Cause: evidence.CauseImport,
+	Fix: "add web/x.ts",
+}
+
 // TestRepositoryStateOnAPush: a run whose HEAD is the tip of the target
 // branch carries the repository state of its head, in the JSON of the result
 // golden of each state. The state does not change the status: drift that the
 // last commit did not add passes, and an expired exception fails every run.
+// A place the check could not read is listed beside a clean state.
 func TestRepositoryStateOnAPush(t *testing.T) {
 	copies := tree(nil, utilCopy, tcCopy)
 	tests := []struct {
@@ -831,7 +839,9 @@ func TestRepositoryStateOnAPush(t *testing.T) {
 		status result.Status
 	}{
 		{name: "repository_clean", status: result.StatusPass, setup: func(w *world) {
-			w.pushWith(expiredYAML, "2026-11-10", copies)
+			head := tree(nil, utilCopy, tcCopy)
+			head.Unknown = []evidence.UnknownItem{unresolved}
+			w.pushWith(expiredYAML, "2026-11-10", head)
 		}},
 		{name: "repository_drift", status: result.StatusPass, setup: func(w *world) {
 			w.pushWith(policyYAML, "2026-11-10", tree([]evidence.ImportFact{tcToUtil}))
@@ -863,6 +873,26 @@ func TestRepositoryStateOnAPush(t *testing.T) {
 	}
 }
 
+// A missing tool does not hide a failure, so a push that fails carries the
+// state, and the tool it could not run is unread beside it.
+func TestRepositoryStateListsAMissingTool(t *testing.T) {
+	w := newWorld()
+	head := tree(nil, utilCopy, tcCopy)
+	head.Unknown = []evidence.UnknownItem{missingTool}
+	w.pushWith(expiredYAML, "2026-11-20", head)
+	got := w.check(t, changecheck.Options{}).Result
+	r := got.Repository
+	if got.Status != result.StatusFail || r == nil || r.State != result.RepositoryExpired {
+		t.Fatalf("status %s, repository %+v; want fail and expired", got.Status, r)
+	}
+	want := []result.UnreadPlace{{Reason: missingTool.Reason, Fix: missingTool.Fix}}
+	if !slices.Equal(r.Unread, want) {
+		t.Errorf("unread = %+v, want %+v", r.Unread, want)
+	}
+}
+
+var missingTool = evidence.UnknownItem{Reason: "ast-grep is not installed", Cause: evidence.CauseTool, Fix: "install ast-grep"}
+
 // An exception is listed from 14 days before its date (2026-11-19), and not
 // 15 days before.
 func TestRepositoryStateExpiringWindow(t *testing.T) {
@@ -885,7 +915,6 @@ func TestRepositoryStateExpiringWindow(t *testing.T) {
 // verdict carries a state. Every other run carries none, and none of them is
 // an error: an absent state is no state, never clean.
 func TestNoRepositoryState(t *testing.T) {
-	missingTool := evidence.UnknownItem{Reason: "ast-grep is not installed", Cause: evidence.CauseTool, Fix: "install ast-grep"}
 	tests := []struct {
 		name   string
 		setup  func(w *world)

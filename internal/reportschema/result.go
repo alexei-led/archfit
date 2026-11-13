@@ -33,6 +33,7 @@ const (
 	defPolicy    = "Policy"
 	defRepo      = "Repository"
 	defExpiring  = "ExpiringException"
+	defUnread    = "UnreadPlace"
 )
 
 // propRule is the rule property of an error and of an exception.
@@ -128,13 +129,14 @@ func patchResultDefinitions(defs jsonschema.Definitions) error {
 	pattern(defPolicy, "digest", digestPattern)
 	enum(defRepo, "state", string(result.RepositoryClean), string(result.RepositoryDrift), string(result.RepositoryExpired))
 	pattern(defExpiring, "expires", datePattern)
+	property(defUnread, "line").Minimum = "1"
 
 	one := uint64(1)
 	for _, f := range [][2]string{
 		{defResult, "summary"}, {defResult, "engine"}, {defCanAnswer, "from"}, {defCanAnswer, "to"}, {defCanAnswer, "engine"},
 		{defError, "path"}, {defError, propRule}, {defError, "what"}, {defError, "key"},
 		{defUnknown, "what"}, {defNext, "text"}, {defPolicy, "path"}, {defException, propRule},
-		{defExpiring, propRule}, {defExpiring, "from"},
+		{defExpiring, propRule}, {defExpiring, "from"}, {defUnread, "reason"},
 	} {
 		property(f[0], f[1]).MinLength = &one
 	}

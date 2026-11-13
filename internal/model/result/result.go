@@ -222,18 +222,38 @@ const (
 	RepositoryExpired RepositoryState = "expired"
 )
 
-// Repository is the whole head tree judged on its own, with the policy's
-// exceptions on the result's date.
+// Repository is the whole tree the check read, the working tree, judged on
+// its own with the policy's exceptions on the result's date. In CI the
+// working tree is the tree of HEAD.
 type Repository struct {
-	// State is clean, drift or expired.
+	// State is clean, drift or expired. It covers only what the check read:
+	// a reader that shows State shows Unread beside it.
 	State RepositoryState `json:"state"`
 	// Drift are the errors no exception covers, in record order, each with
-	// from_change false. An error an expired exception matches is not here:
+	// from_change false and the next step "fix the code, or ask an owner to
+	// add an exception". An error an expired exception matches is not here:
 	// the result's errors list that exception.
 	Drift []Error `json:"drift"`
 	// Expiring are the exceptions within 14 days of their date that still
 	// cover an error, in policy order.
 	Expiring []ExpiringException `json:"expiring"`
+	// Unread are the places of the tree the check could not read, such as an
+	// import that does not resolve or a missing tool. State does not cover
+	// them: missing evidence is not zero.
+	Unread []UnreadPlace `json:"unread"`
+}
+
+// UnreadPlace is a place of the tree the check could not read.
+type UnreadPlace struct {
+	// Path is the file. Absent when the place is the whole tree, such as a
+	// missing tool.
+	Path string `json:"path,omitempty"`
+	// Line is the line in Path, when there is one.
+	Line int `json:"line,omitempty"`
+	// Reason says what could not be read.
+	Reason string `json:"reason"`
+	// Fix is the step that makes it readable, when there is one.
+	Fix string `json:"fix,omitempty"`
 }
 
 // ExpiringException is an exception of the policy close to its date.

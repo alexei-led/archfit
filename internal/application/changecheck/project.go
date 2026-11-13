@@ -50,17 +50,28 @@ func project(r run, protected bool, now time.Time, engine string) result.Result 
 	return res
 }
 
+// nextDrift is the step of a drift error. Drift is the owners' work, not a
+// change's: `archfit request` asks only for what a change adds.
+var nextDrift = result.Next{Kind: result.NextFix, Text: "fix the code, or ask an owner to add an exception"}
+
 // projectRepository maps the repository state: its drift in the fields of
-// an error, and the exceptions close to their date. The expired exceptions
-// are not repeated: the result's errors list them for every run.
+// an error, the exceptions close to their date, and the places the check
+// could not read, which the state does not cover. The expired exceptions are
+// not repeated: the result's errors list them for every run.
 func projectRepository(s repostate.Repository, policyPath string) *result.Repository {
 	out := &result.Repository{
 		State:    result.RepositoryState(s.State),
 		Drift:    make([]result.Error, 0, len(s.Drift)),
 		Expiring: make([]result.ExpiringException, 0, len(s.Expiring)),
+		Unread:   make([]result.UnreadPlace, 0, len(s.Unknown)),
 	}
 	for _, e := range s.Drift {
-		out.Drift = append(out.Drift, projectError(e, policyPath))
+		d := projectError(e, policyPath)
+		d.Next = nextDrift
+		out.Drift = append(out.Drift, d)
+	}
+	for _, u := range s.Unknown {
+		out.Unread = append(out.Unread, result.UnreadPlace{Path: u.File, Line: u.Line, Reason: u.Reason, Fix: u.Fix})
 	}
 	for _, x := range s.Expiring {
 		out.Expiring = append(out.Expiring, result.ExpiringException{

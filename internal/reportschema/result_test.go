@@ -112,7 +112,11 @@ func TestResultSchemaRejectsBrokenDocuments(t *testing.T) {
 		{"unknown repository state", goldenClean, func(d map[string]any) { repository(d)["state"] = "policy_changed" }},
 		{"null drift", goldenClean, func(d map[string]any) { repository(d)["drift"] = nil }},
 		{"missing expiring", goldenClean, func(d map[string]any) { delete(repository(d), "expiring") }},
-		{"extra key in the repository", goldenClean, func(d map[string]any) { repository(d)["unread"] = []any{} }},
+		{"missing unread", goldenClean, func(d map[string]any) { delete(repository(d), "unread") }},
+		{"unread without a reason", goldenClean, func(d map[string]any) {
+			delete(repository(d)["unread"].([]any)[0].(map[string]any), "reason")
+		}},
+		{"extra key in the repository", goldenClean, func(d map[string]any) { repository(d)["balances"] = []any{} }},
 		{"bad expiring date", goldenClean, func(d map[string]any) {
 			repository(d)["expiring"].([]any)[0].(map[string]any)["expires"] = "in 9 days"
 		}},
