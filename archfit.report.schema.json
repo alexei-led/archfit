@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.state.schema.json",
+  "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.report.schema.json",
   "$defs": {
     "AgentTask": {
       "properties": {

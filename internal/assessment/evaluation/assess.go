@@ -98,14 +98,13 @@ type Observations struct {
 	// acquisition (policy.ModuleMap.CrateOwners). The rules use it to place a
 	// Rust node no path glob claims, such as a cargo-modules crate::mod node,
 	// in its crate's module. Nil when Rust is absent.
-	CrateOwners             map[string]string
-	FileFacts               []modevidence.FileFact
-	Clones                  []clone.Cluster
-	DynamicImports          []modevidence.DynamicImportSite
-	RuntimeAsyncSites       []modevidence.RuntimeAsyncSite
-	RuntimeConfidence       string
-	DeprecatedDeps          []modevidence.DeprecatedDep
-	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
+	CrateOwners       map[string]string
+	FileFacts         []modevidence.FileFact
+	Clones            []clone.Cluster
+	DynamicImports    []modevidence.DynamicImportSite
+	RuntimeAsyncSites []modevidence.RuntimeAsyncSite
+	RuntimeConfidence string
+	DeprecatedDeps    []modevidence.DeprecatedDep
 
 	// Declared and corroborated deploy units remain separate. The corroborated
 	// map is keyed by declared module only after acquisition has attributed the

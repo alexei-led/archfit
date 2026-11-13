@@ -49,6 +49,8 @@ This project is indexed by GitNexus as **archfit** (11188 symbols, 36851 relatio
 
 <!-- gitnexus:end -->
 
+`archfit check` writes the text record by default: exit `0` is `pass`, `1` is `fail`, and `2` is `unknown`, wrong usage, or a tool error. Do not treat exit `2` as a pass.
+
 <!-- archfit:start -->
 
 Run `archfit rules` before you start and `archfit check` before you finish.

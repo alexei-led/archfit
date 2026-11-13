@@ -36,7 +36,7 @@ var retiredDenyRules = []retiredDenyRule{
 	{"syntax_no_config", "internal/syntax/**", pkgConfig, "internal/syntax/fileclass/fileclass.go", pkgConfig},
 	{"report_ports_no_config", "internal/report/ports/**", pkgConfig, "internal/report/ports/ports.go", pkgConfig},
 	{"baseline_no_config", "internal/baseline/**", pkgConfig, "internal/baseline/baseline.go", pkgConfig},
-	{"output_no_config", "internal/output/**", pkgConfig, "internal/output/console/report.go", pkgConfig},
+	{"output_no_config", "internal/output/**", pkgConfig, "internal/output/reporttext/reporttext.go", pkgConfig},
 	{"labels_no_config", "internal/relationship/labels/**", pkgConfig, "internal/relationship/labels/labels.go", pkgConfig},
 	{"labels_store_no_config", "internal/labels/labelsio/**", pkgConfig, "internal/labels/labelsio/labelsio.go", pkgConfig},
 	{"toolrun_no_config", "internal/toolrun/**", pkgConfig, "internal/toolrun/toolrun.go", pkgConfig},

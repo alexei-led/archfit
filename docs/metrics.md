@@ -119,7 +119,6 @@ The following report blocks explain inputs or expose limits. None gates by itsel
 | `dynamic_connascence_signals` | Review hints from dynamic imports and runtime async relations. Each signal is unmeasured and report-only. |
 | `distance_config_candidates` | Static external, dynamic, and async evidence that can prompt config review. It does not change distance or config. |
 | `volatility_corroboration` | Git commit counts by declared module. It supports review but does not set volatility. |
-| `semantic_strength_overlay` | SCIP strength refinements by language. Go is excluded because `go/types` supplies its strength. |
 | `runtime_async`, `runtime_async_edges` | Detected async integration sites. Missing evidence does not prove synchronous coupling. These sites do not affect score or distance. |
 | `local_coupling` | Same-module coupling and cohesion signals. Unknown strength abstains. These edges do not enter `coupling_balance`. |
 | `distance_context`, `classified_edges` | Distance basis and scoring inputs, abstentions, volatility provenance, drivers, module-pair concentration, and tail risk. These explain the score; they do not create another gate. |

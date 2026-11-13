@@ -4,8 +4,7 @@
 # A stable public contract keeps coupling weak across that boundary.
 # Intrusive access at high volatility can qualify a distributed-monolith seam.
 # Declare owners and deploy units to describe each service's responsibility.
-#   archfit analyze --config .archfit.yaml
-#   archfit analyze --format scorecard --config .archfit.yaml
+# For Archfit 3 only. Run `archfit init` to convert a repository to version 3.
 version: 2
 coupling:
   min_severity: medium

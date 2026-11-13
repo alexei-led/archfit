@@ -98,21 +98,6 @@ func SortSyntaxFacts(facts []SyntaxFact) {
 	})
 }
 
-// SemanticStrengthOverlay records how often SCIP semantic strength refined
-// extractor edges. It is report-only evidence.
-type SemanticStrengthOverlay struct {
-	ByLanguage map[string]SemanticStrengthOverlayStats `json:"by_language,omitempty"`
-}
-
-// SemanticStrengthOverlayStats is the per-language SCIP overlay hit/miss summary.
-type SemanticStrengthOverlayStats struct {
-	CandidateEdges int            `json:"candidate_edges"`
-	Applied        int            `json:"applied"`
-	Missed         int            `json:"missed"`
-	Before         map[string]int `json:"before,omitempty"`
-	After          map[string]int `json:"after,omitempty"`
-}
-
 // FileFact holds neutral per-module structural facts assembled from the symbol
 // graph and file LOC. Report-only evidence for the off-gate LLM narrative.
 type FileFact struct {

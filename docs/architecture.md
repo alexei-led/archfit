@@ -10,7 +10,7 @@ Archfit is a Go command-line tool. Its six layers keep policy, analysis, workflo
 | `support` | Shared analysis scope | `internal/scope` |
 | `core` | Policy, relationships, assessment, syntax analysis | `internal/policy`, `internal/relationship/**`, `internal/assessment/**`, `internal/syntax` |
 | `application` | Use-case stages and report projection | `internal/application` |
-| `adapter` | Config, acquisition, tools, persistence, providers, output | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/factcache`, `internal/history`, `internal/baseline`, `internal/ownership`, `internal/labels`, `internal/llm`, `internal/output/**` |
+| `adapter` | Config, acquisition, tools, persistence, providers, output | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/factcache`, `internal/history`, `internal/baseline`, `internal/ownership`, `internal/labels`, `internal/llm`, `internal/output/record`, `internal/output/reporttext`, `internal/output/jsonout`, `internal/reportschema` |
 | `cmd` | CLI composition, development tools, architecture tests | `cmd/**`, `internal/calibrate`, `scripts/eval`, architecture tests |
 
 The module map and import limits live in `.archfit.yaml`. See `AGENTS.md` for the generated module table and blocking rules.
@@ -86,7 +86,7 @@ Git object writes use a private directory for the command, with the repository's
 - Application code uses ports. It does not import concrete extractors, output adapters, or persistence adapters.
 - Relationship analysis owns classification and coupling semantics. Assessment consumes its public relationship contract.
 - Assessment does not read the raw graph or relationship classifier internals.
-- Renderers consume report DTOs. They do not make policy or assessment decisions.
+- `output/record` renders the check/can result as text, JSON, or SARIF. `output/reporttext` and `output/jsonout` render the repository report. They consume finished contracts and do not make policy or assessment decisions.
 - CLI packages wire concrete implementations. They do not implement domain rules, metrics, or decisions.
 - Neutral model packages do not import project packages.
 

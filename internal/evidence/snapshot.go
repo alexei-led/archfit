@@ -17,21 +17,20 @@ import (
 // lifecycle status, baselines, and report models deliberately never cross this
 // boundary.
 type Facts struct {
-	Graph                   *graph.Graph
-	Coverage                []modevidence.Coverage
-	SuppliedCoverage        []modevidence.CoverageIngest
-	Symbols                 symbol.Graph
-	PatternMatches          []pattern.Match
-	SyntaxFacts             []modevidence.SyntaxFact
-	FileLOC                 map[string]int
-	FileClassIndex          map[string]fileclass.FileClass
-	FileFacts               []modevidence.FileFact
-	Clones                  []modelclone.Cluster
-	DynamicImports          []modevidence.DynamicImportSite
-	RuntimeAsyncSites       []modevidence.RuntimeAsyncSite
-	RuntimeConfidence       string
-	DeprecatedDeps          []modevidence.DeprecatedDep
-	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
+	Graph             *graph.Graph
+	Coverage          []modevidence.Coverage
+	SuppliedCoverage  []modevidence.CoverageIngest
+	Symbols           symbol.Graph
+	PatternMatches    []pattern.Match
+	SyntaxFacts       []modevidence.SyntaxFact
+	FileLOC           map[string]int
+	FileClassIndex    map[string]fileclass.FileClass
+	FileFacts         []modevidence.FileFact
+	Clones            []modelclone.Cluster
+	DynamicImports    []modevidence.DynamicImportSite
+	RuntimeAsyncSites []modevidence.RuntimeAsyncSite
+	RuntimeConfidence string
+	DeprecatedDeps    []modevidence.DeprecatedDep
 	// RustModuleGraphCrates are the crate identifiers cargo-modules graphed,
 	// a crate with no submodule included: its module graph is empty, not
 	// missing.
