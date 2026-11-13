@@ -329,6 +329,7 @@ package internal/model/result
   const internal/model/result.CauseTool internal/model/result.Cause
   type internal/model/result.Error struct{Path string "json:\"path\""; Line int "json:\"line,omitempty\""; Rule string "json:\"rule\""; What string "json:\"what\""; Why string "json:\"why,omitempty\""; Instead string "json:\"instead,omitempty\""; Balance *internal/model/result.Balance "json:\"balance,omitempty\""; Next internal/model/result.Next "json:\"next\""; From string "json:\"from,omitempty\""; To string "json:\"to,omitempty\""; Key string "json:\"key\""; FromChange bool "json:\"from_change\""; Exception *internal/model/result.Exception "json:\"exception,omitempty\""}
   type internal/model/result.Exception struct{Rule string "json:\"rule\""; Expires string "json:\"expires\""}
+  type internal/model/result.ExpiringException struct{Rule string "json:\"rule\""; From string "json:\"from\""; To string "json:\"to,omitempty\""; Expires string "json:\"expires\""; Why string "json:\"why,omitempty\""}
   type internal/model/result.Next struct{Kind internal/model/result.NextKind "json:\"kind\""; Text string "json:\"text\""; Note string "json:\"note,omitempty\""}
   const internal/model/result.NextCommand internal/model/result.NextKind
   const internal/model/result.NextFix internal/model/result.NextKind
@@ -340,7 +341,12 @@ package internal/model/result
   const internal/model/result.ReplyNo internal/model/result.Reply
   const internal/model/result.ReplyUnknown internal/model/result.Reply
   const internal/model/result.ReplyYes internal/model/result.Reply
-  type internal/model/result.Result struct{Schema string "json:\"schema\""; Status internal/model/result.Status "json:\"status\""; Summary string "json:\"summary\""; Errors []internal/model/result.Error "json:\"errors\""; Unknown []internal/model/result.Unknown "json:\"unknown\""; Policy internal/model/result.Policy "json:\"policy\""; Base string "json:\"base,omitempty\""; Head string "json:\"head,omitempty\""; Date string "json:\"date\""; Engine string "json:\"engine\""}
+  type internal/model/result.Repository struct{State internal/model/result.RepositoryState "json:\"state\""; Drift []internal/model/result.Error "json:\"drift\""; Expiring []internal/model/result.ExpiringException "json:\"expiring\""; Unread []internal/model/result.UnreadPlace "json:\"unread\""}
+  const internal/model/result.RepositoryClean internal/model/result.RepositoryState
+  const internal/model/result.RepositoryDrift internal/model/result.RepositoryState
+  const internal/model/result.RepositoryExpired internal/model/result.RepositoryState
+  type internal/model/result.RepositoryState string
+  type internal/model/result.Result struct{Schema string "json:\"schema\""; Status internal/model/result.Status "json:\"status\""; Summary string "json:\"summary\""; Errors []internal/model/result.Error "json:\"errors\""; Unknown []internal/model/result.Unknown "json:\"unknown\""; Repository *internal/model/result.Repository "json:\"repository,omitempty\""; Policy internal/model/result.Policy "json:\"policy\""; Base string "json:\"base,omitempty\""; Head string "json:\"head,omitempty\""; Date string "json:\"date\""; Engine string "json:\"engine\""}
   const internal/model/result.SchemaVersion untyped string
   type internal/model/result.Status string
   const internal/model/result.StatusFail internal/model/result.Status
@@ -348,6 +354,7 @@ package internal/model/result
   const internal/model/result.StatusUnknown internal/model/result.Status
   const internal/model/result.StatusWaiting internal/model/result.Status
   type internal/model/result.Unknown struct{Path string "json:\"path,omitempty\""; Line int "json:\"line,omitempty\""; Cause internal/model/result.Cause "json:\"cause\""; What string "json:\"what\""; Why string "json:\"why,omitempty\""; Next internal/model/result.Next "json:\"next\""}
+  type internal/model/result.UnreadPlace struct{Path string "json:\"path,omitempty\""; Line int "json:\"line,omitempty\""; Reason string "json:\"reason\""; Fix string "json:\"fix,omitempty\""}
 package internal/model/rule
   func internal/model/rule.IsMetricRatchet(ruleID string) bool
   const internal/model/rule.RuleIDBCImbalancedCoupling untyped string

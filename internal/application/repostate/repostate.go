@@ -235,6 +235,16 @@ type PolicySource interface {
 	Policy(ctx context.Context) (resolved.Policy, error)
 }
 
+// Tree lists the files of the working tree, as a commit of every change
+// would hold them: the subset of changecheck.Repository the state needs.
+type Tree interface {
+	// WorkingTree returns the git tree id of the working tree.
+	WorkingTree(ctx context.Context) (string, error)
+	// Files returns every file of the git tree id tree, repository-relative
+	// and slash-separated.
+	Files(ctx context.Context, tree string) ([]string, error)
+}
+
 // HeadFacts reads the check facts of the working tree of the repository at
 // root, as a commit of every change would hold it.
 type HeadFacts interface {
@@ -244,22 +254,34 @@ type HeadFacts interface {
 // Service gives the state of a checkout. Every port is required.
 type Service struct {
 	Policies PolicySource
+	Tree     Tree
 	Facts    HeadFacts
 }
 
 // State gives the repository state of the checkout at root on today. A
 // policy that does not fit the tree gives no state: its error comes back,
-// as does an error of a port.
+// as does an error of a port. The policy is checked against every file of
+// the working tree, as `archfit check` does, not against the files the
+// extractors read: those leave test files out, and a language that is off
+// or a missing tool would make a path look empty.
 func (s Service) State(ctx context.Context, root string, today time.Time) (Repository, error) {
 	p, err := s.Policies.Policy(ctx)
 	if err != nil {
 		return Repository{}, err
 	}
-	head, err := s.Facts.Head(ctx, root)
+	tree, err := s.Tree.WorkingTree(ctx)
 	if err != nil {
 		return Repository{}, err
 	}
-	if err := p.CheckTree(head.Sources); err != nil {
+	files, err := s.Tree.Files(ctx, tree)
+	if err != nil {
+		return Repository{}, err
+	}
+	if err := p.CheckTree(files); err != nil {
+		return Repository{}, err
+	}
+	head, err := s.Facts.Head(ctx, root)
+	if err != nil {
 		return Repository{}, err
 	}
 	return Evaluate(Input{Policy: p, Head: head, Today: today}), nil

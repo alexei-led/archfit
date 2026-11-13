@@ -8,9 +8,11 @@ type CheckFacts struct {
 	Imports  []ImportFact        `json:"imports,omitempty"`
 	Literals []LiteralOccurrence `json:"literals,omitempty"`
 	Unknown  []UnknownItem       `json:"unknown,omitempty"`
-	// Sources are the source files of the tree the extractors read, test and
-	// generated files included: the unowned rule finds production code in no
-	// module among them, and an import target that is one of them is a file.
+	// Sources are the source files of the tree the extractors read: the
+	// unowned rule finds production code in no module among them, and an
+	// import target that is one of them is a file. An extractor may leave
+	// test files out (Go reads no _test.go file), so Sources is not the file
+	// list of the tree: check a policy's globs against the tree's files.
 	Sources []string `json:"sources,omitempty"`
 }
 

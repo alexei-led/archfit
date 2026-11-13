@@ -98,7 +98,7 @@ func (co checkout) repositoryState(ctx context.Context) (report.RepositoryState,
 	if err != nil {
 		return report.RepositoryState{}, err
 	}
-	svc := repostate.Service{Policies: src, Facts: co.facts(checkfacts.ConfigFrom(p))}
+	svc := repostate.Service{Policies: src, Tree: repository{co}, Facts: co.facts(checkfacts.ConfigFrom(p))}
 	state, err := svc.State(ctx, co.root, co.now())
 	if err != nil {
 		return report.RepositoryState{}, err

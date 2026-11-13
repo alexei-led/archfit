@@ -107,6 +107,22 @@ func TestReportOnAVersion2Policy(t *testing.T) {
 	}
 }
 
+// TestReportOnAPolicyThatDeclaresTests: the Go extractor reads no test file,
+// yet the policy's tests glob matches the test files of the tree, so the
+// report gives a state, as check does.
+func TestReportOnAPolicyThatDeclaresTests(t *testing.T) {
+	t.Parallel()
+	files := with(fixtureFiles(), map[string]string{
+		defaultConfigPath:       fixturePolicy + "tests:\n  - \"**/*_test.go\"\n",
+		"pkg/util/util_test.go": "package util\n\nimport \"testing\"\n\nfunc TestUtil(t *testing.T) {}\n",
+	})
+	dir := fixtureRepo(t, files, nil)
+	got := runCLI(t, fixtureDate, cmdReport, "-C", dir)
+	if got.code != 0 || !strings.HasPrefix(got.stdout, "repository: clean\n") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want 0 and a clean state", got.code, got.stdout, got.stderr)
+	}
+}
+
 // TestReportErrorsExit2: no policy, or one that does not fit the tree, stops
 // the report with exit 2 and prints nothing.
 func TestReportErrorsExit2(t *testing.T) {

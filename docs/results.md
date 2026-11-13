@@ -104,6 +104,7 @@ The same tree, policy, engine version, and date give the same output.
 | `summary` | The status line of the record. |
 | `errors[]` | The errors in record order. |
 | `unknown[]` | The reasons for `unknown`: `path`, `line`, `cause` (`policy`, `base`, `tool`, `import`), `what`, `why`, `next`. |
+| `repository` | The state of the repository, on a push only. See below. |
 | `policy` | `path`, `digest`, `protected`, `differs` (the local file differs from the target's), and `target` (the branch it was compared with). |
 | `base`, `head` | The commits compared. |
 | `date` | The date the exceptions were judged on, `YYYY-MM-DD`. |
@@ -122,6 +123,19 @@ Each error has:
 | `key` | The rule, the modules, and the symbol the error is counted by. |
 | `from_change` | `false` for an expired exception that another change added. |
 | `exception` | For an expired exception: the `rule` it covers and the date it `expires`. |
+
+On a push, the result also has a `repository` object: the whole working tree, judged on its own with the exceptions on `date`. In CI the working tree is the tree of `HEAD`. A push is a run where `HEAD` is the tip of the target branch, and where the status is `pass` or `fail`.
+
+| Field | Meaning |
+| --- | --- |
+| `state` | `clean` (no error outside the exceptions), `drift` (an error that no exception covers), or `expired` (an exception passed its date and the code still breaks its rule). |
+| `drift[]` | The errors that no exception covers, in the fields of an error, each with `from_change: false` and the next step `fix the code, or ask an owner to add an exception`. `archfit request` asks only for what a change adds. |
+| `expiring[]` | The exceptions within 14 days of their date that still cover an error: `rule`, `from`, `to`, `expires` (the last day it holds), `why`. |
+| `unread[]` | The places the check could not read, which `state` does not cover: `path`, `line`, `reason`, `fix`. A reader that shows `state` shows `unread` beside it. |
+
+An expired exception is not in `repository`. `errors[]` lists it, as on every run. The state does not change the status: drift that the change did not add still gives `pass`.
+
+A pull-request run has no `repository`. A push also has none when its status is `unknown`, when a later push moved the tip before the run read it, or when it is a `--policy` preview. A missing `repository` means "no state". It never means `clean`.
 
 `archfit can --format json` writes `archfit.can.v1`, in the same schema file: `from`, `to`, `answer` (`yes`, `no`, `unknown`), `rule`, `what`, `why`, `instead`, `balance`, `next`, `policy`, `head`, `date`, and `engine`.
 

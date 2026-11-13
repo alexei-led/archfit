@@ -1,0 +1,39 @@
+{
+  "schema": "archfit.result.v1",
+  "status": "pass",
+  "summary": "archfit: pass",
+  "errors": [],
+  "unknown": [],
+  "repository": {
+    "state": "clean",
+    "drift": [],
+    "expiring": [
+      {
+        "rule": "duplication",
+        "from": "pkg_tc",
+        "to": "pkg_util",
+        "expires": "2026-11-19",
+        "why": "Request #431 is open."
+      }
+    ],
+    "unread": [
+      {
+        "path": "web/app.ts",
+        "line": 3,
+        "reason": "import ./x does not resolve",
+        "fix": "add web/x.ts"
+      }
+    ]
+  },
+  "policy": {
+    "path": ".archfit.yaml",
+    "digest": "sha256:c5b390bb2758ae3774a04401921f08e02397f6da5d7a5dba1144490c6ae4061a",
+    "protected": true,
+    "differs": false,
+    "target": "origin/main"
+  },
+  "base": "1405df66cbe219b0bf6355bc3d60361a8376b6b4",
+  "head": "1a954628a960aaef81d7b2d4521929579f3541e6",
+  "date": "2026-11-10",
+  "engine": "4.0.0"
+}
