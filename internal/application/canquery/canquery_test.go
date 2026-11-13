@@ -479,3 +479,36 @@ func TestAnswersUseOnlyDesignWords(t *testing.T) {
 		}
 	}
 }
+
+// TestCoveredErrorsAreLeftOut: a question with Covered leaves out the errors
+// an exception covers, as check does. pkg_chaos -> pkg_runtime breaks the deny
+// rule and graph: covering the deny rule answers with graph, never with yes.
+func TestCoveredErrorsAreLeftOut(t *testing.T) {
+	t.Parallel()
+	only := func(rules ...string) func(rule, from, to string) bool {
+		return func(rule, from, to string) bool {
+			return from == chaos && to == runtime && slices.Contains(rules, rule)
+		}
+	}
+	for _, c := range []struct {
+		name     string
+		covered  func(rule, from, to string) bool
+		wantRule string
+		want     result.Reply
+	}{
+		{name: "no filter", wantRule: denyChaos, want: result.ReplyNo},
+		{name: "the deny rule covered", covered: only(denyChaos), wantRule: resolved.RuleGraph, want: result.ReplyNo},
+		{name: "every error covered", covered: func(string, string, string) bool { return true }, want: result.ReplyYes},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			a, err := service(policy()).Can(context.Background(), canquery.Question{From: chaos, To: runtime, Covered: c.covered})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.Answer != c.want || a.Rule != c.wantRule {
+				t.Errorf("answer %s rule %q, want %s %q", a.Answer, a.Rule, c.want, c.wantRule)
+			}
+		})
+	}
+}

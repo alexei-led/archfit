@@ -468,7 +468,7 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 | Event | Runs | Stops when |
 | --- | --- | --- |
 | `session-start` | Records `HEAD` as the session base and prints the five lines that `init` writes for agents. | never |
-| `post-tool-use` | `can` on each import on a line added since the session base, when the working tree changed. | `can` answers `no`, no exception covers it, and the session has not shown it yet. |
+| `post-tool-use` | `can` on each import on a line added since the session base, when the working tree changed, with the errors that exceptions cover left out. It stores the answer of the first `no` for `archfit request`. | `can` answers `no`, and the session has not shown it yet. |
 | `stop` | `check` | The change fails, with errors other than the set it stopped on last. A pass or an `unknown` forgets that set. |
 | `pre-commit` | `check` on the staged content against `HEAD` | The commit adds an error, or an exception is past its date. |
 

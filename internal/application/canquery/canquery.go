@@ -50,7 +50,8 @@
 //
 // # Limits
 //
-// `can` applies no exception and does not find a cycle the dependency would
+// `can` applies no exception, unless the question sets Covered (the
+// post-tool-use hook does), and does not find a cycle the dependency would
 // close. `check` judges both.
 //
 // The package reads the checkout through its ports and imports no adapter:
@@ -134,6 +135,12 @@ type Question struct {
 	// From and To are the arguments as given.
 	From, To string
 	Stamp    Stamp
+	// Covered, when set, leaves out the errors an exception covers, as check
+	// does: it reports whether an exception covers an error of rule from the
+	// module from to to. `archfit can` sets none; the post-tool-use hook sets
+	// one, so it never shows a no that check passes, nor hides a second error
+	// behind a covered one.
+	Covered func(rule, from, to string) bool
 }
 
 // Service answers Questions. Every port is required.
@@ -180,12 +187,12 @@ func (s Service) Can(ctx context.Context, q Question) (result.CanAnswer, error) 
 		Head:   q.Stamp.Head, Date: q.Stamp.Date, Engine: q.Stamp.Engine,
 	}
 	if from.end.Path == "" || from.end.IsFile || len(from.end.Files) == 0 {
-		return judge(p, a, from, to), nil
+		return judge(p, a, from, to, q.Covered), nil
 	}
 	// Check judges each file of a directory on its own.
 	var first result.CanAnswer
 	for i, file := range from.end.Files {
-		got := judge(p, a, fileSide(p, from.arg, file), to)
+		got := judge(p, a, fileSide(p, from.arg, file), to, q.Covered)
 		switch {
 		case i == 0:
 			first = got
@@ -198,7 +205,7 @@ func (s Service) Can(ctx context.Context, q Question) (result.CanAnswer, error) 
 
 // judge answers for one importer: a file, a module, or a directory with no
 // source file.
-func judge(p resolved.Policy, a result.CanAnswer, from, to side) result.CanAnswer {
+func judge(p resolved.Policy, a result.CanAnswer, from, to side, covered func(rule, from, to string) bool) result.CanAnswer {
 	if from.end.IsFile && (p.IsTest(from.end.Path) || p.IsGenerated(from.end.Path)) {
 		a.Answer = result.ReplyYes
 		return a
@@ -214,6 +221,10 @@ func judge(p resolved.Policy, a result.CanAnswer, from, to side) result.CanAnswe
 	// own taken to cover it. An error of one judgment and not the other
 	// turns on a path the module name does not give.
 	wide := change.Judge(widen(p, use), use)
+	if covered != nil {
+		drop := func(e change.Error) bool { return covered(e.Key.Rule, e.Key.From, e.Key.To) }
+		errs, wide = slices.DeleteFunc(errs, drop), slices.DeleteFunc(wide, drop)
+	}
 	inErrs, inWide := keys(errs), keys(wide)
 	var certain []change.Error
 	for _, e := range errs {

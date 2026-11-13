@@ -58,6 +58,10 @@ func (c can) Can(_ context.Context, q canquery.Question) (result.CanAnswer, erro
 	*c.asked = append(*c.asked, q.To)
 	switch q.To {
 	case toUtil:
+		// A graph error, unless the question's Covered covers it.
+		if q.Covered != nil && q.Covered(resolved.RuleGraph, tc, util) {
+			return result.CanAnswer{Answer: result.ReplyYes}, nil
+		}
 		return result.CanAnswer{From: tc, To: util, Answer: result.ReplyNo, Rule: resolved.RuleGraph}, nil
 	case forbidden:
 		return result.CanAnswer{From: tc, To: forbidden, Answer: result.ReplyNo, Rule: "only-docker"}, nil

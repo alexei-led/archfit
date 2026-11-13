@@ -86,10 +86,13 @@ repository that holds the event cwd. They remember the session in
   post-tool-use   when the working tree changed since its last run, reads
                   the imports the check reads, keeps those on lines added
                   since the session base, and asks archfit can about each:
-                    no, not reported earlier in the session, and no
-                    exception covers it
+                    no, not reported earlier in the session
                                     exit 2; stderr names the file and line,
-                                    then the record of archfit can
+                                    then the record of archfit can; the
+                                    first answer is stored for archfit
+                                    request
+                  The errors an exception covers are left out, as check
+                  leaves them out.
                     yes, unknown    exit 0, silent
                   Without a version 3 policy it is silent.
   stop            runs archfit check, as you would before you finish:
@@ -334,7 +337,7 @@ func (noStore) Save(context.Context, string, result.Result) error { return nil }
 
 // pathInRepo returns configAbs relative to gitRoot, through symlinks and a
 // case-variant spelling, or an error when the config lies outside the
-// repository: the pre-commit hook reads the config from the index.
+// repository.
 func pathInRepo(gitRoot, configAbs string) (string, error) {
 	resolved := configAbs
 	if dir, err := filepath.EvalSymlinks(filepath.Dir(configAbs)); err == nil {

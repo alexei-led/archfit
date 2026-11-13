@@ -4,9 +4,10 @@
 //
 // The imports are the ones the check reads (the head check facts), so the
 // hook and check never read a file two ways. An import on a line the change
-// did not add is not asked about. A no that an exception of the policy covers
-// is dropped: check would pass it. A yes or an unknown is dropped too: the
-// check at the end of the session gives the verdict.
+// did not add is not asked about. Each question leaves out the errors an
+// exception of the policy covers, as check does, so a covered error neither
+// shows as a no nor hides a second error of the same import. A yes or an
+// unknown is dropped: the check at the end of the session gives the verdict.
 //
 // `can` sees no cycle the import would close; check sees it.
 //
@@ -99,6 +100,7 @@ func (s Service) Refusals(ctx context.Context, r Request) ([]Refusal, error) {
 		}
 	}
 	today := s.Clock.Now()
+	covered := func(rule, from, to string) bool { return count.Covered(p, rule, from, to, today) }
 	var out []Refusal
 	for _, imp := range facts.Imports {
 		if added != nil && !slices.Contains(added[imp.File], imp.Line) {
@@ -109,11 +111,11 @@ func (s Service) Refusals(ctx context.Context, r Request) ([]Refusal, error) {
 			// A path of the tree, also where it spells a module name.
 			target = "./" + target
 		}
-		a, err := s.Can.Can(ctx, canquery.Question{From: imp.File, To: target, Stamp: r.Stamp})
+		a, err := s.Can.Can(ctx, canquery.Question{From: imp.File, To: target, Stamp: r.Stamp, Covered: covered})
 		if err != nil {
 			return nil, err
 		}
-		if a.Answer != result.ReplyNo || count.Covered(p, a.Rule, a.From, a.To, today) {
+		if a.Answer != result.ReplyNo {
 			continue
 		}
 		out = append(out, Refusal{File: imp.File, Line: imp.Line, Import: imp.Target, Answer: a})

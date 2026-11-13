@@ -556,3 +556,43 @@ func TestHookRunPreCommit(t *testing.T) {
 		})
 	}
 }
+
+// TestHookRunPostToolUseCannotRecordTheSession: a session file the hook cannot
+// write is the hook's own failure: a message, never a stop, also when the
+// edit adds nothing to show.
+func TestHookRunPostToolUseCannotRecordTheSession(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into a read-only directory")
+	}
+	dir := hookFixture(t, nil)
+	sessions := filepath.Join(dir, cacheDirName, sessionDirName)
+	if err := os.MkdirAll(sessions, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sessions, 0o500); err != nil { //nolint:gosec // a read-only directory on purpose
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(sessions, 0o750) }) //nolint:gosec // let t.TempDir remove it
+	writeFiles(t, dir, map[string]string{tcNetem: tcUsesFmt})
+	code, stdout, stderr := hookRun(t, dir, harnessEventPostToolUse, hookEventPostToolUse, nil)
+	// No words check: the message ends with the error text of the system.
+	if code != 0 || stderr != "" || !strings.Contains(systemMessageOf(t, stdout), "the session was not recorded") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want 0 and a systemMessage", code, stdout, stderr)
+	}
+}
+
+// TestHookRunPostToolUseLeavesTheAnswerForRequest: the record of a no ends
+// with archfit request; that command reads the answer the hook stored, as it
+// reads the answer of archfit can.
+func TestHookRunPostToolUseLeavesTheAnswerForRequest(t *testing.T) {
+	t.Parallel()
+	dir := hookFixture(t, nil)
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	code, stdout, stderr := hookRun(t, dir, harnessEventPostToolUse, hookEventPostToolUse, nil)
+	hookOutputCase{wantCode: 2, wantStderr: `next: archfit request -m "<why you need it>"`}.check(t, code, stdout, stderr)
+	req := runCLI(t, fixtureDate, "request", "-m", "the netem shaper needs the message", "-C", dir)
+	if out := req.stdout + req.stderr; strings.Contains(out, "run archfit check first") || !strings.Contains(out, "pkg_tc -> pkg_util") {
+		t.Errorf("archfit request after the hook: exit %d\n%s", req.code, out)
+	}
+}

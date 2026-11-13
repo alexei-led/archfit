@@ -138,9 +138,12 @@ func sessionStart(ctx context.Context, deps *appDeps, dir, id string) error {
 // can answers no for, once while they stay. It reads the tree, never the tool
 // payload, so an edit made through a shell command counts too. The imports
 // are the ones the check reads (the head check facts), on lines added since
-// the session base (internal/application/importcheck). A yes, an unknown, a
-// no an exception covers, or a tree without a valid version 3 policy is
-// silent: the stop hook reports what the check makes of it.
+// the session base (internal/application/importcheck), with the errors an
+// exception covers left out. A yes, an unknown, or a tree without a valid
+// version 3 policy is silent: the stop hook reports what the check makes of
+// it. The answer of the first no is stored for archfit request, as archfit
+// can stores its answer. A failure of the hook's own is a message, never a
+// stop.
 func postToolUse(ctx context.Context, deps *appDeps, dir, id string) error {
 	sess, err := openSession(ctx, deps.Runner, dir, id)
 	if err != nil {
@@ -157,25 +160,43 @@ func postToolUse(ctx context.Context, deps *appDeps, dir, id string) error {
 	if tree == sess.LastTree {
 		return nil
 	}
-	msgs, err := sess.newRefusals(ctx, co)
+	shown, err := sess.newRefusals(ctx, co)
 	if err != nil {
 		return systemMessage(deps, couldNotRun(err))
 	}
 	sess.LastTree = tree
+	var notes []string
 	if err := sess.save(); err != nil {
-		msgs = append(msgs, "archfit: the session was not recorded: "+err.Error())
+		notes = append(notes, "archfit: the session was not recorded: "+err.Error())
 	}
-	if len(msgs) == 0 {
+	if len(shown) == 0 {
+		// A failure of the hook's own never stops the agent.
+		if len(notes) > 0 {
+			return systemMessage(deps, strings.Join(notes, "\n"))
+		}
 		return nil
 	}
-	return &exitError{code: 2, msg: strings.TrimSuffix(strings.Join(msgs, ""), "\n")}
+	// archfit request reads the answer of the first no, as after archfit can.
+	if err := co.saveAnswer(tree, shown[0].Answer); err != nil {
+		notes = append(notes, "archfit: the answer was not stored for archfit request: "+err.Error())
+	}
+	var b strings.Builder
+	for _, r := range shown {
+		if err := refusalText(&b, r); err != nil {
+			return systemMessage(deps, couldNotRun(err))
+		}
+	}
+	for _, note := range notes {
+		b.WriteString(note + "\n")
+	}
+	return &exitError{code: 2, msg: strings.TrimSuffix(b.String(), "\n")}
 }
 
 // newRefusals asks archfit can about each import on a line added since the
-// session base (internal/application/importcheck) and returns the text of
-// every no the session has not shown yet. It keeps in Reported the noes each
-// file still adds.
-func (s *hookSession) newRefusals(ctx context.Context, co checkout) ([]string, error) {
+// session base (internal/application/importcheck) and returns every no the
+// session has not shown yet. It keeps in Reported the noes each file still
+// adds.
+func (s *hookSession) newRefusals(ctx context.Context, co checkout) ([]importcheck.Refusal, error) {
 	base := s.BaseSHA
 	if base != "" && !refExists(ctx, co.runner, co.root, base) {
 		// A rebase dropped the base commit: HEAD is the nearest one left.
@@ -190,39 +211,30 @@ func (s *hookSession) newRefusals(ctx context.Context, co checkout) ([]string, e
 		return nil, err
 	}
 	held := map[string][]string{}
-	var msgs []string
+	var shown []importcheck.Refusal
 	for _, r := range refusals {
 		key := r.Import + "\x00" + r.Answer.Rule
 		if slices.Contains(held[r.File], key) {
 			continue
 		}
 		held[r.File] = append(held[r.File], key)
-		if slices.Contains(s.Reported[r.File], key) {
-			continue
+		if !slices.Contains(s.Reported[r.File], key) {
+			shown = append(shown, r)
 		}
-		text, err := refusalText(r)
-		if err != nil {
-			return nil, err
-		}
-		msgs = append(msgs, text)
 	}
 	for file := range held {
 		slices.Sort(held[file])
 	}
 	s.Reported = held
-	return msgs, nil
+	return shown, nil
 }
 
-// refusalText is what post-tool-use shows for one import that archfit can
-// answers no for: the file, the line and the import, then the record of the
-// answer.
-func refusalText(r importcheck.Refusal) (string, error) {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s:%d: import %s\n", r.File, r.Line, r.Import)
-	if err := record.Answer(&b, r.Answer, record.Options{}); err != nil {
-		return "", err
-	}
-	return b.String(), nil
+// refusalText writes what post-tool-use shows for one import that archfit
+// can answers no for: the file, the line and the import, then the record of
+// the answer.
+func refusalText(b *strings.Builder, r importcheck.Refusal) error {
+	fmt.Fprintf(b, "%s:%d: import %s\n", r.File, r.Line, r.Import)
+	return record.Answer(b, r.Answer, record.Options{})
 }
 
 // writeFileAtomic writes data to path through a temporary file in the same
