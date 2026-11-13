@@ -125,7 +125,7 @@ func agentLoopStatus(ctx context.Context, deps *appDeps, targetBranch string) ag
 func harnessStatusOf(ctx context.Context, deps *appDeps, repo, harness string) harnessStatus {
 	st := harnessStatus{Name: harness, Config: filepath.Join(repo, harnessConfigFile(harness))}
 	st.Detected, st.DetectedBy = detectHarness(ctx, deps, repo, harness)
-	st.Ignored = gitIgnores(ctx, deps, repo, harnessConfigFile(harness))
+	st.Ignored = st.Detected && gitIgnores(ctx, deps, repo, harnessConfigFile(harness))
 	positions, readErr := installedHooks(st.Config)
 	var trusted map[string]bool
 	disabledBy := ""
@@ -157,13 +157,14 @@ func harnessStatusOf(ctx context.Context, deps *appDeps, repo, harness string) h
 	return st
 }
 
-// gitIgnores reports whether the .gitignore rules of repo ignore the
-// repository-relative path, tracked or not: git check-ignore prints the path
-// it ignores. Outside a git repository nothing is ignored.
+// gitIgnores reports whether git ignores the repository-relative path, so
+// other checkouts do not get it: git check-ignore prints the path it ignores.
+// A tracked file is never ignored, whatever the rules say: every clone has it.
+// Outside a git repository nothing is ignored.
 func gitIgnores(ctx context.Context, deps *appDeps, repo, rel string) bool {
 	rel = filepath.ToSlash(rel)
 	out, err := deps.Runner.Run(ctx, toolrun.ToolCmd{
-		Name: gitBinary, Args: []string{"check-ignore", "--no-index", "--", rel}, WorkDir: repo,
+		Name: gitBinary, Args: []string{"check-ignore", "--", rel}, WorkDir: repo,
 	})
 	return err == nil && out.ExitCode == 0 && strings.TrimSpace(string(out.Stdout)) == rel
 }

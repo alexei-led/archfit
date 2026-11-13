@@ -72,7 +72,7 @@ const userClaudeSettings = `{"model": "opus", "hooks": {"Stop": [{"hooks": [{"ty
 // detected by .claude/, Codex by CODEX_HOME, git by the repository. A second
 // run writes the same bytes, and the user's own settings and hooks stay.
 func TestDoctorFixInstallsTheHooksOfTheDetectedHarnesses(t *testing.T) {
-	dir := fixRepo(t, map[string]string{harnessConfigFile(harnessClaude): userClaudeSettings})
+	dir := fixRepo(t, map[string]string{harnessConfigFile(harnessClaude): userClaudeSettings, defaultConfigPath: "version: 3\n"})
 	out := fixSection(runDoctorFix(t, dir, DoctorCmd{}, true))
 
 	repo, err := filepath.EvalSymlinks(dir)
@@ -132,6 +132,9 @@ func TestDoctorFixLeavesAForeignPreCommitHook(t *testing.T) {
 	if !strings.Contains(out, "warning: ") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "", "")) {
 		t.Errorf("doctor --fix does not say what to add to the hook:\n%s", out)
 	}
+	if !strings.Contains(out, defaultConfigPath+" does not exist") {
+		t.Errorf("doctor --fix does not say the policy is missing:\n%s", out)
+	}
 }
 
 // TestDoctorFixWithoutAHarnessWritesNothing: outside a git repository there is
@@ -151,18 +154,91 @@ func TestDoctorFixWithoutAHarnessWritesNothing(t *testing.T) {
 
 // TestDoctorWarnsWhenGitIgnoresTheSettings: a .gitignore that ignores .claude/
 // keeps the hooks out of every other checkout; doctor and doctor --fix say so.
+// A harness that is not here gets no warning, and a settings file the
+// repository tracks despite the rule reaches every clone, so it gets none.
 func TestDoctorWarnsWhenGitIgnoresTheSettings(t *testing.T) {
-	dir := fixRepo(t, map[string]string{".gitignore": ".claude/\n", harnessConfigFile(harnessClaude): "{}"})
-	out := runDoctorFix(t, dir, DoctorCmd{}, false)
-	report, fix, _ := strings.Cut(out, "\ninstalling hooks:")
 	const warning = "warning: git ignores "
-	for name, text := range map[string]string{"report": report, "fix": fix} {
-		if !strings.Contains(text, warning) || !strings.Contains(text, filepath.Join(".claude", "settings.json")) {
-			t.Errorf("the %s part does not warn that git ignores the Claude Code settings:\n%s", name, text)
-		}
+	for _, tc := range []struct {
+		name    string
+		tracked bool
+		want    bool
+	}{
+		{name: "an ignored settings file", want: true},
+		{name: "a tracked settings file", tracked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := fixRepo(t, map[string]string{".gitignore": ".claude/\n.codex/\n", harnessConfigFile(harnessClaude): "{}"})
+			if tc.tracked {
+				gitFixture(t, dir, "add", "-f", harnessConfigFile(harnessClaude))
+			}
+			out := runDoctorFix(t, dir, DoctorCmd{}, false)
+			repo, err := filepath.EvalSymlinks(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, fix, _ := strings.Cut(out, "\ninstalling hooks:")
+			claude := warning + filepath.Join(repo, harnessConfigFile(harnessClaude))
+			for name, text := range map[string]string{"report": report, "fix": fix} {
+				if got := strings.Contains(text, claude); got != tc.want {
+					t.Errorf("the %s part warns about the Claude Code settings: %v, want %v:\n%s", name, got, tc.want, text)
+				}
+			}
+			if codex := warning + filepath.Join(repo, harnessConfigFile(harnessCodex)); strings.Contains(out, codex) {
+				t.Errorf("doctor warns about the settings of Codex, which is not here:\n%s", out)
+			}
+		})
 	}
-	if strings.Contains(out, warning+filepath.Join(dir, ".codex")) {
-		t.Errorf("doctor warns about the Codex settings of an undetected harness:\n%s", out)
+}
+
+// TestDoctorFixKeepsOutOfASharedHooksDirectory: a core.hooksPath outside the
+// repository (a global hooks directory) runs its hooks in every repository,
+// so doctor --fix writes no pre-commit hook there and says what to add.
+func TestDoctorFixKeepsOutOfASharedHooksDirectory(t *testing.T) {
+	dir := fixRepo(t, nil)
+	shared := t.TempDir()
+	gitFixture(t, dir, "config", "core.hooksPath", shared)
+	out := fixSection(runDoctorFix(t, dir, DoctorCmd{}, false))
+	if entries, err := os.ReadDir(shared); err != nil || len(entries) != 0 {
+		t.Errorf("the shared hooks directory holds %v (err %v), want nothing", entries, err)
+	}
+	if !strings.Contains(out, "outside it") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "", "")) {
+		t.Errorf("doctor --fix does not say why it wrote no pre-commit hook:\n%s", out)
+	}
+}
+
+// TestDoctorFixInstallsHooksWhenAToolchainInstallFails: the hooks do not wait
+// for a toolchain install, which can fail for reasons of its own.
+func TestDoctorFixInstallsHooksWhenAToolchainInstallFails(t *testing.T) {
+	dir := fixRepo(t, map[string]string{harnessConfigFile(harnessClaude): "{}"})
+	chdirIsolated(t, dir)
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, name == "brew"
+		},
+		RunFunc: func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if cmd.Name == "brew" {
+				return toolrun.Output{ExitCode: 1, Stderr: []byte("brew is offline")}, nil
+			}
+			return toolrun.New().Run(ctx, cmd)
+		},
+	}
+	var out bytes.Buffer
+	err := (&DoctorCmd{Fix: true}).Run(&appDeps{Runner: runner, Stdout: &out})
+	if err == nil || !strings.Contains(err.Error(), "brew is offline") {
+		t.Errorf("doctor --fix error = %v, want the failed toolchain install", err)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(dir, harnessConfigFile(harnessClaude))), hookRunCommand) {
+		t.Errorf("doctor --fix wrote no Claude Code hook after the failed install:\n%s", out.String())
+	}
+}
+
+// TestDoctorFixReadsANullSettingsFile: a settings file that holds JSON null
+// is an empty one.
+func TestDoctorFixReadsANullSettingsFile(t *testing.T) {
+	dir := fixRepo(t, map[string]string{harnessConfigFile(harnessClaude): "null"})
+	runDoctorFix(t, dir, DoctorCmd{}, false)
+	if !strings.Contains(readFile(t, filepath.Join(dir, harnessConfigFile(harnessClaude))), hookRunCommand) {
+		t.Error("doctor --fix wrote no hook into a null settings file")
 	}
 }
 

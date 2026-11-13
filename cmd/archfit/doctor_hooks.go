@@ -4,10 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"strings"
 
 	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
+
+// errSharedHooksDir marks a hooks directory outside the repository, such as a
+// global core.hooksPath: a hook written there runs in every repository that
+// uses it, so doctor --fix does not write one.
+var errSharedHooksDir = errors.New("git runs the hooks of this repository from a directory outside it")
 
 // noHarness is what doctor --fix prints when it finds no harness to install
 // hooks for. It writes nothing then.
@@ -34,7 +43,7 @@ func (c *DoctorCmd) installHooks(ctx context.Context, deps *appDeps) error {
 		}
 		path, err := c.installHarness(ctx, deps, root, harness)
 		switch {
-		case errors.Is(err, errForeignHook):
+		case errors.Is(err, errForeignHook), errors.Is(err, errSharedHooksDir):
 			_, _ = fmt.Fprintf(deps.Stdout, "  warning: %v\n", err)
 			continue
 		case err != nil:
@@ -57,6 +66,9 @@ func (c *DoctorCmd) installHooks(ctx context.Context, deps *appDeps) error {
 			_, _ = fmt.Fprintln(deps.Stdout, "  "+codexTrustNotice)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(root, defaultConfigPath)); errors.Is(err, fs.ErrNotExist) {
+		_, _ = fmt.Fprintf(deps.Stdout, "  warning: %s does not exist: the hooks read the policy there; run archfit init\n", filepath.Join(root, defaultConfigPath))
+	}
 	return errors.Join(failed...)
 }
 
@@ -64,6 +76,9 @@ func (c *DoctorCmd) installHooks(ctx context.Context, deps *appDeps) error {
 // file. With --dry-run it only names the file.
 func (c *DoctorCmd) installHarness(ctx context.Context, deps *appDeps, root, harness string) (string, error) {
 	if harness == harnessGit {
+		if err := hooksInRepository(ctx, deps, root); err != nil {
+			return "", err
+		}
 		if c.DryRun {
 			return gitHookTarget(ctx, deps.Runner, root, defaultConfigPath)
 		}
@@ -73,4 +88,41 @@ func (c *DoctorCmd) installHarness(ctx context.Context, deps *appDeps, root, har
 		return filepath.Join(root, harnessConfigFile(harness)), nil
 	}
 	return installHarnessHooks(root, harness, defaultConfigPath)
+}
+
+// hooksInRepository returns errSharedHooksDir when the hooks directory git
+// uses for root lies outside the repository and its git directory.
+func hooksInRepository(ctx context.Context, deps *appDeps, root string) error {
+	hooks, err := gitHooksDir(ctx, deps.Runner, root)
+	if err != nil {
+		return err
+	}
+	out, err := deps.Runner.Run(ctx, toolrun.ToolCmd{
+		Name: gitBinary, Args: []string{gitRevParse, "--path-format=absolute", "--git-common-dir"}, WorkDir: root,
+	})
+	if err != nil {
+		return err
+	}
+	if out.ExitCode != 0 {
+		return fmt.Errorf("git rev-parse --git-common-dir exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+	}
+	for _, dir := range []string{root, strings.TrimSpace(string(out.Stdout))} {
+		if within(dir, hooks) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s (core.hooksPath); doctor does not write there: add %q to its pre-commit hook",
+		errSharedHooksDir, hooks, hookRunLine(hookEventPreCommit, "", defaultConfigPath))
+}
+
+// within reports whether path lies in dir, with symlinks resolved on both.
+func within(dir, path string) bool {
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

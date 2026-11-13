@@ -255,6 +255,10 @@ func mergeHookConfig(raw []byte, hooks []harnessHook, command func(run string) s
 			return nil, fmt.Errorf("not a JSON object: %w", err)
 		}
 	}
+	if top == nil {
+		// The file held JSON null.
+		top = map[string]json.RawMessage{}
+	}
 	events := map[string][]json.RawMessage{}
 	if h, ok := top["hooks"]; ok {
 		if err := json.Unmarshal(h, &events); err != nil {

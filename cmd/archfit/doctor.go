@@ -131,10 +131,10 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	writeAgentLoop(deps.Stdout, agentLoopStatus(ctx, deps, cfg.TargetBranch))
 
 	if c.Fix {
-		if err := c.runFix(ctx, deps); err != nil {
-			return err
-		}
-		if err := c.installHooks(ctx, deps); err != nil {
+		// The hooks come first: a toolchain install that fails (brew offline)
+		// must not cost a checkout its hooks.
+		hooksErr := c.installHooks(ctx, deps)
+		if err := errors.Join(hooksErr, c.runFix(ctx, deps)); err != nil {
 			return err
 		}
 	}

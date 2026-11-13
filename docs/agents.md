@@ -112,7 +112,8 @@ It writes the hooks of each harness it finds, at the repository root:
 `.claude/settings.json` for Claude Code, `.codex/hooks.json` for Codex, and
 the git pre-commit hook. It keeps every other key and hook in the settings
 file. Running it again changes nothing. A pre-commit hook that archfit did not
-write stays: doctor prints the line to add to it. When git ignores a settings
+write, or one in a hooks directory outside the repository, stays: doctor prints
+the line to add to it. When git ignores a settings
 file, doctor warns: other checkouts and worktrees do not get those hooks.
 
 The installed hooks call `archfit hook run <event>`:
