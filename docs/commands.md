@@ -6,7 +6,7 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 
 ## Policy version
 
-`check`, `can`, `rules`, `request` and `init` are the Archfit 4 commands. `can`, `rules` and `request` need a version 3 `.archfit.yaml`. `check` reads the version first: a version 3 policy runs the Archfit 4 check, and a version 2 policy (Archfit 3) runs the Archfit 3 check. In a repository with a version 2 policy, run `archfit init` to convert it to version 3 (see [migration](migration.md)).
+`check`, `can`, `rules`, `request`, `init` and `report` are the Archfit 4 commands. `can`, `rules` and `request` need a version 3 `.archfit.yaml`; `report` gives the state of the repository only on a version 3 policy. `check` reads the version first: a version 3 policy runs the Archfit 4 check, and a version 2 policy (Archfit 3) runs the Archfit 3 check. In a repository with a version 2 policy, run `archfit init` to convert it to version 3 (see [migration](migration.md)).
 
 ## Choose a command
 
@@ -18,6 +18,7 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 | Show the rules that apply | `archfit rules [PATH... \| RULE] [--graph]` |
 | Ask an owner to change the policy | `archfit request -m "<why>" [--expires DATE]` |
 | Set up a repository, or convert an Archfit 3 one | `archfit init` |
+| See the state of the repository and its measurements | `archfit report` |
 | Accept current findings as the gate baseline | `archfit baseline` |
 | Explain one finding | `archfit explain <fingerprint-prefix>` |
 | Ask which module owns a path | `archfit policy where <path>` |
@@ -33,9 +34,9 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 
 ## Exit codes
 
-`check` with a version 3 policy, `can`, `rules`, `request`, and `init` use these codes:
+`check` with a version 3 policy, `can`, `rules`, `request`, `init`, and `report` use these codes:
 
-| Code | `check` | `can` | `rules`, `init` | `request` |
+| Code | `check` | `can` | `rules`, `init`, `report` | `request` |
 | --- | --- | --- | --- | --- |
 | `0` | `pass` | yes | done | sent (with the App, milestone 2) |
 | `1` | `fail` | no | – | – |
@@ -240,6 +241,46 @@ Read the policy and its exceptions before you open the pull request. A place in 
 
 | Flag | Meaning |
 | --- | --- |
+| `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
+
+### `report`
+
+`archfit report [flags]` gives owners the repository-wide picture. It decides nothing: it exits `0` whatever it shows, and `2` only on wrong usage or a tool error. It never runs on the path of `check`.
+
+On a version 3 policy, it first judges the whole working tree with the rules and exceptions of `.archfit.yaml` on today's date. The state is one of:
+
+| State | Meaning |
+| --- | --- |
+| `clean` | No error outside the exceptions. |
+| `drift` | An error exists that no exception covers. The report lists each one. |
+| `expired` | An exception passed its date and the code still breaks the rule. Every change fails until an owner extends the exception or the code is fixed. |
+
+Beside the state, the report lists the places the check could not read (the state does not cover them), the exceptions within 14 days of their date, the rules nothing checks, and the balance of each allowed dependency. Then come the measurements of the code. A tool whose evidence is partial or timed out, or that the code needs and is not installed, is listed first under `evidence not complete:`: a measurement it feeds can show a zero that was not measured. A policy that does not fit the tree, such as a path glob that matches no file, stops the report with exit `2` before the measurements.
+
+```text
+$ archfit report
+repository: drift, 1 error no exception covers
+pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
+  why: a new dependency between modules needs an owner
+  balance: 9/10 (min 7)
+exceptions close to their date:
+  duplication pkg_tc -> pkg_util: 2026-11-19 (9 days)
+not checked:
+  keep-docs: Each module has a README.
+allowed dependencies:
+  pkg_chaos -> pkg_runtime: 9/10 (min 7)
+measurements:
+  cycle: 0 import cycles (strong)
+policy: not protected
+```
+
+On a version 2 policy the report shows the measurements only, says to run `archfit init`, and has no `policy:` line, as the version 2 `check` has none. On a version 3 policy, the report does not yet place Python code in its modules, so the coupling measurements of a Python repository are `n/a`.
+
+`--format json` writes the `archfit.architecture-state.v1` document of `archfit.state.schema.json`. On a version 3 policy, its `repository` object holds the state and each list above.
+
+| Flag | Meaning |
+| --- | --- |
+| `--format <name>` | `text` (default) or `json`. |
 | `-C, --directory <dir>` | Run in `<dir>` instead of the current directory. |
 
 ### `baseline`

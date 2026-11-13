@@ -1,0 +1,10 @@
+repository: drift, 1 error no exception covers
+pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
+  why: a new dependency between modules needs an owner
+  balance: 9/10 (min 7)
+exceptions close to their date:
+  duplication pkg_tc -> pkg_util: 2026-11-19 (9 days)
+not checked:
+  keep-docs: Each module has a README.
+allowed dependencies:
+  pkg_chaos -> pkg_runtime: 9/10 (min 7)

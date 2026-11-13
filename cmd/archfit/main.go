@@ -80,6 +80,7 @@ type cli struct {
 	Check    CheckCmd    `cmd:"" group:"analysis" help:"The status of the change: pass (0), fail (1), or unknown (2). A version 2 policy runs the Archfit 3 check."`
 	Can      CanCmd      `cmd:"" group:"analysis" help:"Before writing code: may this file, directory or module depend on that one, or use a library."`
 	Rules    RulesCmd    `cmd:"" group:"analysis" help:"The rules that apply to paths or to the change, one rule in full, or the module graph."`
+	Report   ReportCmd   `cmd:"" group:"analysis" help:"The repository-wide picture for owners: the state of the repository and the measurements. Exits 0 whatever it shows."`
 	Request  RequestCmd  `cmd:"" group:"analysis" help:"Ask an owner to change the policy for the errors of the last check. Without the App it prints the request (exit 2)."`
 	Init     RepoInitCmd `cmd:"" group:"setup" help:"Set up a repository: a version 3 policy and the instruction block for agents. Converts an Archfit 3 repository; never changes a version 3 policy."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`

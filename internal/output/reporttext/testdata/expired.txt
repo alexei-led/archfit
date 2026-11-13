@@ -1,0 +1,10 @@
+repository: expired, 1 exception past the date
+.archfit.yaml: exception: duplication pkg_tc -> pkg_util expired on 2026-11-19
+  why: an exception with a date fails every change after that date
+pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
+  why: a new dependency between modules needs an owner
+  balance: 9/10 (min 7)
+measurements:
+  coupling_balance: 78 (mixed)
+  cycle: 0
+  encapsulation: n/a

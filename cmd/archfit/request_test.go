@@ -41,7 +41,7 @@ func TestRequestFromTheCLI(t *testing.T) {
 			first:   []string{cmdCheck},
 			request: []string{"-m", "tc parses the name before pkg_util loads", flagExpires, "2026-12-10"}},
 		{name: "can", base: base, first: []string{cmdCan, pkgTC, pkgUtil}, request: []string{"-m", whyGraph}},
-		{name: "not_protected", base: unprotected, head: map[string]string{tcNetem: tcImportsUtil},
+		{name: caseNotProtected, base: unprotected, head: map[string]string{tcNetem: tcImportsUtil},
 			first: []string{cmdCheck}, request: []string{"-m", whyGraph}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
