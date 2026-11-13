@@ -20,6 +20,7 @@ import (
 
 	"github.com/alexei-led/archfit/v3/internal/application/canquery"
 	"github.com/alexei-led/archfit/v3/internal/application/changecheck"
+	"github.com/alexei-led/archfit/v3/internal/application/importcheck"
 	"github.com/alexei-led/archfit/v3/internal/application/rulesquery"
 	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition/checkfacts"
@@ -162,6 +163,46 @@ func (co checkout) changeCheck() changecheck.Service {
 func (co checkout) canQuery() canquery.Service {
 	src := localPolicy{co}
 	return canquery.Service{Policies: src, Tree: &tree{co: co, policy: src}, Go: &goModules{co: co}}
+}
+
+// importCheck is the use case of the post-tool-use hook. Its facts and the
+// directories can reads come from one read of the head facts.
+func (co checkout) importCheck() importcheck.Service {
+	src := localPolicy{co}
+	shared := &tree{co: co, policy: src}
+	return importcheck.Service{
+		Policies:   validPolicy{co},
+		Facts:      sharedFacts{shared},
+		Repository: repository{co},
+		Can:        canquery.Service{Policies: src, Tree: shared, Go: &goModules{co: co}},
+		Clock:      clockFunc(co.now),
+	}
+}
+
+// validPolicy is importcheck.Policies: .archfit.yaml at the root, when it is a
+// valid version 3 policy.
+type validPolicy struct{ co checkout }
+
+func (v validPolicy) Local(context.Context) (resolved.Policy, bool, error) {
+	data, ok, err := v.co.policyAt("")
+	if err != nil || !ok {
+		return resolved.Policy{}, false, err
+	}
+	p, err := policyfile.Resolve(data)
+	return p, err == nil, nil
+}
+
+// sharedFacts is importcheck.Facts: it reads the head facts and keeps them in
+// the tree that can reads directories from.
+type sharedFacts struct{ t *tree }
+
+func (f sharedFacts) Head(ctx context.Context, p resolved.Policy) (evidence.CheckFacts, error) {
+	facts, err := checkFacts{f.t.co}.Head(ctx, p)
+	if err != nil {
+		return evidence.CheckFacts{}, err
+	}
+	f.t.facts = &facts
+	return facts, nil
 }
 
 func (co checkout) rulesQuery() rulesquery.Service {

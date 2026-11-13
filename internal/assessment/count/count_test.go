@@ -33,6 +33,8 @@ const (
 	renamedFile = "tools/new.go"
 
 	regex = "[a-zA-Z][a-zA-Z0-9.:_-]*"
+
+	dockerAPI = "github.com/docker/docker"
 )
 
 var today = time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
@@ -367,10 +369,10 @@ func TestAssessExpiredExceptionFailsAnUnrelatedChange(t *testing.T) {
 // the rule id fixes the library, so the exception matches by rule and from.
 func TestAssessOnlyRuleException(t *testing.T) {
 	dockerOnly := resolved.Rule{
-		ID: "docker-in-runtime", Form: resolved.FormOnly, Use: "github.com/docker/docker",
+		ID: "docker-in-runtime", Form: resolved.FormOnly, Use: dockerAPI,
 		In: []string{runtime}, Why: "One adapter owns the Docker API.",
 	}
-	use := tree{imports: []evidence.ImportFact{{File: tcFile, Line: 5, Target: "github.com/docker/docker", External: true}}}
+	use := tree{imports: []evidence.ImportFact{{File: tcFile, Line: 5, Target: dockerAPI, External: true}}}
 	onlyKey := change.Key{Rule: dockerOnly.ID, From: tc, To: dockerOnly.Use, Symbol: dockerOnly.Use}
 	expiredOnly := change.Key{Rule: count.RuleException, From: tc, Symbol: dockerOnly.ID}
 	cases := []struct {
@@ -633,4 +635,36 @@ func orEmpty(ks []change.Key) []change.Key {
 		return []change.Key{}
 	}
 	return ks
+}
+
+// TestCovered: the exception check applies, asked for one rule and pair.
+func TestCovered(t *testing.T) {
+	dockerOnly := resolved.Rule{ID: "docker-in-runtime", Form: resolved.FormOnly, Use: dockerAPI, In: []string{runtime}}
+	graph := resolved.Exception{Rule: resolved.RuleGraph, From: tc, To: util, Expires: day(0)}
+	for _, c := range []struct {
+		name           string
+		exception      resolved.Exception
+		rule, from, to string
+		want           bool
+	}{
+		{name: "the same rule and pair", exception: graph, rule: resolved.RuleGraph, from: tc, to: util, want: true},
+		{name: "another pair", exception: graph, rule: resolved.RuleGraph, from: chaos, to: util},
+		{name: "another rule", exception: graph, rule: resolved.RuleCoupling, from: tc, to: util},
+		{name: "past its date", exception: resolved.Exception{Rule: resolved.RuleGraph, From: tc, To: util, Expires: day(-1)},
+			rule: resolved.RuleGraph, from: tc, to: util},
+		{name: "no date", exception: resolved.Exception{Rule: resolved.RuleGraph, From: tc, To: util},
+			rule: resolved.RuleGraph, from: tc, to: util, want: true},
+		{name: "a copy, the pair in either order", exception: resolved.Exception{Rule: resolved.RuleDuplication, From: util, To: tc},
+			rule: resolved.RuleDuplication, from: util, to: tc, want: true},
+		{name: "an only rule, by its module", exception: resolved.Exception{Rule: dockerOnly.ID, From: tc},
+			rule: dockerOnly.ID, from: tc, to: dockerOnly.Use, want: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p := policy(c.exception)
+			p.Rules = []resolved.Rule{dockerOnly}
+			if got := count.Covered(p, c.rule, c.from, c.to, today); got != c.want {
+				t.Errorf("Covered = %v, want %v", got, c.want)
+			}
+		})
+	}
 }

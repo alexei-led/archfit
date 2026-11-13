@@ -107,7 +107,7 @@ func TestDoctorFixInstallsTheHooksOfTheDetectedHarnesses(t *testing.T) {
 			stopCommands = append(stopCommands, h.Command)
 		}
 	}
-	if !slices.Contains(stopCommands, "echo bye") || !slices.Contains(stopCommands, hookRunLine(hookEventStop, harnessClaude, "")) {
+	if !slices.Contains(stopCommands, "echo bye") || !slices.Contains(stopCommands, hookRunLine(hookEventStop, harnessClaude)) {
 		t.Errorf("Stop hooks = %v, want the user's and archfit's", stopCommands)
 	}
 
@@ -129,7 +129,7 @@ func TestDoctorFixLeavesAForeignPreCommitHook(t *testing.T) {
 	if got := readFile(t, filepath.Join(dir, ".git", "hooks", hookEventPreCommit)); got != foreign {
 		t.Errorf("the pre-commit hook is now:\n%s", got)
 	}
-	if !strings.Contains(out, "warning: ") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "", "")) {
+	if !strings.Contains(out, "warning: ") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "")) {
 		t.Errorf("doctor --fix does not say what to add to the hook:\n%s", out)
 	}
 	if !strings.Contains(out, defaultConfigPath+" does not exist") {
@@ -216,7 +216,7 @@ func TestDoctorFixKeepsOutOfASharedHooksDirectory(t *testing.T) {
 			if entries, err := os.ReadDir(shared); err != nil || len(entries) != 0 {
 				t.Errorf("the shared hooks directory holds %v (err %v), want nothing", entries, err)
 			}
-			if !strings.Contains(out, "outside it") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "", "")) {
+			if !strings.Contains(out, "outside it") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "")) {
 				t.Errorf("doctor --fix does not say why it wrote no pre-commit hook:\n%s", out)
 			}
 		})
