@@ -123,13 +123,13 @@ class CopiesTest(unittest.TestCase):
         (
             "regex copied into pkg/tc",
             "pkg/tc/iface.go",
-            [f"var re = regexp.MustCompile(`^{REGEX}$`)"],
+            [f"var re = regexp.MustCompile(`{REGEX}`)"],
             [REGEX],
         ),
         (
             "error text copied",
             "pkg/tc/iface.go",
-            [f'return fmt.Errorf("{ERROR}: %s", n)'],
+            [f'return fmt.Errorf("{ERROR}", n)'],
             [ERROR],
         ),
         (
@@ -138,6 +138,7 @@ class CopiesTest(unittest.TestCase):
             [f"`{REGEX}`", f'"{ERROR}"'],
             [REGEX, ERROR],
         ),
+        ("substring is not identical", "pkg/tc/iface.go", [f"`^{REGEX}$`"], []),
         ("the rule's home", "pkg/util/util.go", [f"`{REGEX}`"], []),
         ("a test may quote the error", "pkg/tc/iface_test.go", [f'"{ERROR}"'], []),
         ("docs are not code", "AGENTS.md", [f"`{REGEX}`"], []),

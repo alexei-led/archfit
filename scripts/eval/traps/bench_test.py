@@ -188,6 +188,8 @@ class FakeProcesses:
                 settings.write_text("{}\n")
                 return bench.Result(0, f"wrote {settings}\n", "")
             if argv[1] == "check":
+                if argv != [str(FAKE_ARCHFIT), "check"]:
+                    raise AssertionError(f"unexpected check flags: {argv}")
                 code, doc = self.check
                 return bench.Result(code, doc, "")
             raise AssertionError(f"unexpected archfit call {argv}")

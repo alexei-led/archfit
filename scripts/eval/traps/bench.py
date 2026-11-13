@@ -336,7 +336,7 @@ def run_one(cfg: Config, spec: RunSpec, runner: Runner) -> dict[str, Any]:
             )
 
         check_run = runner(
-            [str(cfg.archfit), "check", "-c", ".archfit.yaml"],
+            [str(cfg.archfit), "check"],
             clone,
             None,
             cfg.timeout,
@@ -682,6 +682,11 @@ def main(argv: list[str] | None = None) -> int:
                 clone, setup = prepare_clone(cfg, spec, Path(tmp), subprocess_runner)
                 diff = _must(subprocess_runner(["git", "-C", str(clone), "diff", "--no-color", cfg.trap.commit, setup], clone), "setup diff")
                 (cfg.out / f"{arm.name}.patch").write_text(diff.stdout, encoding="utf-8")
+                if arm.hooks:
+                    hook_config = clone / ".claude" / "settings.json"
+                    (cfg.out / f"{arm.name}.hooks.json").write_text(
+                        hook_config.read_text(encoding="utf-8"), encoding="utf-8"
+                    )
                 print(f"{arm.name}: {setup}")
         return 0
     records = run_benchmark(cfg)

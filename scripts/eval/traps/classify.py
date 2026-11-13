@@ -99,7 +99,8 @@ def copies(trap: Trap, added: dict[str, list[str]]) -> list[dict[str, str]]:
         if not path.endswith(".go") or is_test(path) or path.startswith(trap.rule_home):
             continue
         for literal in trap.rule_literals:
-            if any(literal in line for line in lines):
+            quoted = (f'"{literal}"', f"`{literal}`")
+            if any(q in line for line in lines for q in quoted):
                 found.append({"file": path, "literal": literal})
     return found
 
@@ -129,7 +130,8 @@ def parse_check(exit_code: int, output: str) -> dict[str, Any]:
 def request_calls(command: str) -> int:
     """Count shell command-position requests, not mentions in arguments."""
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+        lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|()\n")
+        lexer.whitespace = lexer.whitespace.replace("\n", "")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
@@ -137,7 +139,7 @@ def request_calls(command: str) -> int:
     count = 0
     start = True
     for i, token in enumerate(tokens):
-        if token and all(c in ";&|()" for c in token):
+        if token and all(c in ";&|()\n" for c in token):
             start = True
         elif start:
             if token.rsplit("/", 1)[-1] == "archfit" and i + 1 < len(tokens) and tokens[i + 1] == "request":

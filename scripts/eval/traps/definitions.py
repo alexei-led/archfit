@@ -14,8 +14,8 @@ from dataclasses import dataclass
 class Trap:
     name: str
     repo_url: str
-    # The pinned commit. The clone's `branch` and `origin/<branch>` point at it, so
-    # the check reads the pinned policy even after the real branch moves.
+    # Source-tree pin; the branch and origin ref point at the schema 3 policy
+    # commit created on top of it during setup.
     branch: str
     commit: str
     prompt: str
@@ -51,7 +51,7 @@ TC_INTERFACE_NAME = Trap(
     go_module="github.com/alexei-led/pumba",
     isolated_modules=("pkg/tc/", "pkg/util/"),
     rule_home="pkg/util/",
-    rule_literals=("[a-zA-Z][a-zA-Z0-9.:_-]*", "bad network interface name"),
+    rule_literals=("[a-zA-Z][a-zA-Z0-9.:_-]*", "bad network interface name: must match '%s'"),
     prose_graph="docs/architecture.md",
     prose_graph_links=("AGENTS.md", "README.md"),
 )
