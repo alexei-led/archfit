@@ -22,8 +22,8 @@ const cacheDir = ".archfit-cache"
 //
 // The staging happens in a private copy of the index, as in AddedLines, so the
 // repository's index, HEAD and working tree stay as they are.
-// It runs: git add --all into the private index, git rm -r --cached
-// .archfit-cache, then git write-tree
+// Use an ObjectStore runner for writes outside the repository; keep it alive
+// for readers of the returned tree id. The cache is excluded before staging.
 func WorkingTreeID(ctx context.Context, dir string, runner toolrun.Runner) (string, error) {
 	root, err := RepoRoot(ctx, dir, runner)
 	if err != nil {
@@ -39,9 +39,6 @@ func WorkingTreeID(ctx context.Context, dir string, runner toolrun.Runner) (stri
 		return "", err
 	}
 	env := []string{"GIT_INDEX_FILE=" + index}
-	if _, err := runTree(ctx, root, runner, env, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", cacheDir); err != nil {
-		return "", err
-	}
 	out, err := runTree(ctx, root, runner, env, "write-tree")
 	if err != nil {
 		return "", err

@@ -52,8 +52,9 @@ func snapshotIdentity(ctx context.Context, runner toolrun.Runner, gitRoot string
 // Nothing the user sees changes: git write-tree runs over a private copy of
 // the index (it writes its cache-tree back into the index it reads, and git
 // commit holds that file locked), the parent is HEAD when HEAD exists, and no
-// ref moves. The tree and commit objects stay unreachable until git gc prunes
-// them. Unmerged index entries make write-tree fail, and so the snapshot.
+// ref moves. With an ObjectStore runner the tree and commit objects live only
+// until the command finishes; its readers must share that runner. Unmerged
+// index entries make write-tree fail, and so the snapshot.
 func SnapshotIndex(ctx context.Context, runner toolrun.Runner, gitRoot, indexFile string) (string, error) {
 	if indexFile == "" {
 		path, err := runGit(ctx, runner, gitRoot, nil, "rev-parse", "--git-path", "index")

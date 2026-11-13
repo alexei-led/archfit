@@ -83,7 +83,7 @@ func openCheckout(ctx context.Context, deps *appDeps, dir string) (checkout, err
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
-	return checkout{root: root, start: start, runner: deps.Runner, engine: version, now: deps.clock()}, nil
+	return checkout{root: root, start: start, runner: deps.Runner, engine: engineVersion(), now: deps.clock()}, nil
 }
 
 // policyAt returns the bytes of the policy file a version 3 command reads:

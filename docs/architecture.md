@@ -63,7 +63,9 @@ flowchart LR
 4. `checkfacts` reads the facts of the head and the base with the settings of the policy that judges. `count.Assess` counts the errors of each tree, applies the exceptions on the date, and gives the status.
 5. `changecheck/project.go` builds the `internal/model/result` value. The result is stored in `.archfit-cache/last.json` for `archfit request`.
 
-The same tree, policy, engine version, and date give the same result. When the working tree changes during the run, nothing is stored. `changecheck` states its needs as ports, and `cmd/archfit` wires them.
+The same tree, policy, engine version, and date give the same result. Result identities omit one leading `v` from the build version; `archfit --version` keeps the display version unchanged. When the working tree changes during the run, nothing is stored. `changecheck` states its needs as ports, and `cmd/archfit` wires them.
+
+Git object writes use a private directory for the command, with the repository's object database as a read-only alternate. Working-tree ids, their readers, and pre-commit snapshots share that storage until command cleanup. Staging excludes `.archfit-cache/` before reading its files. A check does not need write access to `.git`; the pre-commit hook still needs access to create and remove its temporary worktree metadata.
 
 | Package | Responsibility |
 |---|---|

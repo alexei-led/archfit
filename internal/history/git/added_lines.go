@@ -25,8 +25,8 @@ import (
 // are relative to the repository root, whatever dir is.
 //
 // The staging happens in a private copy of the index, so the repository's
-// index, HEAD and working tree stay as they are. git add writes the blobs of
-// changed files into the object store, unreachable until git gc prunes them.
+// index, HEAD and working tree stay as they are. Use an ObjectStore runner to
+// keep changed blobs outside the repository until the command finishes.
 // It runs: git add --all into the private index, then git diff --cached
 // --unified=0 -M <base>
 func AddedLines(ctx context.Context, dir, base string, runner toolrun.Runner) (evidence.AddedLines, error) {
@@ -63,7 +63,7 @@ func AddedLines(ctx context.Context, dir, base string, runner toolrun.Runner) (e
 }
 
 // stageWorkingTree copies the repository's index into dir and stages every
-// change of the working tree in the copy, as git add --all does. It returns
+// change except the archfit cache in the copy. It returns
 // the copy's path. The repository's own index is only read.
 func stageWorkingTree(ctx context.Context, runner toolrun.Runner, root, dir string) (string, error) {
 	repoIndex, err := runGit(ctx, runner, root, nil, "rev-parse", "--git-path", "index")
@@ -77,7 +77,11 @@ func stageWorkingTree(ctx context.Context, runner toolrun.Runner, root, dir stri
 	if err := copyIndex(repoIndex, index); err != nil {
 		return "", err
 	}
-	_, err = runTree(ctx, root, runner, []string{"GIT_INDEX_FILE=" + index}, "add", "--all")
+	env := []string{"GIT_INDEX_FILE=" + index}
+	if _, err := runTree(ctx, root, runner, env, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", cacheDir); err != nil {
+		return "", err
+	}
+	_, err = runTree(ctx, root, runner, env, "add", "--all", "--", ".", ":(top,exclude)"+cacheDir)
 	return index, err
 }
 
