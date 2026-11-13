@@ -74,13 +74,13 @@ ARMS = {
         ),
         Arm(
             "block-hooks",
-            "As block, plus `archfit hook install --harness claude`.",
+            "As block, plus hooks via the doctor hook writer.",
             hooks=True,
         ),
         Arm("tool", "archfit block and command, no prose graph.", prose_graph=False),
         Arm(
             "tool-hooks",
-            "As tool, plus `archfit hook install --harness claude`.",
+            "As tool, plus hooks via the doctor hook writer.",
             prose_graph=False,
             hooks=True,
         ),

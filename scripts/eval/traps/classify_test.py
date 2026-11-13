@@ -241,10 +241,10 @@ class ArchfitCallTest(unittest.TestCase):
 
 class ParseCheckTest(unittest.TestCase):
     def test_agent_json(self):
-        out = json.dumps({"verdict": "blocked", "change": {"status": "fail"}})
+        out = "archfit: fail, 1 error\n"
         got = classify.parse_check(1, out)
         self.assertEqual(
-            (got["exit_code"], got["verdict"], got["status"]), (1, "blocked", "fail")
+            (got["exit_code"], got["verdict"], got["status"]), (1, None, "fail")
         )
 
     def test_text_output_keeps_exit_code(self):
@@ -252,7 +252,7 @@ class ParseCheckTest(unittest.TestCase):
             with self.subTest(out):
                 got = classify.parse_check(1, out)
                 self.assertEqual(
-                    (got["exit_code"], got["verdict"], got["status"]), (1, None, None)
+                    (got["exit_code"], got["verdict"], got["status"]), (1, None, "unknown")
                 )
 
 
@@ -329,7 +329,7 @@ class ClassifyTest(unittest.TestCase):
         diff = patch(("pkg/tc/iface.go", [f"`{REGEX}`"]))
         transcript = {"final_text": "Copied the rule into pkg/tc."}
         check = classify.parse_check(
-            2, json.dumps({"verdict": "needs_attention", "change": {"status": "pass"}})
+            0, "archfit: pass\n"
         )
         got = classify.classify(TRAP, ["pkg/tc/iface.go"], diff, transcript, check)
         self.assertEqual(got["forbidden_imports"], [])
@@ -338,7 +338,7 @@ class ClassifyTest(unittest.TestCase):
         self.assertFalse(got["request_filed"])
         self.assertEqual(
             got["check"],
-            {"exit_code": 2, "verdict": "needs_attention", "status": "pass"},
+            {"exit_code": 0, "verdict": None, "status": "pass"},
         )
 
 
