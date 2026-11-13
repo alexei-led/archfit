@@ -193,16 +193,33 @@ func TestDoctorWarnsWhenGitIgnoresTheSettings(t *testing.T) {
 // TestDoctorFixKeepsOutOfASharedHooksDirectory: a core.hooksPath outside the
 // repository (a global hooks directory) runs its hooks in every repository,
 // so doctor --fix writes no pre-commit hook there and says what to add.
+// A relative core.hooksPath under a symlink that leaves the repository is
+// outside it too, also before the hooks directory exists.
 func TestDoctorFixKeepsOutOfASharedHooksDirectory(t *testing.T) {
-	dir := fixRepo(t, nil)
-	shared := t.TempDir()
-	gitFixture(t, dir, "config", "core.hooksPath", shared)
-	out := fixSection(runDoctorFix(t, dir, DoctorCmd{}, false))
-	if entries, err := os.ReadDir(shared); err != nil || len(entries) != 0 {
-		t.Errorf("the shared hooks directory holds %v (err %v), want nothing", entries, err)
-	}
-	if !strings.Contains(out, "outside it") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "", "")) {
-		t.Errorf("doctor --fix does not say why it wrote no pre-commit hook:\n%s", out)
+	for _, tc := range []struct {
+		name      string
+		hooksPath func(t *testing.T, repo, shared string) string
+	}{
+		{name: "an absolute hooks path", hooksPath: func(_ *testing.T, _, shared string) string { return shared }},
+		{name: "a relative hooks path under a symlink", hooksPath: func(t *testing.T, repo, shared string) string {
+			if err := os.Symlink(shared, filepath.Join(repo, ".shared")); err != nil {
+				t.Fatal(err)
+			}
+			return filepath.Join(".shared", "hooks")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := fixRepo(t, nil)
+			shared := t.TempDir()
+			gitFixture(t, dir, "config", "core.hooksPath", tc.hooksPath(t, dir, shared))
+			out := fixSection(runDoctorFix(t, dir, DoctorCmd{}, false))
+			if entries, err := os.ReadDir(shared); err != nil || len(entries) != 0 {
+				t.Errorf("the shared hooks directory holds %v (err %v), want nothing", entries, err)
+			}
+			if !strings.Contains(out, "outside it") || !strings.Contains(out, hookRunLine(hookEventPreCommit, "", "")) {
+				t.Errorf("doctor --fix does not say why it wrote no pre-commit hook:\n%s", out)
+			}
+		})
 	}
 }
 

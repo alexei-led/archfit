@@ -115,14 +115,25 @@ func hooksInRepository(ctx context.Context, deps *appDeps, root string) error {
 		errSharedHooksDir, hooks, hookRunLine(hookEventPreCommit, "", defaultConfigPath))
 }
 
-// within reports whether path lies in dir, with symlinks resolved on both.
+// within reports whether path lies in dir, with symlinks resolved on both,
+// also in the part of path that exists when the rest does not yet.
 func within(dir, path string) bool {
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = resolved
-	}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	rel, err := filepath.Rel(dir, path)
+	rel, err := filepath.Rel(resolveExisting(dir), resolveExisting(path))
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// resolveExisting resolves the symlinks of the longest part of path that
+// exists and keeps the rest as written: a hooks directory not created yet
+// still lands where its symlinked parent points.
+func resolveExisting(path string) string {
+	rest := ""
+	for p := filepath.Clean(path); ; p = filepath.Dir(p) {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		if filepath.Dir(p) == p {
+			return path
+		}
+		rest = filepath.Join(filepath.Base(p), rest)
+	}
 }
