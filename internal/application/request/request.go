@@ -5,9 +5,10 @@
 //
 // # The request
 //
-// Milestone 2 hands it to the App, which owns the request contract (design
-// 11.7) and opens an issue for it. The App takes the dependency and the
-// balance from its own verified result; the numbers here are as reported.
+// The sender posts a comment on the open pull request, or opens an issue
+// from a can answer before a pull request exists. The App owns the request
+// contract (design 11.7) and takes the dependency and balance from its own
+// verified result; the numbers in a can issue are as reported.
 //
 //	reason         the worker's reason, required
 //	expires        the date asked for an exception (YYYY-MM-DD); absent
@@ -43,8 +44,8 @@
 // # Errors
 //
 // Every error of Service.Ask is one of the sentinels below, wrapped with its
-// message, or an error of a port. Milestone 1 has no App sender (D5): Ask
-// returns the request with number 0, and the CLI prints it and exits 2.
+// message, or an error of a port. Without a GitHub remote, the sender returns
+// no delivery (D5): the CLI prints the request and exits 2.
 package request
 
 import (
@@ -54,6 +55,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit/v3/internal/model/result"
 )
@@ -91,12 +93,15 @@ var endsInExpires = regexp.MustCompile(`(?:^|\s)--expires(?:\s+\S+)?\s*$`)
 // Request asks an owner to change the policy. The package doc describes its
 // fields.
 type Request struct {
-	Reason       string  `json:"reason"`
-	Expires      string  `json:"expires,omitempty"`
-	Errors       []Error `json:"errors"`
-	Head         string  `json:"head,omitempty"`
-	Base         string  `json:"base,omitempty"`
-	PolicyDigest string  `json:"policy_digest"`
+	// Can is the source answer when asking before a pull request exists.
+	// It is not part of the printed request document.
+	Can          *result.CanAnswer `json:"-"`
+	Reason       string            `json:"reason"`
+	Expires      string            `json:"expires,omitempty"`
+	Errors       []Error           `json:"errors"`
+	Head         string            `json:"head,omitempty"`
+	Base         string            `json:"base,omitempty"`
+	PolicyDigest string            `json:"policy_digest"`
 }
 
 // Error is one error the request asks about.
@@ -149,10 +154,16 @@ type ReasonReader interface {
 	Reason(ctx context.Context) (string, error)
 }
 
-// Sender hands a request to the App and returns its number, the issue
-// number. Milestone 1 has none (D5).
+// Delivery identifies the comment or issue sent on GitHub. Its zero value
+// means nothing was sent because the checkout has no GitHub remote.
+type Delivery struct {
+	Number int
+	URL    string
+}
+
+// Sender posts the request on GitHub using the worker's credentials.
 type Sender interface {
-	Send(ctx context.Context, r Request) (int, error)
+	Send(ctx context.Context, r Request) (Delivery, error)
 }
 
 // Clock gives today's date for --expires. The stored output can be days
@@ -174,8 +185,10 @@ type Service struct {
 // Outcome is the built request and its number.
 type Outcome struct {
 	Request Request
-	// Number is the request number the App gave; 0 when no sender is wired.
+	// Number is the issue or pull request number; 0 when nothing was sent.
 	Number int
+	// URL is the sent comment or issue; empty when nothing was sent.
+	URL string
 }
 
 // Ask builds the request from the last output and sends it when a sender is
@@ -199,11 +212,11 @@ func (s Service) Ask(ctx context.Context, in Input) (Outcome, error) {
 	if s.Sender == nil {
 		return Outcome{Request: req}, nil
 	}
-	number, err := s.Sender.Send(ctx, req)
+	sent, err := s.Sender.Send(ctx, req)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("send the request: %w", err)
 	}
-	return Outcome{Request: req, Number: number}, nil
+	return Outcome{Request: req, Number: sent.Number, URL: sent.URL}, nil
 }
 
 // current returns the stored output when it was produced on this HEAD and
@@ -261,7 +274,7 @@ func fromLast(last Last) (Request, string, error) {
 		return Request{}, "", fmt.Errorf("%w: the rule says to fix the code", ErrNothingToAsk)
 	}
 	errs := []Error{{Rule: a.Rule, From: a.From, To: a.To, Balance: a.Balance}}
-	return Request{Errors: errs, Head: a.Head, PolicyDigest: a.Policy.Digest}, a.Date, nil
+	return Request{Can: a, Errors: errs, Head: a.Head, PolicyDigest: a.Policy.Digest}, a.Date, nil
 }
 
 func nothingToAsk(status result.Status) error {
@@ -314,6 +327,9 @@ func (s Service) reason(ctx context.Context, given string) (string, error) {
 	}
 	if why == "" {
 		return "", fmt.Errorf(`%w: archfit request -m "<why>"`, ErrNoReason)
+	}
+	if strings.ContainsAny(why, "\r\n") || utf8.RuneCountInString(why) > 500 {
+		return "", fmt.Errorf("%w: use one line of at most 500 characters", ErrNoReason)
 	}
 	if endsInExpires.MatchString(why) {
 		return "", fmt.Errorf(`%w: give the date outside the reason: archfit request -m "<why>" --expires YYYY-MM-DD`, ErrReasonFlag)
