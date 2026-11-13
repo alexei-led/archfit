@@ -1,6 +1,6 @@
 # Languages and tools
 
-Archfit builds a dependency graph from Go, TypeScript and JavaScript, Python, Rust, and .NET projects. Each language uses its normal project tools.
+Archfit builds a dependency graph from Go, TypeScript and JavaScript, Python, Rust, and .NET projects. Optional report adapters use project tools for more detail.
 
 Language adapters run when project markers and required tools are present. Set `languages.<language>.enabled: true` to require an adapter, or `false` to skip it. See [configuration](configuration.md) for all options.
 
@@ -8,7 +8,7 @@ Language adapters run when project markers and required tools are present. Set `
 
 | Language | Project marker | Required tool | Graph detail | Missing or incomplete input |
 | --- | --- | --- | --- | --- |
-| Go | `go.mod` or a supported `go.work` workspace | `go` | File-to-package imports | Load errors produce partial evidence. Synthetic error packages are skipped. |
+| Go | `go.mod` or a supported `go.work` workspace | None for imports; optional `go` for report strength hints | File-to-package imports | Without `go`, the report reads imports with the built-in parser and discloses missing type precision. Unknown inputs remain partial. |
 | TypeScript and JavaScript | Root `package.json` | `npx` or `bunx`, plus `dependency-cruiser` | File-to-file imports | Without the root marker, the adapter is absent. Tool errors produce partial evidence. |
 | Python | `pyproject.toml`, `setup.py`, or `languages.python.package` | `uv`, or Python 3.14+ with `grimp==3.17` installed | Dotted module imports | Without a package marker, the adapter is absent. Source or graph extraction gaps produce partial evidence. |
 | Rust | Root `Cargo.toml`, or configured `languages.rust.manifest` | `cargo` | Crate dependencies | Cargo errors produce partial evidence. A one-crate graph has no internal crate edges. |
@@ -22,13 +22,13 @@ Each adapter drives the project's own tooling. Archfit reuses what is installed 
 
 | Language | Do this first | Configure when auto-detection is wrong |
 | --- | --- | --- |
-| Go | a `go.mod` (or a supported `go.work`) and a working `go` | `languages.go.modules` to select workspace members, `exclude` for generated trees |
+| Go | a `go.mod` (or a supported `go.work`); install `go` and resolve dependencies only for typed report detail | `languages.go.modules` to select workspace members, `exclude` for generated trees |
 | TypeScript / JavaScript | `npm ci` (or `pnpm install` / `yarn`) in the project root, the workspace root for a monorepo, so `node_modules` and the `tsconfig` `paths`/`baseUrl` resolve | `analyzers.scip` for symbol-level strength, `exclude` for generated code |
 | Python | a package marker (`pyproject.toml` or `setup.py`) and Python 3.14+ with `grimp==3.17` | `languages.python.package` when the importable package name is not obvious |
 | Rust | a root `Cargo.toml` and `cargo` | `languages.rust.manifest`, `languages.rust.features`, `languages.rust.include_dev_deps` |
 | .NET | the `dotnet` SDK on `PATH`, and `ARCHFIT_DOTNET_ROSLYN` set to the absolute path of the built Roslyn helper, outside the target (`make dotnet-roslyn`). Restore NuGet packages (`dotnet restore`) in the environment that runs archfit; archfit never restores, and unrestored package symbols leave projects `partial`. Network is optional, but without it MSBuild SDKs resolved through NuGet cannot load | `languages.dotnet.projects` to select solutions or projects, `analyzers.roslyn.enabled: false` for the project-only graph (map and report only; .NET rule gates need the helper, which the image ships) |
 
-The shipped image already contains every tool, at the versions pinned in `tools/manifest.json`: Go, Node with dependency-cruiser and TypeScript, Python with grimp, Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules. Running archfit from the image removes the "install the analyzer" failure mode entirely; what remains is the target repository's own prerequisites (the second and third columns).
+The shipped image contains Node with dependency-cruiser and TypeScript, Python with grimp, Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
 
 ## When evidence is absent, disabled, or partial
 
@@ -51,11 +51,13 @@ The partial results people hit first:
 
 ### Go
 
-Archfit loads packages with `go/packages` and emits file-to-package imports. It reads `go.work` when present. It otherwise uses a root `go.mod`, then searches below the analysis root for modules.
+`archfit check` always reads Go imports with the built-in standard parser. It never runs the typed loader or the Go toolchain, even when `go` is installed, and needs no installed module dependencies.
 
-Package loading uses the host `GOOS`, `GOARCH`, default build tags, and tags in `GOFLAGS`. Files excluded by those settings are not parsed. Run archfit under each platform or tag set that matters. `_test.go` files are not loaded.
+`archfit report` uses `go/packages` when `go` is on `PATH`, adding strength hints from `go/types`. Without `go`, it uses the same parser as the check and still emits file-to-package imports and workspace module information. The `go/packages` coverage row then discloses the parser fallback and missing type precision; it does not claim typed strength. An installed toolchain that fails to load packages still produces a load error or partial evidence, not a parser retry.
 
-For cgo files, archfit maps preprocessed imports back to the original file. If preprocessing fails, archfit reads imports from the original file and marks the package load partial.
+Both paths read `go.work` when present, otherwise a root `go.mod`, then search below the analysis root for modules. They respect `GOOS`, `GOARCH`, build constraints, and tags in `GOFLAGS`. Run archfit under each platform or tag set that matters. `_test.go` files are not read for imports.
+
+The parser reports unparseable source and unresolved first-party imports as unknown input. A source read failure returns an error. If `CGO_ENABLED` is unset, it also reports cgo-dependent file selection as unknown rather than guessing. The typed loader maps preprocessed cgo imports back to the original file; if preprocessing fails, it reads imports from that file and marks the load partial.
 
 Use `languages.go.modules` to select workspace members. Use `exclude` for files that must not count, such as ignored generators. See [configuration](configuration.md).
 
@@ -275,7 +277,8 @@ The complete release image is the simplest fixed tool environment. The tool vers
 
 | Tool | Image version |
 | --- | --- |
-| Go / Node / Python / uv | 1.27.4 / 24.22.1 / 3.14.9 / 0.13.5 |
+| Node / Python / uv | 24.22.1 / 3.14.9 / 0.13.5 |
+| Go (build-only; absent from the final image) | 1.27.4 |
 | dependency-cruiser / TypeScript compiler | 18.7.0 / 6.0.3 |
 | .NET SDK | 10.0.402 |
 | archfit-roslyn / Microsoft.CodeAnalysis | 1.1.0 / 5.6.0 |
@@ -309,8 +312,9 @@ official platform toolchains (`rust-src` is required). `scripts/ci-provision-too
 build/CI provisioning, not a portable runtime installer. Never install target dependencies as part
 of the Python import producer. Runtime tool discovery does not certify the complete environment.
 
-The image installs analyzers before use and disables npm/uv tool bootstrap. Go/Cargo target
-dependency resolution may still use network access. Optional indexers/build scripts may execute
+The image installs analyzers before use and disables npm/uv tool bootstrap. Cargo target
+dependency resolution may still use network access. Host reports using the typed Go loader may
+also resolve dependencies over the network. Optional indexers/build scripts may execute
 target code and send mounted source outward; no secret-free or image-digest claim removes that risk.
 App reports are customer-attested measurements, not remote proof of execution.
 
