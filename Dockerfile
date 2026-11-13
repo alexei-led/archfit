@@ -31,21 +31,19 @@ ARG VERSION COMMIT DATE
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
-    -o /out/archfit ./cmd/archfit
+    -o /out/archfit ./cmd/archfit \
+    && python scripts/provision_tools.py runtime
 
 FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae
-# cc/linker is needed by Cargo/Go target analysis, not just by this image build.
+# cc/linker is needed by Cargo target analysis, not just by this image build.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git build-essential pkg-config libssl-dev libicu72 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=tools-builder /opt/archfit /opt/archfit
 COPY --from=tools-builder /out/archfit /usr/local/bin/archfit
-ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/archfit/dotnet:/opt/archfit/go/bin:/opt/archfit/node/bin:/opt/archfit/rust/bin:${PATH}" \
+ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/archfit/dotnet:/opt/archfit/node/bin:/opt/archfit/rust/bin:${PATH}" \
     ARCHFIT_TOOL_PYTHON=/opt/archfit/python/bin/python \
     HOME=/tmp \
-    GOTOOLCHAIN=local \
-    GOCACHE=/tmp/archfit-go-build \
-    GOPATH=/tmp/archfit-go \
     CARGO_HOME=/tmp/archfit-cargo \
     RUSTUP_HOME=/tmp/archfit-rustup \
     RUST_SRC_PATH=/opt/archfit/rust/lib/rustlib/src/rust/library \

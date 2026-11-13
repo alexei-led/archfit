@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def check_locks(root: Path) -> None:
     manifest = json.loads((root / "tools/manifest.json").read_text())
+    for arch, artifacts in manifest["artifacts"].items():
+        if not set(manifest["build_only"]) <= artifacts.keys():
+            raise ValueError(f"build-only SDK missing from artifacts: {arch}")
     package = json.loads((root / "tools/node/package.json").read_text())
     lock = json.loads((root / "tools/node/package-lock.json").read_text())
     if package["dependencies"] != manifest["node"]:
@@ -140,9 +143,16 @@ def install_sdks(root: Path, prefix: Path, arch: str) -> None:
         install_dotnet(artifacts["dotnet"], temp, prefix)
 
 
+def prepare_runtime(root: Path, prefix: Path) -> None:
+    """Remove build-only SDKs before the prefix enters the final image."""
+    manifest = json.loads((root / "tools/manifest.json").read_text())
+    for name in manifest["build_only"]:
+        shutil.rmtree(prefix / name)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "sdks"))
+    parser.add_argument("command", choices=("check", "sdks", "runtime"))
     parser.add_argument("--arch", choices=("amd64", "arm64"))
     parser.add_argument("--prefix", type=Path, default=Path("/opt/archfit"))
     args = parser.parse_args()
@@ -151,6 +161,8 @@ def main() -> None:
         if args.arch is None:
             parser.error("sdks requires --arch (the target, not build platform)")
         install_sdks(ROOT, args.prefix, args.arch)
+    elif args.command == "runtime":
+        prepare_runtime(ROOT, args.prefix)
 
 
 if __name__ == "__main__":

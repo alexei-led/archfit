@@ -7,6 +7,7 @@ import (
 	"go/types"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -61,8 +62,9 @@ var goStrengthRank = map[string]int{
 	strengthIntrusive:  5,
 }
 
-// GoExtractor is the native Go import extractor using go/packages.
-// It is in-process (no subprocess) and satisfies the engine.Extractor interface
+// GoExtractor reads Go imports for the report, adding go/types strength hints
+// through go/packages when the Go toolchain is installed. Otherwise it uses
+// ParseImports without running a tool. It satisfies the engine.Extractor interface
 // structurally: Name() string and Extract(ctx, scope.Scope) (graph.Facts, evidence.Coverage, error).
 type GoExtractor struct {
 	cfg evidenceports.ExtractConfig
@@ -132,6 +134,10 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 
 	if len(memberDirs) == 0 {
 		return graph.Facts{}, evidence.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
+	}
+
+	if _, err := exec.LookPath("go"); err != nil {
+		return e.extractParsedImports(s.Root)
 	}
 
 	// Load per-member facts — from the fact cache where the member's input

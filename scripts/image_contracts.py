@@ -128,6 +128,7 @@ def rows(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 CHECK = f"archfit check --base {lc.TARGET_BRANCH} --format json"
+NO_GO = 'test -z "$(command -v go)"; test ! -e /opt/archfit/go; '
 
 
 def forbidden(doc: dict[str, Any]) -> bool:
@@ -165,15 +166,14 @@ def inventory(contract: ImageContract) -> None:
         "test ! -w /opt/archfit/manifest.json; "
         "test -r /opt/archfit/rust/lib/rustlib/src/rust/library/core/src/lib.rs; "
         f'test "$(node --version)" = v{pins["versions"]["node"]}; '
-        f"go version | grep -F go{pins['versions']['go']}; "
-        'test "$(go env GOHOSTARCH)" = "$(case $(uname -m) in aarch64) echo arm64;; x86_64) echo amd64;; esac)"; '
+        f"{NO_GO}"
         f"rustc --version | grep -F {pins['versions']['rust']}; "
         f"cargo --version | grep -F {pins['versions']['rust']}; rust-analyzer --version; "
         f"cargo modules --version | grep -F {pins['versions']['cargo-modules']}; "
         f"uv --version | grep -F {pins['versions']['uv']}; scip-go --version | grep -F {pins['versions']['scip-go']}; "
         f'node -e {shlex.quote(node_script)}; "$ARCHFIT_TOOL_PYTHON" -I -c {shlex.quote(py_script)}; '
         "depcruise --version; ast-grep --version; jscpd --version; scip-typescript --version; scip-python --version; "
-        'mkdir -p "$GOCACHE" "$GOPATH" "$CARGO_HOME" "$XDG_CACHE_HOME" "$UV_CACHE_DIR" "$npm_config_cache"; '
+        'mkdir -p "$CARGO_HOME" "$XDG_CACHE_HOME" "$UV_CACHE_DIR" "$npm_config_cache"; '
         "archfit --version"
     )
     contract.run("inventory-uid", "27182:27182", script)
@@ -185,10 +185,18 @@ def language_cases(contract: ImageContract) -> None:
         prepare_fixture(spec, fixture)
         before = tree_hash(fixture)
         for uid in ("65532:65532", "27182:27182"):
+            script = saved_command("primary", CHECK)
+            if spec.name == "go":
+                script = NO_GO + script
+                files = " ".join(shlex.quote(name) for name in spec.forbidden)
+                script += (
+                    f"git checkout {lc.TARGET_BRANCH} -- {files}; "
+                    + saved_command("clean", CHECK)
+                )
             output = contract.run(
                 f"{spec.name}-{uid.split(':')[0]}",
                 uid,
-                saved_command("primary", CHECK),
+                script,
                 fixture,
             )
             doc = contract.read_result(output, "primary")
@@ -202,6 +210,16 @@ def language_cases(contract: ImageContract) -> None:
                 and doc.get("unknown") == [],
                 doc.get("unknown"),
             )
+            if spec.name == "go":
+                clean = contract.read_result(output, "clean")
+                contract.expect(
+                    f"{output.name}: clean check passes without Go executable or SDK",
+                    exit_code(output, "clean") == "0"
+                    and clean.get("status") == "pass"
+                    and clean.get("errors") == []
+                    and clean.get("unknown") == [],
+                    clean,
+                )
         contract.expect(
             f"{spec.name}: trusted inputs unchanged", tree_hash(fixture) == before
         )

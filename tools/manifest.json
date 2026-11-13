@@ -1,4 +1,5 @@
 {
+  "build_only": ["go"],
   "versions": {
     "go": "1.27.4",
     "node": "24.22.1",
