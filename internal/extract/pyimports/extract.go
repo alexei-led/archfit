@@ -73,8 +73,9 @@ type Import struct {
 
 // Facts are the imports of a tree.
 type Facts struct {
-	Sources []string // the module files read, sorted
-	Imports []Import // sorted by file, line and module
+	Sources []string          // the module files read, sorted
+	Imports []Import          // sorted by file, line and module
+	Modules map[string]string // source file to dotted module, for report projection
 }
 
 // Config holds the policy settings the extractor reads.
@@ -177,7 +178,7 @@ func Extract(ctx context.Context, runner toolrun.Runner, root string, cfg Config
 	slices.SortStableFunc(imports, func(a, b Import) int {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Module, b.Module))
 	})
-	return Facts{Sources: sources, Imports: imports}, nil
+	return Facts{Sources: sources, Imports: imports, Modules: moduleOf}, nil
 }
 
 // place classifies one target module of an import in file.

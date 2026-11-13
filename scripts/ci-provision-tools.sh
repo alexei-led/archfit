@@ -26,7 +26,7 @@ toolchain_ready() {
         test -x "$prefix/bin/scip-go" &&
         test -x "$prefix/rust/bin/rustc" &&
         test -x "$prefix/analyzers/node/node_modules/.bin/sg" &&
-        "$prefix/python/bin/python" -I -c 'import grimp, grpc_tools' >/dev/null 2>&1
+        "$prefix/python/bin/python" -I -c 'import google.protobuf, grpc_tools' >/dev/null 2>&1
 }
 
 export_toolchain() {

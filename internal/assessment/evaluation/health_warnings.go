@@ -8,9 +8,9 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
-// toolGrimp is the Python primary analyzer's coverage name. Assessment is core
+// toolPythonImports is the Python primary analyzer's coverage name. Assessment is core
 // ring: it names the tool, it never imports the extractor adapter that runs it.
-const toolGrimp = "grimp"
+const toolPythonImports = "pyimports"
 
 // healthWarnings returns actionable hints, in emission order, when the assessed
 // result looks suspicious. Each warning includes a next-command suggestion. They
@@ -72,7 +72,7 @@ func pythonAllEdgesExternal(cov []evidence.Coverage, edges *result.ClassifiedEdg
 	if edges == nil || edges.External == 0 || edges.Scored != 0 {
 		return false
 	}
-	if !coverageStatusIs(cov, toolGrimp, evidence.StatusOK) {
+	if !coverageStatusIs(cov, toolPythonImports, evidence.StatusOK) {
 		return false
 	}
 	crossModule := edges.Total - edges.SameModule

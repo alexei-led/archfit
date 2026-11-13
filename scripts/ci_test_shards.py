@@ -29,7 +29,6 @@ SPLIT = (
 COSTS = {
     "github.com/alexei-led/archfit/v3/internal/toolrun": 26.0,
     "github.com/alexei-led/archfit/v3/internal/extract/ts": 25.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/py": 13.0,
     "github.com/alexei-led/archfit/v3/internal": 11.0,
     "github.com/alexei-led/archfit/v3/internal/extract/golang": 4.5,
 }
@@ -65,4 +64,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

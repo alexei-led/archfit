@@ -40,9 +40,10 @@ class ProvisionToolsTest(unittest.TestCase):
         self.assertEqual(manifest["versions"]["rust"], "1.99.1")
         self.assertEqual(
             manifest["python"],
-            {"grimp": "3.17", "protobuf": "7.36.2", "grpcio-tools": "1.84.1"},
+            {"protobuf": "7.36.2", "grpcio-tools": "1.84.1"},
         )
         lock = (ROOT / "tools/python/requirements.lock").read_text()
+        self.assertNotIn("grimp", lock)
         for package, version in manifest["python"].items():
             self.assertIn(f"{package}=={version}", lock)
         for entry in re.split(r"\n(?=[a-z])", lock):

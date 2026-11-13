@@ -233,23 +233,26 @@ class ImageContractsTest(unittest.TestCase):
                 "schema_version": "archfit.architecture-state.v1",
                 "measurement": {
                     "tool_versions": {
-                        "grimp": f"grimp {image.lc.TOOL_MANIFEST['python']['grimp']}; python {image.lc.TOOL_MANIFEST['versions']['python']}"
+                        "pyimports": f"ast-grep {image.lc.TOOL_MANIFEST['node']['@ast-grep/cli']}"
                     }
                 },
-                "coverage": {"tools": [{"tool": "grimp", "status": "ok"}]},
+                "coverage": {"tools": [{"tool": "pyimports", "status": "ok"}]},
                 "decision": {"hard_gates": "fail"},
                 "findings": [{"rule_id": "no-core-to-adapter", "kind": "gate"}],
             }
 
+            report_rc = "0"
+
             def run(name, uid, script, fixture):
                 self.assertTrue((fixture / ".git").is_dir())
                 self.assertTrue((fixture / "src/modern314/core.py").is_file())
+                self.assertTrue((fixture / "src/modern314/_version.py").is_file())
                 self.assertIn("archfit report -C /tmp/repo --format json", script)
                 self.assertNotIn("archfit analyze", script)
                 result = output / name
                 result.mkdir()
                 (result / "report.json").write_text(json.dumps(state))
-                (result / "report.rc").write_text("0")
+                (result / "report.rc").write_text(report_rc)
                 return result
 
             with patch.object(contract, "run", side_effect=run) as commands:
@@ -257,9 +260,42 @@ class ImageContractsTest(unittest.TestCase):
             self.assertEqual(commands.call_count, 2)
             self.assertTrue(all(row["passed"] for row in contract.assertions))
 
-            for version in ("", "grimp 0.0; python 0.0"):
-                with self.subTest(version=version), tempfile.TemporaryDirectory() as bad_dir:
-                    state["measurement"]["tool_versions"]["grimp"] = version
+            negatives = {
+                "missing parser": {"coverage": {"tools": []}},
+                "wrong producer": {
+                    "coverage": {"tools": [{"tool": "grimp", "status": "ok"}]}
+                },
+                "partial parser": {
+                    "coverage": {"tools": [{"tool": "pyimports", "status": "partial"}]}
+                },
+                "missing version": {"measurement": {"tool_versions": {}}},
+                "wrong version": {
+                    "measurement": {"tool_versions": {"pyimports": "ast-grep 0.0.0"}}
+                },
+                "gate passed": {"decision": {"hard_gates": "pass"}},
+                "unevaluated rule": {
+                    "decision": {
+                        "hard_gates": "fail",
+                        "unevaluated_required_rules": ["missing"],
+                    }
+                },
+                "missing finding": {"findings": []},
+            }
+            good = state.copy()
+            for name, change in negatives.items():
+                with self.subTest(name=name), tempfile.TemporaryDirectory() as bad_dir:
+                    state = {**good, **change}
+                    output = Path(bad_dir)
+                    bad = image.ImageContract("local:contract", "colima", output)
+                    with patch.object(bad, "run", side_effect=run):
+                        image.python314_case(bad)
+                    self.assertTrue(all(not row["passed"] for row in bad.assertions))
+            state = good
+            for report_rc in ("1", "2"):
+                with (
+                    self.subTest(report_rc=report_rc),
+                    tempfile.TemporaryDirectory() as bad_dir,
+                ):
                     output = Path(bad_dir)
                     bad = image.ImageContract("local:contract", "colima", output)
                     with patch.object(bad, "run", side_effect=run):

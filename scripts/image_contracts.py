@@ -160,7 +160,7 @@ def prepare_fixture(
 def inventory(contract: ImageContract) -> None:
     pins = lc.TOOL_MANIFEST
     node_script = "const p='/opt/archfit/analyzers/node/node_modules/'; const m=require('/opt/archfit/manifest.json'); for(const [n,v] of Object.entries(m.node)){if(require(p+n+'/package.json').version!==v) throw Error(n)}; console.log(JSON.stringify(m.node));"
-    py_script = "import importlib.metadata as m, json, platform; p=json.load(open('/opt/archfit/manifest.json')); assert platform.python_version()==p['versions']['python']; [(_ for _ in ()).throw(AssertionError(k)) for k,v in p['python'].items() if m.version(k)!=v]; import grimp, google.protobuf, grpc_tools; print(p['python'])"
+    py_script = "import importlib.metadata as m, importlib.util as u, json, platform; p=json.load(open('/opt/archfit/manifest.json')); assert platform.python_version()==p['versions']['python']; [(_ for _ in ()).throw(AssertionError(k)) for k,v in p['python'].items() if m.version(k)!=v]; assert u.find_spec('grimp') is None; import google.protobuf, grpc_tools; print(p['python'])"
     script = (
         'test "$HOME" = /tmp; ! getent passwd 27182; '
         "test ! -w /opt/archfit/manifest.json; "
@@ -249,17 +249,19 @@ def python314_case(contract: ImageContract) -> None:
             fixture,
         )
         state = contract.read_state(output, "report")
-        version = state.get("measurement", {}).get("tool_versions", {}).get("grimp", "")
-        pin = f"grimp {lc.TOOL_MANIFEST['python']['grimp']}; python {lc.TOOL_MANIFEST['versions']['python']}"
+        version = (
+            state.get("measurement", {}).get("tool_versions", {}).get("pyimports", "")
+        )
+        pin = f"ast-grep {lc.TOOL_MANIFEST['node']['@ast-grep/cli']}"
         contract.expect(
             f"{output.name}: src-layout Python 3.14 forbidden import",
             (output / "report.rc").is_file()
             and (output / "report.rc").read_text().strip() == "0"
             and state.get("decision", {}).get("hard_gates") == "fail"
             and not state.get("decision", {}).get("unevaluated_required_rules", [])
-            and rows(state).get("grimp", {}).get("status") == "ok"
+            and rows(state).get("pyimports", {}).get("status") == "ok"
             and "comparison" not in state
-            and pin in version
+            and pin == version
             and any(
                 f.get("rule_id") == "no-core-to-adapter" and f.get("kind") == "gate"
                 for f in state.get("findings", [])
