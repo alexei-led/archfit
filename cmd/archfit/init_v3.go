@@ -13,6 +13,10 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
+// agentLines are the five lines for agents that init writes into AGENTS.md.
+// The session-start hook prints them too.
+const agentLines = policy3.Lines
+
 // RepoInitCmd is `archfit init` (internal/initcfg/policy3): set up a
 // repository. It writes what is missing and never changes a version 3
 // policy: a fresh repository gets a version 3 policy and the instruction

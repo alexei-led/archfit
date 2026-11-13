@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alexei-led/archfit/v3/internal/initcfg/policy3"
 )
 
 // archfitExecEnv makes the test binary run the archfit CLI: git runs the
@@ -20,24 +22,10 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// sessionSource is the SessionStart stdin key that says why a session started.
 const (
-	// sessionSource is the SessionStart stdin key that says why a session started.
-	sessionSource    = "source"
-	traceSession     = "trace-session"
-	traceRationale   = "impl is private to b"
-	traceAlternative = "call the API b exports"
-	// hookTraceCfg declares owners, subdomains and volatility, so config
-	// quality has nothing to say, and a rule with a rationale and an
-	// alternative, so a denial shows why and instead.
-	hookTraceCfg = lintCleanModules + `rules:
-  - id: no_b_impl
-    type: forbidden_dependency
-    gate: fail
-    from: pkg/a/**
-    to: pkg/b/impl
-    rationale: ` + traceRationale + `
-    alternatives: ["` + traceAlternative + `"]
-`
+	sessionSource = "source"
+	traceSession  = "trace-session"
 )
 
 // installedRuns installs the hooks of a harness into dir and returns the
@@ -111,16 +99,55 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// TestHookTrace is the protocol trace of one agent session per harness: the
-// agent edits through a shell, commits mid-session, and finishes. The
-// violation is reported once after the edit and blocks the first stop only;
-// the commit does not hide it, and the hooks never react to their own writes.
+// outsideARepository names the hook-error case of the hook tables.
+const outsideARepository = "outside a git repository the hook reports and stops nothing"
+
+// Hook fixture files: an edit of pkg/tc/netem.go that only uses the standard
+// library (allowed), and one that adds the graph error of design 8.1
+// (tcImportsUtil, change_check_test.go).
+const (
+	tcUsesFmt = "package tc\n\nimport \"fmt\"\n\n// Netem shapes traffic.\nfunc Netem() string { return fmt.Sprint(\"netem\") }\n"
+	chaosFile = "pkg/chaos/netem/netem.go"
+	// graphRecord and denyRecord start the records of the two errors.
+	graphRecord = "graph: pkg_tc -> pkg_util is not an allowed dependency"
+	denyRecord  = "no-chaos-to-runtime: pkg_chaos must not depend on pkg_runtime"
+	// canGraph starts the record archfit can prints for the graph error.
+	canGraph = "pkg_tc -> pkg_util: graph: not an allowed dependency"
+)
+
+// coveredException lets pkg_tc depend on pkg_util until a far date: check
+// passes the import, though archfit can answers no.
+const coveredException = `exceptions:
+  - rule: graph
+    from: pkg_tc
+    to: pkg_util
+    expires: 2099-01-01
+    why: "Request #12 is open."
+`
+
+// hookFixture is the change-check fixture: the base on main (origin/HEAD) and
+// an empty change on the branch, with base the extra files of the base.
+func hookFixture(t *testing.T, base map[string]string) string {
+	t.Helper()
+	return fixtureRepo(t, with(fixtureFiles(), base), nil)
+}
+
+// hookRun runs one hook event in dir, as a harness would.
+func hookRun(t *testing.T, dir, harnessEventName, run string, extra map[string]any) (int, string, string) {
+	t.Helper()
+	return runHook(t, harnessEvent(t, harnessEventName, dir, extra), "run", run)
+}
+
+// TestHookTrace is the protocol trace of one agent session per harness,
+// through the installed hooks: the agent edits through a shell, commits
+// mid-session, and finishes. The error is reported once after the edit and
+// stops the first stop only; the commit does not hide it.
 func TestHookTrace(t *testing.T) {
 	t.Parallel()
 	for _, harness := range []string{harnessClaude, harnessCodex} {
 		t.Run(harness, func(t *testing.T) {
 			t.Parallel()
-			dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
+			dir := hookFixture(t, nil)
 			runs := installedRuns(t, dir, harness)
 			run := func(event string, extra map[string]any) (int, string, string) {
 				t.Helper()
@@ -128,89 +155,74 @@ func TestHookTrace(t *testing.T) {
 				if !ok {
 					t.Fatalf("no %s hook installed for %s: %v", event, harness, runs)
 				}
-				return runHook(t, harnessEvent(t, event, dir, extra), args...)
+				code, stdout, stderr := runHook(t, harnessEvent(t, event, dir, extra), args...)
+				checkHookWords(t, stdout+stderr)
+				return code, stdout, stderr
 			}
-			shellEdit := map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "cat > " + filePkgAA}}
+			shellEdit := map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "cat > " + tcNetem}}
 
-			// 1. The session starts at HEAD and the agent reads the bootstrap.
+			// 1. The session starts at HEAD and the agent reads the five lines.
 			code, stdout, stderr := run(harnessEventSessionStart, map[string]any{sessionSource: "startup"})
-			if code != 0 || stdout != sessionBootstrap || stderr != "" {
+			if code != 0 || stdout != policy3.Lines || stderr != "" {
 				t.Fatalf("session start: exit %d\nstdout %q\nstderr %q", code, stdout, stderr)
 			}
 			if got, want := readSession(t, dir).BaseSHA, gitOutput(t, dir, "rev-parse", "HEAD"); got != want {
 				t.Fatalf("session base = %q, want HEAD %q", got, want)
 			}
 
-			// 2. An edit through the shell adds the forbidden import.
-			writeFixtureFile(t, dir, filePkgAA, hookViolatingA)
+			// 2. An edit through the shell adds the import of the graph error.
+			writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
 			code, stdout, stderr = run(harnessEventPostToolUse, shellEdit)
-			if code != 2 || stdout != "" {
-				t.Fatalf("post-tool-use after the edit: exit %d, stdout %q, want 2 and empty stdout\n%s", code, stdout, stderr)
-			}
-			if n := strings.Count(stderr, ruleNoBImpl); n != 1 {
-				t.Errorf("stderr names %s %d times, want once:\n%s", ruleNoBImpl, n, stderr)
-			}
-			for _, want := range []string{filePkgAA, "example.com/test/pkg/b/impl", "why: " + traceRationale, "instead: " + traceAlternative} {
-				if !strings.Contains(stderr, want) {
-					t.Errorf("post-tool-use stderr is missing %q:\n%s", want, stderr)
-				}
+			if code != 2 || stdout != "" || !strings.Contains(stderr, tcNetem+":12: import pkg/util\n"+canGraph) {
+				t.Fatalf("post-tool-use after the edit: exit %d, stdout %q, want 2 and the record\n%s", code, stdout, stderr)
 			}
 
 			// 3. The next tool call with nothing new is silent.
 			code, stdout, stderr = run(harnessEventPostToolUse, shellEdit)
 			hookOutputCase{}.check(t, code, stdout, stderr)
 
-			// 4. A commit mid-session does not hide the violation from the stop.
-			gitCommitFixture(t, dir)
+			// 4. A commit mid-session does not hide the error from the stop.
+			gitRun(t, dir, "add", "-A")
+			gitRun(t, dir, "commit", "-qm", "edit", "--no-gpg-sign")
 			code, stdout, stderr = run(harnessEventStop, map[string]any{stopHookActive: false})
-			if code != 2 || stdout != "" || !strings.Contains(stderr, "change fail") || !strings.Contains(stderr, ruleNoBImpl) {
-				t.Fatalf("first stop: exit %d, stdout %q, want 2 and the blocker on stderr:\n%s", code, stdout, stderr)
+			if code != 2 || stdout != "" || !strings.Contains(stderr, graphRecord) || !strings.Contains(stderr, "archfit: fail, 1 error") {
+				t.Fatalf("first stop: exit %d, stdout %q, want 2 and the record on stderr:\n%s", code, stdout, stderr)
 			}
 
-			// 5. The harness's own repeat guard: a stop after a block lets the agent stop.
+			// 5. The harness's own repeat guard: a stop after a stop lets the agent stop.
 			code, stdout, stderr = run(harnessEventStop, map[string]any{stopHookActive: true})
-			hookOutputCase{wantStdout: "still reports blockers"}.check(t, code, stdout, stderr)
+			hookOutputCase{wantStdout: "still fails after one attempt"}.check(t, code, stdout, stderr)
 
-			// 6. The same blockers on the same tree do not block again.
+			// 6. The same errors do not stop again.
 			code, stdout, stderr = run(harnessEventStop, map[string]any{stopHookActive: false})
-			hookOutputCase{wantStdout: "already stopped on"}.check(t, code, stdout, stderr)
-
-			// 7. The hooks' own writes are not edits.
-			writeFixtureFile(t, dir, filepath.Join(cacheDirName, "scratch", "a.go"), hookViolatingA)
-			code, stdout, stderr = run(harnessEventPostToolUse, shellEdit)
-			hookOutputCase{}.check(t, code, stdout, stderr)
-			for file := range readSession(t, dir).Files {
-				if inArchfitCache(file) {
-					t.Errorf("the session tracks archfit's own file %s", file)
-				}
-			}
+			hookOutputCase{wantStdout: "the same errors as at the last stop"}.check(t, code, stdout, stderr)
 		})
 	}
 }
 
-// TestHookTraceGitOnly runs the same violation with only the git hook
-// installed: git commit runs the hook as a process, and the commit fails with
-// the rule named.
+// TestHookTraceGitOnly: git commit runs the installed pre-commit hook as a
+// process, and the commit fails with the record of the error.
 func TestHookTraceGitOnly(t *testing.T) {
 	t.Parallel()
-	dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
+	dir := hookFixture(t, nil)
 	// A user's global core.hooksPath must not take the fixture's hook.
-	gitFixture(t, dir, "config", "core.hooksPath", filepath.Join(".git", "hooks"))
+	gitRun(t, dir, "config", "core.hooksPath", filepath.Join(".git", "hooks"))
 	if code, stdout, stderr := runHook(t, "", "install", flagHarness, harnessGit, flagDir, dir); code != 0 {
 		t.Fatalf("hook install --harness git: exit %d\n%s%s", code, stdout, stderr)
 	}
-	writeFixtureFile(t, dir, filePkgAA, hookViolatingA)
-	gitFixture(t, dir, "add", "-A")
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	gitRun(t, dir, "add", "-A")
+	before := gitOutput(t, dir, "rev-parse", "HEAD")
 
 	out, err := gitCommitWithHooks(t, dir)
 	if err == nil {
-		t.Fatalf("git commit succeeded with a violation staged:\n%s", out)
+		t.Fatalf("git commit succeeded with an error staged:\n%s", out)
 	}
-	if !strings.Contains(out, ruleNoBImpl) {
-		t.Errorf("git commit output does not name %s:\n%s", ruleNoBImpl, out)
+	if !strings.Contains(out, graphRecord) {
+		t.Errorf("git commit output does not hold the record:\n%s", out)
 	}
-	if count := gitOutput(t, dir, "rev-list", "--count", "HEAD"); count != "1" {
-		t.Errorf("HEAD has %s commits, want the fixture's 1", count)
+	if after := gitOutput(t, dir, "rev-parse", "HEAD"); after != before {
+		t.Errorf("HEAD moved to %s, want the commit stopped", after)
 	}
 }
 
@@ -227,7 +239,7 @@ func gitCommitWithHooks(t *testing.T, dir string) (string, error) {
 	if err := os.WriteFile(filepath.Join(bin, "archfit"), []byte(shim), 0o700); err != nil { //nolint:gosec // an executable test shim
 		t.Fatal(err)
 	}
-	cmd := exec.Command("git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "violation")
+	cmd := exec.Command("git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "edit")
 	cmd.Dir = dir
 	cmd.Env = append(scrubGitFixtureEnv(os.Environ()),
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -237,193 +249,310 @@ func gitCommitWithHooks(t *testing.T, dir string) (string, error) {
 	return string(out), err
 }
 
-// TestHookRunPostToolUse pins the post-tool-use table: only a denial the
-// change adds is reported, and an error never blocks.
+// TestHookRunPostToolUse pins the post-tool-use table: only a no from archfit
+// can stops the agent; a yes, an unknown, a covered import, a tree with no
+// version 3 policy, and a hook error never do.
 func TestHookRunPostToolUse(t *testing.T) {
 	t.Parallel()
-	const extraFile = "pkg/a/extra.go"
 	for _, tc := range []struct {
 		name string
 		repo func(*testing.T) string
 		hookOutputCase
 	}{
-		{name: "a denied import in an edited file",
-			repo:           func(t *testing.T) string { return hookRepo(t, hookTraceCfg, hookCleanA, hookViolatingA) },
-			hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: "which rule " + ruleNoBImpl + " denies"}},
-		{name: "a denied import in an untracked file",
+		{name: "a forbidden import stops with the record",
 			repo: func(t *testing.T) string {
-				dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
-				writeFixtureFile(t, dir, extraFile, hookViolatingA)
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
 				return dir
-			}, hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: extraFile + " imports example.com/test/pkg/b/impl"}},
-		{name: "an import that was there at the base is not new",
+			}, hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: tcNetem + ":12: import pkg/util\n" + canGraph}},
+		{name: "a deny rule names why and instead",
 			repo: func(t *testing.T) string {
-				return hookRepo(t, hookTraceCfg, hookViolatingA, hookViolatingA+"\n// edit\n")
-			}},
-		{name: "an import no rule denies is silent",
-			repo: func(t *testing.T) string {
-				return hookRepo(t, hookTraceCfg, hookCleanA, "package a\n\nimport \"strings\"\n\nvar _ = strings.ToUpper\n")
-			}},
-		{name: "an archfit error fails open",
-			repo: func(t *testing.T) string {
-				dir := hookRepo(t, hookTraceCfg, hookCleanA, hookViolatingA)
-				if err := os.Remove(filepath.Join(dir, defaultConfigPath)); err != nil {
-					t.Fatal(err)
-				}
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{chaosFile: chaosImportsRuntime})
 				return dir
-			}, hookOutputCase: hookOutputCase{wantStdout: failedOpen}},
-		{name: "outside a git repository fails open",
+			}, hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: "  instead: Add a method to container.Client."}},
+		{name: "an allowed import is silent",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{tcNetem: tcUsesFmt})
+				return dir
+			}},
+		{name: "an import an exception covers is silent",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, map[string]string{defaultConfigPath: fixturePolicy + coveredException})
+				writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+				return dir
+			}},
+		{name: "an unknown answer is silent",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{"tools/gen/gen.go": "package gen\n\nimport \"example.com/pumba/pkg/util\"\n\nvar _ = util.NotRunning\n"})
+				return dir
+			}},
+		{name: "an import that was there at the session base is not new",
+			repo: func(t *testing.T) string {
+				return fixtureRepo(t, fixtureFiles(), map[string]string{tcNetem: tcImportsUtil})
+			}},
+		{name: "a version 2 policy is silent",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{defaultConfigPath: hookModules, tcNetem: tcImportsUtil})
+				return dir
+			}},
+		{name: outsideARepository,
 			repo: func(t *testing.T) string {
 				dir := t.TempDir()
-				writeFixtureFile(t, dir, filePkgAA, hookViolatingA)
+				writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
 				return dir
-			}, hookOutputCase: hookOutputCase{wantStdout: failedOpen}},
+			}, hookOutputCase: hookOutputCase{wantStdout: couldNotRunMsg}},
+		{name: "a broken session file: the hook reports and stops nothing",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{
+					tcNetem: tcImportsUtil,
+					filepath.Join(cacheDirName, sessionDirName, sessionFileName(traceSession)): "{not json",
+				})
+				return dir
+			}, hookOutputCase: hookOutputCase{wantStdout: couldNotRunMsg}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := tc.repo(t)
-			code, stdout, stderr := runHook(t, harnessEvent(t, harnessEventPostToolUse, dir, nil), "run", hookEventPostToolUse)
+			code, stdout, stderr := hookRun(t, dir, harnessEventPostToolUse, hookEventPostToolUse, nil)
 			tc.check(t, code, stdout, stderr)
 		})
 	}
 }
 
-// TestHookRunSessionStartKeepsTheBase: Claude Code fires SessionStart again on
-// resume and after compaction; the session's base must not move to a commit
-// the agent made since.
-func TestHookRunSessionStartKeepsTheBase(t *testing.T) {
+// TestHookRunPostToolUseReportsOnce: a no is reported once while the file
+// adds it, and again after it was removed and comes back.
+func TestHookRunPostToolUseReportsOnce(t *testing.T) {
 	t.Parallel()
-	dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
-	start := gitOutput(t, dir, "rev-parse", "HEAD")
-	for _, source := range []string{"startup", "compact"} {
-		if code, _, stderr := runHook(t, harnessEvent(t, harnessEventSessionStart, dir, map[string]any{sessionSource: source}), "run", hookEventSessionStart); code != 0 {
-			t.Fatalf("session start (%s): exit %d\n%s", source, code, stderr)
-		}
-		commitFiles(t, dir, map[string]string{filePkgAA: hookCleanA + "\n// " + source + "\n"})
+	dir := hookFixture(t, nil)
+	postToolUse := func(want hookOutputCase) {
+		t.Helper()
+		code, stdout, stderr := hookRun(t, dir, harnessEventPostToolUse, hookEventPostToolUse, nil)
+		want.check(t, code, stdout, stderr)
 	}
-	if got := readSession(t, dir).BaseSHA; got != start {
-		t.Errorf("session base = %q after a second session start, want the first HEAD %q", got, start)
-	}
+	reported := hookOutputCase{wantCode: 2, wantStderr: canGraph}
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	postToolUse(reported)
+	writeFiles(t, dir, map[string]string{runtimeGo: "package runtime\n\n// Do runs.\nfunc Do() {}\n\n// Stop stops.\nfunc Stop() {}\n"})
+	postToolUse(hookOutputCase{})
+	writeFiles(t, dir, map[string]string{tcNetem: tcUsesFmt})
+	postToolUse(hookOutputCase{})
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	postToolUse(reported)
 }
 
-// TestHookRunSessionStartBeforeTheFirstCommit records an empty base: the
-// whole tree is the change.
-func TestHookRunSessionStartBeforeTheFirstCommit(t *testing.T) {
+// TestHookRunStop pins the stop table: only a fail stops the agent; an unknown
+// and a hook error show a message and stop nothing.
+func TestHookRunStop(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	gitInitFixtureRepo(t, dir)
-	code, stdout, stderr := runHook(t, harnessEvent(t, harnessEventSessionStart, dir, nil), "run", hookEventSessionStart)
-	if code != 0 || stdout != sessionBootstrap || stderr != "" {
-		t.Fatalf("exit %d\nstdout %q\nstderr %q", code, stdout, stderr)
+	failing := func(t *testing.T) string {
+		dir := hookFixture(t, nil)
+		writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+		return dir
 	}
-	if sess := readSession(t, dir); sess.BaseSHA != "" || sess.StartedAt.IsZero() {
-		t.Errorf("session = %+v, want an empty base and a start time", sess)
-	}
-}
-
-// TestHookRunReportsAViolationThatComesBack: a violation the agent removes and
-// then adds again is reported again after the edit and blocks the stop again.
-// Neither the reported denial nor the stop's block outlives the fix.
-func TestHookRunReportsAViolationThatComesBack(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct{ name, fixed string }{
-		{name: "the import edited out", fixed: hookCleanA + "\n// fixed\n"},
-		{name: "the file reverted to the base", fixed: hookCleanA},
+	for _, tc := range []struct {
+		name   string
+		repo   func(*testing.T) string
+		event  string
+		active bool
+		args   []string
+		hookOutputCase
+	}{
+		{name: "a fail stops the agent with the record", repo: failing,
+			hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: graphRecord}},
+		{name: "codex reads the same protocol", repo: failing, args: []string{flagHarness, harnessCodex},
+			hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: graphRecord}},
+		{name: "a fail with stop_hook_active lets the agent stop", repo: failing, active: true,
+			hookOutputCase: hookOutputCase{wantStdout: "still fails after one attempt"}},
+		{name: "a pass is silent",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{tcNetem: tcUsesFmt})
+				return dir
+			}},
+		{name: "an exception covers the error",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, map[string]string{defaultConfigPath: fixturePolicy + coveredException})
+				writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+				return dir
+			}},
+		{name: "a changed policy is unknown: a message, no stop",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{defaultConfigPath: fixturePolicy + coveredException, tcNetem: tcImportsUtil})
+				return dir
+			}, hookOutputCase: hookOutputCase{wantStdout: "policy: differs from origin/main"}},
+		{name: "a clean tree skips the run", repo: func(t *testing.T) string { return hookFixture(t, nil) }},
+		{name: "archfit's own cache is not a change",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{filepath.Join(cacheDirName, "facts", "x.json"): "{}"})
+				return dir
+			}},
+		{name: outsideARepository,
+			repo: func(t *testing.T) string { return t.TempDir() }, hookOutputCase: hookOutputCase{wantStdout: couldNotRunMsg}},
+		{name: "malformed stdin", repo: failing, event: "malformed",
+			hookOutputCase: hookOutputCase{wantCode: 1, wantStderr: "malformed hook event"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
-			run := func(event, hookRunEvent string, extra map[string]any) (int, string, string) {
-				return runHook(t, harnessEvent(t, event, dir, extra), "run", hookRunEvent)
+			dir := tc.repo(t)
+			stdin := harnessEvent(t, harnessEventStop, dir, map[string]any{stopHookActive: tc.active})
+			if tc.event == "malformed" {
+				stdin = "{not json"
 			}
-			if code, _, stderr := run(harnessEventSessionStart, hookEventSessionStart, nil); code != 0 {
-				t.Fatalf("session start: exit %d\n%s", code, stderr)
-			}
-			for round, content := range []string{hookViolatingA, tc.fixed, hookViolatingA} {
-				writeFixtureFile(t, dir, filePkgAA, content)
-				wantCode, want := 2, ruleNoBImpl
-				if content == tc.fixed {
-					wantCode, want = 0, ""
-				}
-				code, stdout, stderr := run(harnessEventPostToolUse, hookEventPostToolUse, nil)
-				hookOutputCase{wantCode: wantCode, wantStderr: want}.check(t, code, stdout, stderr)
-				code, stdout, stderr = run(harnessEventStop, hookEventStop, map[string]any{stopHookActive: false})
-				if code != wantCode || stdout != "" || !strings.Contains(stderr, want) {
-					t.Fatalf("round %d stop: exit %d, want %d\nstdout %q\nstderr %q", round, code, wantCode, stdout, stderr)
-				}
-			}
+			code, stdout, stderr := runHook(t, stdin, append([]string{"run", hookEventStop}, tc.args...)...)
+			tc.check(t, code, stdout, stderr)
 		})
 	}
 }
 
-// TestHookRunSubagentStopDoesNotUseUpTheBlock: a subagent shares the session;
-// its stop is blocked once but must not suppress the main agent's stop.
-func TestHookRunSubagentStopDoesNotUseUpTheBlock(t *testing.T) {
+// TestHookRunStopOncePerErrorSet: the stop does not stop twice on the same set
+// of errors, wherever their lines moved; a new error stops again, and so do
+// the same errors after a pass.
+func TestHookRunStopOncePerErrorSet(t *testing.T) {
 	t.Parallel()
-	dir := hookRepo(t, hookTraceCfg, hookCleanA, hookViolatingA)
-	for _, event := range []string{harnessEventSubagentStop, harnessEventStop} {
-		code, stdout, stderr := runHook(t, harnessEvent(t, event, dir, map[string]any{stopHookActive: false}), "run", hookEventStop)
-		if code != 2 || stdout != "" || !strings.Contains(stderr, ruleNoBImpl) {
-			t.Fatalf("%s: exit %d, want 2 with the blocker\nstdout %q\nstderr %q", event, code, stdout, stderr)
-		}
+	dir := hookFixture(t, nil)
+	stop := func(want hookOutputCase) {
+		t.Helper()
+		code, stdout, stderr := hookRun(t, dir, harnessEventStop, hookEventStop, map[string]any{stopHookActive: false})
+		want.check(t, code, stdout, stderr)
+	}
+	same := hookOutputCase{wantStdout: "the same errors as at the last stop"}
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	stop(hookOutputCase{wantCode: 2, wantStderr: graphRecord})
+	stop(same)
+	writeFiles(t, dir, map[string]string{tcNetem: "// Package tc.\n" + tcImportsUtil})
+	stop(same)
+	writeFiles(t, dir, map[string]string{chaosFile: chaosImportsRuntime})
+	stop(hookOutputCase{wantCode: 2, wantStderr: denyRecord})
+	stop(same)
+	writeFiles(t, dir, map[string]string{tcNetem: tcUsesFmt, chaosFile: fixtureFiles()[chaosFile]})
+	stop(hookOutputCase{})
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	stop(hookOutputCase{wantCode: 2, wantStderr: graphRecord})
+}
+
+// TestHookRunSubagentStopDoesNotUseUpTheStop: a subagent shares the session;
+// its stop is stopped, but must not keep the main agent's stop from stopping.
+func TestHookRunSubagentStopDoesNotUseUpTheStop(t *testing.T) {
+	t.Parallel()
+	dir := hookFixture(t, nil)
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	for _, event := range []string{harnessEventSubagentStop, harnessEventSubagentStop, harnessEventStop} {
+		code, stdout, stderr := hookRun(t, dir, event, hookEventStop, map[string]any{stopHookActive: false})
+		hookOutputCase{wantCode: 2, wantStderr: graphRecord}.check(t, code, stdout, stderr)
 	}
 }
 
 // TestHookRunFromASubdirectory: the agent's shell changed directory, so the
-// event cwd is below the repository root; the config is still found there.
+// event cwd is below the repository root; the hooks still read the root.
 func TestHookRunFromASubdirectory(t *testing.T) {
 	t.Parallel()
-	dir := hookRepo(t, hookTraceCfg, hookCleanA, "")
-	sub := filepath.Join(dir, "pkg", "a")
-	writeFixtureFile(t, dir, filePkgAA, hookViolatingA)
-	code, stdout, stderr := runHook(t, harnessEvent(t, harnessEventPostToolUse, sub, nil), "run", hookEventPostToolUse)
-	hookOutputCase{wantCode: 2, wantStderr: ruleNoBImpl}.check(t, code, stdout, stderr)
-	code, stdout, stderr = runHook(t, harnessEvent(t, harnessEventStop, sub, nil), "run", hookEventStop)
-	if code != 2 || stdout != "" || !strings.Contains(stderr, ruleNoBImpl) {
-		t.Fatalf("stop: exit %d, want 2 with the blocker\nstdout %q\nstderr %q", code, stdout, stderr)
+	dir := hookFixture(t, nil)
+	writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+	sub := filepath.Join(dir, "pkg", "tc")
+	code, stdout, stderr := hookRun(t, sub, harnessEventPostToolUse, hookEventPostToolUse, nil)
+	hookOutputCase{wantCode: 2, wantStderr: canGraph}.check(t, code, stdout, stderr)
+	code, stdout, stderr = hookRun(t, sub, harnessEventStop, hookEventStop, nil)
+	hookOutputCase{wantCode: 2, wantStderr: graphRecord}.check(t, code, stdout, stderr)
+}
+
+// TestHookRunSessionStart: the session starts at HEAD and keeps that base on
+// resume and after compaction; before the first commit it has no base.
+func TestHookRunSessionStart(t *testing.T) {
+	t.Parallel()
+	dir := hookFixture(t, nil)
+	start := gitOutput(t, dir, "rev-parse", "HEAD")
+	for _, source := range []string{"startup", "compact"} {
+		code, stdout, stderr := hookRun(t, dir, harnessEventSessionStart, hookEventSessionStart, map[string]any{sessionSource: source})
+		if code != 0 || stdout != policy3.Lines || stderr != "" {
+			t.Fatalf("session start (%s): exit %d\nstdout %q\nstderr %q", source, code, stdout, stderr)
+		}
+		checkHookWords(t, stdout)
+		writeFiles(t, dir, map[string]string{runtimeGo: "package runtime\n\n// Do runs " + source + ".\nfunc Do() {}\n"})
+		gitRun(t, dir, "commit", "-qam", source, "--no-gpg-sign")
+	}
+	if got := readSession(t, dir).BaseSHA; got != start {
+		t.Errorf("session base = %q after a second session start, want the first HEAD %q", got, start)
+	}
+
+	empty := t.TempDir()
+	gitInitFixtureRepo(t, empty)
+	code, stdout, stderr := hookRun(t, empty, harnessEventSessionStart, hookEventSessionStart, nil)
+	if code != 0 || stdout != policy3.Lines || stderr != "" {
+		t.Fatalf("before the first commit: exit %d\nstdout %q\nstderr %q", code, stdout, stderr)
+	}
+	if sess := readSession(t, empty); sess.BaseSHA != "" || sess.StartedAt.IsZero() {
+		t.Errorf("session = %+v, want an empty base and a start time", sess)
 	}
 }
 
-// TestHookRunPostToolUseWaitsForARelativeImportTarget: an import of a file the
-// agent has not written yet cannot be judged; once the file exists, the next
-// tool call judges it, though the importer did not change.
-func TestHookRunPostToolUseWaitsForARelativeImportTarget(t *testing.T) {
-	t.Parallel()
-	const (
-		app     = "web/app.ts"
-		private = "web/private.ts"
-		cfg     = `version: 2
-modules:
-  web:
-    paths: ["web/**"]
-    owner: team-web
-    subdomain: core
-    volatility: low
-rules:
-  - id: no_private
-    type: forbidden_dependency
-    gate: fail
-    from: web/app.ts
-    to: web/private.ts
-`
-	)
-	dir := t.TempDir()
-	for name, content := range map[string]string{
-		tsPackageJSON: `{"name": "fixture", "private": true}`, app: "export const a = 1;\n", defaultConfigPath: cfg,
+// TestHookRunPreCommit pins that the pre-commit hook judges the index, what
+// the commit will contain, against HEAD, and never the files on disk. Only a
+// fail stops the commit; an unknown and a hook error are shown.
+func TestHookRunPreCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		repo     func(*testing.T) string
+		wantCode int
+		wantErr  string // substring of stderr; "" means empty stderr
+	}{
+		{name: "a staged error stops the commit", wantCode: 1, wantErr: graphRecord,
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+				gitRun(t, dir, "add", "-A")
+				return dir
+			}},
+		{name: "a staged clean file with an error in the working tree passes",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{tcNetem: tcUsesFmt})
+				gitRun(t, dir, "add", "-A")
+				writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil, "pkg/tc/extra.go": tcImportsUtil})
+				return dir
+			}},
+		{name: "a staged error with a clean working tree stops the commit", wantCode: 1, wantErr: graphRecord,
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{tcNetem: tcImportsUtil})
+				gitRun(t, dir, "add", "-A")
+				writeFiles(t, dir, map[string]string{tcNetem: tcUsesFmt})
+				return dir
+			}},
+		{name: "an error HEAD already has is not this commit's",
+			repo: func(t *testing.T) string {
+				dir := fixtureRepo(t, fixtureFiles(), map[string]string{tcNetem: tcImportsUtil})
+				writeFiles(t, dir, map[string]string{runtimeGo: "package runtime\n\n// Do runs.\nfunc Do() {}\n\n// Stop stops.\nfunc Stop() {}\n"})
+				gitRun(t, dir, "add", "-A")
+				return dir
+			}},
+		{name: "a staged policy change is unknown: shown, not stopped", wantErr: "policy: differs from ",
+			repo: func(t *testing.T) string {
+				dir := hookFixture(t, nil)
+				writeFiles(t, dir, map[string]string{defaultConfigPath: fixturePolicy + coveredException, tcNetem: tcImportsUtil})
+				gitRun(t, dir, "add", "-A")
+				return dir
+			}},
+		{name: outsideARepository, wantErr: couldNotRunMsg,
+			repo: func(t *testing.T) string { return t.TempDir() }},
 	} {
-		writeFixtureFile(t, dir, name, content)
+		t.Run(tc.name, func(t *testing.T) {
+			dir := tc.repo(t)
+			t.Chdir(dir)
+			code, stdout, stderr := runHook(t, "", "run", hookEventPreCommit)
+			checkHookWords(t, stdout+stderr)
+			if code != tc.wantCode || stdout != "" {
+				t.Fatalf("exit %d, want %d; stdout %q\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
+			}
+			if tc.wantErr == "" && stderr != "" || !strings.Contains(stderr, tc.wantErr) {
+				t.Errorf("stderr = %q, want %q", stderr, tc.wantErr)
+			}
+		})
 	}
-	gitInitFixtureRepo(t, dir)
-	gitCommitFixture(t, dir)
-	postToolUse := func() (int, string, string) {
-		return runHook(t, harnessEvent(t, harnessEventPostToolUse, dir, nil), "run", hookEventPostToolUse)
-	}
-
-	writeFixtureFile(t, dir, app, "import { p } from './private';\nexport const a = p;\n")
-	code, stdout, stderr := postToolUse()
-	hookOutputCase{}.check(t, code, stdout, stderr)
-
-	writeFixtureFile(t, dir, private, "export const p = 1;\n")
-	code, stdout, stderr = postToolUse()
-	hookOutputCase{wantCode: 2, wantStderr: app + " imports " + private + ", which rule no_private denies"}.check(t, code, stdout, stderr)
 }

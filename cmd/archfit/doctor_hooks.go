@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -66,8 +64,8 @@ func (c *DoctorCmd) installHooks(ctx context.Context, deps *appDeps) error {
 			_, _ = fmt.Fprintln(deps.Stdout, "  "+codexTrustNotice)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, defaultConfigPath)); errors.Is(err, fs.ErrNotExist) {
-		_, _ = fmt.Fprintf(deps.Stdout, "  warning: %s does not exist: the hooks read the policy there; run archfit init\n", filepath.Join(root, defaultConfigPath))
+	if warning := missingPolicyWarning(ctx, deps.Runner, root); warning != "" {
+		_, _ = fmt.Fprintln(deps.Stdout, "  "+warning)
 	}
 	return errors.Join(failed...)
 }
@@ -80,14 +78,14 @@ func (c *DoctorCmd) installHarness(ctx context.Context, deps *appDeps, root, har
 			return "", err
 		}
 		if c.DryRun {
-			return gitHookTarget(ctx, deps.Runner, root, defaultConfigPath)
+			return gitHookTarget(ctx, deps.Runner, root)
 		}
-		return installGitHook(ctx, deps.Runner, root, defaultConfigPath)
+		return installGitHook(ctx, deps.Runner, root)
 	}
 	if c.DryRun {
 		return filepath.Join(root, harnessConfigFile(harness)), nil
 	}
-	return installHarnessHooks(root, harness, defaultConfigPath)
+	return installHarnessHooks(root, harness)
 }
 
 // hooksInRepository returns errSharedHooksDir when the hooks directory git
@@ -112,7 +110,7 @@ func hooksInRepository(ctx context.Context, deps *appDeps, root string) error {
 		}
 	}
 	return fmt.Errorf("%w: %s (core.hooksPath); doctor does not write there: add %q to its pre-commit hook",
-		errSharedHooksDir, hooks, hookRunLine(hookEventPreCommit, "", defaultConfigPath))
+		errSharedHooksDir, hooks, hookRunLine(hookEventPreCommit, ""))
 }
 
 // within reports whether path lies in dir, with symlinks resolved on both,
