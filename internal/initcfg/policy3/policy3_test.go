@@ -605,3 +605,25 @@ func TestInitStopsOnAnUnreadableGitattributesLine(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteBlockKeepsPrettierFormattedFile(t *testing.T) {
+	const formatted = "# Notes\n\n<!-- archfit:start -->\n\n" +
+		"Run `archfit rules` before you start and `archfit check` before you finish.\n" +
+		"Do what `next:` says. `archfit: pass` means done.\n" +
+		"Before a new dependency between modules: `archfit can <file> <target>`.\n" +
+		"If a rule is in your way: `archfit request -m \"<why>\"`, then wait or do other work.\n" +
+		"Never edit `.archfit.yaml`. Never copy code to get around a rule.\n" +
+		"<!-- archfit:end -->\n"
+	root := t.TempDir()
+	path := filepath.Join(root, policy3.AgentsFile)
+	if err := os.WriteFile(path, []byte(formatted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wrote, err := policy3.WriteBlock(root)
+	if err != nil || wrote {
+		t.Fatalf("WriteBlock formatted file: wrote %v, err %v; want no write", wrote, err)
+	}
+	if got := readFile(t, path); string(got) != formatted {
+		t.Errorf("formatted file changed: %q", got)
+	}
+}
