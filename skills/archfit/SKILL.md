@@ -12,15 +12,15 @@ metadata:
 
 # archfit: the worker loop
 
-1. Before an import across modules: `archfit policy can-import <file> <target>`.
-   `denied`: do not add it; read `instead`. `unconstrained` is not permission.
-   `archfit policy where <path>` gives a path's module, allowlists and rules.
-2. Before you finish: `archfit check --format agent`; follow `next_action`:
-   - `repair`: fix the source within the goal and constraints; run `validate`.
-   - `restore_evidence`: install or fix the named analyzer, or merge or
-     rebase the target when the result says so; run again.
-   - `ask_owner`, or `unknown` you cannot fix: stop; report the rule, the
-     file and what you need. Do not retry the same change.
-   - `none`: done, even with exit 2. `repository.attention` is not yours.
-3. Never edit `.archfit.yaml`, `.archfit-baseline.json` or
-   `.archfit-labels.yaml`, add a waiver, or run `archfit baseline` to pass.
+1. Before you start: `archfit rules`. It lists the rules for the files you
+   change.
+2. Before a new dependency between modules: `archfit can <from> <to>`.
+   `no` names the rule and what to do instead.
+3. Before you finish: `archfit check`. Do what each `next:` line says.
+   `archfit: pass` (exit 0) means done.
+   - `fail` (exit 1): fix the code, or, if the rule is in your way,
+     `archfit request -m "<why>"`, then wait or do other work.
+   - `unknown` (exit 2): do what `next:` says (install a tool, git fetch)
+     and run it again. If it names the policy, stop and ask an owner.
+4. Never edit `.archfit.yaml`. Never copy code to get around a rule.
+5. `archfit doctor --fix` installs the hooks that run steps 2 and 3.

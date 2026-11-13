@@ -73,11 +73,11 @@ func harnessConfigFile(harness string) string {
 type HookInstallCmd struct {
 	Harness string `required:"" enum:"claude,codex,git" help:"Harness to install for: claude (.claude/settings.json), codex (.codex/hooks.json), or git (the pre-commit hook)."`
 	Dir     string `help:"Repository to install into." default:"." type:"path"`
-	Config  string `short:"c" help:"Config path the installed hooks pass to archfit hook run, relative to the repository root." default:".archfit.yaml"`
 }
 
 func (*HookInstallCmd) Help() string {
-	return `Write the archfit hooks into the configuration of one harness.
+	return `Write the archfit hooks into the configuration of one harness. archfit
+doctor --fix runs this for every harness it finds.
 
   claude  merges into <dir>/.claude/settings.json: SessionStart, PostToolUse
           (after Edit, Write, MultiEdit, NotebookEdit, Bash), Stop, and
@@ -91,14 +91,14 @@ func (*HookInstallCmd) Help() string {
 Every other key and hook in a settings file stays. An archfit hook run entry
 already there is replaced, so installing twice changes nothing, and an entry of
 the removed archfit hook claude command is dropped. A pre-commit hook archfit
-did not write is left alone: the command exits 3 and names it.
+did not write is left alone: the command exits 3 and names it. The hooks
+read .archfit.yaml at the root of the repository, as archfit check does.
 
 It prints one line per file it wrote. Exit 0, or 3 on an error.
 
 Examples:
   archfit hook install --harness claude
-  archfit hook install --harness codex --dir ../service
-  archfit hook install --harness git -c policy/archfit.yaml`
+  archfit hook install --harness codex --dir ../service`
 }
 
 func (c *HookInstallCmd) Run(deps *appDeps) error {
@@ -107,15 +107,15 @@ func (c *HookInstallCmd) Run(deps *appDeps) error {
 		err  error
 	)
 	if c.Harness == harnessGit {
-		path, err = installGitHook(deps.runContext(), deps.Runner, c.Dir, c.Config)
+		path, err = installGitHook(deps.runContext(), deps.Runner, c.Dir)
 	} else {
-		path, err = installHarnessHooks(c.Dir, c.Harness, c.Config)
+		path, err = installHarnessHooks(c.Dir, c.Harness)
 	}
 	if err != nil {
 		return &exitError{code: 3, msg: "error: " + err.Error()}
 	}
 	_, _ = fmt.Fprintf(deps.Stdout, "wrote %s\n", path)
-	if warning := missingConfigWarning(deps.runContext(), deps.Runner, c.Dir, c.Config); warning != "" {
+	if warning := missingPolicyWarning(deps.runContext(), deps.Runner, c.Dir); warning != "" {
 		_, _ = fmt.Fprintln(deps.stderr(), warning)
 	}
 	if c.Harness == harnessCodex {
@@ -127,90 +127,40 @@ func (c *HookInstallCmd) Run(deps *appDeps) error {
 // gitRevParse is the git subcommand the hook adapters ask for paths and refs.
 const gitRevParse = "rev-parse"
 
-// missingConfigWarning names a config the installed hooks will not load.
-// hook run resolves -c against the repository root, so an install from a
-// subproject that leaves -c at its default loads the root's config, or none.
+// missingPolicyWarning names the policy the installed hooks read when it does
+// not exist: .archfit.yaml at the root of the repository that holds dir.
 // Outside a git repository there is no root to check against.
-func missingConfigWarning(ctx context.Context, runner toolrun.Runner, dir, configPath string) string {
-	if filepath.IsAbs(configPath) {
-		if _, err := os.Stat(configPath); err != nil {
-			return fmt.Sprintf("warning: %s does not exist; the installed hooks cannot load it until it does", configPath)
-		}
-		return ""
-	}
+func missingPolicyWarning(ctx context.Context, runner toolrun.Runner, dir string) string {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{gitRevParse, "--show-toplevel"}, WorkDir: dir})
 	if err != nil || out.ExitCode != 0 {
 		return ""
 	}
-	root := strings.TrimSpace(string(out.Stdout))
-	loaded := filepath.Join(root, configPath)
-	_, missing := os.Stat(loaded)
-	local := configFromRoot(root, filepath.Join(dir, configPath))
-	if local == filepath.ToSlash(configPath) {
-		local = "" // --dir is the root: the same file
+	policy := filepath.Join(strings.TrimSpace(string(out.Stdout)), defaultConfigPath)
+	if _, err := os.Stat(policy); errors.Is(err, fs.ErrNotExist) {
+		return "warning: " + policy + " does not exist: the hooks read the policy there; run archfit init"
 	}
-	switch {
-	case missing == nil && local == "":
-		return ""
-	case missing == nil:
-		return fmt.Sprintf("warning: the hooks load %s, not the config in %s; to use that one, pass -c %s", loaded, dir, shellQuote(local))
-	case local != "":
-		return fmt.Sprintf("warning: %s does not exist: the hooks resolve -c against the repository root; pass -c %s", loaded, shellQuote(local))
-	default:
-		return fmt.Sprintf("warning: %s does not exist: the hooks resolve -c against the repository root, so they cannot load it", loaded)
-	}
-}
-
-// configFromRoot is an existing config's slash path from the repository root,
-// or "" when it does not exist or lies outside the root. git prints the root
-// with symlinks resolved, so the config's path is resolved too.
-func configFromRoot(root, path string) string {
-	found, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return ""
-	}
-	abs, err := filepath.Abs(found)
-	if err != nil {
-		return ""
-	}
-	rel, err := filepath.Rel(root, abs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
-		return ""
-	}
-	return filepath.ToSlash(rel)
+	return ""
 }
 
 // hookRunLine is the command an installed hook runs.
-func hookRunLine(run, harness, configPath string) string {
+func hookRunLine(run, harness string) string {
 	line := hookRunCommand + " " + run
 	if harness != "" {
 		line += " --harness " + harness
 	}
-	if configPath != "" && configPath != defaultConfigPath {
-		line += " -c " + shellQuote(configPath)
-	}
 	return line
-}
-
-// shellQuote quotes a word for sh when it holds anything but plain path
-// characters.
-func shellQuote(s string) string {
-	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./") == "" {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
 // installHarnessHooks merges archfit's hooks into a Claude Code or Codex hook
 // file and returns its path.
-func installHarnessHooks(dir, harness, configPath string) (string, error) {
+func installHarnessHooks(dir, harness string) (string, error) {
 	path := filepath.Join(dir, harnessConfigFile(harness))
 	raw, err := os.ReadFile(path) //nolint:gosec // the harness config file under the repository the user named
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
 	merged, err := mergeHookConfig(raw, harnessHooks(harness), func(run string) string {
-		return hookRunLine(run, harness, configPath)
+		return hookRunLine(run, harness)
 	})
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", path, err)
@@ -381,10 +331,10 @@ func gitHooksDir(ctx context.Context, runner toolrun.Runner, dir string) (string
 }
 
 // gitPreCommitScript is the pre-commit hook archfit writes.
-func gitPreCommitScript(configPath string) []byte {
+func gitPreCommitScript() []byte {
 	return []byte("#!/bin/sh\n" + gitHookMarker + "\n" +
 		"# It judges the staged content and blocks a commit whose change fails (archfit hook run --help).\n" +
-		"exec " + hookRunLine(hookEventPreCommit, "", configPath) + "\n")
+		"exec " + hookRunLine(hookEventPreCommit, "") + "\n")
 }
 
 // errForeignHook marks a pre-commit hook that archfit did not write. It stays
@@ -393,12 +343,12 @@ var errForeignHook = errors.New("a pre-commit hook is in place")
 
 // installGitHook writes the pre-commit hook and returns its path. A hook
 // archfit did not write is never replaced.
-func installGitHook(ctx context.Context, runner toolrun.Runner, dir, configPath string) (string, error) {
-	path, err := gitHookTarget(ctx, runner, dir, configPath)
+func installGitHook(ctx context.Context, runner toolrun.Runner, dir string) (string, error) {
+	path, err := gitHookTarget(ctx, runner, dir)
 	if err != nil {
 		return "", err
 	}
-	if err := writeFileAtomic(path, gitPreCommitScript(configPath), 0o755); err != nil {
+	if err := writeFileAtomic(path, gitPreCommitScript(), 0o755); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -406,7 +356,7 @@ func installGitHook(ctx context.Context, runner toolrun.Runner, dir, configPath 
 
 // gitHookTarget is the pre-commit hook file installGitHook writes, or why it
 // does not: errForeignHook for a hook archfit did not write.
-func gitHookTarget(ctx context.Context, runner toolrun.Runner, dir, configPath string) (string, error) {
+func gitHookTarget(ctx context.Context, runner toolrun.Runner, dir string) (string, error) {
 	hooksDir, err := gitHooksDir(ctx, runner, dir)
 	if err != nil {
 		return "", err
@@ -415,7 +365,7 @@ func gitHookTarget(ctx context.Context, runner toolrun.Runner, dir, configPath s
 	current, err := os.ReadFile(path) //nolint:gosec // the hook file of the repository the user named
 	switch {
 	case err == nil && !bytes.Contains(current, []byte(gitHookMarker)):
-		return "", fmt.Errorf("%w: %s exists and archfit did not write it: add %q to it, or remove it and run this again", errForeignHook, path, hookRunLine(hookEventPreCommit, "", configPath))
+		return "", fmt.Errorf("%w: %s exists and archfit did not write it: add %q to it, or remove it and run this again", errForeignHook, path, hookRunLine(hookEventPreCommit, ""))
 	case err != nil && !errors.Is(err, fs.ErrNotExist):
 		return "", err
 	}

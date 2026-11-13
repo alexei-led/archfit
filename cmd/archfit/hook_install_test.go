@@ -12,7 +12,7 @@ import (
 // existingClaudeSettings is a settings file a user already has: foreign keys,
 // foreign hooks next to the events archfit installs into, an entry of the
 // removed `archfit hook claude`, and an archfit hook run entry from an
-// earlier install with another config.
+// earlier install with a config flag the hooks no longer take.
 const existingClaudeSettings = `{
   "model": "opus",
   "permissions": {"allow": ["Bash(go test:*)"], "deny": []},
@@ -193,12 +193,10 @@ func TestHookInstallGit(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		foreign  string
-		config   string
 		wantCode int
 		wantRun  string
 	}{
 		{name: "a fresh hook", wantRun: "exec archfit hook run pre-commit\n"},
-		{name: "a config path is passed on", config: "policy dir/archfit.yaml", wantRun: "exec archfit hook run pre-commit -c 'policy dir/archfit.yaml'\n"},
 		{name: "a foreign hook is left alone", foreign: "#!/bin/sh\nmake lint\n", wantCode: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -210,9 +208,6 @@ func TestHookInstallGit(t *testing.T) {
 				writeFixtureFile(t, dir, filepath.Join(hooksPath, hookEventPreCommit), tc.foreign)
 			}
 			args := []string{installSubcmd, flagHarness, harnessGit, flagDir, dir}
-			if tc.config != "" {
-				args = append(args, "-c", tc.config)
-			}
 			for range 2 {
 				code, stdout, stderr := runHook(t, "", args...)
 				if code != tc.wantCode {
@@ -255,46 +250,37 @@ const (
 	flagHarness = "--harness"
 )
 
-// TestHookInstallWarnsWhenTheHooksCannotFindTheConfig: hook run resolves -c
-// against the repository root, so an install from a subproject that leaves -c
-// at its default would load nothing. The install says so and names the path.
-func TestHookInstallWarnsWhenTheHooksCannotFindTheConfig(t *testing.T) {
+// TestHookInstallWarnsWithoutAPolicy: the hooks read .archfit.yaml at the
+// repository root, from a subproject too. The install says when it is not
+// there.
+func TestHookInstallWarnsWithoutAPolicy(t *testing.T) {
 	t.Parallel()
 	const service = "service"
-	subConfig := service + "/" + defaultConfigPath
 	for _, tc := range []struct {
-		name, dir, config, wantStderr string
-		noRootConfig                  bool
+		name, dir  string
+		noPolicy   bool
+		wantStderr string
 	}{
-		{name: "the root config"},
-		{name: "a subproject config named from the root", dir: service, config: subConfig},
-		{name: "a subproject config left at the default beside a root config", dir: service,
-			wantStderr: ", not the config in "},
-		{name: "a subproject config left at the default", dir: service, noRootConfig: true,
-			wantStderr: "the hooks resolve -c against the repository root; pass -c " + subConfig + "\n"},
-		{name: "a config that does not exist", config: "nope.yaml",
-			wantStderr: "the hooks resolve -c against the repository root, so they cannot load it\n"},
+		{name: "a policy at the root"},
+		{name: "a policy at the root, installed from a subproject", dir: service},
+		{name: "no policy at the root", noPolicy: true, wantStderr: defaultConfigPath + " does not exist: the hooks read the policy there; run archfit init\n"},
 	} {
 		for _, harness := range []string{harnessClaude, harnessGit} {
 			t.Run(tc.name+"/"+harness, func(t *testing.T) {
 				t.Parallel()
 				repo := hookRepo(t, hookModules, hookCleanA, "")
-				writeFixtureFile(t, repo, subConfig, hookModules)
-				if tc.noRootConfig {
+				writeFixtureFile(t, repo, service+"/"+defaultConfigPath, hookModules)
+				if tc.noPolicy {
 					if err := os.Remove(filepath.Join(repo, defaultConfigPath)); err != nil {
 						t.Fatal(err)
 					}
 				}
-				args := []string{installSubcmd, flagHarness, harness, flagDir, filepath.Join(repo, tc.dir)}
-				if tc.config != "" {
-					args = append(args, "-c", tc.config)
-				}
-				code, _, stderr := runHook(t, "", args...)
+				code, _, stderr := runHook(t, "", installSubcmd, flagHarness, harness, flagDir, filepath.Join(repo, tc.dir))
 				if code != 0 {
 					t.Fatalf("exit %d, stderr %q", code, stderr)
 				}
-				if tc.wantStderr == "" && stderr != "" || !strings.Contains(stderr, tc.wantStderr) {
-					t.Errorf("stderr = %q, want %q in it", stderr, tc.wantStderr)
+				if tc.wantStderr == "" && stderr != "" || !strings.HasSuffix(stderr, tc.wantStderr) {
+					t.Errorf("stderr = %q, want it to end with %q", stderr, tc.wantStderr)
 				}
 			})
 		}
