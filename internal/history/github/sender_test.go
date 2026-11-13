@@ -27,6 +27,7 @@ const (
 	thirdCredential  = "third"
 	forkHead         = "worker:feature"
 	originCommand    = "git config --get remote.origin.url"
+	pushURLCommand   = "git remote get-url --push origin"
 	upstreamCommand  = "git rev-parse --abbrev-ref --symbolic-full-name @{upstream}"
 )
 
@@ -209,7 +210,7 @@ func TestRepositoryRouting(t *testing.T) {
 		{"origin", nil, testRepo, "acme:feature"},
 		{"fork push", map[string]toolrun.Output{
 			"git for-each-ref --format=%(push:remotename) refs/heads/feature": {Stdout: []byte("fork\n")},
-			"git config --get remote.fork.url":                                {Stdout: []byte("git@github.com:worker/shop.git\n")},
+			"git remote get-url --push fork":                                  {Stdout: []byte("git@github.com:worker/shop.git\n")},
 		}, testRepo, forkHead},
 		{"origin fork upstream", map[string]toolrun.Output{
 			originCommand:                          {Stdout: []byte("https://github.com/worker/shop.git")},
@@ -255,6 +256,9 @@ func TestGitHubRemote(t *testing.T) {
 		{"https://github.com/acme/../shop", ""},
 		{"file:///acme/shop", ""},
 		{"https://github.com/acme/shop?token=secret", ""},
+		{"https://user@github.com/acme/shop.git", ""},
+		{"https://user:password@github.com/acme/shop.git", ""},
+		{"ssh://git:password@github.com/acme/shop.git", ""},
 	} {
 		if got := githubRepository(tc.remote); got != tc.want {
 			t.Errorf("repository(%q) = %q, want %q", tc.remote, got, tc.want)
@@ -345,6 +349,9 @@ func gitRunner(t *testing.T, override map[string]toolrun.Output) *toolrun.Runner
 	}
 	for key, value := range override {
 		commands[key] = value
+	}
+	if _, ok := override[pushURLCommand]; !ok {
+		commands[pushURLCommand] = commands[originCommand]
 	}
 	return &toolrun.RunnerMock{RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
 		key := cmd.Name + " " + strings.Join(cmd.Args, " ")

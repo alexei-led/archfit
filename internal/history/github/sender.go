@@ -105,8 +105,9 @@ func (s *Sender) Send(ctx context.Context, r Input) (Outcome, error) {
 		number = pulls[0].Number
 	}
 	u, err := url.Parse(sent.URL)
+	repoPath := "/" + repo + "/"
 	if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.User != nil || u.RawQuery != "" ||
-		!strings.HasPrefix(u.Path, "/"+repo+"/") || strings.Contains(sent.URL, token) ||
+		len(u.Path) < len(repoPath) || !strings.EqualFold(u.Path[:len(repoPath)], repoPath) || strings.Contains(sent.URL, token) ||
 		strings.Contains(u.Path+"#"+u.Fragment, token) || number < 1 {
 		return Outcome{}, errors.New("GitHub returned an invalid receipt; outcome unknown: check GitHub before trying again")
 	}
@@ -239,7 +240,7 @@ func (s *Sender) repository(ctx context.Context) (string, string, error) {
 	if code != 0 {
 		return "", "", errors.New("cannot read current branch; nothing sent")
 	}
-	_, code, err = s.git(ctx, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	upstream, code, err := s.git(ctx, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
 	if err != nil {
 		return "", "", err
 	}
@@ -250,19 +251,23 @@ func (s *Sender) repository(ctx context.Context) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	pushRepo := ""
-	if pushRemote != "" {
-		remote, _, err := s.git(ctx, "config", "--get", "remote."+pushRemote+".url")
-		if err != nil {
-			return "", "", err
-		}
-		pushRepo = githubRepository(remote)
+	if pushRemote == "" {
+		pushRemote = "origin"
 	}
-	if pushRepo == "" {
-		pushRepo = githubRepository(origin)
+	remote, code, err := s.git(ctx, "remote", "get-url", "--push", pushRemote)
+	if err != nil {
+		return "", "", err
+	}
+	pushRepo := githubRepository(remote)
+	if code != 0 || pushRepo == "" {
+		return "", "", errors.New("cannot identify the GitHub push destination; nothing sent")
+	}
+	_, remoteBranch, ok := strings.Cut(upstream, "/")
+	if !ok || remoteBranch == "" {
+		return "", "", errors.New("cannot identify the upstream branch; nothing sent")
 	}
 	owner, _, _ := strings.Cut(pushRepo, "/")
-	return repo, owner + ":" + branch, nil
+	return repo, owner + ":" + remoteBranch, nil
 }
 
 // githubRepository accepts GitHub HTTPS, SSH and scp-style clone URLs. Reject
@@ -273,6 +278,9 @@ func githubRepository(remote string) string {
 	}
 	u, err := url.Parse(remote)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "ssh") || u.Host != "github.com" || u.RawQuery != "" || u.Fragment != "" {
+		return ""
+	}
+	if u.User != nil && (u.Scheme != "ssh" || u.User.String() != "git") {
 		return ""
 	}
 	path := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
