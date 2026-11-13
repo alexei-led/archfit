@@ -64,9 +64,9 @@ Use focused checks during development:
 | Portable skill | `go test ./skills/ ./cmd/archfit/ -run 'Skill\|Help'` |
 | Workflow files | `make workflows` |
 
-`make arch-lint` accepts exit `0` or `2` from the architecture check.
-It fails on exit `1` or `3`.
-Exit `2` still discloses incomplete evidence or diagnostics.
+`make arch-lint` runs `archfit check` and accepts exit `0` only.
+Before a new dependency between modules, run `archfit can <file> <target>`.
+Before finishing, run `archfit check` and follow each record's `next` line.
 
 Add behavior tests for changed logic and regressions.
 Mock system boundaries rather than internal decisions.

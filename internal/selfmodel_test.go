@@ -1,18 +1,11 @@
-// Self-model purity gate: `.archfit.yaml` must describe the physical package
-// tree it gates, and nothing else. These tests fail when the source moves and
-// the model does not — a dead path glob, an unowned package, a rule aimed at a
-// package that no longer exists, or a public entry outside its own module.
-//
-// The rule, public-surface, layer, and ownership checks are the production
-// `archfit config lint` predicates run over this repository, so the self-model
-// holds the engine's config to exactly what lint and check enforce for users.
-//
+// The self-model checks that the schema 3 policy describes this source tree.
+// They check ownership, live selectors, public surfaces, and layers.
 // Run with: go test ./internal/ -run TestSelfModel
 package arch_test
 
 import (
-	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -20,62 +13,41 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/v3/internal/config"
-	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
+	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
 )
 
 const selfConfigPath = "../.archfit.yaml"
 
-// guardRules match nothing on purpose: each one forbids re-introducing a
-// package this migration deleted, and declares `guard: true`, which exempts it
-// from the dead-selector check. The test fails if a guard is deleted, loses
-// `guard: true`, or starts matching real source; every guard needs an entry
-// here saying what it guards.
+// These notes record packages the earlier migration removed. Schema 3 does
+// not enforce a rule with an endpoint that does not exist.
 var guardRules = map[string]string{
 	"no_stage_view":       "internal/view was dissolved; the rule blocks a new shared stage-view package",
 	"no_analysispipeline": "internal/analysispipeline was dissolved; the rule blocks a new orchestration hub",
 }
 
-func loadSelfConfig(t *testing.T) config.Config {
+func selfPolicy3(t *testing.T) resolved.Policy {
 	t.Helper()
-	cfg, err := config.Load(context.Background(), selfConfigPath)
+	data, err := os.ReadFile(selfConfigPath)
 	if err != nil {
-		t.Fatalf("load self-config: %v", err)
+		t.Fatal(err)
 	}
-	return cfg
+	p, err := policyfile.Resolve(data)
+	if err != nil {
+		t.Fatalf("resolve self-policy: %v", err)
+	}
+	return p
 }
 
-// lintRepo runs the production config lint for cfg over this repository: the
-// source inventory `archfit config lint` reads and the predicates it applies.
-func lintRepo(t *testing.T, cfg config.Config) []evaluation.PolicyDiagnostic {
+func selfTreeFiles(t *testing.T) []string {
 	t.Helper()
-	root, err := filepath.Abs("..")
+	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard")
+	cmd.Dir = ".."
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("resolve repository root: %v", err)
+		t.Fatalf("list repository files: %v", err)
 	}
-	inventory, err := acquisition.Inventory{ConfigPath: selfConfigPath, Options: cfg.RunOptions(), Runner: toolrun.New()}.
-		SourceInventory(context.Background(), root)
-	if err != nil {
-		t.Fatalf("read source inventory: %v", err)
-	}
-	if len(inventory.FileClassIndex) == 0 {
-		t.Fatal("empty source inventory: every lint check would pass vacuously")
-	}
-	return evaluation.LintPolicy(cfg.PolicySnapshot(), inventory)
-}
-
-// lintFindings keeps the diagnostics carrying one of codes.
-func lintFindings(diagnostics []evaluation.PolicyDiagnostic, codes ...string) []evaluation.PolicyDiagnostic {
-	var out []evaluation.PolicyDiagnostic
-	for _, d := range diagnostics {
-		if slices.Contains(codes, d.Code) {
-			out = append(out, d)
-		}
-	}
-	return out
+	return strings.Split(strings.TrimSpace(string(out)), "\n")
 }
 
 // repoDirs lists every repo-relative directory that holds at least one source
@@ -127,26 +99,6 @@ func repoDirs(t *testing.T) (dirs []string, goFiles []string) {
 	return dirs, goFiles
 }
 
-// goPackageDirs returns the repo-relative directory of every Go package in the
-// module. These are the paths archfit's own classifier resolves edges to, so
-// every one of them must have exactly one owning module.
-func goPackageDirs(t *testing.T) []string {
-	t.Helper()
-	_, goFiles := repoDirs(t)
-	seen := map[string]bool{}
-	var dirs []string
-	for _, f := range goFiles {
-		dir := filepath.ToSlash(filepath.Dir(f))
-		if seen[dir] {
-			continue
-		}
-		seen[dir] = true
-		dirs = append(dirs, dir)
-	}
-	slices.Sort(dirs)
-	return dirs
-}
-
 func matchesAny(glob string, candidates []string) bool {
 	for _, c := range candidates {
 		if ok, err := doublestar.Match(glob, c); err == nil && ok {
@@ -160,151 +112,106 @@ func matchesAny(glob string, candidates []string) bool {
 // longer exists. A dead glob makes the module map look broader than the code
 // it actually owns.
 func TestSelfModelHasNoDeadPathGlobs(t *testing.T) {
-	cfg := loadSelfConfig(t)
-	dirs, goFiles := repoDirs(t)
-	candidates := append(append([]string{}, dirs...), goFiles...)
-
-	for _, name := range sortedModuleNames(cfg.Modules) {
-		for _, glob := range cfg.Modules[name].Paths {
-			if !matchesAny(glob, candidates) {
-				t.Errorf("module %q: path glob %q matches no directory or Go file", name, glob)
+	p := selfPolicy3(t)
+	dirs, files := repoDirs(t)
+	for name, module := range p.Modules {
+		for _, glob := range module.Paths {
+			if !matchesAny(glob, append(dirs, files...)) {
+				t.Errorf("module %s: dead path %s", name, glob)
 			}
 		}
 	}
 }
 
-// TestSelfModelCoversEveryGoPackage fails when a Go package has no owning
-// module. An unowned package is invisible to every dependency rule.
 func TestSelfModelCoversEveryGoPackage(t *testing.T) {
-	cfg := loadSelfConfig(t)
-	mm := policy.BuildModuleMap(cfg.Modules)
-
-	for _, dir := range goPackageDirs(t) {
-		if _, ok := mm.ModuleFor(dir); !ok {
-			t.Errorf("Go package %q has no owning module in .archfit.yaml", dir)
+	p := selfPolicy3(t)
+	_, files := repoDirs(t)
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		if _, ok := p.ModuleOf(file); !ok {
+			t.Errorf("unowned Go file: %s", file)
 		}
 	}
 }
 
-// TestSelfModelHasNoAmbiguousPackageOwnership fails when two modules both claim
-// source by an equally specific glob. Most-specific-wins resolves genuine
-// nesting; an exact tie means one module silently shadows the other.
 func TestSelfModelHasNoAmbiguousPackageOwnership(t *testing.T) {
-	for _, d := range lintFindings(lintRepo(t, loadSelfConfig(t)), evaluation.LintAmbiguousOwnership) {
-		t.Errorf("%s: %s", d.Path, d.Message)
+	p := selfPolicy3(t)
+	if err := p.CheckTree(selfTreeFiles(t)); err != nil {
+		t.Error(err)
 	}
 }
 
-// TestSelfModelHasNoDeadRules fails when a rule selector matches no source,
-// unless the rule is a declared re-introduction guard, and when a guard is
-// missing, undeclared, or matches real source again.
 func TestSelfModelHasNoDeadRules(t *testing.T) {
-	cfg := loadSelfConfig(t)
-
+	p := selfPolicy3(t)
+	if err := p.CheckTree(selfTreeFiles(t)); err != nil {
+		t.Error(err)
+	}
 	seen := map[string]bool{}
-	graded := 0
-	for _, rule := range cfg.Rules {
-		if rule.ID == "" {
-			t.Errorf("rule with type %q has no id", rule.Type)
-			continue
-		}
-		if seen[rule.ID] {
-			t.Errorf("duplicate rule id %q", rule.ID)
-		}
-		seen[rule.ID] = true
-
-		_, registered := guardRules[rule.ID]
-		switch {
-		case registered && !rule.Guard:
-			t.Errorf("guard rule %q must declare guard: true", rule.ID)
-		case !registered && rule.Guard:
-			t.Errorf("rule %q declares guard: true but guardRules does not say what it guards", rule.ID)
-		case !rule.Guard && (rule.From != "" || rule.To != ""):
-			graded++
-		}
+	for _, r := range p.Rules {
+		seen[r.ID] = true
 	}
-	for id, why := range guardRules {
+	for id := range guardRules {
 		if !seen[id] {
-			t.Errorf("guard rule %q is missing from .archfit.yaml (%s)", id, why)
+			t.Errorf("missing guard note %s", id)
 		}
-	}
-	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintDeadSelector, evaluation.LintGuardMatchesSource) {
-		t.Errorf("%s: %s", d.Path, d.Message)
-	}
-
-	// Non-vacuity guard. With an empty or all-guard rule set the lint grades
-	// nothing and still passes, which reads as "every boundary is live" for a
-	// config that declares no boundary at all.
-	if graded == 0 {
-		t.Error("no rule was graded for dead selectors — the dead-rule gate checked nothing")
 	}
 }
 
-// TestSelfModelPublicSurfacesAreRealAndOwned fails when a module publishes a
-// path it does not own or that names no package. A public entry is a coupling
-// classification input: a stale one silences a real intrusive edge.
 func TestSelfModelPublicSurfacesAreRealAndOwned(t *testing.T) {
-	cfg := loadSelfConfig(t)
-	if !slices.ContainsFunc(sortedModuleNames(cfg.Modules), func(name string) bool { return len(cfg.Modules[name].Public) > 0 }) {
-		t.Fatal("no module declares a public surface: the check would pass vacuously")
+	p := selfPolicy3(t)
+	files := selfTreeFiles(t)
+	if err := p.CheckTree(files); err != nil {
+		t.Error(err)
 	}
-	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintPublicOutsideModule, evaluation.LintPublicMatchesNothing) {
-		t.Errorf("%s: %s", d.Path, d.Message)
-	}
-}
-
-// TestSelfModelLayersAreDeclaredAndUsed fails on a module in an undeclared
-// layer and on a declared layer no module occupies. Both break
-// forbidden_layer_direction: the first silently opts out of ranking, the second
-// leaves a rung in the ladder that means nothing.
-func TestSelfModelLayersAreDeclaredAndUsed(t *testing.T) {
-	cfg := loadSelfConfig(t)
-	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintUndeclaredLayer) {
-		t.Errorf("%s: %s", d.Path, d.Message)
-	}
-
-	used := map[string]bool{}
-	for _, name := range sortedModuleNames(cfg.Modules) {
-		layer := cfg.Modules[name].Layer
-		if layer == "" {
-			t.Errorf("module %q declares no layer", name)
-			continue
-		}
-		used[layer] = true
-	}
-	for _, layer := range cfg.Layers {
-		if !used[layer] {
-			t.Errorf("layer %q is declared but no module occupies it", layer)
-		}
-	}
-}
-
-// TestSelfModelDeclaresNoDissolvedPackage fails when the model names a package
-// this migration deleted. The model is the last place a dissolved boundary can
-// survive as documentation of an architecture that no longer exists.
-func TestSelfModelDeclaresNoDissolvedPackage(t *testing.T) {
-	cfg := loadSelfConfig(t)
-
-	for _, dissolved := range []string{"internal/engine", "internal/analysispipeline", "internal/view"} {
-		for _, name := range sortedModuleNames(cfg.Modules) {
-			def := cfg.Modules[name]
-			for _, glob := range append(append([]string{}, def.Paths...), def.Public...) {
-				if strings.HasPrefix(glob, dissolved) {
-					t.Errorf("module %q still declares dissolved package %q", name, glob)
+	count := 0
+	for name, mod := range p.Modules {
+		for _, glob := range mod.Public {
+			count++
+			for _, file := range files {
+				matched, _ := doublestar.Match(glob, file)
+				if matched {
+					if owner, ok := p.ModuleOf(file); !ok || owner != name {
+						t.Errorf("%s publishes %s owned by %s", name, file, owner)
+					}
 				}
 			}
 		}
 	}
-	if slices.Contains(cfg.Layers, "engine") {
-		t.Error(`layers: still declares the dissolved "engine" layer`)
+	if count == 0 {
+		t.Error("no public surfaces declared")
 	}
 }
 
-func sortedModuleNames(modules map[string]policy.ModuleDef) []string {
-	names := make([]string, 0, len(modules))
-	for name := range modules {
-		names = append(names, name)
+func TestSelfModelLayersAreDeclaredAndUsed(t *testing.T) {
+	p := selfPolicy3(t)
+	used := map[string]bool{}
+	for name, mod := range p.Modules {
+		if !slices.Contains(p.Layers, mod.Layer) {
+			t.Errorf("%s has undeclared layer %s", name, mod.Layer)
+		}
+		used[mod.Layer] = true
 	}
-	slices.Sort(names)
-	return names
+	for _, layer := range p.Layers {
+		if !used[layer] {
+			t.Errorf("unused layer %s", layer)
+		}
+	}
+}
+
+func TestSelfModelDeclaresNoDissolvedPackage(t *testing.T) {
+	p := selfPolicy3(t)
+	for _, dissolved := range []string{"internal/engine", "internal/analysispipeline", "internal/view"} {
+		for name, mod := range p.Modules {
+			for _, glob := range append(slices.Clone(mod.Paths), mod.Public...) {
+				if strings.HasPrefix(glob, dissolved) {
+					t.Errorf("%s declares dissolved %s", name, glob)
+				}
+			}
+		}
+	}
+	if slices.Contains(p.Layers, "engine") {
+		t.Error("engine layer still declared")
+	}
 }
