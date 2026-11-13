@@ -1,33 +1,18 @@
 package application
 
 import (
-	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
-// The four comparability fingerprints, by their wire names. They qualify a
-// comparison, so they have exactly one home — the root comparison block. A
-// second copy elsewhere in the document is a second answer to "may these two
-// runs be compared", and the two copies would drift.
-const (
-	keyClassificationHash = "classification_hash"
-	keyModelHash          = "model_hash"
-	keyLabelsHash         = "labels_hash"
-	keyRubricVersion      = "rubric_version"
-)
-
 // gitSource is the volatility-corroboration source name used by the fixtures.
 const gitSource = "git"
-
-var fingerprintKeys = []string{keyClassificationHash, keyModelHash, keyLabelsHash, keyRubricVersion}
 
 // TestMeasurementCarriesOnlyDeterministicFields pins the measurement block's
 // field set. Every field here must be a property of the measured tree, the
@@ -99,67 +84,4 @@ func TestMeasurementNamesTheTreeAndTheWindow(t *testing.T) {
 			t.Errorf("window/depth = %q/%d, want 20 commits/3", measurement.HistoryWindow, measurement.HistoryDepth)
 		}
 	})
-}
-
-// TestFingerprintsLiveOnlyInTheComparisonBlock walks the serialised state and
-// asserts each of the four comparability hashes appears at exactly one path.
-//
-// It walks the wire form rather than the struct because that is what a consumer
-// reads: a fingerprint duplicated into a dimension delta or a seam record would
-// let two parts of one document disagree about whether the run is comparable.
-func TestFingerprintsLiveOnlyInTheComparisonBlock(t *testing.T) {
-	diagnostic := stateFixture()
-	diagnostic.ModelHash, diagnostic.LabelsHash = "model-hash", "labels-hash"
-	diagnostic.Seams = []result.Seam{{
-		ID: "seam-1", FromModule: "a", ToModule: "b", LabelEvidenceHash: "evidence-hash",
-	}}
-
-	encoded, err := json.Marshal(projectReport(diagnostic, score.Scorecard{}).State)
-	if err != nil {
-		t.Fatalf("marshal state: %v", err)
-	}
-	var decoded any
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		t.Fatalf("unmarshal state: %v", err)
-	}
-
-	for _, key := range fingerprintKeys {
-		paths := jsonPathsOfKey(decoded, key, "")
-		if len(paths) != 1 || paths[0] != ".comparison."+key {
-			t.Errorf("%s found at %v, want exactly [.comparison.%s]", key, paths, key)
-		}
-	}
-
-	// The seam's own evidence hash is a different fact — it fingerprints the
-	// edges behind one label, not the run — so it stays where it is.
-	if got := jsonPathsOfKey(decoded, "label_evidence_hash", ""); len(got) != 1 {
-		t.Errorf("label_evidence_hash found at %v, want the one seam record", got)
-	}
-}
-
-// jsonPathsOfKey lists every dotted path at which key occurs in a decoded JSON
-// document. Array elements are traversed without an index so a path names the
-// shape rather than one element.
-func jsonPathsOfKey(node any, key, path string) []string {
-	var out []string
-	switch typed := node.(type) {
-	case map[string]any:
-		names := make([]string, 0, len(typed))
-		for name := range typed {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			child := path + "." + name
-			if name == key {
-				out = append(out, child)
-			}
-			out = append(out, jsonPathsOfKey(typed[name], key, child)...)
-		}
-	case []any:
-		for _, item := range typed {
-			out = append(out, jsonPathsOfKey(item, key, path+"[]")...)
-		}
-	}
-	return out
 }

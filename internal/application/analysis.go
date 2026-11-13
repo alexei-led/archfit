@@ -82,32 +82,20 @@ type AnalysisRequest struct {
 	GateReasonsInState bool
 	// AddedBase: see Request.
 	AddedBase string
-	// ApplyToolGate lets a missing required analyzer stamp the verdict fail and
-	// hard-gate the run. Only analyze/check set it: explain, enrich,
-	// config compare, and the --base sub-run render a verdict but consume no
-	// exit code from it, so a coverage gap must not rewrite what they report.
+	// ApplyToolGate lets a missing required analyzer stamp the report verdict fail.
+	// Enrichment leaves it off so a coverage gap cannot rewrite its result.
 	ApplyToolGate bool
-	// DiscloseHealthWarnings prints the assessment's health hints to stderr. Only
-	// analyze/check set it. Every other caller either renders a tree the user
-	// cannot act on — the --base sub-run scores a temp worktree that is deleted
-	// before control returns, so its hints name paths that no longer exist — or
-	// is a report-only stage that never disclosed them.
+	// DiscloseHealthWarnings prints assessment health hints on the report path.
+	// Enrichment consumes the assessment without disclosing those hints.
 	DiscloseHealthWarnings bool
-	// Comparison and use-case stages may override the technical context while
+	// Use-case stages may override the technical context while
 	// keeping the analyzer implementation shared.
-	ConfigSource        string
-	BundleDir           string
-	Root                string
-	EvaluatedAt         time.Time
-	SuppressGateReasons bool
-	// WarnLabel prefixes the ACQUISITION stage's stderr warnings, so a sub-run's
-	// degradation is not misread as the head run's. Health warnings do not use
-	// it: they are analyze/check-only (see DiscloseHealthWarnings).
-	WarnLabel            string
+	ConfigSource         string
+	BundleDir            string
+	Root                 string
+	EvaluatedAt          time.Time
+	SuppressGateReasons  bool
 	CaptureRelationships bool
-	// DependencyRoot is the working tree a checkout Root stands in for: the
-	// --base sub-run sets it to the head scan root (see scope.Scope).
-	DependencyRoot string
 }
 
 // AnalysisResult is the stage output consumed by the application projection.
@@ -135,20 +123,14 @@ type PolicyPreparer interface {
 // snapshot rather than re-deriving it.
 type AnalysisContext struct {
 	Scope      scope.Scope
-	BaseRef    string
 	Now        time.Time
 	ConfigHash string
-	// ModelHash and LabelsHash fingerprint the module model and the approved
-	// label set. With the classification hash and the rubric version they are
-	// the four inputs a numerical comparison needs to agree on; any mismatch makes the
-	// comparison non-comparable rather than a delta nobody can justify.
+	// ModelHash and LabelsHash identify the module map and approved labels.
 	ModelHash  string
 	LabelsHash string
-	// ClassificationHash is the comparison input for the policy leaves that
-	// change facts (acquisition.ClassificationHash). ConfigHash stays the raw-byte
-	// identity of the file and is never compared.
+	// ClassificationHash identifies policy leaves that change extracted facts.
+	// ConfigHash separately identifies the raw policy bytes.
 	ClassificationHash string
-	MeasurementProfile *modevidence.MeasurementProfile
 	ConfigSource       string
 	BundleDir          string
 	// ScanRoot is the analysis boundary AS THE CALLER GAVE IT (empty means "the
@@ -178,8 +160,7 @@ type AnalysisContext struct {
 	// CoverageGaps elements are mutated IN PLACE by the assessment stage: under
 	// --require-tools, the tool gate stamps Gate on the gap it fails on. An
 	// AnalysisContext must therefore never be cached or shared across two
-	// scorings — acquisition allocates a fresh slice per run and that is what
-	// keeps the two sides of --base and config compare independent.
+	// scorings: acquisition allocates a fresh slice per run.
 	MarkedCoverage []modevidence.Coverage
 	CoverageGaps   []modevidence.CoverageGap
 	// CrateRootDirs maps a Rust crate name to its repo-relative source dir, for
@@ -211,37 +192,15 @@ type EvidenceStage interface {
 	Acquire(context.Context, AnalysisRequest) (Acquired, error)
 }
 
-// WorktreeProvider materialises a base ref in a clean detached worktree and
-// returns the scan root mirroring headRoot inside it. cleanup always runs.
-type WorktreeProvider interface {
-	Checkout(ctx context.Context, baseRef, anchorDir, headRoot string) (root string, cleanup func(), err error)
-}
-
-// AnalyzerFamilies records which optional finding-producing analyzers the
-// config activates. Task-origin comparison uses it to compare like with like.
-type AnalyzerFamilies struct {
-	Patterns, Syntax, SCIP, Clones, CargoModules, Roslyn bool
-}
-
-// StageExecutor sequences evidence acquisition, assessment, scoring, and the
-// base-tree comparison for report measurements.
+// StageExecutor sequences evidence acquisition, assessment, and scoring for reports.
 type StageExecutor struct {
 	Preparer PolicyPreparer
 	Evidence EvidenceStage
 	Stderr   io.Writer
 	Progress func(stage string)
-
-	// Worktree and NewBaseEvidence enable `--base`. NewBaseEvidence builds the
-	// evidence stage for the base tree; it is a constructor, not a port, because
-	// only the composition root knows how to build one.
-	Worktree        WorktreeProvider
-	NewBaseEvidence func(baseRoot string) EvidenceStage
-	Analyzers       AnalyzerFamilies
 }
 
-// Execute prepares policy, acquires evidence, classifies relationships, assesses
-// the result, scores it, and — when the request names a base ref — attaches the
-// base comparison.
+// Execute prepares policy, acquires evidence, classifies relationships, and scores the assessment.
 func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (AnalysisResult, error) {
 	if s.Preparer == nil || s.Evidence == nil {
 		return AnalysisResult{}, errors.New("analysis stages are required")
@@ -253,7 +212,7 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("evidence acquisition: %w", err)
 	}
-	discloseRawCoverageReasons(s.stderr(), req.WarnLabel, acquired.Context.MarkedCoverage)
+	discloseRawCoverageReasons(s.stderr(), "", acquired.Context.MarkedCoverage)
 	assessed, err := s.assess(ctx, req, acquired)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("assessment: %w", err)
@@ -274,9 +233,8 @@ func relate(acquired Acquired) relationship.AnalysisResult {
 	})
 }
 
-// assess runs relationship analysis, assessment, scoring, and the base-tree
-// comparison in the one order every use case shares.
-func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired Acquired) (AnalysisResult, error) {
+// assess runs relationship analysis, assessment, and scoring in one shared order.
+func (s StageExecutor) assess(_ context.Context, req AnalysisRequest, acquired Acquired) (AnalysisResult, error) {
 	runCtx := acquired.Context
 	facts := acquired.Observations
 	s.reportPhase("Analyzing dependencies")
@@ -296,7 +254,6 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		return AnalysisResult{}, err
 	}
 	diag := assessed.Diagnostic
-	diag.MeasurementProfile = runCtx.MeasurementProfile
 	attachRelationshipEvidence(&diag, relationships.Evidence)
 	diag.DistanceContext = buildDistanceContext(diag, runCtx.Policy, runCtx.DeployUnitDetectedModules)
 	if req.DiscloseHealthWarnings {
@@ -319,12 +276,6 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		s.discloseGate(scored)
 	}
 	out := AnalysisResult{Score: scored.Score, gateReasons: scored.GateReasons}
-	if req.BaseRef != "" {
-		if err := s.attachBaseComparison(ctx, req, runCtx, &diag); err != nil {
-			return AnalysisResult{}, err
-		}
-		discloseRawComparisonReasons(s.stderr(), diag.Comparison)
-	}
 	out.Diagnostic = diag
 	if req.CaptureRelationships {
 		out.EnrichmentEvidence = projectEnrichmentEvidence(relationships.Relationships)

@@ -47,17 +47,14 @@ type IdentityInputs struct {
 }
 
 // withRunFacts stamps the document's state with what the run was judged under
-// and why the coupling gate said what it said. The measurement profile hash
-// comes from the document itself, so it always describes the evidence the
-// verdict rests on.
+// and why the coupling gate said what it said.
 func withRunFacts(doc report.Document, in IdentityInputs, gateReasons []string) report.Document {
 	doc.State.GateReasons = slices.Clone(gateReasons)
 	doc.State.Identity = report.ResultIdentity{
 		SchemaVersion: report.IdentitySchemaVersion,
 		PolicyDigest:  in.PolicyDigest, LabelsDigest: in.LabelsDigest,
 		PolicyRef: in.PolicyRef, BaseSHA: in.BaseSHA, HeadTreeDigest: in.HeadTreeDigest,
-		EngineVersion:          in.EngineVersion,
-		MeasurementProfileHash: report.ProfileHash(doc.State.Comparison.MeasurementProfile),
+		EngineVersion: in.EngineVersion,
 	}
 	return doc
 }
@@ -65,7 +62,7 @@ func withRunFacts(doc report.Document, in IdentityInputs, gateReasons []string) 
 // projectArchitectureState projects the assessment-owned architecture state
 // onto the external archfit.architecture-state.v1 contract, and adds the run
 // facts assessment deliberately never sees: which tree was measured, which tool
-// versions produced the evidence, and what this run was compared against.
+// versions produced the evidence.
 //
 // The verdict, the decision counters, and every dimension envelope are copied
 // verbatim. Nothing is decided here — the application projects, it does not
@@ -94,45 +91,9 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		out.Measurement.HistoryWindow = historyWindow(h.FullHistory, h.CommitWindow)
 	}
 
-	out.Comparison = report.StateComparison{
-		Status: report.ComparisonNotRequested, Reasons: []string{},
-		ConfigHash: r.ConfigHash, ClassificationHash: r.ClassificationHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
-		RubricVersion:      report.ScoreVersion,
-		MeasurementProfile: projectMeasurementProfile(r.MeasurementProfile),
-	}
-	if c := r.Comparison; c != nil {
-		// The comparison verdict is decided where both sides exist (the base
-		// comparison in the application, the fingerprint rule in assessment).
-		// The projection copies it: a renderer must not be able to reach a
-		// different answer than the run did.
-		out.Comparison.Status = report.ComparisonStatus(c.Status)
-		out.Comparison.BaseRef = c.BaseRef
-		out.Comparison.Reasons = append([]string{}, c.Reasons...)
-		out.Comparison.Drift = slices.Clone(c.Drift)
-		if c.OriginStatus != "" {
-			introduced := append([]string{}, c.IntroducedFindingIDs...)
-			resolved := append([]string{}, c.ResolvedFindingIDs...)
-			out.Comparison.OriginStatus = c.OriginStatus
-			out.Comparison.OriginReasons = append([]string{}, c.OriginReasons...)
-			out.Comparison.IntroducedFindingIDs = &introduced
-			out.Comparison.ResolvedFindingIDs = &resolved
-		}
-	}
-
 	out.Seams = projectStateSeams(r.Seams)
 
 	out.Coverage.Measured, out.Coverage.Partial, out.Coverage.Unmeasured = out.Dimensions.CountStatuses()
-	return out
-}
-
-func projectMeasurementProfile(p *evidence.MeasurementProfile) *report.MeasurementProfile {
-	if p == nil {
-		return nil
-	}
-	out := &report.MeasurementProfile{Version: p.Version, SettingsHash: p.SettingsHash, Producers: []report.MeasurementProducer{}, Unknowns: append([]string{}, p.Unknowns...)}
-	for _, producer := range p.Producers {
-		out.Producers = append(out.Producers, report.MeasurementProducer{Tool: producer.Tool, SemanticsVersion: producer.SemanticsVersion, ToolVersion: producer.ToolVersion, Status: producer.Status, PartialBasis: string(producer.PartialBasis)})
-	}
 	return out
 }
 
@@ -488,7 +449,6 @@ func projectFindings(in []finding.Finding) []report.Finding {
 				To:   report.FindingEndpoint{Module: f.Edge.To.Module, Path: f.Edge.To.Path}, Kind: f.Edge.Kind,
 			},
 			MatchedBy: matchedBy, Locations: locations, Why: f.Why, Constraint: f.Constraint, Alternatives: f.Alternatives,
-			Origin: string(f.Origin),
 		})
 	}
 	return out
@@ -497,7 +457,7 @@ func projectFindings(in []finding.Finding) []report.Finding {
 func projectAgentTasks(in []result.AgentTask) []report.AgentTask {
 	out := make([]report.AgentTask, 0, len(in))
 	for _, t := range in {
-		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, RepairKind: t.RepairKind, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations), Origin: string(t.Origin)})
+		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, RepairKind: t.RepairKind, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations)})
 	}
 	return out
 }

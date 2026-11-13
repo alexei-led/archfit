@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
-	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
@@ -18,14 +16,12 @@ import (
 
 // Shared literals for the shadow-state fixtures.
 const (
-	stateHeadRef    = "HEAD"
-	stateConfigHash = "cfg-hash"
-	stateClassHash  = "class-hash"
-	// driftedFingerprint stands in for any fingerprint that moved between runs.
-	driftedFingerprint = "other"
-	stateToolSCIP      = "scip"
-	stateMetricEdges   = "internal_edges"
-	stateSevHigh       = "high"
+	stateHeadRef     = "HEAD"
+	stateConfigHash  = "cfg-hash"
+	stateClassHash   = "class-hash"
+	stateToolSCIP    = "scip"
+	stateMetricEdges = "internal_edges"
+	stateSevHigh     = "high"
 )
 
 // stateFixture is a small assessment result carrying one of each fact the
@@ -70,9 +66,6 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 	}
 	if len(state.Coverage.Tools) != 2 || state.Coverage.Tools[1].Status != evidence.StatusPartial {
 		t.Errorf("Coverage.Tools = %+v, want both rows in acquisition order", state.Coverage.Tools)
-	}
-	if state.Comparison.ConfigHash != stateConfigHash || state.Comparison.RubricVersion != report.ScoreVersion {
-		t.Errorf("Comparison = %+v, want the run's config hash and rubric version", state.Comparison)
 	}
 
 	if state.Coverage.Measured+state.Coverage.Partial+state.Coverage.Unmeasured != report.DimensionCount {
@@ -193,87 +186,6 @@ func TestShadowStateCoverageCountsTheProjectedEnvelopes(t *testing.T) {
 	if coverage.Measured+coverage.Partial+coverage.Unmeasured != report.DimensionCount {
 		t.Errorf("coverage counts %+v do not sum to %d", coverage, report.DimensionCount)
 	}
-}
-
-// TestStateComparisonIsStrictAndExplains asserts the comparison contract: it
-// always reports this run's four fingerprints, it is not_requested when nothing
-// was compared, and a mismatch on ANY of the four is non_comparable with a
-// named reason — never a numerical delta with a caveat attached.
-func TestStateComparisonIsStrictAndExplains(t *testing.T) {
-	head := decision.Fingerprints{
-		ClassificationHash: stateClassHash, ModelHash: "model-hash", LabelsHash: "labels-hash",
-		RubricVersion:      report.ScoreVersion,
-		MeasurementProfile: &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, SettingsHash: "settings", Producers: []evidence.MeasurementProducer{{Tool: "loc", SemanticsVersion: "loc.v1", Status: evidence.StatusOK}}},
-	}
-
-	t.Run("without a comparison", func(t *testing.T) {
-		diagnostic := stateFixture()
-		diagnostic.ModelHash, diagnostic.LabelsHash = head.ModelHash, head.LabelsHash
-
-		state := projectReport(diagnostic, score.Scorecard{}).State
-		if state.Comparison.Status != report.ComparisonNotRequested {
-			t.Errorf("Comparison.Status = %q, want not_requested", state.Comparison.Status)
-		}
-		if len(state.Comparison.Reasons) != 0 {
-			t.Errorf("Comparison.Reasons = %v, want empty when no comparison was asked for", state.Comparison.Reasons)
-		}
-		// The fingerprints are reported regardless: they are what a later run
-		// compares against, so a report that omits them cannot be compared at all.
-		if state.Comparison.ConfigHash != stateConfigHash ||
-			state.Comparison.ClassificationHash != head.ClassificationHash ||
-			state.Comparison.ModelHash != head.ModelHash ||
-			state.Comparison.LabelsHash != head.LabelsHash ||
-			state.Comparison.RubricVersion != report.ScoreVersion {
-			t.Errorf("Comparison = %+v, want all four fingerprints reported", state.Comparison)
-		}
-	})
-
-	mismatches := []struct {
-		name       string
-		base       decision.Fingerprints
-		wantReason string
-	}{
-		{"classification differs", decision.Fingerprints{ClassificationHash: driftedFingerprint, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyClassificationHash},
-		{"model differs", decision.Fingerprints{ClassificationHash: head.ClassificationHash, ModelHash: driftedFingerprint, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyModelHash},
-		{"labels differ", decision.Fingerprints{ClassificationHash: head.ClassificationHash, ModelHash: head.ModelHash, LabelsHash: driftedFingerprint, RubricVersion: head.RubricVersion}, keyLabelsHash},
-		{"rubric differs", decision.Fingerprints{ClassificationHash: head.ClassificationHash, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: "bc_score.v5"}, keyRubricVersion},
-	}
-	for _, tc := range mismatches {
-		t.Run(tc.name, func(t *testing.T) {
-			diagnostic := stateFixture()
-			diagnostic.ModelHash, diagnostic.LabelsHash = head.ModelHash, head.LabelsHash
-			diagnostic.Base = blockBaseRef
-			diagnostic.Comparison = decision.CompareFingerprints(blockBaseRef, head, tc.base)
-
-			state := projectReport(diagnostic, score.Scorecard{}).State
-			if state.Comparison.Status != report.ComparisonNonComparable {
-				t.Errorf("Comparison.Status = %q, want non_comparable", state.Comparison.Status)
-			}
-			if state.Comparison.BaseRef != blockBaseRef {
-				t.Errorf("Comparison.BaseRef = %q, want %q", state.Comparison.BaseRef, blockBaseRef)
-			}
-			if !strings.Contains(strings.Join(state.Comparison.Reasons, "; "), tc.wantReason) {
-				t.Errorf("Comparison.Reasons = %v, want the mismatched input %q named",
-					state.Comparison.Reasons, tc.wantReason)
-			}
-		})
-	}
-
-	t.Run("matching fingerprints compare", func(t *testing.T) {
-		diagnostic := stateFixture()
-		diagnostic.ModelHash, diagnostic.LabelsHash = head.ModelHash, head.LabelsHash
-		diagnostic.Base = blockBaseRef
-		diagnostic.Comparison = decision.CompareFingerprints(blockBaseRef, head, head)
-
-		state := projectReport(diagnostic, score.Scorecard{}).State
-		if state.Comparison.Status != report.ComparisonComparable {
-			t.Errorf("Comparison.Status = %q, want comparable (reasons %v)",
-				state.Comparison.Status, state.Comparison.Reasons)
-		}
-		if len(state.Comparison.Reasons) != 0 {
-			t.Errorf("Comparison.Reasons = %v, want empty on a clean comparison", state.Comparison.Reasons)
-		}
-	})
 }
 
 // TestShadowStateReferencesFindingsWithoutCopyingThem asserts findings and

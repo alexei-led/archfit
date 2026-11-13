@@ -16,7 +16,9 @@ A producer reports zero only after it completes the relevant denominator. A miss
 
 ## Code the change adds that no analysis reads
 
-Missing evidence is not zero, and that holds for code a change adds. Production source that no module owns, that an `exclude:` glob matches, that is in a language the config turns off, or that no analyzer reads, is invisible to every rule: a forbidden import moved into it passes. With `--base`, `check` reports each such added file as `map/uncovered_change`, with the reason and the exclusion or switch behind it, so an owner-approved exclusion stays distinguishable from a hole. `module_review.change_gate: fail` turns the finding into an unevaluated entry: the change is `unknown`, never `pass`. A waiver or a baseline entry does not lift it, because neither is evidence that the code was read. See [configuration](configuration.md#module-review).
+`archfit check` reads the merge base and head in one run. It counts errors by rule, modules, and symbol or literal. A new entry, or a higher count, belongs to the change. Moving or renaming code alone does not establish a new error. Missing facts give `unknown`, not a clean count. An expired exception fails every change while the error remains.
+
+The policy's exclusions and language settings apply to both trees. They are protected policy inputs, not a way for a worker to accept unread code. See [what the check reads](#what-the-check-reads) for the readers and their limits.
 
 ## Dimension contracts
 
@@ -84,9 +86,8 @@ The [metrics reference](metrics.md) explains how supplied coverage differs from 
 ### `drift`
 
 - **Required facts:** `admissible persisted reference`, `complete two-sided seam identity`.
-- **Denominator:** The union of qualifying seam identities in the current and persisted ledgers.
-- **Promote when:** A persisted state baseline contains a seam ledger and all comparison fingerprints match. Every qualifying seam identity on both sides is compared.
-- **Limits:** A missing, legacy, or incompatible baseline is unmeasured, not partial. A separate `--base` comparison is out of claim. `comparison.status: not_requested` only means that the user did not request a base-tree report.
+- **Current result:** `unmeasured`. The report has no stored reference and does not compare seam inventories across runs.
+- **Limits:** This legacy report dimension is not the repository drift that schema 3 `archfit report` lists for owners. The check's same-run change counting does not promote it.
 
 The coupling contract counts abstentions in its denominator. Same-module coupling and undeclared external dependencies are outside that denominator. See [coupling](coupling.md) for current v7 distance and seam semantics.
 
@@ -98,20 +99,11 @@ The complexity contract measures module graph depth and degree distributions. It
 
 ## Comparisons and references
 
-Archfit has two comparison paths. They answer different questions.
+The check compares the merge base and head under one policy and one engine in the same run. Its `--base <ref>` selects the target branch; it does not load an earlier report. See [commands](commands.md#check) for target selection and [results](results.md) for added errors and repository drift.
 
-| Reference | Purpose | Compatibility rule |
-|---|---|---|
-| Persisted architecture-state baseline | Compare qualifying seams over time for the `drift` dimension. | Requires the current and stored classification hash, model hash, labels hash, rubric version, and measurement profile to match. |
-| `--base <ref>` | Compare the current tree with a Git base tree for findings and coverage. | Compares classification hash, model hash, labels hash, rubric version, and measurement profile. It does not compare the raw config hash because both sides use one config file. |
+The report measures one tree. It has no measurement profile, comparability verdict, finding origin, or base-tree comparison block. Tool versions and availability remain visible as measurement and coverage evidence. Missing evidence still prevents promotion; removing a profile does not make an incomplete inventory complete.
 
-The comparison fingerprints are separate so reports can name each mismatch. The measurement profile contains producer identity, tool version, evidence status, and measurement settings. A missing or unsupported profile blocks comparison. A profile change is not treated as a code-only change.
-
-Changing a module name can change seam identity. Changing labels can change strength and seam qualification. Changing classification settings can change observed relationships. Changing the rubric can change assessed meaning. Owner and deploy-unit resolution affect model identity, but do not change distance, severity, or seam qualification. Each fingerprinted change makes a numeric comparison non-comparable.
-
-`--base` does not provide the persisted reference for `drift`. Without a comparable persisted baseline, drift is `unmeasured`, even when `--base` runs. `comparison.status: not_requested` means only that the user did not request a separate base-tree report.
-
-The raw config hash identifies the config file. It is not a comparability fingerprint. Comments, waivers, rules, and `reviewed_at` can change raw bytes without changing the facts used by a numeric comparison.
+Report identity retains the policy digest, labels digest, policy ref, base commit, head tree digest, and engine version when known. It carries no measurement-profile hash. A policy digest identifies policy bytes, not evidence completeness.
 
 ## What the check reads
 
@@ -193,7 +185,6 @@ mounted source remain part of the operator's trust boundary. See [Languages and 
 - **Missing reference packs.** A target framework without its reference pack on the host (for example `net8.0` against a 10.0 SDK) leaves the project `partial`, with the pack named. Results depend on the host's installed packs.
 - **Unresolved symbols are missing candidates.** An unresolved reference can hide a cross-boundary edge, so it is not reduced precision. Any `partial` or `failed` project, an evaluated project the helper did not report, or a failed or timed-out helper run keeps the `coupling` dimension from `measured` by blocking `extractor resolution within ceiling`, as TypeScript unresolved specifiers do above the ceiling.
 - **Rules over incomplete projects are unevaluated.** A project's file edges are complete only when the helper loaded it `complete`. A required rule whose dependency source reaches a file of an incomplete project is unevaluated: its `from:` side, the modules a module rule reads, or every file for `cycle`. Incomplete means `partial`, `failed`, not reported, or any project when the helper produced no report. The reason names `roslyn`, each project, and that project's own cause. A rule whose scope is established and that produced a finding is not listed: the finding is its result, and the report must not both publish a rule's violations and say the rule was not evaluated. A rule whose scope the configuration does not establish stays listed even when it produced a finding: that finding comes from a file set the declaration did not define. Its blocker still fails the gate, so the verdict is unchanged. A rule scoped to complete projects stays evaluated, even when the `dotnet-msbuild` or `roslyn` row is `partial`. `ProjectReference` fallback edges do not make a project complete: they match no selector below the project directory, and they omit projects used through a transitive `ProjectReference`. The same files keep `structure`, `modularity`, and `complexity` from `measured`. This follows the Python precedent: unanalysed source in a rule's scope holds that rule, not every rule.
-- **Partial runs are not comparable.** A Roslyn `partial` producer makes a `--base` comparison non-comparable. `roslyn` is its own analyzer family, so `--base` pairs it, and `config compare` grades its row the same way. The base checkout has no restore outputs of its own; it reuses the working tree's for projects at the same path (see [languages](languages.md#snapshot-and-trust)). Reuse is trusted only when NuGet's restore graph for the base project matches the one the working tree was restored from: a base project with different package references, central versions, sources, `global.json`, `NuGet.config`, or `Directory.*` build files, or one the working tree has not restored, stays `partial`, and `origin_reasons` quotes the base row's reason that names it. A restore graph records the path its tree was restored at, so outputs copied from a tree that has moved are reconciled by the project path they record; one whose recorded path cannot be reconciled stays `partial` with that cause, not a package-input one.
 - **Producer identity.** The coverage row version is the helper's `archfit-roslyn <version>; Microsoft.CodeAnalysis <version>; SDK <version>` string.
 
 See [languages](languages.md#net) for statuses and fallback.

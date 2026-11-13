@@ -474,14 +474,6 @@ rules:
         - internal/assessment/score/**
     why: The architecture decision comes from hard gates and finding classes, never from an averaged score. If the state package can reach the scorer, a metric can silently decide the verdict.
     instead: Use hard-gate decisions from internal/assessment/decision in internal/assessment/state.
-  - id: output_no_decision
-    deny:
-      from:
-        - internal/output/**
-      to:
-        - internal/assessment/decision/**
-    why: Renderers display the decision and never make it. A decision inside a renderer gives one run different verdicts by format.
-    instead: Read the verdict from the report DTOs in internal/model/report
   - id: application_no_concrete_adapters
     deny:
       from:
@@ -659,7 +651,7 @@ exceptions:
   - rule: duplication
     from: assessment-repair
     to: evidence-adapters
-    why: Existing duplicate at internal/assessment/decision/measurement.go:125; this literal already lives in internal/extract/dotnet/typegraph.go:617; retain until consolidated.
+    why: Existing duplicate at internal/assessment/evaluation/dimensions.go:1075; this literal already lives in internal/extract/astgrep/syntax.go:427; retain until the modules stop sharing the code.
   - rule: duplication
     from: assessment-repair
     to: report-adapters

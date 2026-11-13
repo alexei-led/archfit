@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -201,9 +200,8 @@ func TestAcquireThreadsMissingSuppliedCoverageIntoTheExistingGapGate(t *testing.
 
 // TestAcquireDisclosesGoFilesExcludedByBuildConstraints adds a file for another
 // GOOS to an otherwise identical tree. The run prints one stderr warning and the
-// go/packages row names the count, but the row status and the measurement
-// profile stay those of the tree without the file: an unbuilt file is a scope
-// disclosure, never a degraded or non-comparable measurement.
+// go/packages row names the count, but its status stays that of the tree
+// without the file: an unbuilt file is a scope disclosure, not a failed load.
 func TestAcquireDisclosesGoFilesExcludedByBuildConstraints(t *testing.T) {
 	t.Parallel()
 	otherOS := "windows"
@@ -260,9 +258,6 @@ func TestAcquireDisclosesGoFilesExcludedByBuildConstraints(t *testing.T) {
 	}
 	if row.Status != cleanRow.Status || row.Status != evidence.StatusOK {
 		t.Errorf("go/packages status = %q (without the file: %q), want ok for both", row.Status, cleanRow.Status)
-	}
-	if !reflect.DeepEqual(disclosed.Context.MeasurementProfile, clean.Context.MeasurementProfile) {
-		t.Errorf("measurement profile moved with an unbuilt file:\n got %+v\nwant %+v", disclosed.Context.MeasurementProfile, clean.Context.MeasurementProfile)
 	}
 }
 

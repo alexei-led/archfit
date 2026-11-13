@@ -9,7 +9,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
@@ -152,7 +151,6 @@ func TestProjectedStatePassesTheConsumerTextRules(t *testing.T) {
 	r.State.Dimensions.Intent.Coverage.Basis = long
 	r.State.Dimensions.Intent.Unknown = []state.UnknownFact{{Fact: long, Reason: long, Owner: "intent"}}
 	r.State.Dimensions.Drift.Delta = &state.Delta{Status: textStatusNonComparable, Reasons: []string{long}}
-	r.Comparison = &result.StateComparison{Status: textStatusNonComparable, BaseRef: "main", Reasons: []string{long}, OriginStatus: decision.OriginUnknown, OriginReasons: []string{long}}
 
 	doc := projectReport(r, score.Scorecard{})
 	data, err := json.Marshal(doc.State)

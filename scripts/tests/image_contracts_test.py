@@ -231,15 +231,9 @@ class ImageContractsTest(unittest.TestCase):
             contract = image.ImageContract("local:contract", "colima", output)
             state = {
                 "schema_version": "archfit.architecture-state.v1",
-                "comparison": {
-                    "measurement_profile": {
-                        "producers": [
-                            {
-                                "tool": "grimp",
-                                "semantics_version": "grimp.v3",
-                                "tool_version": f"grimp {image.lc.TOOL_MANIFEST['python']['grimp']}; python {image.lc.TOOL_MANIFEST['versions']['python']}",
-                            }
-                        ]
+                "measurement": {
+                    "tool_versions": {
+                        "grimp": f"grimp {image.lc.TOOL_MANIFEST['python']['grimp']}; python {image.lc.TOOL_MANIFEST['versions']['python']}"
                     }
                 },
                 "coverage": {"tools": [{"tool": "grimp", "status": "ok"}]},
@@ -262,6 +256,15 @@ class ImageContractsTest(unittest.TestCase):
                 image.python314_case(contract)
             self.assertEqual(commands.call_count, 2)
             self.assertTrue(all(row["passed"] for row in contract.assertions))
+
+            for version in ("", "grimp 0.0; python 0.0"):
+                with self.subTest(version=version), tempfile.TemporaryDirectory() as bad_dir:
+                    state["measurement"]["tool_versions"]["grimp"] = version
+                    output = Path(bad_dir)
+                    bad = image.ImageContract("local:contract", "colima", output)
+                    with patch.object(bad, "run", side_effect=run):
+                        image.python314_case(bad)
+                    self.assertTrue(all(not row["passed"] for row in bad.assertions))
 
     def test_readonly_report_trusts_only_the_host_owned_fixture(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -4,9 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
 	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -22,13 +20,5 @@ func TestSuccessfulUnmatchedHistoryRemainsComparable(t *testing.T) {
 	history := buildVolatilityCorroboration(context.Background(), "/repo", "", p, runner)
 	if history == nil || history.Status != "ok" || history.CommitsScanned != 1 || history.ModulesTouched != 0 {
 		t.Fatalf("successful history became absent: %+v", history)
-	}
-	s := Service{Runner: runner}
-	profile := s.measurementProfile(context.Background(), scope.Scope{GitRoot: "/repo"}, nil, nil, nil, history)
-	if reasons := decision.CompareMeasurementProfiles(profile, profile); len(reasons) != 0 {
-		t.Fatalf("successful no-match history is not comparable: %v", reasons)
-	}
-	if len(profile.Producers) != 1 || profile.Producers[0].Status != "ok" {
-		t.Fatalf("history profile = %+v", profile.Producers)
 	}
 }

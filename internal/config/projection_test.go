@@ -54,20 +54,6 @@ func TestValidateRulesRejectsUnknownRuleType(t *testing.T) {
 	}
 }
 
-// TestWithIndependentModulesDoesNotAliasTheHeadModuleMap pins the base-tree
-// isolation: Config is a value but its Modules map is shared, and the run's
-// owner/deploy-unit backfill writes through it, so a base sub-run over an
-// aliased map would inherit head-tree owners and never resolve its own.
-func TestWithIndependentModulesDoesNotAliasTheHeadModuleMap(t *testing.T) {
-	t.Parallel()
-	head := Config{Modules: map[string]policy.ModuleDef{"a": {Paths: []string{globModuleA}}}}
-	base := head.WithIndependentModules()
-	base.Modules["a"] = policy.ModuleDef{Paths: []string{globModuleA}, Owner: "base-team"}
-	if head.Modules["a"].Owner != "" {
-		t.Fatalf("head module map mutated through the base copy: %+v", head.Modules["a"])
-	}
-}
-
 // TestPreparerWarnsOnPatternsOutsideForbiddenPattern pins the v2.4 posture
 // for rules[].patterns on any other rule type: the config still loads and the
 // patterns still run, but analyze/check say the matches can never fire.

@@ -4,26 +4,23 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
 	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 func TestHistoryCrateUncertaintyRespectsDeclaredScope(t *testing.T) {
 	const rustModule = "rust"
 	for _, tc := range []struct {
-		name           string
-		modules        map[string]policy.ModuleDef
-		wantStatus     string
-		wantComparable bool
+		name       string
+		modules    map[string]policy.ModuleDef
+		wantStatus string
 	}{
 		{"unowned Rust outside Go TS Python modules", map[string]policy.ModuleDef{
 			"go": {Paths: []string{"go/**"}}, "ts": {Paths: []string{"web/**/*.ts"}}, "py": {Paths: []string{"app.**"}},
-		}, "ok", true},
-		{"bare crate identity", map[string]policy.ModuleDef{rustModule: {Paths: []string{"my-crate"}}}, "partial", false},
-		{"nested crate identity", map[string]policy.ModuleDef{rustModule: {Paths: []string{"my_crate::core::**"}}}, "partial", false},
-		{"physical Rust module", map[string]policy.ModuleDef{rustModule: {Paths: []string{"fixtures/**"}}}, "ok", true},
+		}, "ok"},
+		{"bare crate identity", map[string]policy.ModuleDef{rustModule: {Paths: []string{"my-crate"}}}, "partial"},
+		{"nested crate identity", map[string]policy.ModuleDef{rustModule: {Paths: []string{"my_crate::core::**"}}}, "partial"},
+		{"physical Rust module", map[string]policy.ModuleDef{rustModule: {Paths: []string{"fixtures/**"}}}, "ok"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := &toolrun.RunnerMock{RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
@@ -36,12 +33,6 @@ func TestHistoryCrateUncertaintyRespectsDeclaredScope(t *testing.T) {
 			history := buildVolatilityCorroboration(context.Background(), "/repo", "", p, runner)
 			if history == nil || history.Status != tc.wantStatus {
 				t.Fatalf("history = %+v, want %s", history, tc.wantStatus)
-			}
-			service := Service{Runner: runner}
-			profile := service.measurementProfile(context.Background(), scope.Scope{GitRoot: "/repo"}, nil, nil, nil, history)
-			reasons := decision.CompareMeasurementProfiles(profile, profile)
-			if (len(reasons) == 0) != tc.wantComparable {
-				t.Fatalf("comparable = %t, want %t, reasons=%v", len(reasons) == 0, tc.wantComparable, reasons)
 			}
 		})
 	}

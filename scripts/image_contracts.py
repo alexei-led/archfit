@@ -249,12 +249,7 @@ def python314_case(contract: ImageContract) -> None:
             fixture,
         )
         state = contract.read_state(output, "report")
-        producers = (
-            state.get("comparison", {})
-            .get("measurement_profile", {})
-            .get("producers", [])
-        )
-        producer = next((row for row in producers if row.get("tool") == "grimp"), {})
+        version = state.get("measurement", {}).get("tool_versions", {}).get("grimp", "")
         pin = f"grimp {lc.TOOL_MANIFEST['python']['grimp']}; python {lc.TOOL_MANIFEST['versions']['python']}"
         contract.expect(
             f"{output.name}: src-layout Python 3.14 forbidden import",
@@ -263,13 +258,13 @@ def python314_case(contract: ImageContract) -> None:
             and state.get("decision", {}).get("hard_gates") == "fail"
             and not state.get("decision", {}).get("unevaluated_required_rules", [])
             and rows(state).get("grimp", {}).get("status") == "ok"
-            and producer.get("semantics_version") == "grimp.v3"
-            and pin in producer.get("tool_version", "")
+            and "comparison" not in state
+            and pin in version
             and any(
                 f.get("rule_id") == "no-core-to-adapter" and f.get("kind") == "gate"
                 for f in state.get("findings", [])
             ),
-            producer,
+            version,
         )
 
 

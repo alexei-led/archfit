@@ -28,13 +28,15 @@ func TestRendererWritesArchitectureStateAtRoot(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &root); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	for _, key := range []string{"schema_version", "verdict", "decision", "comparison", "measurement", "dimensions", "coverage", "findings", "agent_tasks", "seams"} {
+	for _, key := range []string{"schema_version", "verdict", "decision", "measurement", "dimensions", "coverage", "findings", "agent_tasks", "seams"} {
 		if _, ok := root[key]; !ok {
 			t.Errorf("missing root key %q", key)
 		}
 	}
-	if _, ok := root["score"]; ok {
-		t.Error("legacy score field must not be present")
+	for _, key := range []string{"score", "comparison"} {
+		if _, ok := root[key]; ok {
+			t.Errorf("retired root field %q must not be present", key)
+		}
 	}
 	if string(root["verdict"]) != `"needs_attention"` {
 		t.Errorf("verdict = %s", root["verdict"])
