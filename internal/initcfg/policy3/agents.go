@@ -22,12 +22,12 @@ const (
 // hook prints them too.
 const Lines = "Run `archfit rules` before you start and `archfit check` before you finish.\n" +
 	"Do what `next:` says. `archfit: pass` means done.\n" +
-	"Before a new dependency between modules: `archfit can <from> <to>`.\n" +
+	"Before a new dependency between modules: `archfit can <file> <target>`.\n" +
 	"If a rule is in your way: `archfit request -m \"<why>\"`, then wait or do other work.\n" +
 	"Never edit `.archfit.yaml`. Never copy code to get around a rule.\n"
 
 // Block is the instruction block for agents: Lines between the markers.
-const Block = markerStart + "\n" + Lines + markerEnd + "\n"
+const Block = markerStart + "\n\n" + Lines + markerEnd + "\n"
 
 // spliceFile returns the content of the instruction file at path with Block in
 // it. A missing file gives Block alone.
