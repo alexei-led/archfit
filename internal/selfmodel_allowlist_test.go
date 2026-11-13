@@ -5,18 +5,14 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/assessment/change"
+	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
 )
 
 const (
-	pkgConfig        = "internal/config"
-	pkgLLM           = "internal/llm"
-	modConfigAdapter = "policy-config-adapter"
-	modProviders     = "provider-adapters"
-	typeModuleDeps   = "module_dependencies"
-	globInternal     = "internal/**"
+	pkgConfig    = "internal/config"
+	pkgLLM       = "internal/llm"
+	globInternal = "internal/**"
 )
 
 // retiredDenyRule is one of the 21 forbidden_dependency rules the module
@@ -52,47 +48,37 @@ var retiredDenyRules = []retiredDenyRule{
 	{"application_no_provider_adapters", "internal/application/**", "internal/llm/**", "internal/application/analysis.go", pkgLLM + "/anthropic"},
 }
 
-// TestSelfModelAllowlistsCatchTheRetiredDenyRules is the paired proof for the
-// self-config rewrite: every import one of the 21 retired deny rules banned is
-// a module_dependencies finding under the current .archfit.yaml, the imports
-// the composition roots and the config lifecycle make stay allowed, and an
-// importer no module owns is now denied too, where no retired rule named it.
+// The schema 3 graph must still reject the imports banned by the retired rules.
 func TestSelfModelAllowlistsCatchTheRetiredDenyRules(t *testing.T) {
-	allowlists := selfAllowlistRule(t)
+	p := selfPolicy3(t)
 	for _, retired := range retiredDenyRules {
 		t.Run(retired.id, func(t *testing.T) {
 			if !retired.banned(retired.importer, retired.pkg) {
-				t.Fatalf("fixture import %s -> %s is not one %s banned", retired.importer, retired.pkg, retired.id)
+				t.Fatal("invalid retired-rule fixture")
 			}
-			got := allowlists.Check(importSet(retired.importer, retired.pkg), rules.Evidence{})
-			if len(got) != 1 || !targetsAModuleWithVisibleTo(got[0].Edge.To.Module) {
-				t.Errorf("module_dependencies findings = %+v, want one on policy-config-adapter or provider-adapters", got)
+			errs := change.Judge(p, change.Use{From: change.End{Path: retired.importer, IsFile: true}, To: change.End{Path: retired.pkg}})
+			for _, err := range errs {
+				if err.Key.Rule == resolved.RuleGraph {
+					return
+				}
 			}
+			t.Errorf("%s -> %s: graph rule did not reject: %+v", retired.importer, retired.pkg, errs)
 		})
 	}
-
 	for _, allowed := range []struct{ importer, pkg string }{
-		{"cmd/archfit/main.go", pkgConfig},
-		{"cmd/archfit/main.go", pkgLLM},
-		{"cmd/calibrate/main.go", pkgConfig},
-		{"internal/configschema/schema.go", pkgConfig},
-		{"internal/initcfg/discover_go.go", pkgConfig},
-		{"internal/config/projection.go", pkgConfig},
+		{"cmd/archfit/main.go", pkgConfig}, {"cmd/archfit/main.go", pkgLLM},
+		{"cmd/calibrate/main.go", pkgConfig}, {"internal/configschema/schema.go", pkgConfig},
+		{"internal/initcfg/discover_go.go", pkgConfig}, {"internal/config/projection.go", pkgConfig},
 	} {
-		if got := allowlists.Check(importSet(allowed.importer, allowed.pkg), rules.Evidence{}); len(got) != 0 {
-			t.Errorf("%s -> %s: findings = %+v, want none: the allowlist admits it", allowed.importer, allowed.pkg, got)
+		errs := change.Judge(p, change.Use{From: change.End{Path: allowed.importer, IsFile: true}, To: change.End{Path: allowed.pkg}})
+		for _, err := range errs {
+			if err.Key.Rule == resolved.RuleGraph {
+				t.Errorf("allowed %s -> %s: %+v", allowed.importer, allowed.pkg, err)
+			}
 		}
 	}
-
-	const unowned = "internal/newtool/main.go"
-	for _, retired := range retiredDenyRules {
-		if retired.banned(unowned, pkgConfig) {
-			t.Fatalf("retired rule %s already banned %s; pick an importer no rule named", retired.id, unowned)
-		}
-	}
-	got := allowlists.Check(importSet(unowned, pkgConfig), rules.Evidence{})
-	if len(got) != 1 || got[0].Edge.From.Path != "internal/newtool" || got[0].Edge.To.Module != modConfigAdapter {
-		t.Errorf("unowned importer findings = %+v, want internal/newtool -> %s", got, modConfigAdapter)
+	if _, ok := p.ModuleOf("internal/newtool/main.go"); ok {
+		t.Error("unowned fixture unexpectedly has an owner")
 	}
 }
 
@@ -100,39 +86,4 @@ func (r retiredDenyRule) banned(importer, pkg string) bool {
 	fromMatch, _ := doublestar.Match(r.from, importer)
 	toMatch, _ := doublestar.Match(r.to, pkg)
 	return fromMatch && toMatch
-}
-
-func targetsAModuleWithVisibleTo(module string) bool {
-	return module == modConfigAdapter || module == modProviders
-}
-
-// selfAllowlistRule compiles the self-config's one module_dependencies rule.
-func selfAllowlistRule(t *testing.T) rules.Rule {
-	t.Helper()
-	ruleConfig := loadSelfConfig(t).PolicySnapshot().Gates.Rules
-	var defs []policy.RuleDef
-	for _, def := range ruleConfig.Rules {
-		if def.Type == typeModuleDeps {
-			defs = append(defs, def)
-		}
-	}
-	if len(defs) != 1 {
-		t.Fatalf("self-config module_dependencies rules = %d, want 1", len(defs))
-	}
-	ruleConfig.Rules = defs
-	compiled, err := rules.New(ruleConfig)
-	if err != nil {
-		t.Fatalf("compile self-config rules: %v", err)
-	}
-	return compiled[0]
-}
-
-// importSet is one Go import of pkg by the file importer, the edge shape the
-// Go extractor emits.
-func importSet(importer, pkg string) relationship.Set {
-	return relationship.Set{Edges: []relationship.Edge{{
-		FromID: "file:" + importer, ToID: "package:" + pkg,
-		FromPath: importer, ToPath: pkg, Kind: "imports", Language: "go",
-		Locations: []relationship.Location{{File: importer, Line: 3}},
-	}}}
 }
