@@ -8,7 +8,7 @@ import (
 
 func TestPrimaryToolForLanguageFollowsRegistryOrder(t *testing.T) {
 	t.Parallel()
-	all := &result.Result{PrimaryExtractorTools: []string{"go/packages", "dependency-cruiser", "grimp", "cargo", "dotnet-msbuild"}}
+	all := &result.Result{PrimaryExtractorTools: []string{"go/packages", "dependency-cruiser", "pyimports", "cargo", "dotnet-msbuild"}}
 	short := &result.Result{PrimaryExtractorTools: all.PrimaryExtractorTools[:4]}
 	for _, tc := range []struct {
 		language string
@@ -17,7 +17,7 @@ func TestPrimaryToolForLanguageFollowsRegistryOrder(t *testing.T) {
 	}{
 		{"go", all, "go/packages"},
 		{languageTypeScript, all, "dependency-cruiser"},
-		{languagePython, all, "grimp"},
+		{languagePython, all, "pyimports"},
 		{languageRust, all, "cargo"},
 		{"dotnet", all, "dotnet-msbuild"},
 		{"dotnet", short, ""}, // a registry without the .NET row abstains

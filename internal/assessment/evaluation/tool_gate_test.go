@@ -25,7 +25,7 @@ func TestApplyToolGate(t *testing.T) {
 		diag := result.Result{
 			Verdict: result.VerdictPass,
 			CoverageGaps: []evidence.CoverageGap{
-				{Tool: toolGrimp, Gate: gateWarn},
+				{Tool: toolPythonImports, Gate: gateWarn},
 				{Tool: toolJscpd, Gate: gateWarn},
 			},
 		}
@@ -47,7 +47,7 @@ func TestApplyToolGate(t *testing.T) {
 		diag := result.Result{
 			Verdict: result.VerdictPass,
 			CoverageGaps: []evidence.CoverageGap{
-				{Tool: toolGrimp, Gate: gateWarn},
+				{Tool: toolPythonImports, Gate: gateWarn},
 				{Tool: toolGoPackages, Gate: gateFail},
 			},
 		}
@@ -89,7 +89,7 @@ func TestApplyToolGate(t *testing.T) {
 		diag := result.Result{
 			Verdict: result.VerdictPass,
 			CoverageGaps: []evidence.CoverageGap{
-				{Tool: toolGrimp, Gate: gateWarn},
+				{Tool: toolPythonImports, Gate: gateWarn},
 			},
 		}
 		if ApplyToolGate(&diag, false) {

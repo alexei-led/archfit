@@ -11,7 +11,7 @@ import (
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
 	"github.com/alexei-led/archfit/v3/internal/extract/golang"
-	"github.com/alexei-led/archfit/v3/internal/extract/py"
+	"github.com/alexei-led/archfit/v3/internal/extract/pyimports"
 	"github.com/alexei-led/archfit/v3/internal/extract/rust"
 	"github.com/alexei-led/archfit/v3/internal/extract/ts"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
@@ -57,7 +57,7 @@ type Descriptor struct {
 	// not in this tree" rather than a coverage gap or a declared opt-out.
 	//
 	// Every row MUST answer by calling the extractor's own applicability code
-	// (golang.AnalysableMembers, ts.Applicable, py.Applicable, rust.Applicable) —
+	// (golang.AnalysableMembers, ts.Applicable, pyimports.Applicable, rust.Applicable) —
 	// never a hand-rolled marker list. A parallel reimplementation is how "we did
 	// not look" repeatedly rendered as "there is nothing here": a marker the
 	// extractor ignores (tsconfig.json without package.json, setup.cfg, a go.mod
@@ -109,7 +109,7 @@ const (
 
 	ToolGoPackages    = "go/packages"
 	ToolDepCruiser    = "dependency-cruiser"
-	ToolGrimp         = "grimp"
+	ToolPythonImports = pyimports.ToolName
 	ToolCargo         = "cargo"
 	ToolCargoModules  = "cargo-modules"
 	ToolDotNetMSBuild = "dotnet-msbuild"
@@ -165,16 +165,14 @@ var languages = []Descriptor{
 		Aliases:        []string{"py"},
 		ProjectPresent: pyProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, _ *factcache.Store) evidenceports.Extractor {
-			return py.New(r, cfg)
+			return pyimports.New(r, cfg)
 		},
-		QueryEdge:   py.QueryEdge,
+		QueryEdge:   pyimports.QueryEdge,
 		CheckFacts:  pyCheckFacts,
-		PrimaryTool: ToolGrimp,
-		InstallHint: "install uv (selects Python 3.14 + grimp==3.17), or put a separate Python 3.14+ environment with grimp==3.17 on PATH",
+		PrimaryTool: ToolPythonImports,
+		InstallHint: analyzerSetupURL,
 		CheckTools:  []Tool{astGrep},
 		ReportTools: []Tool{
-			{"uv", "uv", "https://docs.astral.sh/uv/getting-started/installation", nil, nil},
-			{"python3", "python3", "https://www.python.org/downloads", nil, nil},
 			{SCIPPython, SCIPPython, analyzerSetupURL, nil, nil},
 		},
 	},
@@ -276,7 +274,7 @@ func tsProjectPresent(root string, _ evidenceports.ExtractConfig) bool {
 }
 
 func pyProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
-	return py.Applicable(root, cfg.PyPackage)
+	return pyimports.Applicable(root, cfg.PyPackage)
 }
 
 func rustProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {

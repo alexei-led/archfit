@@ -19,7 +19,6 @@
     "@sourcegraph/scip-python": "0.6.8"
   },
   "python": {
-    "grimp": "3.17",
     "protobuf": "7.36.2",
     "grpcio-tools": "1.84.1"
   },

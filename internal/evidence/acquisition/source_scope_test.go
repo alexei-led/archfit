@@ -31,7 +31,7 @@ func TestPythonSourceScopeRequiresScannedModuleMembership(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := evidencecontract.Facts{
 				FileLOC:  map[string]int{"src/app/a.py": 1, "scripts/run.py": 1},
-				Coverage: []modevidence.Coverage{{Tool: registry.ToolGrimp, Status: tc.status}},
+				Coverage: []modevidence.Coverage{{Tool: registry.ToolPythonImports, Status: tc.status}},
 			}
 			if tc.graph {
 				f.Graph = graph.Build([]graph.Facts{{Nodes: []graph.Node{{Kind: graph.NodeKindModule, Path: "app.a", Language: graph.LangPython}}}})
@@ -52,7 +52,7 @@ func TestPythonSourceScopeRequiresScannedModuleMembership(t *testing.T) {
 func TestPythonSourceScopeRejectsAmbiguousModuleBodies(t *testing.T) {
 	f := evidencecontract.Facts{
 		FileLOC:  map[string]int{"app.py": 1, "app/__init__.py": 1, "app/a.py": 1},
-		Coverage: []modevidence.Coverage{{Tool: registry.ToolGrimp, Status: modevidence.StatusOK}},
+		Coverage: []modevidence.Coverage{{Tool: registry.ToolPythonImports, Status: modevidence.StatusOK}},
 		Graph: graph.Build([]graph.Facts{{Nodes: []graph.Node{
 			{Kind: graph.NodeKindModule, Path: "app", Language: graph.LangPython},
 			{Kind: graph.NodeKindModule, Path: "app.a", Language: graph.LangPython},
@@ -139,7 +139,7 @@ func TestUnanalysedFilesFollowTheExtractorsOwnApplicability(t *testing.T) {
 	)
 	probes := func(absent ...string) map[string]func(string) bool {
 		out := map[string]func(string) bool{}
-		for _, tool := range []string{registry.ToolGoPackages, registry.ToolDepCruiser, registry.ToolGrimp, registry.ToolCargo} {
+		for _, tool := range []string{registry.ToolGoPackages, registry.ToolDepCruiser, registry.ToolPythonImports, registry.ToolCargo} {
 			out[tool] = func(string) bool { return true }
 		}
 		for _, tool := range absent {
@@ -165,7 +165,7 @@ func TestUnanalysedFilesFollowTheExtractorsOwnApplicability(t *testing.T) {
 			cov:  CoverageOptions{ProjectPresent: probes(registry.ToolDepCruiser), Gates: map[string]string{langTS: gateOff}},
 			want: map[string]struct{}{tsFile: {}}},
 		{name: "go without a module and python without a project", root: root,
-			cov:  CoverageOptions{ProjectPresent: probes(registry.ToolGoPackages, registry.ToolGrimp)},
+			cov:  CoverageOptions{ProjectPresent: probes(registry.ToolGoPackages, registry.ToolPythonImports)},
 			want: map[string]struct{}{goFile: {}, pyFile: {}}},
 		{name: "already declared out of scope", root: root, cov: CoverageOptions{ProjectPresent: probes(registry.ToolDepCruiser)},
 			out: map[string]struct{}{tsFile: {}}},

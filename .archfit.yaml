@@ -165,7 +165,6 @@ modules:
       - internal/extract/registry
       - internal/extract/golang
       - internal/extract/ts
-      - internal/extract/py
       - internal/extract/rust
       - internal/extract/dotnet
       - internal/extract/scip

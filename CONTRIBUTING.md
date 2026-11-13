@@ -41,14 +41,15 @@ Their versions come from the [tool manifest](tools/manifest.json):
 
 | Tool | Required version | How the tests find it | When absent |
 | --- | --- | --- | --- |
+| `ast-grep` | 0.51.0 | `ast-grep` on `PATH` | Its real-parser tests skip. |
 | dependency-cruiser | 18.7.0 with TypeScript 6.0.3 installed beside it. Version 18.7.0 accepts TypeScript `>=2.0.0 <7.0.0`. | `depcruise` and `node` on `PATH` | Its tests skip. |
 | `grpcio-tools` and `protobuf` | 1.84.1 and 7.36.2 | Imported by `ARCHFIT_TOOL_PYTHON` | `make test` runs the SCIP reader tests in an isolated `uv` Python 3.14. |
-| `ARCHFIT_TOOL_PYTHON` | Python 3.14 or later with `grimp` 3.17, `grpcio-tools` 1.84.1, and `protobuf` 7.36.2 | Environment variable with an absolute interpreter path outside the checkout | Go tests provision through `uv`, or skip without it. |
+| `ARCHFIT_TOOL_PYTHON` | Python 3.14 or later with `grpcio-tools` 1.84.1 and `protobuf` 7.36.2, for the SCIP reader only | Environment variable with an absolute interpreter path outside the checkout | Go tests provision through `uv`, or skip without it. |
 
-When `ARCHFIT_TOOL_PYTHON` is set, the Go and SCIP reader tests use that interpreter and do not fall back.
+When `ARCHFIT_TOOL_PYTHON` is set, the SCIP reader and its Go integration tests use that interpreter and do not fall back. Python import tests use `ast-grep`, not Python or grimp.
 `make host-tools` uses `npm` and `uv` to install the locked Node and Python environments.
 It installs under `~/.local/share/archfit-tools`. Set `HOST_TOOLS_DIR` to choose another directory.
-It prints the `depcruise` path and the `ARCHFIT_TOOL_PYTHON` value. It does not edit `PATH` or shell profiles.
+It prints the `depcruise` path and the SCIP reader's `ARCHFIT_TOOL_PYTHON` value. It does not edit `PATH` or shell profiles.
 
 Use focused checks during development:
 

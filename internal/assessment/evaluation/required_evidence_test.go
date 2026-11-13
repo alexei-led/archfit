@@ -78,7 +78,7 @@ func TestRequiredRuleEvidenceSharesIntentPrerequisites(t *testing.T) {
 
 func TestRequiredRuleEvidenceIgnoresUnrelatedLanguageProducer(t *testing.T) {
 	diag, in := dimensionsFixture()
-	const pythonProducer = "grimp"
+	const pythonProducer = "pyimports"
 	diag.PrimaryExtractorTools = []string{diag.PrimaryExtractorTools[0], toolDepCruiser, pythonProducer, toolCargo}
 	diag.ToolCoverage = append(diag.ToolCoverage, modevidence.Coverage{Tool: pythonProducer, Status: modevidence.StatusAbsent})
 	in.Facts.FileLOC["a/helper.py"] = 10

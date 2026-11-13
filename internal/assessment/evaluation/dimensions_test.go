@@ -572,7 +572,7 @@ func TestIntentRequiresSyntaxEvidenceForSyntaxRules(t *testing.T) {
 func TestIntentDoesNotConformUnsupportedLanguageRules(t *testing.T) {
 	t.Parallel()
 	maxPublicAPIs := 5
-	primaryTools := []string{"go/packages", "dependency-cruiser", "grimp", toolCargo}
+	primaryTools := []string{"go/packages", "dependency-cruiser", "pyimports", toolCargo}
 	absentPrimaries := []modevidence.Coverage{
 		{Tool: primaryTools[0], Status: modevidence.StatusAbsent},
 		{Tool: primaryTools[1], Status: modevidence.StatusAbsent},
@@ -1146,27 +1146,27 @@ func TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled(t *testing.T) {
 // missing". The first must not hold a rule unevaluated; the second must.
 //
 // The shape is archfit's own: a Go project that ships Python helper scripts it
-// runs out-of-process, so .py files sit under a declared module while grimp is
+// runs out-of-process, so .py files sit under a declared module while pyimports is
 // legitimately absent (no Python project). A Go-targeted dependency rule cannot
 // be violated from a Python node — a dotted Python ID never matches a slash
-// path — so grimp's absence says nothing about it.
+// path — so the Python parser's absence says nothing about it.
 func TestIntentScopesDependencyRulesByTargetVocabulary(t *testing.T) {
 	t.Parallel()
 	const (
-		toolGoPkgs = "go/packages"
-		toolGrimp  = "grimp"
+		toolGoPkgs        = "go/packages"
+		toolPythonImports = "pyimports"
 	)
 	maxPublicAPIs := 5
-	primaryTools := []string{toolGoPkgs, "dependency-cruiser", toolGrimp, toolCargo}
+	primaryTools := []string{toolGoPkgs, "dependency-cruiser", toolPythonImports, toolCargo}
 	modules := map[string]policy.ModuleDef{
 		"adapters": {Paths: []string{"internal/extract/**"}, Public: []string{"internal/extract"}},
 	}
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
-	// grimp absent WITHOUT a coverage gap: the extractor's probe reports no
+	// pyimports absent WITHOUT a coverage gap: the extractor's probe reports no
 	// Python project. go/packages is OK.
 	coverage := []modevidence.Coverage{
 		{Tool: toolGoPkgs, Status: modevidence.StatusOK},
-		{Tool: toolGrimp, Status: modevidence.StatusAbsent},
+		{Tool: toolPythonImports, Status: modevidence.StatusAbsent},
 		{Tool: toolSyntaxAggregate, Status: modevidence.StatusOK},
 	}
 
@@ -1182,10 +1182,10 @@ func TestIntentScopesDependencyRulesByTargetVocabulary(t *testing.T) {
 			rule: policy.RuleDef{ID: "extract_no_config", Type: ruleForbidden, Gate: gateWarnPosture,
 				From: globInternalAll, To: "internal/config"},
 			wantStatus: state.Measured,
-			why:        "a dotted Python node cannot address a slash path, so grimp could not have found a violation",
+			why:        "a dotted Python node cannot address a slash path, so the Python parser could not have found a violation",
 		},
 		{
-			name: "python-targeted dependency rule still needs grimp",
+			name: "python-targeted dependency rule still needs the Python parser",
 			rule: policy.RuleDef{ID: "py_no_internal", Type: ruleForbidden, Gate: gateWarnPosture,
 				From: globInternalAll, To: "helpers.**"},
 			wantStatus: state.Partial,
@@ -1202,7 +1202,7 @@ func TestIntentScopesDependencyRulesByTargetVocabulary(t *testing.T) {
 			name: "an absent producer WITH a gap keeps an addressable language unevaluated",
 			rule: policy.RuleDef{ID: "py_no_internal_gap", Type: ruleForbidden, Gate: gateWarnPosture,
 				From: globInternalAll, To: "helpers.**"},
-			gaps:       []modevidence.CoverageGap{{Tool: toolGrimp}},
+			gaps:       []modevidence.CoverageGap{{Tool: toolPythonImports}},
 			wantStatus: state.Partial,
 			why:        "a missing analyzer must never be read as nothing to analyze",
 		},
@@ -1214,9 +1214,9 @@ func TestIntentScopesDependencyRulesByTargetVocabulary(t *testing.T) {
 			in := evaluation.StateInput{
 				Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
 				Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
-					"internal/extract/py/py.go":           fileclass.Production,
-					"internal/extract/py/grimp_helper.py": fileclass.Production,
-					"internal/config/config.go":           fileclass.Production,
+					"internal/extract/pyimports/report.go": fileclass.Production,
+					"internal/extract/scip/scip_reader.py": fileclass.Production,
+					"internal/config/config.go":            fileclass.Production,
 				}},
 			}
 			diag := &result.Result{

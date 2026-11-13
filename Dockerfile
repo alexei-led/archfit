@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=tools-builder /opt/archfit /opt/archfit
 COPY --from=tools-builder /out/archfit /usr/local/bin/archfit
+# Python is retained for the optional SCIP reader, not Python import extraction.
 ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/archfit/dotnet:/opt/archfit/node/bin:/opt/archfit/rust/bin:${PATH}" \
     ARCHFIT_TOOL_PYTHON=/opt/archfit/python/bin/python \
     HOME=/tmp \

@@ -93,13 +93,17 @@ func TestDiscover_GoModulesDeclareNoPublicSurface(t *testing.T) {
 
 // TestDiscover_PresenceDrivesLanguageModes: presence comes from the registry,
 // so a language whose extractor applies is enabled even when discovery found
-// no module (a package.json with no src/ or lib/, a flat Python project), and
+// no module (a package.json with no src/ or lib/, Python without packaging metadata), and
 // an absent language is written auto, never false. Go discovery does not run
 // without a Go member.
 func TestDiscover_PresenceDrivesLanguageModes(t *testing.T) {
 	root := t.TempDir()
-	for name, body := range map[string]string{"package.json": "{}", "pyproject.toml": "[project]\n", "app.py": ""} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o600); err != nil {
+	for name, body := range map[string]string{"package.json": "{}", "app/__init__.py": ""} {
+		full := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
