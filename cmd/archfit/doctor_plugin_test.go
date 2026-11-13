@@ -11,14 +11,19 @@ import (
 )
 
 func TestClaudePluginStatus(t *testing.T) {
+	const enabledReason = "enabled and installed; managed settings and session load not verified"
+	const installedRecord = `{"plugins":{"archfit@archfit":[{"scope":"user","installPath":"INSTALL"}]}}`
 	const enabledSettings = `{"enabledPlugins":{"archfit@archfit":true}}`
 	for _, tc := range []struct {
 		name, settings, record, want string
+		project, local, wantReason   string
 		install                      bool
 	}{
 		{name: "absent", want: "absent"},
 		{name: "off", settings: `{"enabledPlugins":{"archfit@archfit":false}}`, want: pluginDisabled},
-		{name: "enabled", settings: enabledSettings, record: `{"plugins":{"archfit@archfit":[{"scope":"user","installPath":"INSTALL"}]}}`, want: "active", install: true},
+		{name: "enabled", settings: enabledSettings, record: installedRecord, want: pluginUnknown, install: true, wantReason: enabledReason},
+		{name: "project disables", settings: enabledSettings, record: installedRecord, install: true, project: `{"disableAllHooks":true}`, want: pluginDisabled},
+		{name: "local overrides project", settings: enabledSettings, record: installedRecord, install: true, project: `{"disableAllHooks":true}`, local: `{"disableAllHooks":false}`, want: pluginUnknown, wantReason: enabledReason},
 		{name: "malformed settings", settings: `{`, want: pluginUnknown},
 		{name: "malformed record", settings: enabledSettings, record: `{`, want: pluginUnknown},
 		{name: "missing record", settings: enabledSettings, want: pluginUnknown},
@@ -54,9 +59,21 @@ func TestClaudePluginStatus(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			for name, contents := range map[string]string{"settings.json": tc.project, "settings.local.json": tc.local} {
+				if contents == "" {
+					continue
+				}
+				path := filepath.Join(repo, ".claude", name)
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			got := claudePluginStatus(repo).Hooks[0]
-			if got.Status != tc.want {
-				t.Fatalf("got %+v, want %s", got, tc.want)
+			if got.Status != tc.want || (tc.wantReason != "" && got.Reason != tc.wantReason) {
+				t.Fatalf("got %+v, want status %s reason %q", got, tc.want, tc.wantReason)
 			}
 		})
 	}
@@ -124,5 +141,30 @@ func TestClaudePluginHooks(t *testing.T) {
 				t.Fatalf("forward: %s", out)
 			}
 		})
+	}
+}
+
+func TestDoctorPluginResolvesRepositoryRoot(t *testing.T) {
+	repo := hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA, "")
+	home := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", home)
+	chdirIsolated(t, repo)
+	writeFixtureFile(t, repo, ".claude/settings.json", `{"disableAllHooks":true}`)
+	if err := os.MkdirAll(filepath.Join(repo, "subdir"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Join(repo, "subdir"))
+	code, stdout, stderr := runArchfit(t, "doctor", "--format", formatJSON)
+	if code != 0 {
+		t.Fatalf("doctor: %d %s", code, stderr)
+	}
+	var doc struct {
+		ClaudePlugin harnessStatus `json:"claude_plugin"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.ClaudePlugin.Hooks[0]; got.Status != pluginDisabled {
+		t.Fatalf("plugin: %+v", got)
 	}
 }

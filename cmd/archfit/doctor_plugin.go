@@ -110,8 +110,8 @@ func claudePluginStatus(repo string) harnessStatus {
 		}
 		if validClaudePlugin(e.InstallPath) {
 			st.Detected = true
-			st.DetectedBy = "configured and installed; session load not verified"
-			result.Status = "active"
+			st.DetectedBy = "configured and installed"
+			result.Reason = "enabled and installed; managed settings and session load not verified"
 			return st
 		}
 	}
@@ -124,9 +124,6 @@ func writeClaudePlugin(w io.Writer, plugin harnessStatus) {
 	_, _ = fmt.Fprintf(w, "  Claude plugin %s: %s", status.Event, status.Status)
 	if status.Reason != "" {
 		_, _ = fmt.Fprintf(w, " (%s)", status.Reason)
-	}
-	if status.Status == hookActive {
-		_, _ = fmt.Fprint(w, " (configured and installed; session load not verified)")
 	}
 	_, _ = fmt.Fprintln(w)
 }

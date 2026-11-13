@@ -108,9 +108,10 @@ Check the hooks with `archfit doctor`. It lists the harnesses it finds and
 each repository hook as `active` or `inactive` (not installed, switched off by
 `disableAllHooks` in the Claude Code project settings, or, for Codex, not
 trusted yet). `archfit doctor --format json` reports the same under
-`agent_loop`. It also reports the Claude plugin as `active`, `disabled`,
-`absent`, or `unknown` from installation and settings records; session loading
-is not verified; JSON puts this row under `claude_plugin`.
+`agent_loop`. It also reports the Claude plugin as `disabled`, `absent`, or
+`unknown` from installation and settings records. An enabled, installed plugin reports `unknown`: managed restrictions
+and session loading cannot be verified from those records. JSON puts this row
+under `claude_plugin`.
 
 #### Other harnesses
 

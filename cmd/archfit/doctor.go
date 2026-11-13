@@ -83,7 +83,8 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	}
 	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
 	loop := agentLoopStatus(ctx, deps, cfg.TargetBranch)
-	plugin := claudePluginStatus(dir)
+	// The Claude harness config is resolved at the repository root by agentLoopStatus.
+	plugin := claudePluginStatus(filepath.Dir(filepath.Dir(loop.Harnesses[0].Config)))
 	if c.Format == formatJSON {
 		if err := writeDoctorJSON(deps, struct {
 			doctorReport
