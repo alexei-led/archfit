@@ -102,20 +102,18 @@ Read repair advice within its evidence and role limits:
 
 ### Hooks
 
-Install the hooks of your harness:
+Install the hooks once in each checkout:
 
 ```sh
-archfit hook install --harness claude   # .claude/settings.json
-archfit hook install --harness codex    # .codex/hooks.json
-archfit hook install --harness git      # the git pre-commit hook
+archfit doctor --fix
 ```
 
-`install` merges into the settings file and keeps every other key and hook.
-Running it again changes nothing. It removes entries of the old
-`archfit hook claude` command. Pass `-c <config>` when the config is not
-`.archfit.yaml` at the repository root; the path is relative to the root, so a subproject's config is `-c service/.archfit.yaml` even when you run `install` from `service/`. `install` warns when the hooks would load another config, or none. Pass `--dir <repo>` to install into another repository. A
-pre-commit hook that archfit did not write is left alone: `install` exits `3`
-and names it.
+It writes the hooks of each harness it finds, at the repository root:
+`.claude/settings.json` for Claude Code, `.codex/hooks.json` for Codex, and
+the git pre-commit hook. It keeps every other key and hook in the settings
+file. Running it again changes nothing. A pre-commit hook that archfit did not
+write stays: doctor prints the line to add to it. When git ignores a settings
+file, doctor warns: other checkouts and worktrees do not get those hooks.
 
 The installed hooks call `archfit hook run <event>`:
 
@@ -133,7 +131,7 @@ hooks ignore their own writes under `.archfit-cache/`. An archfit error in
 `post-tool-use` or `stop` fails open with a message and never blocks the
 agent.
 
-Codex runs a project hook only after you trust it. After `install`, start
+Codex runs a project hook only after you trust it. After `doctor --fix`, start
 Codex and approve the hooks, or run it once with
 `--dangerously-bypass-hook-trust`.
 
@@ -160,7 +158,7 @@ harness's own hook system or from the agent's instructions:
 | Before finishing | `archfit check --base <sha> --format agent`, where `<sha>` is the commit the session started from |
 
 The git pre-commit hook works with every harness. Install it with
-`archfit hook install --harness git`, or through the pre-commit framework in
+`archfit doctor --fix`, or through the pre-commit framework in
 `.pre-commit-config.yaml`:
 
 ```yaml
@@ -205,7 +203,7 @@ are owner work. Each links to the page that holds the detail.
 | Accept a finding with an owner and an expiry | Waivers. See [rules](rules.md#waivers). |
 | Add reviewed AI annotations | `archfit config enrich <kind>`. See [commands](commands.md#config-enrich-kind) and [AI](ai.md). |
 | Write the agent instructions block | `archfit agents-md --write` |
-| Install the session hooks | `archfit hook install --harness <name>` |
+| Install the session hooks | `archfit doctor --fix` |
 
 Review a policy edit as a policy change, not as code. A PR that edits a
 protected file reports `unknown` until the owner merges it or the policy

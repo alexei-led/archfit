@@ -24,11 +24,10 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 | Ask which module owns a path | `archfit policy where <path>` |
 | Ask whether a file can import a target | `archfit policy can-import <file> <target>` |
 | Draw modules and seams | `archfit map` |
-| Check analyzer tools and the agent loop, or install tools | `archfit doctor` or `archfit doctor --fix` |
+| Check the tools and hooks of this checkout, or install the hooks | `archfit doctor` or `archfit doctor --fix` |
 | Create or review the config | `archfit config init` or `archfit config update` |
 | Compare two configs on one source tree | `archfit config compare <candidate>` |
 | Check config defects | `archfit config lint` |
-| Install the agent or Git hooks | `archfit hook install --harness claude`, `codex`, or `git` |
 | Render the instruction block | `archfit agents-md --write` |
 | Install the bundled agent skill | `archfit skill install` |
 
@@ -354,16 +353,35 @@ A rule that needs the whole graph, such as `module_cycle`, leaves a target not d
 
 ### `doctor`
 
-`archfit doctor [flags]` checks analyzer availability. `--fix` installs tools that archfit can install. For .NET it also prints the SDK and helper versions that the current directory's `global.json` selects, and fails when that pin cannot be satisfied.
+`archfit doctor [flags]` checks this checkout: the tools archfit uses and the hooks of the agent loop. `--fix` installs the hooks.
+
+The tools come in two tables:
+
+| Group | Tools | Without the tool |
+| --- | --- | --- |
+| Needed for the check | `git` for every language. `ast-grep` for TypeScript, JavaScript and Python imports, and for the literals of every language but Go. `cargo` for Rust. `dotnet` for C#. | The check is `unknown` for the code it cannot read. |
+| Optional, for the report | `go`, `scip-go`, `node`, `depcruise`, `scip-typescript`, `uv`, `python3`, `scip-python`, `rust-analyzer`, `cargo-modules`, `archfit-roslyn`, `jscpd` | `report` measures less. The check never runs these tools. |
+
+A Go repository needs only `git`. Each row shows the tool, its status (`ok`, `missing`, or `invalid`), the languages that use it, and its path or install hint. For .NET, doctor prints the SDK and helper versions that the current directory's `global.json` selects, and fails when that pin cannot be satisfied.
+
+After the tools and the LLM settings, doctor shows the hooks. For each harness (Claude Code, Codex, git), it shows whether the harness is here and whether each archfit hook runs: `active`, or `inactive` with the reason. Reasons are: not installed; for Claude Code, `disableAllHooks` in `.claude/settings.json` or `.claude/settings.local.json`; for Codex, not trusted yet. Codex keeps hook trust in `~/.codex/config.toml` (`CODEX_HOME`). doctor cannot recompute the trusted hash, so a trusted Codex hook is `active (hash not verified)`. When git ignores a harness settings file, doctor warns: other checkouts and worktrees do not get its hooks. Then doctor shows the target branch, the scope of the check, and whether a policy file differs from the target.
+
+`doctor --fix` writes the hooks of each harness it finds, at the root of the repository:
+
+| Harness | Found when | File | Events |
+| --- | --- | --- | --- |
+| Claude Code | `.claude/` is in the repository, or `claude` is on `PATH` | `.claude/settings.json` | `SessionStart`, `PostToolUse` (after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`), `Stop`, `SubagentStop` |
+| Codex | `codex` is on `PATH`, or `CODEX_HOME` (default `~/.codex`) exists | `.codex/hooks.json` | `SessionStart`, `PostToolUse` (after `apply_patch`, `Bash`), `Stop` |
+| git | the directory is in a git repository | `pre-commit` in the hooks directory git uses (`core.hooksPath` when set) | the pre-commit hook |
+
+It keeps every other setting and hook in a settings file and replaces its own earlier entries, so a second run changes nothing. It never replaces a pre-commit hook that archfit did not write: it prints a warning with the line to add to that hook. Codex runs the hooks only after you trust them. Outside a git repository, `--fix` writes no hook and says so. `--fix` also installs the analyzer toolchains that archfit can install.
 
 | Flag | Meaning |
 | --- | --- |
-| `--fix` | Install missing supported tools. `--install` is an alias. |
-| `--lang <name>` | Limit installation to `go`, `ts`, `py`, or `rust`. Repeatable. Default: all. |
-| `-n, --dry-run` | Print install commands without running them. Requires `--fix`. |
-| `--format <name>` | `text` (default) or `json`. `json` prints the tool rows (`ok`, `missing`, or `invalid` with its `error`) and the agent loop as `archfit.doctor.v1`. It cannot be combined with `--fix`. An `invalid` tool fails `doctor` in both formats, after the full report. |
-
-After the tool table and the LLM settings, `doctor` reports the agent loop: the harnesses it finds (Claude Code, Codex, git), each archfit hook as `active` or `inactive` (not installed; for Claude Code, `disableAllHooks` in `.claude/settings.json` or `.claude/settings.local.json`; for Codex, not trusted yet), the target branch, the scope `check` would use, and whether a policy file differs from the target. Codex keeps hook trust in `~/.codex/config.toml` (`CODEX_HOME`); `doctor` cannot recompute the trusted hash, so a trusted Codex hook is `active (hash not verified)`. In JSON this is `agent_loop`.
+| `--fix` | Install the hooks of the harnesses found here, and the missing toolchains archfit can install. `--install` is an alias. |
+| `--lang <name>` | Limit the toolchain install to `go`, `ts`, `py`, or `rust`. Repeatable. Default: all. |
+| `-n, --dry-run` | With `--fix`: print the install commands and the hook files, and change nothing. |
+| `--format <name>` | `text` (default) or `json`. `json` prints the tool rows and the hooks as `archfit.doctor.v1`. Each tool row has `group` (`check` or `report`), `languages` (absent: every language), and `status` (`ok`, `missing`, or `invalid` with its `error`). A harness whose settings file git ignores has `ignored: true`. `json` cannot be combined with `--fix`. An `invalid` tool fails `doctor` in both formats, after the full report. |
 
 ### `config init`
 
@@ -439,23 +457,9 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 
 ## Integration commands
 
-### `hook install`
+### Hooks
 
-`archfit hook install --harness claude|codex|git [flags]` writes the archfit hooks for one harness. See [coding agent workflows](agents.md#hooks).
-
-| Harness | File | Events |
-| --- | --- | --- |
-| `claude` | `<dir>/.claude/settings.json` | `SessionStart`, `PostToolUse` (after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`), `Stop`, `SubagentStop` |
-| `codex` | `<dir>/.codex/hooks.json` | `SessionStart`, `PostToolUse` (after `apply_patch`, `Bash`), `Stop` |
-| `git` | `pre-commit` in the hooks directory git uses (`core.hooksPath` when set) | the pre-commit hook |
-
-| Flag | Meaning |
-| --- | --- |
-| `--harness <name>` | Required: `claude`, `codex`, or `git`. |
-| `--dir <path>` | Repository to install into. Default: `.`. |
-| `-c, --config <file>` | Config path the hooks pass on, relative to the repository root, not to `--dir`. Default: `.archfit.yaml`. `install` warns on stderr when no config is there, or when `--dir` holds its own config that `-c` does not name. |
-
-`install` keeps every other key and hook in the settings file, replaces an earlier `archfit hook run` entry instead of adding a second one, and removes entries of the removed `archfit hook claude`. It never replaces a pre-commit hook that archfit did not write: it exits `3` and names the file. It prints one line per file written. Codex runs the hooks only after you trust them.
+`archfit doctor --fix` installs the hooks. The `archfit hook` command is internal: it is not in the command list, and the installed hooks call `archfit hook run <event>`. See [coding agent workflows](agents.md#hooks).
 
 ### `hook run <event>`
 
@@ -466,7 +470,7 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 | `--harness <name>` | `claude` (default) or `codex`. Both use the same protocol. |
 | `-c, --config <file>` | Config path, relative to the root of the repository that holds the event `cwd`, so an agent that changed directory still finds it. `pre-commit` reads it relative to its working directory, which git sets to the root. |
 
-`pre-commit` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default. `archfit hook claude` and `archfit hook git` are removed: run `archfit hook install` again, or call `hook run stop` and `hook run pre-commit`.
+`pre-commit` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default. `archfit hook claude` and `archfit hook git` are removed: run `archfit doctor --fix` again, or call `hook run stop` and `hook run pre-commit`.
 
 ### `agents-md`
 

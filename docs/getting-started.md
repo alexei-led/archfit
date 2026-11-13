@@ -26,7 +26,9 @@ Run:
 archfit doctor
 ```
 
-This command reports the tools that archfit can find. Install the tools for the languages in your repository. A missing tool makes the check `unknown` for the code it cannot read. See [Language support](languages.md#analyzer-tools).
+This command reports the tools that archfit can find, in two groups: needed for the check, and optional, for the report. The check needs `git`, and `ast-grep` for languages other than Go. Install the tools of the first group for the languages in your repository. A missing tool makes the check `unknown` for the code it cannot read. See [Language support](languages.md#analyzer-tools).
+
+For an agent loop, run `archfit doctor --fix` once in each checkout. It installs the hooks of Claude Code, Codex and git. See [hooks](agents.md#hooks).
 
 ## Set up the repository
 
