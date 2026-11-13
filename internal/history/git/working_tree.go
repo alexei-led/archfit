@@ -23,7 +23,8 @@ const cacheDir = ".archfit-cache"
 // The staging happens in a private copy of the index, as in AddedLines, so the
 // repository's index, HEAD and working tree stay as they are.
 // Use an ObjectStore runner for writes outside the repository; keep it alive
-// for readers of the returned tree id. The cache is excluded before staging.
+// for readers of the returned tree id. The cache is removed from the private
+// index before writing the tree.
 func WorkingTreeID(ctx context.Context, dir string, runner toolrun.Runner) (string, error) {
 	root, err := RepoRoot(ctx, dir, runner)
 	if err != nil {

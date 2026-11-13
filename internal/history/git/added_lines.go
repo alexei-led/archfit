@@ -78,10 +78,12 @@ func stageWorkingTree(ctx context.Context, runner toolrun.Runner, root, dir stri
 		return "", err
 	}
 	env := []string{"GIT_INDEX_FILE=" + index}
-	if _, err := runTree(ctx, root, runner, env, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", cacheDir); err != nil {
+	if _, err := runTree(ctx, root, runner, env, "add", "--all"); err != nil {
 		return "", err
 	}
-	_, err = runTree(ctx, root, runner, env, "add", "--all", "--", ".", ":(top,exclude)"+cacheDir)
+	// An exclude pathspec itself makes git add reject an ignored cache.
+	// Remove the cache afterward, including entries copied from the real index.
+	_, err = runTree(ctx, root, runner, env, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", cacheDir)
 	return index, err
 }
 

@@ -21,13 +21,12 @@ func TestPrivateObjectsLifetime(t *testing.T) {
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	command := func(r toolrun.Runner, args ...string) toolrun.Output {
+	command := func(r toolrun.Runner, args ...string) {
 		t.Helper()
 		out, err := r.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: args, WorkDir: root})
 		if err != nil || out.ExitCode != 0 {
 			t.Fatalf("git %v: %v, exit %d: %s", args, err, out.ExitCode, out.Stderr)
 		}
-		return out
 	}
 	command(runner, "init", "-q")
 	if err := os.WriteFile(filepath.Join(root, "tracked"), []byte("tracked\n"), 0o600); err != nil {
@@ -49,7 +48,6 @@ func TestPrivateObjectsLifetime(t *testing.T) {
 	if err := os.WriteFile(cacheFile, []byte("not an object\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cacheHash := string(bytes.TrimSpace(command(runner, "hash-object", cacheFile).Stdout))
 	store, err := NewObjectStore(runner)
 	if err != nil {
 		t.Fatal(err)
@@ -67,12 +65,8 @@ func TestPrivateObjectsLifetime(t *testing.T) {
 	if err != nil || !slices.Equal(added["untracked"], []int{1}) || len(added) != 1 {
 		t.Fatalf("added = %v, %v", added, err)
 	}
-	out, err := store.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{"cat-file", "-e", cacheHash}, WorkDir: root})
-	if err != nil || out.ExitCode == 0 {
-		t.Fatalf("cache blob staged: exit %d, %v", out.ExitCode, err)
-	}
 	var content bytes.Buffer
-	out, err = store.Stream(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{"show", tree + ":untracked"}, WorkDir: root}, func(r io.Reader) error {
+	out, err := store.Stream(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{"show", tree + ":untracked"}, WorkDir: root}, func(r io.Reader) error {
 		_, err := io.Copy(&content, r)
 		return err
 	})

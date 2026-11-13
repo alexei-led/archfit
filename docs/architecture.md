@@ -65,7 +65,7 @@ flowchart LR
 
 The same tree, policy, engine version, and date give the same result. Result identities omit one leading `v` from the build version; `archfit --version` keeps the display version unchanged. When the working tree changes during the run, nothing is stored. `changecheck` states its needs as ports, and `cmd/archfit` wires them.
 
-Git object writes use a private directory for the command, with the repository's object database as a read-only alternate. Working-tree ids, their readers, and pre-commit snapshots share that storage until command cleanup. Staging excludes `.archfit-cache/` before reading its files. A check does not need write access to `.git`; the pre-commit hook still needs access to create and remove its temporary worktree metadata.
+Git object writes use a private directory for the command, with the repository's object database as a read-only alternate. Working-tree ids, their readers, and pre-commit snapshots share that storage until command cleanup. After staging into the private index, Archfit removes `.archfit-cache/` before computing tree ids and diffs. A check does not need write access to `.git`; the pre-commit hook still needs access to create and remove its temporary worktree metadata.
 
 | Package | Responsibility |
 |---|---|
