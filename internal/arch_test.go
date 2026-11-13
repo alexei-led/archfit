@@ -7,7 +7,6 @@
 package arch_test
 
 import (
-	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -18,8 +17,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
-
-	"github.com/alexei-led/archfit/v3/internal/config"
 )
 
 const (
@@ -120,11 +117,7 @@ var adapterPrefixes = []string{
 }
 
 func TestCompositionFanoutRatchet(t *testing.T) {
-	cfg, err := config.Load(context.Background(), "../.archfit.yaml")
-	if err != nil {
-		t.Fatalf("load self config: %v", err)
-	}
-	moduleMap := cfg.ModuleMapView()
+	moduleMap := selfPolicy3(t)
 	for _, tc := range []struct {
 		pkg string
 		max int
@@ -140,9 +133,9 @@ func TestCompositionFanoutRatchet(t *testing.T) {
 					continue
 				}
 				path := strings.TrimPrefix(imp, modulePrefix)
-				name, ok := moduleMap.ModuleFor(path + "/package.go")
+				name, ok := moduleMap.ModuleOf(path + "/package.go")
 				if !ok {
-					name, ok = moduleMap.ModuleFor(path)
+					name, ok = moduleMap.ModuleOf(path)
 				}
 				if ok {
 					modules[name] = struct{}{}

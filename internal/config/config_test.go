@@ -14,8 +14,10 @@ import (
 	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
 
 	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
 	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
 
 	"github.com/goccy/go-yaml"
 )
@@ -1411,145 +1413,68 @@ func TestNewToolInvalidMode(t *testing.T) {
 // not invariants, and pinning them broke this test on every legitimate config change.
 // Toggle-accessor behavior is covered against synthetic configs by TestForMetric,
 // TestNewToolsDefaultOff, and the testdata fixture tests above.
-func TestLoad_SelfConfig(t *testing.T) {
-	// Go tests run with cwd = package dir (internal/config); repo root is two levels up.
-	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
+func selfPolicy(t *testing.T) resolved.Policy {
+	t.Helper()
+	data, err := os.ReadFile("../../.archfit.yaml")
 	if err != nil {
-		t.Fatalf("Load self-config: %v", err)
+		t.Fatalf("read self-policy: %v", err)
 	}
-	if len(cfg.Modules) == 0 {
-		t.Error("self-config: no modules parsed")
+	p, err := policyfile.Resolve(data)
+	if err != nil {
+		t.Fatalf("resolve self-policy: %v", err)
 	}
-	if len(cfg.Layers) == 0 {
-		t.Error("self-config: no layers parsed")
+	return p
+}
+
+func TestLoad_SelfConfig(t *testing.T) {
+	p := selfPolicy(t)
+	if len(p.Modules) == 0 || len(p.Layers) == 0 {
+		t.Fatal("self-policy must declare modules and layers")
 	}
 }
 
 func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
-	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
-	if err != nil {
-		t.Fatalf("Load self-config: %v", err)
-	}
-
-	tests := []struct {
-		name      string
-		layer     string
-		role      policy.Role
-		wantPaths []string
-	}{
-		{
-			name: "evidence-contracts", layer: layerModel, role: policy.RoleSharedModel,
-			wantPaths: []string{"internal/model/evidence/**", "internal/evidence", "internal/evidence/*.go"},
-		},
-		{
-			name: "analysis-scope", layer: layerSupport, role: policy.RoleSharedModel,
-			wantPaths: []string{"internal/scope/**"},
-		},
-		{
-			name: "evidence-analysis", layer: layerCore, role: policy.RoleCore,
-			wantPaths: []string{"internal/syntax/**"},
-		},
-		{
-			name: "evidence-adapters", layer: layerAdapter, role: policy.RoleAdapter,
-			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/evidence/ports/**"},
-		},
-		{
-			name: "persistence-adapters", layer: layerAdapter, role: policy.RoleAdapter,
-			wantPaths: []string{"internal/factcache/**", "internal/history/**", "internal/ownership/**", "internal/baseline/**", "internal/labels/**"},
-		},
-		{
-			name: "provider-adapters", layer: layerAdapter, role: policy.RoleAdapter,
-			wantPaths: []string{"internal/llm/**"},
-		},
-		{
-			name: "report-adapters", layer: layerAdapter, role: policy.RoleAdapter,
-			wantPaths: []string{"internal/output/**"},
-		},
-		{
-			name: "architecture-policy", layer: layerCore, role: policy.RoleCore,
-			wantPaths: []string{"internal/policy/**"},
-		},
-		{
-			name: "relationship-analysis", layer: layerCore, role: policy.RoleCore,
-			wantPaths: []string{"internal/relationship/**"},
-		},
-		{
-			name: "assessment-repair", layer: layerCore, role: policy.RoleCore,
-			wantPaths: []string{"internal/assessment/**"},
-		},
-		{
-			name: "analysis-application", layer: "application",
-			wantPaths: []string{"internal/application/**"},
-		},
-		{
-			name: "report-contract", layer: layerModel, role: policy.RoleSharedModel,
-			wantPaths: []string{"internal/model/report/**"},
-		},
-		{
-			name: "evidence-acquisition", layer: layerAdapter, role: policy.RoleAdapter,
-			wantPaths: []string{"internal/evidence/acquisition/**"},
-		},
-		{
-			name: "cli-composition", layer: "cmd", role: policy.RoleCompositionRoot,
-			wantPaths: []string{"cmd/archfit/**"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			def, ok := cfg.Modules[tt.name]
-			if !ok {
-				t.Fatalf("capability module %q not found in self-config", tt.name)
+	p := selfPolicy(t)
+	for _, tc := range []struct{ file, module, layer string }{
+		{"internal/model/evidence/evidence.go", "evidence-contracts", "model"},
+		{"internal/scope/scope.go", "analysis-scope", "support"},
+		{"internal/syntax/fileclass.go", "evidence-analysis", layerCore},
+		{"internal/extract/golang/cache.go", "evidence-adapters", layerAdapter},
+		{"internal/history/git/added_lines.go", "persistence-adapters", layerAdapter},
+		{"internal/llm/anthropic.go", "provider-adapters", layerAdapter},
+		{"internal/output/console/doc.go", "report-adapters", layerAdapter},
+		{"internal/model/report/document.go", "report-contract", "model"},
+		{"internal/policy/module.go", "architecture-policy", layerCore},
+		{"internal/relationship/relationship.go", "relationship-analysis", layerCore},
+		{"internal/assessment/rules/rules.go", "assessment-repair", layerCore},
+		{"internal/application/analysis.go", "analysis-application", "application"},
+		{"internal/evidence/acquisition/service.go", "evidence-acquisition", layerAdapter},
+		{"cmd/archfit/main.go", "cli-composition", "cmd"},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			name, ok := p.ModuleOf(tc.file)
+			if !ok || name != tc.module {
+				t.Fatalf("owner of %s = %q, %v; want %q", tc.file, name, ok, tc.module)
 			}
-			if def.Layer != tt.layer {
-				t.Errorf("module %q: layer = %q, want %q", tt.name, def.Layer, tt.layer)
-			}
-			if def.Role != tt.role {
-				t.Errorf("module %q: role = %q, want %q", tt.name, def.Role, tt.role)
-			}
-			for _, path := range tt.wantPaths {
-				if !slices.Contains(def.Paths, path) {
-					t.Errorf("module %q: paths %v do not include %q", tt.name, def.Paths, path)
-				}
+			if got := p.Modules[name].Layer; got != tc.layer {
+				t.Errorf("layer of %s = %q, want %q", name, got, tc.layer)
 			}
 		})
 	}
 }
 
 func TestSelfConfig_RoleLayerConformance(t *testing.T) {
-	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
-	if err != nil {
-		t.Fatalf("Load self-config: %v", err)
+	p := selfPolicy(t)
+	used := make(map[string]bool)
+	for name, module := range p.Modules {
+		if !slices.Contains(p.Layers, module.Layer) {
+			t.Errorf("module %s has undeclared layer %q", name, module.Layer)
+		}
+		used[module.Layer] = true
 	}
-
-	names := make([]string, 0, len(cfg.Modules))
-	for name := range cfg.Modules {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-
-	for _, name := range names {
-		def := cfg.Modules[name]
-		switch def.Role {
-		case "":
-		case policy.RoleAdapter:
-			if def.Layer != layerAdapter {
-				t.Errorf("module %q: role=adapter but layer=%q (want adapter)", name, def.Layer)
-			}
-		case policy.RoleCompositionRoot, policy.RoleTest:
-			if def.Layer != "cmd" {
-				t.Errorf("module %q: role=%s but layer=%q (want cmd)", name, def.Role, def.Layer)
-			}
-		case policy.RoleCore:
-			if def.Layer != layerCore {
-				t.Errorf("module %q: role=core but layer=%q (want core)", name, def.Layer)
-			}
-		case policy.RoleSharedModel:
-			if def.Layer != "model" && def.Layer != "support" {
-				t.Errorf("module %q: role=shared_model but layer=%q (want model or support)", name, def.Layer)
-			}
-		default:
-			t.Errorf("module %q: unknown role %q", name, def.Role)
+	for _, layer := range p.Layers {
+		if !used[layer] {
+			t.Errorf("layer %q has no modules", layer)
 		}
 	}
 }

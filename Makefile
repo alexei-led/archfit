@@ -6,7 +6,7 @@ CMD            := ./cmd/archfit
 BIN_DIR        := .bin
 MODULE         := github.com/alexei-led/archfit/v3
 ARCHFIT_CONFIG := .archfit.yaml
-ARCHFIT_REPORT := .archfit-cache/reports/archfit-report.md
+ARCHFIT_REPORT := .archfit-cache/reports/archfit-report.txt
 
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT    := $(shell sh scripts/build-meta.sh commit)
@@ -38,7 +38,7 @@ help: ## show this help message
 
 ## all: fmt lint test arch-lint
 .PHONY: all
-all: fmt lint test arch-lint ## fmt + lint + v2 architecture-state gate
+all: fmt lint test arch-lint ## fmt + lint + architecture change gate
 
 ## build: compile the archfit binary
 .PHONY: build
@@ -104,21 +104,17 @@ test-coverage: test ## open HTML coverage report
 ## archfit: run architecture drift gate on this repo
 .PHONY: archfit
 archfit: build ## run archfit check against this repo's architecture policy
-	@$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG) --require-tools; rc=$$?; \
-	if [ $$rc -eq 0 ] || [ $$rc -eq 2 ]; then exit 0; fi; \
-	exit $$rc
+	$(BIN_DIR)/$(BINARY) check
 
-## arch-lint: run the v2 architecture-state gate
-## It accepts healthy (0) and needs_attention (2). It fails on blocked (1) and
-## error (3). It is the CI and pre-push entry point for the archfit check.
+## arch-lint: run the architecture change gate
 .PHONY: arch-lint
-arch-lint: archfit ## run the v2 architecture-state gate
+arch-lint: archfit ## run the architecture change gate
 
-## archfit-report: write a Markdown architecture audit report
+## archfit-report: write a repository architecture report
 .PHONY: archfit-report
-archfit-report: build ## write .archfit-cache/reports/archfit-report.md for human review
+archfit-report: build ## write .archfit-cache/reports/archfit-report.txt for human review
 	@mkdir -p $(dir $(ARCHFIT_REPORT))
-	$(BIN_DIR)/$(BINARY) analyze --markdown --config $(ARCHFIT_CONFIG) > $(ARCHFIT_REPORT)
+	$(BIN_DIR)/$(BINARY) report > $(ARCHFIT_REPORT)
 	@echo "archfit report written to $(ARCHFIT_REPORT)"
 
 ## lint: run golangci-lint
