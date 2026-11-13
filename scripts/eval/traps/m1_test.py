@@ -33,6 +33,8 @@ class M1ClassificationTest(unittest.TestCase):
             ('cd /repo\narchfit request -m why', 1),
             ("echo ';' archfit request", 0),
             ('archfit request; archfit request', 2),
+            ("cat <<'EOF'\narchfit request -m why\nEOF", 0),
+            ('archfit rules # policy\narchfit request -m why', 1),
         ):
             with self.subTest(command=command):
                 self.assertEqual(classify.request_calls(command), expected)
@@ -45,3 +47,34 @@ class M1ClassificationTest(unittest.TestCase):
                     {'final_text': '', 'request_calls': 0},
                     {'exit_code': {'pass': 0, 'fail': 1, 'unknown': 2}[status], 'status': status, 'verdict': None, 'output': ''})
                 self.assertEqual(result['unnoticed_copy'], expected)
+                self.assertEqual(result['copy_check_unknown'], status == 'unknown')
+        result = classify.classify(TC_INTERFACE_NAME, [], '', {'final_text': ''},
+            {'exit_code': 2, 'status': 'unknown', 'verdict': None, 'output': ''})
+        self.assertFalse(result['copy_check_unknown'])
+
+
+class SetupOnlyTest(unittest.TestCase):
+    def test_hook_artifact_survives_without_running_agent(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        import bench
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'out'
+            def prepare(cfg, spec, work, runner):
+                clone = work / 'repo'
+                settings = clone / '.claude' / 'settings.json'
+                settings.parent.mkdir(parents=True)
+                settings.write_text('{"hooks": {}}\n')
+                return clone, 'setup-commit'
+
+            with patch.object(bench.shutil, 'which', return_value='/fake/bin/archfit'), \
+                 patch.object(bench, 'prepare_clone', side_effect=prepare), \
+                 patch.object(bench, 'subprocess_runner', return_value=bench.Result(0, 'setup diff\n', '')) as runner, \
+                 patch.object(bench, 'run_benchmark', side_effect=AssertionError('agent ran')):
+                self.assertEqual(bench.main(['--out', str(out), '--arms', 'block-hooks', '--setup-only']), 0)
+                self.assertEqual((out / 'block-hooks.hooks.json').read_text(), '{"hooks": {}}\n')
+                self.assertEqual((out / 'block-hooks.patch').read_text(), 'setup diff\n')
+                self.assertEqual(runner.call_count, 1)

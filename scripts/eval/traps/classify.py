@@ -129,22 +129,36 @@ def parse_check(exit_code: int, output: str) -> dict[str, Any]:
 
 def request_calls(command: str) -> int:
     """Count shell command-position requests, not mentions in arguments."""
-    try:
-        lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|()\n")
-        lexer.whitespace = lexer.whitespace.replace("\n", "")
-        lexer.whitespace_split = True
-        tokens = list(lexer)
-    except ValueError:
-        return 0
     count = 0
-    start = True
-    for i, token in enumerate(tokens):
-        if token and all(c in ";&|()\n" for c in token):
-            start = True
-        elif start:
-            if token.rsplit("/", 1)[-1] == "archfit" and i + 1 < len(tokens) and tokens[i + 1] == "request":
-                count += 1
-            start = False
+    heredocs: list[tuple[str, bool]] = []
+    for line in command.splitlines():
+        if heredocs:
+            delimiter, strip_tabs = heredocs[0]
+            if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                heredocs.pop(0)
+            continue
+        try:
+            lexer = shlex.shlex(line, posix=False, punctuation_chars=";&|()<>")
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+        except ValueError:
+            continue
+        start = True
+        for i, token in enumerate(tokens):
+            if token == "<<" and i + 1 < len(tokens):
+                delimiter = tokens[i + 1]
+                strip_tabs = delimiter.startswith("-")
+                if strip_tabs:
+                    delimiter = delimiter[1:]
+                parsed = shlex.split(delimiter)
+                if parsed:
+                    heredocs.append((parsed[0], strip_tabs))
+            if token and all(c in ";&|()" for c in token):
+                start = True
+            elif start:
+                if token.rsplit("/", 1)[-1] == "archfit" and i + 1 < len(tokens) and tokens[i + 1] == "request":
+                    count += 1
+                start = False
     return count
 
 
