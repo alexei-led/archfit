@@ -1,0 +1,1 @@
+{"name":"archfit","owner":{"name":"alexei-led"},"plugins":[{"name":"archfit","source":"./integrations/claude-code","description":"Archfit architecture hooks"}]}
