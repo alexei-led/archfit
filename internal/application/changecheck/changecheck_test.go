@@ -36,6 +36,7 @@ const (
 	releaseSHA   = "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"
 	forkSHA      = "5eed5eed5eed5eed5eed5eed5eed5eed5eed5eed"
 	treeID       = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	candidate    = "candidate.yaml"
 	engine       = "4.0.0"
 )
 
@@ -514,10 +515,10 @@ func TestCheck(t *testing.T) {
 		{
 			name: "--policy previews a candidate without the comparison",
 			setup: func(w *world) {
-				w.policies.local["candidate.yaml"] = file(strings.Replace(policyYAML,
+				w.policies.local[candidate] = file(strings.Replace(policyYAML,
 					"  pkg_tc:\n    paths: [pkg/tc/**]\n", "  pkg_tc:\n    paths: [pkg/tc/**]\n    depends_on: [pkg_util]\n", 1))
 			},
-			opts: changecheck.Options{Policy: "candidate.yaml"},
+			opts: changecheck.Options{Policy: candidate},
 			want: want{record: "archfit: pass\n", base: baseSHA, facts: true},
 		},
 		{
@@ -589,9 +590,9 @@ func TestCheck(t *testing.T) {
 		{
 			name: "a path of a candidate policy matches nothing",
 			setup: func(w *world) {
-				w.policies.local["candidate.yaml"] = file(policyYAML + "tests: [test/**]\n")
+				w.policies.local[candidate] = file(policyYAML + "tests: [test/**]\n")
 			},
-			opts: changecheck.Options{Policy: "candidate.yaml"},
+			opts: changecheck.Options{Policy: candidate},
 			want: want{
 				record: `candidate.yaml: policy: tests: "test/**" matches no file` + "\n" +
 					"  why: the policy does not fit the files of the tree\n  next: fix candidate.yaml\n" + noVerdict,
@@ -802,6 +803,139 @@ func TestPortErrors(t *testing.T) {
 			}
 			if name != "Save" && len(w.store.saves) != 0 {
 				t.Errorf("stored %d results after a port error", len(w.store.saves))
+			}
+		})
+	}
+}
+
+// pushWith puts HEAD at the tip of origin/main after a commit that adds
+// nothing, judged with policyText on today.
+func (w *world) pushWith(policyText, today string, head evidence.CheckFacts) {
+	w.atTip(baseSHA)
+	w.policies.local[changecheck.PolicyPath] = file(policyText)
+	w.policies.target[headSHA] = file(policyText)
+	w.facts.head, w.facts.base = head, head
+	w.repo.added = nil
+	w.today = today
+}
+
+// TestRepositoryStateOnAPush: a run whose HEAD is the tip of the target
+// branch carries the repository state of its head, in the JSON of the result
+// golden of each state. The state does not change the status: drift that the
+// last commit did not add passes, and an expired exception fails every run.
+func TestRepositoryStateOnAPush(t *testing.T) {
+	copies := tree(nil, utilCopy, tcCopy)
+	tests := []struct {
+		name   string
+		setup  func(w *world)
+		status result.Status
+	}{
+		{name: "repository_clean", status: result.StatusPass, setup: func(w *world) {
+			w.pushWith(expiredYAML, "2026-11-10", copies)
+		}},
+		{name: "repository_drift", status: result.StatusPass, setup: func(w *world) {
+			w.pushWith(policyYAML, "2026-11-10", tree([]evidence.ImportFact{tcToUtil}))
+		}},
+		{name: "repository_expired", status: result.StatusFail, setup: func(w *world) {
+			w.pushWith(expiredYAML, "2026-11-20", copies)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld()
+			tt.setup(w)
+			got := w.check(t, changecheck.Options{}).Result
+			if got.Status != tt.status {
+				t.Errorf("status = %s, want %s", got.Status, tt.status)
+			}
+			data, err := os.ReadFile(filepath.Join("..", "..", "model", "result", "testdata", tt.name+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want result.Result
+			if err := json.Unmarshal(data, &want); err != nil {
+				t.Fatal(err)
+			}
+			if g, w := jsonOf(t, got), jsonOf(t, want); g != w {
+				t.Errorf("JSON:\n--- got\n%s--- want\n%s", g, w)
+			}
+		})
+	}
+}
+
+// An exception is listed from 14 days before its date (2026-11-19), and not
+// 15 days before.
+func TestRepositoryStateExpiringWindow(t *testing.T) {
+	for today, listed := range map[string]bool{"2026-11-05": true, "2026-11-04": false} {
+		t.Run(today, func(t *testing.T) {
+			w := newWorld()
+			w.pushWith(expiredYAML, today, tree(nil, utilCopy, tcCopy))
+			r := w.check(t, changecheck.Options{}).Result.Repository
+			if r == nil {
+				t.Fatal("no repository state on a push")
+			}
+			if got := len(r.Expiring) == 1; got != listed {
+				t.Errorf("expiring = %+v, want listed: %t", r.Expiring, listed)
+			}
+		})
+	}
+}
+
+// Only a run whose HEAD is the tip of the target branch and that gives a
+// verdict carries a state. Every other run carries none, and none of them is
+// an error: an absent state is no state, never clean.
+func TestNoRepositoryState(t *testing.T) {
+	missingTool := evidence.UnknownItem{Reason: "ast-grep is not installed", Cause: evidence.CauseTool, Fix: "install ast-grep"}
+	tests := []struct {
+		name   string
+		setup  func(w *world)
+		opts   changecheck.Options
+		status result.Status
+	}{
+		{name: "a pull-request run", setup: func(*world) {}, status: result.StatusFail},
+		{
+			// A later push moved the tip: the run of the older push is
+			// behind it and never reports the state of an older tree.
+			name: "a push a later push overtook", setup: func(w *world) { w.repo.mergeBases[mainSHA] = headSHA },
+			status: result.StatusFail,
+		},
+		{
+			name: "a preview on the tip", setup: func(w *world) {
+				w.pushWith(policyYAML, "2026-11-10", tree([]evidence.ImportFact{tcToUtil}))
+				w.policies.local[candidate] = file(policyYAML)
+			},
+			opts: changecheck.Options{Policy: candidate}, status: result.StatusPass,
+		},
+		{
+			name: "a push with no verdict", setup: func(w *world) {
+				head := tree([]evidence.ImportFact{tcToUtil})
+				head.Unknown = []evidence.UnknownItem{missingTool}
+				w.pushWith(policyYAML, "2026-11-10", head)
+			},
+			status: result.StatusUnknown,
+		},
+		{name: "a shallow push without the parent of HEAD", setup: func(w *world) { w.atTip("") }, status: result.StatusUnknown},
+		{
+			name: "a shallow push without the target branch", setup: func(w *world) {
+				w.atTip(baseSHA)
+				delete(w.repo.commits, mainRef)
+			},
+			status: result.StatusUnknown,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld()
+			tt.setup(w)
+			got := w.check(t, tt.opts).Result
+			if got.Status != tt.status {
+				t.Errorf("status = %s, want %s", got.Status, tt.status)
+			}
+			if got.Repository != nil {
+				t.Errorf("repository = %+v, want none", got.Repository)
+			}
+			if strings.Contains(jsonOf(t, got), `"repository"`) {
+				t.Errorf("the JSON has a repository key:\n%s", jsonOf(t, got))
 			}
 		})
 	}
