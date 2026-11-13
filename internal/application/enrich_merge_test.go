@@ -38,12 +38,12 @@ func TestMergeEnrichmentLabelsKeepsFreshApprovals(t *testing.T) {
 	}
 	byKey := map[string]EnrichmentLabel{}
 	for _, l := range merged {
-		byKey[EnrichmentPairKey(l.From, l.To)] = l
+		byKey[enrichmentPairKey(l.From, l.To)] = l
 	}
-	if got := byKey[EnrichmentPairKey(mergeModA, mergeModB)]; got.Status != EnrichmentLabelStatusApproved || got.Strength != mergeModel {
+	if got := byKey[enrichmentPairKey(mergeModA, mergeModB)]; got.Status != EnrichmentLabelStatusApproved || got.Strength != mergeModel {
 		t.Errorf("unhashed approval was clobbered: %+v", got)
 	}
-	if got := byKey[EnrichmentPairKey(mergeModB, mergeModA)]; got.Strength != mergeModel {
+	if got := byKey[enrichmentPairKey(mergeModB, mergeModA)]; got.Strength != mergeModel {
 		t.Errorf("existing draft not replaced: %+v", got)
 	}
 	if merged[0].From > merged[1].From || merged[1].From > merged[2].From {
@@ -57,7 +57,7 @@ func TestMergeEnrichmentLabelsKeepsFreshApprovals(t *testing.T) {
 // treats an empty hash as effective, so the LLM draft must not overwrite it.
 func TestMergeEnrichmentLabelsKeepsHandAuthoredApproval(t *testing.T) {
 	t.Parallel()
-	key := EnrichmentPairKey(mergeModA, mergeModB)
+	key := enrichmentPairKey(mergeModA, mergeModB)
 	existing := []EnrichmentLabel{{
 		From: mergeModA, To: mergeModB, Strength: mergeContract,
 		Status: EnrichmentLabelStatusApproved, Provenance: EnrichmentLabelProvenanceHuman,
@@ -78,7 +78,7 @@ func TestMergeEnrichmentLabelsKeepsHandAuthoredApproval(t *testing.T) {
 
 func TestMergeEnrichmentLabelsReplacesStaleApproved(t *testing.T) {
 	t.Parallel()
-	key := EnrichmentPairKey(mergeModA, mergeModB)
+	key := enrichmentPairKey(mergeModA, mergeModB)
 	existing := []EnrichmentLabel{{
 		From: mergeModA, To: mergeModB, Strength: mergeModel,
 		EvidenceHash: staleEvidence, Status: EnrichmentLabelStatusApproved,
@@ -101,7 +101,7 @@ func TestMergeEnrichmentLabelsReplacesStaleApproved(t *testing.T) {
 // the rule: the same pair, but the stored hash still matches the code.
 func TestMergeEnrichmentLabelsKeepsApprovalWhenEvidenceMatches(t *testing.T) {
 	t.Parallel()
-	key := EnrichmentPairKey(mergeModA, mergeModB)
+	key := enrichmentPairKey(mergeModA, mergeModB)
 	existing := []EnrichmentLabel{{
 		From: mergeModA, To: mergeModB, Strength: mergeModel,
 		EvidenceHash: currentEvidence, Status: EnrichmentLabelStatusApproved,

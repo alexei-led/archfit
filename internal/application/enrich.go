@@ -192,8 +192,8 @@ func (r EnrichmentRequest) snippetRoot() string {
 	return r.Root
 }
 
-// EnrichmentPairKey is the stable ordered module-pair key used by the workflow.
-func EnrichmentPairKey(from, to string) string { return from + "\x00" + to }
+// enrichmentPairKey is the stable ordered module-pair key used by the workflow.
+func enrichmentPairKey(from, to string) string { return from + "\x00" + to }
 
 // effectiveApprovedLabels returns the pairs whose approved label the gate still
 // honours, so enrich never re-drafts over one. It must mirror the gate's own
@@ -208,7 +208,7 @@ func effectiveApprovedLabels(existing []EnrichmentLabel, evidence map[string]str
 		if label.Status != EnrichmentLabelStatusApproved {
 			continue
 		}
-		key := EnrichmentPairKey(label.From, label.To)
+		key := enrichmentPairKey(label.From, label.To)
 		hash, measured := evidence[key]
 		if !measured || label.EvidenceHash == "" || label.EvidenceHash == hash {
 			approved[key] = struct{}{}
@@ -221,10 +221,10 @@ func mergeEnrichmentLabels(existing, drafts []EnrichmentLabel, evidence map[stri
 	byKey := make(map[string]EnrichmentLabel, len(existing)+len(drafts))
 	approved := effectiveApprovedLabels(existing, evidence)
 	for _, label := range existing {
-		byKey[EnrichmentPairKey(label.From, label.To)] = label
+		byKey[enrichmentPairKey(label.From, label.To)] = label
 	}
 	for _, draft := range drafts {
-		key := EnrichmentPairKey(draft.From, draft.To)
+		key := enrichmentPairKey(draft.From, draft.To)
 		if _, keep := approved[key]; !keep {
 			byKey[key] = draft
 		}
@@ -277,7 +277,7 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	}
 	wanted := make(map[string]struct{}, len(existing))
 	for _, label := range existing {
-		wanted[EnrichmentPairKey(label.From, label.To)] = struct{}{}
+		wanted[enrichmentPairKey(label.From, label.To)] = struct{}{}
 	}
 	evidence := pairEvidence(captured.relationships, wanted)
 	approved := effectiveApprovedLabels(existing, evidence)
@@ -313,11 +313,11 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	}
 	draftWanted := make(map[string]struct{}, len(drafts))
 	for _, draft := range drafts {
-		draftWanted[EnrichmentPairKey(draft.From, draft.To)] = struct{}{}
+		draftWanted[enrichmentPairKey(draft.From, draft.To)] = struct{}{}
 	}
 	draftEvidence := pairEvidence(captured.relationships, draftWanted)
 	for i := range drafts {
-		drafts[i].EvidenceHash = draftEvidence[EnrichmentPairKey(drafts[i].From, drafts[i].To)]
+		drafts[i].EvidenceHash = draftEvidence[enrichmentPairKey(drafts[i].From, drafts[i].To)]
 	}
 	// Keep the first evidence set so approved labels not selected this run are
 	// still evaluated against their current hash during merge. PairEvidence
@@ -342,23 +342,4 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	}
 	result.Drafts = len(drafts)
 	return result, nil
-}
-
-const (
-	enrichmentStrengthContract   = "contract"
-	enrichmentStrengthFunctional = "functional"
-	enrichmentStrengthModel      = "model"
-	enrichmentStrengthSymmetric  = "symmetric"
-	enrichmentStrengthIntrusive  = "intrusive"
-)
-
-// ValidEnrichmentStrength validates a provider-proposed strength.
-func ValidEnrichmentStrength(s string) bool {
-	switch s {
-	case enrichmentStrengthContract, enrichmentStrengthFunctional, enrichmentStrengthModel,
-		enrichmentStrengthSymmetric, enrichmentStrengthIntrusive:
-		return true
-	default:
-		return false
-	}
 }

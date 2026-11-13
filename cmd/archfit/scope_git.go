@@ -114,27 +114,7 @@ func policyFiles(ctx context.Context, runner toolrun.Runner, dir, configPath str
 	return out, nil
 }
 
-// resolveCheckScope decides what a check compares with, from the flags and the
-// config's target_branch. It sets req.baseRef to the resolved base, so every
-// later stage sees one answer.
-func resolveCheckScope(ctx context.Context, deps *appDeps, req *scanRequest, targetBranch string) (application.ScopeResolution, error) {
-	dir := req.root
-	if dir == "" {
-		dir = filepath.Dir(req.configPath)
-	}
-	res, err := resolveScope(ctx, deps.Runner, dir, req.configPath, application.ScopeRequest{
-		Target: req.target, ConfigTarget: targetBranch, Base: req.baseRef,
-	})
-	if err != nil {
-		return res, err
-	}
-	req.baseRef = res.Base
-	return res, nil
-}
-
-// resolveScope resolves the scope of a change in the repository at dir, with
-// the policy files of configPath. req carries the target and the base;
-// resolveScope fills in the policy files.
+// resolveScope fills in the policy files for the doctor scope report.
 func resolveScope(ctx context.Context, runner toolrun.Runner, dir, configPath string, req application.ScopeRequest) (application.ScopeResolution, error) {
 	files, err := policyFiles(ctx, runner, dir, configPath)
 	if err != nil {
@@ -146,68 +126,4 @@ func resolveScope(ctx context.Context, runner toolrun.Runner, dir, configPath st
 		return res, fmt.Errorf("resolve the scope: %w", err)
 	}
 	return res, nil
-}
-
-// materializePolicyAtTarget writes the target tip's policy files to a fresh
-// directory, read as git objects, and returns it. ok is false when the target
-// has no config to judge with.
-func materializePolicyAtTarget(ctx context.Context, deps *appDeps, req scanRequest, res application.ScopeResolution) (dir string, ok bool, err error) {
-	rootDir := req.root
-	if rootDir == "" {
-		rootDir = filepath.Dir(req.configPath)
-	}
-	files, err := policyFiles(ctx, deps.Runner, rootDir, req.configPath)
-	if err != nil || len(files) == 0 {
-		return "", false, err
-	}
-	g := scopeGit{runner: deps.Runner, dir: rootDir}
-	tmp, err := os.MkdirTemp("", "archfit-target-policy-")
-	if err != nil {
-		return "", false, err
-	}
-	names := policyFileNames(req.configPath)
-	haveConfig := false
-	for i, file := range files {
-		content, exists, err := g.FileAt(ctx, res.TargetSHA, file.Path)
-		if err != nil {
-			_ = os.RemoveAll(tmp)
-			return "", false, err
-		}
-		if !exists {
-			continue
-		}
-		if i == 0 {
-			haveConfig = true
-		}
-		if err := os.WriteFile(filepath.Join(tmp, names[i]), content, 0o600); err != nil {
-			_ = os.RemoveAll(tmp)
-			return "", false, err
-		}
-	}
-	if !haveConfig {
-		_ = os.RemoveAll(tmp)
-		return "", false, nil
-	}
-	return tmp, true, nil
-}
-
-// targetPolicyRequest re-aims a scan at the policy files in dir while keeping
-// the tree: the same root and base, measured under the target's rules.
-func targetPolicyRequest(req scanRequest, dir string) (scanRequest, error) {
-	root := req.root
-	if root == "" {
-		root = filepath.Dir(req.configPath)
-	}
-	root, err := filepath.Abs(root)
-	if err != nil {
-		return req, err
-	}
-	treq := req
-	treq.configPath = filepath.Join(dir, filepath.Base(req.configPath))
-	treq.bundleDir = dir
-	treq.root = root
-	// The repair command names the real config, not the temporary copy.
-	treq.validationConfig = req.configPath
-	treq.progress, treq.quiet = progressNone, true
-	return treq, nil
 }

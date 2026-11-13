@@ -12,49 +12,17 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/v3/internal/application"
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	evidencecontract "github.com/alexei-led/archfit/v3/internal/evidence"
-	"github.com/alexei-led/archfit/v3/internal/extract/loc"
 	"github.com/alexei-led/archfit/v3/internal/extract/registry"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/syntax"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
-
-// Inventory reads the rule-scope source inventory `archfit config lint` judges
-// rule selectors and module declarations against. It resolves the analysis
-// boundary the way Acquire does (an empty root means the git root around the
-// config) and runs the same LOC walk and projections, but no analyzer, so Rust
-// crate identities, which need cargo metadata, stay unknown.
-type Inventory struct {
-	ConfigPath string
-	Options    RunOptions
-	Runner     toolrun.Runner
-}
-
-var _ application.SourceInventoryReader = Inventory{}
-
-// SourceInventory implements application.SourceInventoryReader.
-func (i Inventory) SourceInventory(ctx context.Context, root string) (evaluation.Observations, error) {
-	sc := i.Options.Scope
-	sc.WorkDir, sc.Root = scanDir(root, filepath.Dir(i.ConfigPath)), root
-	resolved, err := scope.Resolve(ctx, sc, gitResolver{workDir: sc.WorkDir, runner: i.Runner})
-	if err != nil {
-		return evaluation.Observations{}, err
-	}
-	fileLOC, classes, _, err := loc.RunWithConfig(resolved.Root, i.Options.Acquisition.FileClass)
-	if err != nil {
-		return evaluation.Observations{}, err
-	}
-	facts := evidencecontract.Facts{FileLOC: fileLOC, FileClassIndex: classes}
-	return ruleScopeObservations(ctx, i.Runner, nil, resolved.Root, facts, i.Options), nil
-}
 
 // ruleScopeObservations projects walked source into the fields rule scope
 // reads: the files, the node selector each file projects to, the files the

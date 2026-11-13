@@ -42,7 +42,7 @@ func TestGateReferenceIsVisibleWithoutBaseComparison(t *testing.T) {
 	snapshot := matchingSnapshot()
 	snapshot.MeasurementProfile = nil
 	r.GateReference = baselineComparison(Baseline{State: snapshot}, headContext())
-	doc := ProjectReport(r, score.Scorecard{})
+	doc := projectReport(r, score.Scorecard{})
 	if doc.State.Comparison.Status != report.ComparisonNotRequested {
 		t.Fatalf("display comparison unexpectedly requested: %+v", doc.State.Comparison)
 	}

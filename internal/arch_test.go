@@ -822,15 +822,9 @@ var cmdDomainAdapterFiles = map[string]string{
 	// Runs `config update`'s own authoring pipeline (extract → graph → classify)
 	// to propose config edits. Pre-exists the capability migration; recorded as
 	// accepted risk in docs/architecture.md.
-	"config_update_adapters.go": "config-update authoring pipeline",
-	"config_enrich_adapters.go": "config-enrich draft/review adapter",
-	"application_wiring.go":     "composition root: selects concrete stage implementations",
-	"change_wiring.go":          "composition root of check, can and rules: adapters for their application ports",
-	"init.go":                   "config init authors a config file; initcfg is its writer",
-	"init_v3.go":                "init writes the version 3 policy and the agent block; initcfg/policy3 is its writer",
-	"llmreview.go":              "off-gate LLM review; initcfg supplies the draft format",
-	"draft_metadata.go":         "initcfg draft metadata translation",
-	"evidence_pack.go":          "initcfg evidence-pack translation",
+	"application_wiring.go": "composition root: selects concrete stage implementations",
+	"change_wiring.go":      "composition root of check, can and rules: adapters for their application ports",
+	"init_v3.go":            "init writes the version 3 policy and the agent block; initcfg/policy3 is its writer",
 }
 
 func TestCommandStagesDoNotImportDomainInternals(t *testing.T) {
@@ -881,7 +875,7 @@ func TestCommandStagesDoNotImportDomainInternals(t *testing.T) {
 }
 
 func TestAnalyzeCheckSourceFilesDoNotImportDomainInternals(t *testing.T) {
-	for _, name := range []string{"analyze.go", "check.go"} {
+	for _, name := range []string{"check.go", "report.go"} {
 		path := filepath.Join("..", "cmd", "archfit", name)
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 		if err != nil {

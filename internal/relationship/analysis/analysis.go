@@ -70,7 +70,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 	dynamicConnascence := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, unmeasuredConnascence)
 	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy, classify.BuildContainment(in.Policy.Topology.Modules), cfg.Modules)
 	distanceCandidates := append(buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
-		BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
+		buildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
 	sortDistanceConfigCandidates(distanceCandidates)
 	out := relationship.AnalysisResult{
 		Relationships: set,

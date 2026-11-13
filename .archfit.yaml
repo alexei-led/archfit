@@ -81,10 +81,8 @@ modules:
   cli-composition:
     paths:
       - cmd/archfit/**
-      - skills/*
     public:
       - cmd/archfit
-      - skills
     volatility: medium
     subdomain: generic
     layer: cmd
@@ -125,12 +123,8 @@ modules:
       - policy-config-adapter
   development-tools:
     paths:
-      - cmd/calibrate/**
-      - internal/calibrate/**
       - scripts/eval/**
     public:
-      - cmd/calibrate
-      - internal/calibrate
       - scripts/eval/coverage
     volatility: low
     subdomain: generic

@@ -31,7 +31,7 @@ func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error)
 	cfg, err := config.Load(ctx, path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return config.Config{}, &exitError{code: 3, msg: fmt.Sprintf("error: config not found: %s\n→ run: archfit config init --root .", path)}
+			return config.Config{}, &exitError{code: exitUnknown, msg: fmt.Sprintf("archfit: policy not found: %s\nnext: run archfit init", path)}
 		}
 		return config.Config{}, err
 	}
@@ -39,13 +39,4 @@ func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error)
 		return config.Config{}, err
 	}
 	return cfg, nil
-}
-
-// configLoadError normalises a config-load failure into an exit-3 error.
-func configLoadError(err error) error {
-	var already *exitError
-	if errors.As(err, &already) {
-		return already
-	}
-	return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 }

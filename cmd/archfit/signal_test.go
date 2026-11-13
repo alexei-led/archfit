@@ -65,10 +65,11 @@ func TestSignal_StopsToolsAndRemovesTheSnapshot(t *testing.T) {
 	}
 	mark := filepath.Join(dir, "mark")
 	repo := filepath.Join(dir, "repo")
+	gitInitFixtureRepo(t, repo)
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSignalHelperProcess$") //nolint:gosec // re-executes this test binary
 	cmd.Env = append(os.Environ(),
-		signalHelperEnv+"="+strings.Join([]string{cmdAnalyze, "--config", filepath.Join(repo, ".archfit.yaml"), "--root", repo, "--format", "json"}, "\x1f"),
+		signalHelperEnv+"="+strings.Join([]string{cmdReport, "-C", repo, flagFormat, formatJSON}, "\x1f"),
 		"PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"TMPDIR="+tmp,
 		"ARCHFIT_DOTNET_ROSLYN="+filepath.Join(dir, "helper"),
@@ -105,8 +106,8 @@ func TestSignal_StopsToolsAndRemovesTheSnapshot(t *testing.T) {
 	select {
 	case err := <-done:
 		var exit *exec.ExitError
-		if !errors.As(err, &exit) || exit.ExitCode() != 3 {
-			t.Errorf("exit = %v, want code 3", err)
+		if !errors.As(err, &exit) || exit.ExitCode() != exitUnknown {
+			t.Errorf("exit = %v, want code 2", err)
 		}
 	case <-time.After(30 * time.Second):
 		_ = cmd.Process.Kill()

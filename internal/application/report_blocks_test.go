@@ -10,7 +10,7 @@ import (
 )
 
 // TestProjectReportCarriesEveryEvidenceBlock walks the report projection with
-// one populated item per block. ProjectReport is the single seam between the
+// one populated item per block. projectReport is the single seam between the
 // assessment result and the published document every renderer reads, and the
 // per-item loops are hand-written field-by-field maps: a dropped field here
 // produces an empty or wrong JSON block that no renderer test can catch,
@@ -120,7 +120,7 @@ func reportBlockChecks(doc report.Document) []blockCheck {
 }
 
 func TestProjectReportCarriesEveryEvidenceBlock(t *testing.T) {
-	doc := ProjectReport(populatedResult(), score.Scorecard{RubricVersion: score.RubricVersion})
+	doc := projectReport(populatedResult(), score.Scorecard{RubricVersion: score.RubricVersion})
 	for _, test := range reportBlockChecks(doc) {
 		if !test.ok() {
 			t.Errorf("%s block lost data in projection", test.block)

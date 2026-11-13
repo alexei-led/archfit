@@ -223,6 +223,44 @@ class ImageContractsTest(unittest.TestCase):
             self.assertIn("27182:27182", command)
             self.assertEqual((output / "stderr.log").read_text(), "mount failed")
 
+    def test_python314_uses_report_on_a_git_fixture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            contract = image.ImageContract("local:contract", "colima", output)
+            state = {
+                "schema_version": "archfit.architecture-state.v1",
+                "comparison": {
+                    "measurement_profile": {
+                        "producers": [
+                            {
+                                "tool": "grimp",
+                                "semantics_version": "grimp.v3",
+                                "tool_version": f"grimp {image.lc.TOOL_MANIFEST['python']['grimp']}; python {image.lc.TOOL_MANIFEST['versions']['python']}",
+                            }
+                        ]
+                    }
+                },
+                "coverage": {"tools": [{"tool": "grimp", "status": "ok"}]},
+                "decision": {"hard_gates": "fail"},
+                "findings": [{"rule_id": "no-core-to-adapter", "kind": "gate"}],
+            }
+
+            def run(name, uid, script, fixture):
+                self.assertTrue((fixture / ".git").is_dir())
+                self.assertTrue((fixture / "src/modern314/core.py").is_file())
+                self.assertIn("archfit report -C /tmp/repo --format json", script)
+                self.assertNotIn("archfit analyze", script)
+                result = output / name
+                result.mkdir()
+                (result / "report.json").write_text(json.dumps(state))
+                (result / "report.rc").write_text("0")
+                return result
+
+            with patch.object(contract, "run", side_effect=run) as commands:
+                image.python314_case(contract)
+            self.assertEqual(commands.call_count, 2)
+            self.assertTrue(all(row["passed"] for row in contract.assertions))
+
 
 if __name__ == "__main__":
     unittest.main()

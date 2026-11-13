@@ -56,7 +56,7 @@ func TestProjectReportCycleFindingMatchesPublishedSchema(t *testing.T) {
 				ID: "located", RuleID: "edge", Kind: finding.KindGate, Status: finding.StatusNew,
 				Locations: []relationship.Location{{File: baselineTestFrom, Line: 7}},
 			})
-			document := ProjectReport(diagnostic, score.Scorecard{})
+			document := projectReport(diagnostic, score.Scorecard{})
 			raw, err := json.Marshal(document.State)
 			if err != nil {
 				t.Fatal(err)

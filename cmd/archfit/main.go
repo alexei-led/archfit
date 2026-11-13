@@ -66,98 +66,45 @@ const (
 	languagesDocsURL = "https://github.com/alexei-led/archfit/blob/main/docs/languages.md"
 )
 
-const (
-	commandGroupAnalysis = "analysis"
-	commandGroupSetup    = "setup"
-)
-
-// cli is the top-level kong command struct. Config-consuming commands
-// (analyze/baseline/explain) stay flat at the top level; config-authoring
-// commands live under `config`; `doctor` both checks and (with --fix) installs
-// analyzer tools.
+// cli exposes the seven public commands and the hidden hook entry point.
 type cli struct {
-	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture locally: verdict, dimensions, findings (default command)."`
-	Check    CheckCmd    `cmd:"" group:"analysis" help:"The status of the change: pass (0), fail (1), or unknown (2). A version 2 policy runs the Archfit 3 check."`
-	Can      CanCmd      `cmd:"" group:"analysis" help:"Before writing code: may this file, directory or module depend on that one, or use a library."`
-	Rules    RulesCmd    `cmd:"" group:"analysis" help:"The rules that apply to paths or to the change, one rule in full, or the module graph."`
-	Report   ReportCmd   `cmd:"" group:"analysis" help:"The repository-wide picture for owners: the state of the repository and the measurements. Exits 0 whatever it shows."`
-	Request  RequestCmd  `cmd:"" group:"analysis" help:"Ask an owner to change the policy for the errors of the last check. Without the App it prints the request (exit 2)."`
-	Init     RepoInitCmd `cmd:"" group:"setup" help:"Set up a repository: a version 3 policy and the instruction block for agents. Converts an Archfit 3 repository; never changes a version 3 policy."`
-	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
-	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
-	Hook     HookCmd     `cmd:"" hidden:"" help:"The hook entry points that doctor --fix installs for Claude Code, Codex and git."`
-	Policy   PolicyCmd   `cmd:"" group:"analysis" help:"Pre-edit queries: which module owns a path, and whether a file may import a target."`
-	Map      MapCmd      `cmd:"" group:"analysis" help:"Draw the modules and seams with their policy status (Mermaid or text)."`
-
-	Doctor   DoctorCmd   `cmd:"" group:"setup" help:"This checkout: the tools archfit uses and the hooks. --fix installs the hooks of the harnesses found here."`
-	Config   ConfigCmd   `cmd:"" group:"setup" help:"Create, sync, compare, and enrich the .archfit.yaml config."`
-	AgentsMD AgentsMDCmd `cmd:"" name:"agents-md" group:"setup" help:"Render the archfit block of agent instructions into AGENTS.md (--write, --check)."`
-	Skill    SkillCmd    `cmd:"" group:"setup" help:"Install the archfit agent skill that ships in this binary."`
-
+	Check   CheckCmd    `cmd:"" help:"The status of the change: pass (0), fail (1), or unknown (2)."`
+	Can     CanCmd      `cmd:"" help:"Before writing code: may this file, directory or module depend on that one, or use a library."`
+	Rules   RulesCmd    `cmd:"" help:"The rules that apply to paths or to the change, one rule in full, or the module graph."`
+	Request RequestCmd  `cmd:"" help:"Ask an owner to change the policy for the errors of the last check."`
+	Init    RepoInitCmd `cmd:"" help:"Set up a repository or convert an Archfit 3 policy."`
+	Report  ReportCmd   `cmd:"" help:"The repository-wide picture for owners. Exits 0 whatever it shows."`
+	Doctor  DoctorCmd   `cmd:"" help:"This checkout: the tools and hooks. --fix installs what is missing."`
+	Hook    HookCmd     `cmd:"" hidden:"" help:"The hook entry points installed by doctor --fix."`
 	Version versionFlag `short:"v" help:"Print version and exit."`
 }
 
-// ConfigCmd groups the config-authoring subcommands. init scaffolds a config (or,
-// with --ai-classify, drafts a full AI-classified config); update syncs the
-// config with the project structure; lint reports defects loading accepts;
-// compare measures one tree under two configs; enrich drafts per-dimension AI
-// annotations for review.
-type ConfigCmd struct {
-	Init    InitCmd    `cmd:"" help:"Create a starter config (use --ai-classify for an AI-classified draft)."`
-	Update  UpdateCmd  `cmd:"" help:"Sync the config with current project structure."`
-	Lint    LintCmd    `cmd:"" help:"Report config defects judged against the source tree: dead selectors, unknown values, ownership ties. Exits 1 on errors."`
-	Compare CompareCmd `cmd:"" help:"Measure one source tree under two configs and report the difference (report-only)."`
-	Enrich  EnrichCmd  `cmd:"" help:"Draft AI annotations (labels/owner/volatility/subdomain) for review."`
-}
-
 func (cli) Help() string {
-	return `archfit keeps code changes aligned with the architecture you intended. It turns dependency facts into deterministic gates, scorecards, SARIF, and agent repair tasks so CI can catch architecture drift before review.
+	return `Check a change against the repository's architecture policy.
 
 First run:
-  archfit doctor                                    # tools and hooks (doctor --fix installs the hooks)
-  archfit config init --root .                      # scaffold .archfit.yaml (config init --ai-classify to draft via AI)
-  archfit check --config .archfit.yaml              # CI gate
-  archfit baseline --config .archfit.yaml           # accept current findings as the baseline
+  archfit doctor
+  archfit init
+  # Read .archfit.yaml, then open a pull request with it.
 
-Config work:
-  archfit config update --config .archfit.yaml            # structure drift + config review
-  archfit config compare candidate.archfit.yaml           # one tree, two configs, report-only
+Worker loop:
+  archfit rules
+  archfit can internal/a/a.go internal/b
+  archfit check
+  archfit request -m "why the policy needs to change"
 
-CI / agent loop:
-  archfit policy can-import internal/a/a.go internal/b   # before an edit: denied, allowed, ...
-  archfit check --config .archfit.yaml --format agent    # after an edit: one next_action
-  archfit doctor --fix                                   # install the hooks: Claude Code, Codex, git
-  archfit check --config .archfit.yaml --base origin/main --format json
-  # on exit 1, read agent_tasks[] and rerun the validation command
-  archfit analyze --markdown --config .archfit.yaml > archfit-report.md
+For owners:
+  archfit report
+  archfit rules --graph
+  archfit doctor --fix
 
-Off-gate AI (review-only; never affects the gate):
-  archfit analyze --ai-summary -c .archfit.yaml     # cited architect review after deterministic output
-  archfit config enrich owner                       # draft → review → config enrich owner --apply
-  archfit config init --ai-classify -o draft.yaml   # full AI-classified config draft for review
+Exit codes: 0 pass or done; 1 fail or no; 2 unknown, wrong usage, or a tool error.
 
 Docs:
   ` + docsURL + `
   CI: ` + ciDocsURL + `
   Agent feedback: ` + agentDocsURL + `
-  Analyzer setup: ` + languagesDocsURL + `
-
-Optional AI commands are review-only. They never decide whether the gate passes.`
-}
-
-func commandGroups() []kong.Group {
-	return []kong.Group{
-		{
-			Key:         commandGroupAnalysis,
-			Title:       "Analysis",
-			Description: "Run these locally, in CI, and in AI-agent validation steps.",
-		},
-		{
-			Key:         commandGroupSetup,
-			Title:       "Setup & config",
-			Description: "Create configs (config init), sync structure (config update), compare two configs on one tree (config compare), install the hooks and analyzers (doctor --fix), and draft off-gate AI annotations (config enrich).",
-		},
-	}
+  Analyzer setup: ` + languagesDocsURL
 }
 
 // versionFlag prints the version and exits cleanly.
@@ -296,9 +243,13 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 		if r := recover(); r != nil {
 			if code, ok := r.(exitCode); ok {
 				exitStatus = int(code)
-				return
 			}
-			panic(r)
+			if _, ok := r.(exitCode); !ok {
+				panic(r)
+			}
+		}
+		if exitStatus < 0 || exitStatus > exitUnknown {
+			exitStatus = exitUnknown
 		}
 	}()
 	stdout, stderr := deps.Stdout, deps.stderr()
@@ -308,7 +259,6 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 	parser, err := kong.New(&c,
 		kong.Name("archfit"),
 		kong.Description("Architecture drift feedback for CI and AI agents."),
-		kong.ExplicitGroups(commandGroups()),
 		kong.ConfigureHelp(kong.HelpOptions{FlagsLast: true, WrapUpperBound: 100}),
 		// Help → stdout; usage/errors → stderr (kong's two-writer convention).
 		kong.Writers(stdout, stderr),
@@ -317,15 +267,15 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
-		return 3
+		return exitUnknown
 	}
 
 	kctx, err := parser.Parse(args)
 	if err != nil {
 		// Manual parser.Parse (unlike the kong.Parse helper) does not print the
-		// error itself, so surface it — otherwise a bad flag exits 3 silently.
+		// error itself, so surface it — otherwise a bad flag exits silently.
 		_, _ = fmt.Fprintf(stderr, "archfit: %v\n", err)
-		return 3
+		return exitUnknown
 	}
 
 	runErr := kctx.Run(deps)
@@ -333,7 +283,7 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 		// A signal cut tool runs short: whatever the command printed is
 		// incomplete and must not pass as a verdict.
 		_, _ = fmt.Fprintln(stderr, "archfit: interrupted by a signal; the results are incomplete")
-		return 3
+		return exitUnknown
 	}
 	if runErr == nil {
 		return 0
@@ -356,7 +306,7 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 	}
 
 	_, _ = fmt.Fprintf(stderr, "error: %v\n", runErr)
-	return 3
+	return exitUnknown
 }
 
 func main() {

@@ -168,8 +168,6 @@ Use chapter or section references for the book. Do not copy book text into repor
 Separate book-derived measures, implementation policy, report-only evidence, and unsupported claims.
 Explain each mismatch with source evidence and a reproducible case.
 
-The evaluation skill owns the detailed review procedure:
-[`skills/archfit-eval`](../skills/archfit-eval/SKILL.md).
 Keep dated corpus measurements and review reports in the archive.
 Write fresh output under `/tmp` or `.archfit-cache/`.
 

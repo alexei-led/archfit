@@ -27,7 +27,7 @@ func TestProjectedOriginSummarySurvivesTextBounds(t *testing.T) {
 				HeadCoverage: []evidence.Coverage{{Tool: textToolGrimp, Status: evidence.StatusOK}},
 				BaseCoverage: []evidence.Coverage{{Tool: textToolGrimp, Status: status}},
 			})
-			doc := ProjectReport(r, score.Scorecard{})
+			doc := projectReport(r, score.Scorecard{})
 			why := doc.State.Findings[0].Why
 			want := "does not imply every member or displayed site is new"
 			if status == evidence.StatusPartial {

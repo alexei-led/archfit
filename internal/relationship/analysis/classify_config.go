@@ -1,7 +1,6 @@
 package analysis
 
 import (
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
@@ -41,10 +40,4 @@ func augmentConfig(g *graph.Graph, cfg classify.Config) classify.Config {
 func Classify(g *graph.Graph, cfg classify.Config) (classify.Config, coupling.Index) {
 	cfg = augmentConfig(g, cfg)
 	return cfg, classify.Run(g, cfg)
-}
-
-// StaticExternalDistanceCandidates turns unresolved external dependency targets
-// into declared-external review candidates.
-func StaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) []evidence.DistanceConfigCandidate {
-	return buildStaticDistanceCandidates(g, idx, mm)
 }

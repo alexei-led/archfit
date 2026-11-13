@@ -32,29 +32,25 @@ fi
 
 FACTS_DIR="$(cd "$(dirname "$CFG")" && pwd)/.archfit-cache/facts"
 
-# run_timed prints elapsed wall seconds. `archfit check` exits 0 (pass),
-# 1 (violations), or 2 (warnings) on a valid gate run — all three are timed;
-# the bench never fails on the verdict. Exit 3 (parser, config, or tool error)
-# means the run crashed: a crashed run is not a timing, so the benchmark
-# aborts with exit 3 instead of reporting it as one.
+# Time pass (0) and fail (1). Unknown, usage and tool errors (2) are not a completed check.
 run_timed() {
 	start=$(python3 -c 'import time; print(time.time())')
-	"$BIN" check --config "$CFG" --root "$ROOT" >/dev/null 2>&1
+	"$BIN" check -C "$ROOT" --policy "$CFG" >/dev/null 2>&1
 	rc=$?
 	end=$(python3 -c 'import time; print(time.time())')
 	case "$rc" in
-	0 | 1 | 2) ;;
+	0 | 1) ;;
 	*)
 		echo "error: archfit check exited $rc (parser, config, or tool error) — benchmark aborted" >&2
-		return 3
+		return 2
 		;;
 	esac
 	python3 -c "print('%.1f' % ($end - $start))"
 }
 
 rm -rf "$FACTS_DIR"
-cold=$(run_timed) || exit 3
-warm=$(run_timed) || exit 3
+cold=$(run_timed) || exit 2
+warm=$(run_timed) || exit 2
 echo "config: $CFG"
 echo "root:   $ROOT"
 echo "cold:   ${cold}s (fact cache cleared)"

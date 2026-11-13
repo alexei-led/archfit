@@ -102,7 +102,7 @@ func TestBaseComparison_LongOriginReasonIsDisclosedInFull(t *testing.T) {
 	if !strings.Contains(stderr.String(), want) {
 		t.Errorf("stderr does not carry the whole origin reason:\n%s", stderr.String())
 	}
-	reasons := ProjectReport(out.Diagnostic, out.Score).State.Comparison.OriginReasons
+	reasons := projectReport(out.Diagnostic, out.Score).State.Comparison.OriginReasons
 	if len(reasons) != 1 {
 		t.Fatalf("projected origin reasons = %q, want one", reasons)
 	}

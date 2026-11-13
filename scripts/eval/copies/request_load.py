@@ -559,24 +559,17 @@ def pairs_report(repo: Path, label: str, policy: cg.PolicyMap, volatility: dict[
 
 
 def seam_scores(archfit: str, config: Path, root: Path) -> dict[Pair, dict]:
+    if config.resolve() != (root / ".archfit.yaml").resolve():
+        raise ValueError("report reads .archfit.yaml at the repository root")
     result = subprocess.run(
-        [
-            archfit,
-            "analyze",
-            "--format",
-            "json",
-            "-c",
-            str(config),
-            "--root",
-            str(root),
-        ],
+        [archfit, "report", "-C", str(root), "--format", "json"],
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"archfit analyze: exit {result.returncode}: {result.stderr.strip()[:300]}"
+            f"archfit report: exit {result.returncode}: {result.stderr.strip()[:300]}"
         )
     out = {}
     for seam in json.loads(result.stdout).get("seams", []):
@@ -598,7 +591,7 @@ def at_commit(repo: Path, sha: str, archfit: str, config: Path) -> dict[Pair, di
         tree = Path(tmp) / "tree"
         cg.git(repo, "worktree", "add", "--detach", "-q", str(tree), sha)
         try:
-            return seam_scores(archfit, config, tree)
+            return seam_scores(archfit, tree / ".archfit.yaml", tree)
         finally:
             cg.git(repo, "worktree", "remove", "--force", str(tree))
 

@@ -12,8 +12,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/labels/labelsio"
 )
 
-func enrichmentLabelStore() application.EnrichmentLabelStore { return labelsio.ApplicationStore{} }
-
 // newEvidenceService builds the concrete acquisition stage for one tree.
 func newEvidenceService(configPath, root string, cfg config.Config, deps *appDeps) *acquisition.Service {
 	return &acquisition.Service{
@@ -50,23 +48,6 @@ func newAnalysisStages(configPath, root string, cfg config.Config, deps *appDeps
 	}
 }
 
-// newConfigLintService composes `config lint`: the acquisition walk is its
-// source-inventory port, under the projections of the config being linted.
-func newConfigLintService(configPath string, cfg config.Config, deps *appDeps) application.ConfigLintService {
-	return application.ConfigLintService{Inventory: acquisition.Inventory{
-		ConfigPath: configPath, Options: cfg.RunOptions(), Runner: deps.Runner,
-	}}
-}
-
-// newAnalyzeStages composes the analyze/check run. It is the only composition
-// that owns the user's stderr conversation, so it is the only one that
-// discloses the config-quality block.
-func newAnalyzeStages(configPath, root string, cfg config.Config, deps *appDeps) application.StageExecutor {
-	stages := newAnalysisStages(configPath, root, cfg, deps)
-	stages.Preparer = config.Preparer{Config: cfg, Stderr: deps.stderr(), DiscloseLint: true}
-	return stages
-}
-
 // newReportOnlyStages composes a run that never consults the persisted
 // baseline: config comparison and the base sub-run measure trees, not accepted
 // history.
@@ -99,38 +80,4 @@ func applicationBaseline(b baseline.Baseline) application.Baseline {
 		}
 	}
 	return out
-}
-
-type baselineWriterAdapter struct{}
-
-func (baselineWriterAdapter) Save(ctx context.Context, path string, in application.BaselineSnapshot) error {
-	b := baseline.Baseline{Metrics: in.Metrics}
-	for _, f := range in.Accepted {
-		b.Accepted = append(b.Accepted, baseline.AcceptedFinding{Fingerprint: f.Fingerprint, RuleID: f.RuleID, Kind: f.Kind, Severity: f.Severity})
-	}
-	if in.State != nil {
-		b.State = &baseline.StateSnapshot{
-			ConfigHash: in.State.ConfigHash, ClassificationHash: in.State.ClassificationHash, ModelHash: in.State.ModelHash,
-			LabelsHash: in.State.LabelsHash, RubricVersion: in.State.RubricVersion,
-			MeasurementProfile: in.State.MeasurementProfile,
-			QualifyingSeamIDs:  in.State.QualifyingSeamIDs,
-		}
-	}
-	return baseline.Save(ctx, path, b)
-}
-
-// bundleDirOf is the directory that holds a config bundle: the config file's.
-func bundleDirOf(configPath string) string { return filepath.Dir(configPath) }
-
-// newPolicyQuery composes the tool-free acquisition behind `archfit policy`:
-// the analysis root resolved as check resolves it, under the config's run
-// projections.
-func newPolicyQuery(ctx context.Context, configPath, root string, cfg config.Config, deps *appDeps) (acquisition.Query, error) {
-	return acquisition.NewQuery(ctx, configPath, root, cfg.RunOptions(), deps.Runner)
-}
-
-// newPolicyQueryService composes `archfit policy can-import`: the tool-free
-// edge query and the persisted baseline. No analyzer and no fact cache.
-func newPolicyQueryService(q acquisition.Query) application.PolicyQueryService {
-	return application.PolicyQueryService{Edges: q, Baseline: baselineLoaderAdapter{}}
 }

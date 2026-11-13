@@ -4,34 +4,21 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
-
-	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
-// Config-lint severities. An error makes `archfit config lint` exit 1.
+// Severity of a module-value diagnostic reported by PolicyWarnings.
 const (
-	LintSeverityError   = "error"
-	LintSeverityWarning = "warning"
-	LintSeverityInfo    = "info"
+	LintSeverityError = "error"
 )
 
-// Config-lint diagnostic codes (archfit.config-lint.v1). New codes are
-// additive; an existing code keeps its meaning.
+// Module-value diagnostic codes used by PolicyWarnings.
 const (
-	LintDeadSelector         = "dead_selector"
-	LintGuardRule            = "guard_rule"
-	LintGuardMatchesSource   = "guard_matches_source"
-	LintUnknownVolatility    = "unknown_volatility"
-	LintUnknownSubdomain     = "unknown_subdomain"
-	LintUndeclaredLayer      = "undeclared_layer"
-	LintPublicOutsideModule  = "public_outside_module"
-	LintPublicMatchesNothing = "public_matches_nothing"
-	LintAmbiguousOwnership   = "ambiguous_ownership"
-	LintUnknownModule        = "unknown_module"
-	LintMissingRationale     = "missing_rationale"
+	LintUnknownVolatility = "unknown_volatility"
+	LintUnknownSubdomain  = "unknown_subdomain"
+	LintUndeclaredLayer   = "undeclared_layer"
+	LintUnknownModule     = "unknown_module"
 )
 
 // PolicyDiagnostic is one configuration defect: a code, a severity, the config
@@ -41,37 +28,6 @@ type PolicyDiagnostic struct {
 	Severity string
 	Path     string
 	Message  string
-}
-
-// IsError reports whether the diagnostic fails `archfit config lint`.
-func (d PolicyDiagnostic) IsError() bool { return d.Severity == LintSeverityError }
-
-// LintPolicy reports the configuration defects that loading accepts but that
-// silently weaken the policy, judged against the rule-scope source inventory:
-// dead rule selectors (the predicate rule scope uses; see selectorInventory for
-// where lint and check inputs differ),
-// guard rules, unknown module volatility or subdomain values, layers missing
-// from `layers:`, public entries outside their module or matching no source,
-// and source paths two modules claim at equal specificity. Diagnostics are
-// sorted by path, then code, then message, so two ties that name the same first
-// module keep one order.
-func LintPolicy(p policy.PolicySnapshot, f Observations) []PolicyDiagnostic {
-	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
-	out := ruleDiagnostics(p.Gates.Rules.Rules, inv)
-	out = append(out, allowlistRuleDiagnostics(p.Gates.Rules.Rules, p.Topology)...)
-	out = append(out, moduleValueDiagnostics(p.Topology)...)
-	out = append(out, publicSurfaceDiagnostics(p.Topology, inv)...)
-	out = append(out, ownershipDiagnostics(p.Topology.ModuleMap, inv)...)
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Path != out[j].Path {
-			return out[i].Path < out[j].Path
-		}
-		if out[i].Code != out[j].Code {
-			return out[i].Code < out[j].Code
-		}
-		return out[i].Message < out[j].Message
-	})
-	return out
 }
 
 // PolicyWarnings are the configuration defects analysis runs disclose as
@@ -111,75 +67,6 @@ func PolicyWarnings(p policy.PolicySnapshot, f Observations) []string {
 	return out
 }
 
-// LintRationales warns on every blocking rule that does not say why it
-// exists. The rationale reaches the agent that hits the rule: without it the
-// agent can only fix the symptom. `config lint --strict` makes it an error.
-func LintRationales(rules []policy.RuleDef) []PolicyDiagnostic {
-	var out []PolicyDiagnostic
-	for _, rule := range rules {
-		if !rule.Blocks() || strings.TrimSpace(rule.Rationale) != "" {
-			continue
-		}
-		out = append(out, PolicyDiagnostic{Code: LintMissingRationale, Severity: LintSeverityWarning, Path: "rules[" + rule.ID + "].rationale",
-			Message: "blocking rule has no rationale: say which consequence it prevents, so the agent fixes the cause"})
-	}
-	return out
-}
-
-// ruleDiagnostics reports dead selectors and lists guard rules. A dead selector
-// on a gate: off rule is a warning: the rule is compiled out, so nothing is
-// vacuously passing, but it will be when the gate is turned back on.
-func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiagnostic {
-	var out []PolicyDiagnostic
-	for _, rule := range rules {
-		if _, reads := selectorRuleTypes[rule.Type]; !reads {
-			continue
-		}
-		side, glob, vacuous := inv.vacuousSelector(rule)
-		path := "rules[" + rule.ID + "]"
-		switch {
-		case vacuous && inv.matchesOnlyUnanalysed(rule.Type, side, glob):
-			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
-				Message: side + ": " + glob + " matches only source no dependency producer analyses: its language's" +
-					" extractor finds no project under the analysis root, so the rule can never be evaluated"})
-		case rule.Guard && vacuous && !nodeKindedSelector(glob):
-			out = append(out, PolicyDiagnostic{Code: LintGuardRule, Severity: LintSeverityInfo, Path: path,
-				Message: "guard rule: " + side + " " + glob + " matches nothing by design"})
-		case rule.Guard && inv.matches(rule.Type, selectorFrom, orMatchAll(rule.From)) &&
-			inv.matches(rule.Type, selectorTo, orMatchAll(rule.To)):
-			out = append(out, PolicyDiagnostic{Code: LintGuardMatchesSource, Severity: LintSeverityWarning, Path: path,
-				Message: "guard rule matches scanned source: the guarded path exists — remove the code or drop guard: true"})
-		case vacuous && isModuleSide(side) && len(inv.moduleMap.ModulesSelected(glob)) == 0:
-			out = append(out, PolicyDiagnostic{Code: LintUnknownModule, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
-				Message: side + ": " + glob + " selects no declared module (no module has that name, layer, or role); fix the selector or set guard: true"})
-		case vacuous && isModuleSide(side):
-			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
-				Message: side + ": " + glob + " selects only modules that own no scanned source; fix the module paths or the selector, or set guard: true"})
-		case vacuous:
-			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
-				Message: side + ": " + glob + " matches no scanned source" + inv.vacuityHint(glob) + deadSelectorAdvice(glob)})
-		}
-	}
-	return out
-}
-
-// allowlistRuleDiagnostics reports a module_dependencies rule with nothing to
-// enforce: no module declares depends_on or visible_to, so the rule could only
-// ever pass.
-func allowlistRuleDiagnostics(rules []policy.RuleDef, topology policy.TopologyView) []PolicyDiagnostic {
-	if declaresAnyAllowlist(topology) {
-		return nil
-	}
-	var out []PolicyDiagnostic
-	for _, rule := range rules {
-		if rule.Type == ruleTypeModuleDependencies {
-			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: "rules[" + rule.ID + "]",
-				Message: "module_dependencies has nothing to enforce: no module declares depends_on or visible_to"})
-		}
-	}
-	return out
-}
-
 // declaresAnyAllowlist reports whether any module declares depends_on or
 // visible_to, an empty list included.
 func declaresAnyAllowlist(topology policy.TopologyView) bool {
@@ -189,48 +76,6 @@ func declaresAnyAllowlist(topology policy.TopologyView) bool {
 		}
 	}
 	return false
-}
-
-// deadSelectorSeverity is an error, or a warning on a gate: off rule.
-func deadSelectorSeverity(rule policy.RuleDef) string {
-	if rule.Gate == string(policy.GateOff) {
-		return LintSeverityWarning
-	}
-	return LintSeverityError
-}
-
-// orMatchAll spells an empty rule selector, which means "match all", as the
-// glob that matches everything.
-func orMatchAll(selector string) string {
-	if selector == "" {
-		return "**"
-	}
-	return selector
-}
-
-// deadSelectorAdvice ends a dead-selector message with the fix. A selector
-// spelled as a graph node ID cannot be guarded: nothing turns a kind prefix into
-// an endpoint path, so the guard advice would send the reader the wrong way.
-func deadSelectorAdvice(glob string) string {
-	if nodeKindedSelector(glob) {
-		return ""
-	}
-	return "; fix the selector or set guard: true"
-}
-
-// vacuityHint names why a dead selector can never match, when the spelling
-// itself is the defect.
-func (inv selectorInventory) vacuityHint(glob string) string {
-	if kind, endpoint, ok := nodeKindPrefix(glob); ok {
-		return " (a selector is the endpoint path, not a graph node ID: write " + endpoint + " without the " + kind + ": prefix)"
-	}
-	if unmatchableSelector(glob) {
-		return " (selectors are relative paths or dotted/crate names: no leading !, ./, ../ or /, and no !( negation)"
-	}
-	if module, spelled := inv.goModulePathOf(glob); spelled {
-		return " (selectors are scan-root-relative: drop the Go module path " + module + "/)"
-	}
-	return ""
 }
 
 // moduleValueDiagnostics reports module values the engine cannot read: an
@@ -269,117 +114,6 @@ func moduleValueDiagnostics(topology policy.TopologyView) []PolicyDiagnostic {
 		}
 	}
 	return out
-}
-
-// publicSurfaceDiagnostics reports public entries a module does not own or
-// that name no scanned node. Public globs match edge targets, which are graph
-// nodes (a Go package directory, a TypeScript file, a dotted Python module),
-// so a stale entry silences a real intrusive edge.
-//
-// Ownership is judged on the nodes an entry matches, so glob syntax on either
-// side ({a,b}, [ab]) compares by what it matches, not by its text. An entry
-// that matches no scanned node is judged by its own text, read as a path.
-func publicSurfaceDiagnostics(topology policy.TopologyView, inv selectorInventory) []PolicyDiagnostic {
-	var out []PolicyDiagnostic
-	for _, name := range sortedModuleNames(topology.Modules) {
-		def := topology.Modules[name]
-		owned := func(node string) bool {
-			return slices.ContainsFunc(def.Paths, func(glob string) bool {
-				matched, _ := doublestar.Match(glob, node)
-				return matched
-			})
-		}
-		for i, pub := range def.Public {
-			path := fmt.Sprintf("modules.%s.public[%d]", name, i)
-			nodes := inv.nodesMatching(pub)
-			outside := slices.ContainsFunc(nodes, func(n string) bool { return !owned(n) })
-			if len(nodes) == 0 {
-				outside = !owned(pub)
-			}
-			if outside {
-				out = append(out, PolicyDiagnostic{Code: LintPublicOutsideModule, Severity: LintSeverityError, Path: path,
-					Message: fmt.Sprintf("public entry %q is outside the module's own paths %v", pub, def.Paths)})
-			}
-			if len(nodes) == 0 && !inv.undecidable(pub) {
-				out = append(out, PolicyDiagnostic{Code: LintPublicMatchesNothing, Severity: LintSeverityError, Path: path,
-					Message: fmt.Sprintf("public entry %q names no scanned package or module", pub)})
-			}
-		}
-	}
-	return out
-}
-
-// ownershipDiagnostics reports source paths two or more modules claim at equal
-// specificity, one diagnostic per tied module set. Most-specific-wins resolves
-// genuine nesting; an exact tie is resolved by module name, so every module
-// but the first silently loses the paths.
-func ownershipDiagnostics(mm policy.ModuleMap, inv selectorInventory) []PolicyDiagnostic {
-	type tie struct {
-		modules []string
-		example string
-		count   int
-	}
-	ties := map[string]*tie{}
-	seen := map[string]struct{}{}
-	for _, file := range inv.files {
-		_, selector, _ := ruleFileSelector(inv.moduleMap, file, inv.selectors)
-		for _, path := range []string{file, selector} {
-			if _, done := seen[path]; path == "" || done {
-				continue
-			}
-			seen[path] = struct{}{}
-			modules := mm.OwnershipTie(path)
-			if modules == nil {
-				continue
-			}
-			key := strings.Join(modules, "\x00")
-			if ties[key] == nil {
-				ties[key] = &tie{modules: modules, example: path}
-			}
-			t := ties[key]
-			t.count++
-			if path < t.example {
-				t.example = path
-			}
-		}
-	}
-	keys := make([]string, 0, len(ties))
-	for key := range ties {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	out := make([]PolicyDiagnostic, 0, len(ties))
-	for _, key := range keys {
-		t := ties[key]
-		out = append(out, PolicyDiagnostic{Code: LintAmbiguousOwnership, Severity: LintSeverityError,
-			Path: "modules." + t.modules[0] + ".paths",
-			Message: fmt.Sprintf("%d source path(s), e.g. %s, are claimed at equal specificity by modules %s; %s wins by name",
-				t.count, t.example, strings.Join(t.modules, ", "), t.modules[0])})
-	}
-	return out
-}
-
-// nodesMatching returns the distinct graph-node selectors of in-scope files
-// that pattern matches: what a public glob is matched against.
-func (inv selectorInventory) nodesMatching(pattern string) []string {
-	var nodes []string
-	seen := map[string]struct{}{}
-	for _, file := range inv.files {
-		_, selector, _ := ruleFileSelector(inv.moduleMap, file, inv.selectors)
-		if _, done := seen[selector]; selector == "" || done {
-			continue
-		}
-		seen[selector] = struct{}{}
-		if matched, _ := doublestar.Match(pattern, selector); matched {
-			nodes = append(nodes, selector)
-		}
-	}
-	for _, node := range inv.rustModules {
-		if matched, _ := doublestar.Match(pattern, node); matched {
-			nodes = append(nodes, node)
-		}
-	}
-	return nodes
 }
 
 func sortedModuleNames(modules map[string]policy.ModuleDef) []string {

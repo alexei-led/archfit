@@ -81,7 +81,7 @@ def prefix_policy(
     excluded: tuple[str, ...] = (),
     public: dict[str, tuple[str, ...]] | None = None,
 ) -> cg.PolicyMap:
-    """A stand-in for `archfit policy where`: the module is the one whose path prefix matches.
+    """A stand-in for `archfit rules`: the module is the one whose path prefix matches.
 
     The selector is the file's directory, as for a Go package."""
     depends_on, public = depends_on or {}, public or {}
