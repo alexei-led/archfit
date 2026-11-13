@@ -214,7 +214,7 @@ class Sweep:
                 raise ValueError("report did not emit architecture-state.v1")
             if self.validate_schema:
                 validate_published_schema(
-                    state, REPO_ROOT / "archfit.state.schema.json"
+                    state, REPO_ROOT / "archfit.report.schema.json"
                 )
 
             args = ["check", *root, "--format", "json"]

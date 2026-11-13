@@ -8,8 +8,7 @@
 # context boundary -> a flag). Every context declares its contract package as
 # public and the rest of its tree as internal, so public_api_only blocks an
 # import that bypasses the contract.
-#   archfit analyze --config .archfit.yaml
-#   archfit analyze --format scorecard --config .archfit.yaml
+# For Archfit 3 only. Run `archfit init` to convert a repository to version 3.
 version: 2
 coupling:
   min_severity: medium

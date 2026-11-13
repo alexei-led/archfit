@@ -58,6 +58,8 @@ The run:
 5. The check reads the base and the working tree and counts the errors of each by rule, modules, and symbol. An error the base does not have, or has fewer times, is added by the change: the status is `fail`. An expired exception fails every change, and the status line ends with `(not from this change)`. See [results](results.md).
 6. On a push (`HEAD` is the tip of the target branch) with a `pass` or `fail` status, the JSON result adds the state of the repository. See [results](results.md#json).
 
+The default text record is also the agent workflow: run `archfit check` without a format flag and follow `next:`. Exit `0` means `pass`, `1` means `fail`, and `2` means `unknown`, wrong usage, or a tool error.
+
 The record goes to stdout. Notes, such as a target branch with no policy, and tool errors go to stderr. When no workflow in `.github/workflows/` has a step that uses `alexei-led/archfit-action` (`uses: alexei-led/archfit-action@<ref>`), every result carries the line `policy: not protected`, after the status line: the result is a local guide, not change control.
 
 Each run except a `--policy` preview keeps its JSON output and the git tree id of the working tree in `.archfit-cache/last.json`. `archfit request` reads it while the tree and `HEAD` are the same. The same tree, policy, engine version, and date give the same output.
@@ -200,7 +202,7 @@ policy: not protected
 
 On a version 2 policy the report shows the measurements only, says to run `archfit init`, and has no `policy:` line. On a version 3 policy, the report does not yet place Python code in its modules, so the coupling measurements of a Python repository are `n/a`.
 
-`--format json` writes the `archfit.architecture-state.v1` document of `archfit.state.schema.json`. On a version 3 policy, its `repository` object holds the state and each list above.
+`--format json` writes the `archfit.architecture-state.v1` document of `archfit.report.schema.json`. On a version 3 policy, its `repository` object holds the state and each list above.
 
 | Flag | Meaning |
 | --- | --- |

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	schemaFile = "../../archfit.state.schema.json"
+	schemaFile = "../../archfit.report.schema.json"
 	reportSrc  = "../model/report"
 	// envUpdateSchema regenerates the committed schema, matching the config
 	// schema's workflow so both are refreshed by one `make schema`.
@@ -24,7 +24,7 @@ const (
 	repoRoot = "../.."
 )
 
-// TestStateSchemaNoDrift verifies that the committed archfit.state.schema.json
+// TestStateSchemaNoDrift verifies that the committed archfit.report.schema.json
 // matches what the current report structs generate. A published contract that
 // silently stops describing the emitted document is worse than no contract:
 // consumers generate types from it.
@@ -123,7 +123,7 @@ func TestStateSchemaAcceptsEveryCommittedStateDocument(t *testing.T) {
 
 func compileStateSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	return compileSchema(t, schemaFile, "archfit.state.schema.json")
+	return compileSchema(t, schemaFile, "archfit.report.schema.json")
 }
 
 // findStateDocuments lists the JSON files whose ROOT declares the state

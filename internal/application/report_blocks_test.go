@@ -32,9 +32,6 @@ func populatedResult() result.Result {
 	}}}
 	r.SyntaxFacts = []evidence.SyntaxFact{{Language: "go", File: blockFileA, Module: "a", Kind: "func", Name: "F", Exported: true, StartLine: 1, EndLine: 9, Count: 1, Framework: "none", FrameworkConfirmed: true}}
 	r.DeprecatedDeps = []evidence.DeprecatedDep{{File: "go.mod", Kind: "module", Subject: "old/pkg", Note: "deprecated"}}
-	r.SemanticStrengthOverlay = &evidence.SemanticStrengthOverlay{ByLanguage: map[string]evidence.SemanticStrengthOverlayStats{
-		"typescript": {CandidateEdges: 5, Applied: 3, Missed: 2, Before: map[string]int{mergeFunctional: 5}, After: map[string]int{mergeContract: 3}},
-	}}
 	r.DynamicConnascenceSignals = &evidence.DynamicConnascenceSignals{
 		Unmeasured: []string{"timing"}, ReportOnlyReason: "no runtime trace",
 		Signals: []evidence.DynamicConnascenceSignal{{Kind: "execution", Module: "a", Target: "b", IntegrationKind: blockQueue, Count: 1,
@@ -80,9 +77,6 @@ func reportBlockChecks(doc report.Document) []blockCheck {
 		}},
 		{"deprecated deps", func() bool {
 			return len(doc.DeprecatedDeps) == 1 && doc.DeprecatedDeps[0].Subject == "old/pkg"
-		}},
-		{"semantic overlay", func() bool {
-			return doc.SemanticStrengthOverlay != nil && doc.SemanticStrengthOverlay.ByLanguage["typescript"].Missed == 2
 		}},
 		{"dynamic connascence", func() bool {
 			return doc.DynamicConnascenceSignals != nil && len(doc.DynamicConnascenceSignals.Signals) == 1 &&

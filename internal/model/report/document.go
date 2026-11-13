@@ -125,7 +125,6 @@ type Document struct {
 	RuntimeAsync              []RuntimeAsyncModule       `json:"runtime_async,omitempty"`
 	RuntimeAsyncEdges         []RuntimeAsyncEdge         `json:"runtime_async_edges,omitempty"`
 	DeprecatedDeps            []DeprecatedDep            `json:"deprecated_deps,omitempty"`
-	SemanticStrengthOverlay   *SemanticStrengthOverlay   `json:"semantic_strength_overlay,omitempty"`
 	SyntaxFacts               []SyntaxFact               `json:"syntax_facts,omitempty"`
 	AgentTasks                []AgentTask                `json:"agent_tasks"`
 	AdvisoryTasks             []AdvisoryTask             `json:"advisory_tasks"`

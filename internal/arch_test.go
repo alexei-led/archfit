@@ -921,7 +921,6 @@ func isReportAdapter(pkgPath string) bool {
 // reportAdapterForbids reports whether a report adapter importing imp would
 // breach the report boundary. Adapters render a finished contract: they may
 // reach the report DTOs, the result contract of a check, the rendering port,
-// the shared brief view model (itself a report adapter held to this rule),
 // plus anything outside internal/
 // (stdlib and vendored formatters), and nothing else. Reaching into Assessment
 // or Relationship internals would let a renderer re-derive a fact instead of
@@ -933,7 +932,7 @@ func reportAdapterForbids(imp string) bool {
 	}
 	switch imp {
 	case modulePrefix + "internal/model/report", modulePrefix + "internal/model/result",
-		modulePrefix + "internal/report/ports", modulePrefix + "internal/output/brief":
+		modulePrefix + "internal/report/ports":
 		return false
 	}
 	return true
@@ -953,13 +952,11 @@ func TestReportBoundaryRuleFiresOnDomainImports(t *testing.T) {
 	}{
 		{name: "renderer reads report DTOs", pkg: modulePrefix + "internal/output/jsonout", imp: modulePrefix + "internal/model/report", adapter: true},
 		{name: "renderer reads the result contract", pkg: modulePrefix + "internal/output/record", imp: modulePrefix + "internal/model/result", adapter: true},
-		{name: "renderer reads the rendering port", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/report/ports", adapter: true},
-		{name: "renderer reads stdlib", pkg: modulePrefix + "internal/output/sarif", imp: "encoding/json", adapter: true},
-		{name: "renderer reads the shared brief", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/output/brief", adapter: true},
-		{name: "renderer imports another format", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/output/markdown", adapter: true, forbid: true},
-		{name: "the brief is held to the same rule", pkg: modulePrefix + "internal/output/brief", imp: modulePrefix + "internal/assessment/state", adapter: true, forbid: true},
-		{name: "renderer reaches into assessment", pkg: modulePrefix + "internal/output/markdown", imp: modulePrefix + "internal/assessment/score", adapter: true, forbid: true},
-		{name: "renderer reaches into relationship", pkg: modulePrefix + "internal/output/scorecard", imp: modulePrefix + "internal/relationship/classify", adapter: true, forbid: true},
+		{name: "renderer reads the rendering port", pkg: modulePrefix + "internal/output/reporttext", imp: modulePrefix + "internal/report/ports", adapter: true},
+		{name: "renderer reads stdlib", pkg: modulePrefix + "internal/output/record", imp: "encoding/json", adapter: true},
+		{name: "renderer imports another format", pkg: modulePrefix + "internal/output/reporttext", imp: modulePrefix + "internal/output/jsonout", adapter: true, forbid: true},
+		{name: "renderer reaches into assessment", pkg: modulePrefix + "internal/output/jsonout", imp: modulePrefix + "internal/assessment/score", adapter: true, forbid: true},
+		{name: "renderer reaches into relationship", pkg: modulePrefix + "internal/output/record", imp: modulePrefix + "internal/relationship/classify", adapter: true, forbid: true},
 		{name: "renderer reaches into application", pkg: modulePrefix + "internal/report/ports", imp: modulePrefix + "internal/application", adapter: true, forbid: true},
 		{name: "non-adapter is out of scope", pkg: modulePrefix + "internal/application", imp: modulePrefix + "internal/assessment/score"},
 	} {
@@ -1088,7 +1085,7 @@ func TestInCoreRing(t *testing.T) {
 		modulePrefix + "internal/assessment/signals":                 true,
 		modulePrefix + "internal/relationship/analysis":              true,
 		modulePrefix + "internal/scope":                              true,
-		modulePrefix + "internal/output/markdown":                    false,
+		modulePrefix + "internal/output/jsonout":                     false,
 		modulePrefix + "internal/assessmentx":                        false, // must not over-match the prefix
 	}
 	for path, want := range cases {
@@ -1106,7 +1103,7 @@ func TestIsForbiddenForCore(t *testing.T) {
 		"os", "os/exec",
 		"github.com/goccy/go-yaml",
 		"gopkg.in/yaml.v3",
-		modulePrefix + "internal/output/markdown",
+		modulePrefix + "internal/output/jsonout",
 		modulePrefix + "internal/toolrun",
 		modulePrefix + "internal/factcache",
 	}
