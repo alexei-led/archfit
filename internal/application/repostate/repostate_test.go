@@ -377,25 +377,59 @@ type headFacts struct {
 
 func (h headFacts) Head(context.Context, string) (evidence.CheckFacts, error) { return h.facts, h.err }
 
+// tree is the working tree: its files, or an error for each method.
+type tree struct {
+	files        []string
+	idErr, lsErr error
+}
+
+const treeID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+func (w tree) WorkingTree(context.Context) (string, error) { return treeID, w.idErr }
+
+func (w tree) Files(_ context.Context, id string) ([]string, error) {
+	if id != treeID {
+		return nil, errors.New("unknown tree " + id)
+	}
+	return w.files, w.lsErr
+}
+
 func TestServiceState(t *testing.T) {
 	errPort := errors.New("port failed")
 	unfit := policy()
 	unfit.Modules["pkg_gone"] = resolved.Module{Paths: []string{"pkg/gone/**"}}
+	// The Go and Python extractors leave test files out of Sources; the
+	// policy's tests glob matches files of the tree all the same.
+	withTests := policy()
+	withTests.Tests = []string{"**/*_test.go"}
+	head := facts(tcToUtil, nil)
+	files := slices.Concat(head.Sources, []string{"go.mod", "pkg/tc/tc_test.go"})
 	cases := []struct {
 		name    string
 		source  policySource
+		tree    tree
 		head    headFacts
 		wantErr string
 		want    repostate.State
 	}{
-		{name: "a state", source: policySource{p: policy()}, head: headFacts{facts: facts(tcToUtil, nil)}, want: repostate.StateDrift},
+		{name: "a state", source: policySource{p: policy()}, tree: tree{files: files}, head: headFacts{facts: head}, want: repostate.StateDrift},
+		{
+			name: "a tests glob that matches only files the extractors leave out", source: policySource{p: withTests},
+			tree: tree{files: files}, head: headFacts{facts: head}, want: repostate.StateDrift,
+		},
 		{name: "the policy cannot be read", source: policySource{err: errPort}, wantErr: errPort.Error()},
-		{name: "the head cannot be read", source: policySource{p: policy()}, head: headFacts{err: errPort}, wantErr: errPort.Error()},
-		{name: "a policy that does not fit the tree", source: policySource{p: unfit}, head: headFacts{facts: facts(nil, nil)}, wantErr: "pkg/gone/**"},
+		{name: "the tree id cannot be read", source: policySource{p: policy()}, tree: tree{idErr: errPort}, wantErr: errPort.Error()},
+		{name: "the tree cannot be listed", source: policySource{p: policy()}, tree: tree{lsErr: errPort}, wantErr: errPort.Error()},
+		{name: "the head cannot be read", source: policySource{p: policy()}, tree: tree{files: files}, head: headFacts{err: errPort}, wantErr: errPort.Error()},
+		{name: "a policy that does not fit the tree", source: policySource{p: unfit}, tree: tree{files: files}, head: headFacts{facts: head}, wantErr: "pkg/gone/**"},
+		{
+			name: "a tests glob that matches no file of the tree", source: policySource{p: withTests},
+			tree: tree{files: head.Sources}, head: headFacts{facts: head}, wantErr: "**/*_test.go",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s := repostate.Service{Policies: c.source, Facts: c.head}
+			s := repostate.Service{Policies: c.source, Tree: c.tree, Facts: c.head}
 			r, err := s.State(context.Background(), ".", today)
 			switch {
 			case c.wantErr != "":

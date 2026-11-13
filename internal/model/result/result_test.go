@@ -28,6 +28,9 @@ func TestGoldensMatchTheTypes(t *testing.T) {
 		{name: "policy_differs", status: result.StatusUnknown, causes: []result.Cause{result.CausePolicy}},
 		{name: "expired_exception", status: result.StatusFail, errors: 1},
 		{name: "waiting", status: result.StatusWaiting, errors: 1},
+		{name: "repository_clean", status: result.StatusPass},
+		{name: "repository_drift", status: result.StatusPass},
+		{name: "repository_expired", status: result.StatusFail, errors: 1},
 	}
 	for _, tc := range results {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,6 +108,49 @@ func TestWaitingAsksNothingOfTheAuthor(t *testing.T) {
 			t.Errorf("errors[%d].next = %+v, want kind wait and no note", i, e.Next)
 		}
 	}
+}
+
+// TestRepositoryState pins design 7.1 and 7.2 in the push-run goldens: drift
+// is never from the change, and an expired exception is listed once, in
+// errors, beside the state that names it.
+func TestRepositoryState(t *testing.T) {
+	cases := []struct {
+		golden                  string
+		state                   result.RepositoryState
+		drift, expiring, unread int
+	}{
+		{golden: "repository_clean", state: result.RepositoryClean, expiring: 1, unread: 1},
+		{golden: "repository_drift", state: result.RepositoryDrift, drift: 1},
+		{golden: "repository_expired", state: result.RepositoryExpired},
+	}
+	for _, c := range cases {
+		t.Run(c.golden, func(t *testing.T) {
+			var got result.Result
+			decodeStrict(t, readGolden(t, c.golden), &got)
+			r := got.Repository
+			if r == nil {
+				t.Fatal("no repository state")
+			}
+			if r.State != c.state || len(r.Drift) != c.drift || len(r.Expiring) != c.expiring || len(r.Unread) != c.unread {
+				t.Errorf("repository = %+v, want state %s, %d drift, %d expiring, %d unread", r, c.state, c.drift, c.expiring, c.unread)
+			}
+			for _, e := range r.Drift {
+				if e.FromChange || e.Next.Kind != result.NextFix {
+					t.Errorf("drift %s: from_change %t, next %+v; want false and a fix: archfit request asks only for a change", e.Key, e.FromChange, e.Next)
+				}
+			}
+			if expired := len(got.Errors) == 1 && got.Errors[0].Rule == "exception"; expired != (c.state == result.RepositoryExpired) {
+				t.Errorf("errors = %+v, want the expired exception only in the expired state", got.Errors)
+			}
+		})
+	}
+	t.Run("a pull-request result has none", func(t *testing.T) {
+		var got result.Result
+		decodeStrict(t, readGolden(t, "graph"), &got)
+		if got.Repository != nil {
+			t.Errorf("repository = %+v, want none", got.Repository)
+		}
+	})
 }
 
 func readGolden(t *testing.T, name string) []byte {

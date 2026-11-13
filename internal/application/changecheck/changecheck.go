@@ -25,7 +25,13 @@
 //  5. The facts of the head and the base, read with the settings of the
 //     policy that judges, the lines the change adds, and count.Assess on the
 //     date the Clock gives.
-//  6. The result (project.go) and, unless the run is a preview, the store of
+//  6. On a push, the repository state: when HEAD is the tip of the target
+//     branch and the run gave a verdict, the head facts already read are
+//     judged on their own by internal/application/repostate, the producer of
+//     the repository state, and the result carries its answer. A
+//     pull-request run, a HEAD a later push left behind the tip, a preview
+//     and a run with no verdict carry no state.
+//  7. The result (project.go) and, unless the run is a preview, the store of
 //     the last result for `archfit request`. Every other run is stored, pass
 //     and unknown too, under the tree id read when the run starts. When the
 //     working tree changes during the run, nothing is stored and a note says
@@ -44,6 +50,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/v3/internal/application/repostate"
 	"github.com/alexei-led/archfit/v3/internal/assessment/count"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/result"
@@ -208,7 +215,10 @@ type run struct {
 	reasons []reason
 	// verdict is the assessment; nil when the run stopped before it.
 	verdict *count.Verdict
-	notes   []string
+	// repository is the state of the head tree on a push (step 6); nil on
+	// every other run.
+	repository *repostate.Repository
+	notes      []string
 }
 
 // reason is one reason the run gives no verdict.
@@ -254,7 +264,7 @@ func (s Service) Check(ctx context.Context, o Options) (Outcome, error) {
 	return Outcome{Result: res, Notes: r.notes}, nil
 }
 
-// judge runs steps 1 to 5 of the package doc on the working tree tree.
+// judge runs steps 1 to 6 of the package doc on the working tree tree.
 func (s Service) judge(ctx context.Context, o Options, now time.Time, tree string) (run, error) {
 	r := run{policyPath: PolicyPath}
 	if o.Policy != "" {
@@ -323,6 +333,10 @@ func (s Service) judge(ctx context.Context, o Options, now time.Time, tree strin
 	}
 	v := count.Assess(count.Input{Policy: local.Policy, Base: baseFacts, Head: headFacts, Added: added, Today: now})
 	r.verdict = &v
+	if o.Policy == "" && r.head == target && v.Status != result.StatusUnknown {
+		state := repostate.Evaluate(repostate.Input{Policy: local.Policy, Head: headFacts, Today: now})
+		r.repository = &state
+	}
 	return r, nil
 }
 

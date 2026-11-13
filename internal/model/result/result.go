@@ -103,6 +103,10 @@ type Result struct {
 	Errors []Error `json:"errors"`
 	// Unknown are the reasons for an unknown status, in record order.
 	Unknown []Unknown `json:"unknown"`
+	// Repository is the state of the repository for owners. It is set only
+	// on a run whose HEAD is the tip of the target branch (a push) and that
+	// gave a verdict. Absent means no state, never clean.
+	Repository *Repository `json:"repository,omitempty"`
 	// Policy names the policy that judged the change.
 	Policy Policy `json:"policy"`
 	// Base is the merge-base commit. Absent when there is no merge base.
@@ -202,6 +206,70 @@ type Unknown struct {
 	Why string `json:"why,omitempty"`
 	// Next is the one step that restores a verdict.
 	Next Next `json:"next"`
+}
+
+// RepositoryState is the state of the repository for owners (design 7.1).
+type RepositoryState string
+
+// The states of the repository.
+const (
+	// RepositoryClean: no error outside the exceptions.
+	RepositoryClean RepositoryState = "clean"
+	// RepositoryDrift: an error exists that no exception covers.
+	RepositoryDrift RepositoryState = "drift"
+	// RepositoryExpired: an exception passed its date and the code still
+	// breaks its rule. It wins over drift.
+	RepositoryExpired RepositoryState = "expired"
+)
+
+// Repository is the whole tree the check read, the working tree, judged on
+// its own with the policy's exceptions on the result's date. In CI the
+// working tree is the tree of HEAD.
+type Repository struct {
+	// State is clean, drift or expired. It covers only what the check read:
+	// a reader that shows State shows Unread beside it.
+	State RepositoryState `json:"state"`
+	// Drift are the errors no exception covers, in record order, each with
+	// from_change false and the next step "fix the code, or ask an owner to
+	// add an exception". An error an expired exception matches is not here:
+	// the result's errors list that exception.
+	Drift []Error `json:"drift"`
+	// Expiring are the exceptions within 14 days of their date that still
+	// cover an error, in policy order.
+	Expiring []ExpiringException `json:"expiring"`
+	// Unread are the places of the tree the check could not read, such as an
+	// import that does not resolve or a missing tool. State does not cover
+	// them: missing evidence is not zero.
+	Unread []UnreadPlace `json:"unread"`
+}
+
+// UnreadPlace is a place of the tree the check could not read.
+type UnreadPlace struct {
+	// Path is the file. Absent when the place is the whole tree, such as a
+	// missing tool.
+	Path string `json:"path,omitempty"`
+	// Line is the line in Path, when there is one.
+	Line int `json:"line,omitempty"`
+	// Reason says what could not be read.
+	Reason string `json:"reason"`
+	// Fix is the step that makes it readable, when there is one.
+	Fix string `json:"fix,omitempty"`
+}
+
+// ExpiringException is an exception of the policy close to its date.
+type ExpiringException struct {
+	// Rule is the rule the exception covers.
+	Rule string `json:"rule"`
+	// From is the module the exception starts in, or a path glob for the
+	// unowned rule.
+	From string `json:"from"`
+	// To is the module or library it reaches. Absent for the unowned rule
+	// and a custom only rule.
+	To string `json:"to,omitempty"`
+	// Expires is the last day the exception holds (YYYY-MM-DD).
+	Expires string `json:"expires"`
+	// Why is the owner's reason for the exception.
+	Why string `json:"why,omitempty"`
 }
 
 // Policy names the policy that judged a change.

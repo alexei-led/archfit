@@ -203,6 +203,41 @@
       ],
       "description": "Exception identifies an exception of the policy by its rule; From and To of the error hold its modules."
     },
+    "ExpiringException": {
+      "properties": {
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Rule is the rule the exception covers."
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "From is the module the exception starts in, or a path glob for the\nunowned rule."
+        },
+        "to": {
+          "type": "string",
+          "description": "To is the module or library it reaches. Absent for the unowned rule\nand a custom only rule."
+        },
+        "expires": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Expires is the last day the exception holds (YYYY-MM-DD)."
+        },
+        "why": {
+          "type": "string",
+          "description": "Why is the owner's reason for the exception."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule",
+        "from",
+        "expires"
+      ],
+      "description": "ExpiringException is an exception of the policy close to its date."
+    },
     "Next": {
       "properties": {
         "kind": {
@@ -268,6 +303,49 @@
       ],
       "description": "Policy names the policy that judged a change."
     },
+    "Repository": {
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "clean",
+            "drift",
+            "expired"
+          ],
+          "description": "State is clean, drift or expired. It covers only what the check read:\na reader that shows State shows Unread beside it."
+        },
+        "drift": {
+          "items": {
+            "$ref": "#/$defs/Error"
+          },
+          "type": "array",
+          "description": "Drift are the errors no exception covers, in record order, each with\nfrom_change false and the next step \"fix the code, or ask an owner to\nadd an exception\". An error an expired exception matches is not here:\nthe result's errors list that exception."
+        },
+        "expiring": {
+          "items": {
+            "$ref": "#/$defs/ExpiringException"
+          },
+          "type": "array",
+          "description": "Expiring are the exceptions within 14 days of their date that still\ncover an error, in policy order."
+        },
+        "unread": {
+          "items": {
+            "$ref": "#/$defs/UnreadPlace"
+          },
+          "type": "array",
+          "description": "Unread are the places of the tree the check could not read, such as an\nimport that does not resolve or a missing tool. State does not cover\nthem: missing evidence is not zero."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "drift",
+        "expiring",
+        "unread"
+      ],
+      "description": "Repository is the whole tree the check read, the working tree, judged on its own with the policy's exceptions on the result's date."
+    },
     "Result": {
       "properties": {
         "schema": {
@@ -305,6 +383,10 @@
           },
           "type": "array",
           "description": "Unknown are the reasons for an unknown status, in record order."
+        },
+        "repository": {
+          "$ref": "#/$defs/Repository",
+          "description": "Repository is the state of the repository for owners. It is set only\non a run whose HEAD is the tip of the target branch (a push) and that\ngave a verdict. Absent means no state, never clean."
         },
         "policy": {
           "$ref": "#/$defs/Policy",
@@ -388,6 +470,34 @@
         "next"
       ],
       "description": "Unknown is one reason the check gave no verdict."
+    },
+    "UnreadPlace": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path is the file. Absent when the place is the whole tree, such as a\nmissing tool."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line is the line in Path, when there is one."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reason says what could not be read."
+        },
+        "fix": {
+          "type": "string",
+          "description": "Fix is the step that makes it readable, when there is one."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "reason"
+      ],
+      "description": "UnreadPlace is a place of the tree the check could not read."
     }
   },
   "oneOf": [

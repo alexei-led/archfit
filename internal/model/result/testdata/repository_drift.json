@@ -1,0 +1,44 @@
+{
+  "schema": "archfit.result.v1",
+  "status": "pass",
+  "summary": "archfit: pass",
+  "errors": [],
+  "unknown": [],
+  "repository": {
+    "state": "drift",
+    "drift": [
+      {
+        "path": "pkg/tc/netem.go",
+        "line": 12,
+        "rule": "graph",
+        "what": "pkg_tc -> pkg_util is not an allowed dependency",
+        "why": "a new dependency between modules needs an owner",
+        "balance": {
+          "value": 9,
+          "min": 7
+        },
+        "next": {
+          "kind": "fix",
+          "text": "fix the code, or ask an owner to add an exception"
+        },
+        "from": "pkg_tc",
+        "to": "pkg_util",
+        "key": "graph pkg_tc pkg_util pkg/util",
+        "from_change": false
+      }
+    ],
+    "expiring": [],
+    "unread": []
+  },
+  "policy": {
+    "path": ".archfit.yaml",
+    "digest": "sha256:55667237112f6e37f6ca6b92260d4f0a7cd5d6e86e990e9db8a5416f22c15110",
+    "protected": true,
+    "differs": false,
+    "target": "origin/main"
+  },
+  "base": "1405df66cbe219b0bf6355bc3d60361a8376b6b4",
+  "head": "1a954628a960aaef81d7b2d4521929579f3541e6",
+  "date": "2026-11-10",
+  "engine": "4.0.0"
+}
