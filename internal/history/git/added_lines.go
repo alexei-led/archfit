@@ -78,13 +78,42 @@ func stageWorkingTree(ctx context.Context, runner toolrun.Runner, root, dir stri
 		return "", err
 	}
 	env := []string{"GIT_INDEX_FILE=" + index}
-	if _, err := runTree(ctx, root, runner, env, "add", "--all"); err != nil {
+	if err := addAll(ctx, runner, root, env); err != nil {
 		return "", err
 	}
 	// An exclude pathspec itself makes git add reject an ignored cache.
 	// Remove the cache afterward, including entries copied from the real index.
-	_, err = runTree(ctx, root, runner, env, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", cacheDir)
+	// -f is safe with --cached: it drops the cache from the private index only,
+	// and without it git refuses when the cache file changed since the staging
+	// (it is written while this runs).
+	_, err = runTree(ctx, root, runner, env, "rm", "-r", "-f", "-q", "--cached", "--ignore-unmatch", "--", cacheDir)
 	return index, err
+}
+
+// addAll runs git add --all into the private index, tolerating the one race it
+// can lose. archfit writes its cache under .archfit-cache while this scans the
+// tree, and saveLast writes last.json through a temporary file and a rename: a
+// name read in the scan can be gone before git stats it, and git then reports
+// "unable to stat" instead of staging it. A second archfit on the same
+// checkout widens that window. --ignore-errors keeps the rest of the index
+// written, and the vanished file is a cache file that is removed from the
+// index below anyway, so the failure is not one: archfit's own write must not
+// fail the check (see WorkingTreeID). Any other error fails at once.
+func addAll(ctx context.Context, runner toolrun.Runner, root string, env []string) error {
+	_, err := runTree(ctx, root, runner, env, "add", "--all", "--ignore-errors")
+	if err == nil || cacheRace(err) {
+		return nil
+	}
+	return err
+}
+
+// cacheRace reports the git add failure of a cache file that vanished between
+// the scan and the stat: "unable to stat" without --ignore-errors, "unable to
+// index file" with it.
+func cacheRace(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, cacheDir) &&
+		(strings.Contains(msg, "unable to stat") || strings.Contains(msg, "unable to index file"))
 }
 
 // copyIndex copies the index at from to to with its modification time. Git
