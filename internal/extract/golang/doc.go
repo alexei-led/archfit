@@ -3,7 +3,8 @@
 // The typed loader (GoExtractor) uses golang.org/x/tools/go/packages. It is an
 // in-process adapter that satisfies the engine.Extractor interface, needs the
 // Go toolchain and resolvable module dependencies, and adds strength hints
-// from go/types.
+// from go/types. The report falls back to ParseImports when go is not installed;
+// the check always uses ParseImports, even when go is installed.
 //
 // The parser path (ParseImports) reads file-level import facts with go/parser
 // and go/build only: the members from go.work and go.mod, the files the go
