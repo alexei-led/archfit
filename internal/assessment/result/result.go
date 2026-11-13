@@ -22,7 +22,6 @@ type AgentTask struct {
 	Files        []string              `json:"files"`
 	Validation   []string              `json:"validation"`
 	Declarations []evidence.SyntaxFact `json:"declarations,omitempty"`
-	Origin       finding.Origin        `json:"-"`
 }
 
 // AdvisoryTask is the assessment advisory task before report projection.
@@ -66,17 +65,11 @@ type Result struct {
 	PrimaryExtractorTools     []string                            `json:"primary_extractor_tools,omitempty"`
 	ConfigWarnings            []string                            `json:"config_warnings,omitempty"`
 	// ModelHash and LabelsHash fingerprint the module model and the approved
-	// label set. They reach the wire only through the architecture-state
-	// comparison projection.
-	ModelHash          string                       `json:"-"`
-	ClassificationHash string                       `json:"-"`
-	LabelsHash         string                       `json:"-"`
-	MeasurementProfile *evidence.MeasurementProfile `json:"-"`
+	// label set for assessment and enrichment consumers.
+	ModelHash          string `json:"-"`
+	ClassificationHash string `json:"-"`
+	LabelsHash         string `json:"-"`
 
-	// Comparison records what this run was compared against, when anything was.
-	// Nil means no comparison was requested. `json:"-"` for the same reason the
-	// hashes are: it reaches the wire through the architecture-state contract.
-	Comparison      *StateComparison       `json:"-"`
 	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
 	// ModuleGraphComplexity is an assessment-internal summary of the relationship
 	// graph. The architecture-state complexity envelope is its only wire form.

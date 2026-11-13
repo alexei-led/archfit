@@ -356,8 +356,7 @@ func TestReportPipelineRunsOnSchema3AndDoesNotGate(t *testing.T) {
 			Options: cfg.RunOptions(), Policy: cfg.PolicySnapshot(),
 			Runner: toolrun.New(), Stderr: &stderr,
 		},
-		Stderr:    &stderr,
-		Analyzers: cfg.AnalyzerFamilies(),
+		Stderr: &stderr,
 	}
 	resp, err := application.Service{Stages: stages}.Execute(context.Background(), application.Request{
 		ConfigSource: configPath, BundleDir: root, JSON: true,

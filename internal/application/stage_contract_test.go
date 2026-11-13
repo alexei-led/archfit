@@ -44,7 +44,7 @@ func (f *contextCarryingStage) Acquire(context.Context, AnalysisRequest) (Acquir
 func TestStageExecutorPassesExplicitStageValues(t *testing.T) {
 	stage := &contextCarryingStage{}
 	out, err := (StageExecutor{Preparer: stage, Evidence: stage, Stderr: io.Discard}).
-		Execute(t.Context(), AnalysisRequest{BaseRef: ""})
+		Execute(t.Context(), AnalysisRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

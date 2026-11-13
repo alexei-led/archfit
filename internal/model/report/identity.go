@@ -1,9 +1,6 @@
 package report
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"strings"
 )
 
@@ -37,9 +34,6 @@ type ResultIdentity struct {
 	HeadTreeDigest string `json:"head_tree_digest,omitempty"`
 	// EngineVersion is the archfit build that produced the result.
 	EngineVersion string `json:"engine_version"`
-	// MeasurementProfileHash is the sha256 of the measurement profile: the
-	// producers, their versions and availability, and the settings.
-	MeasurementProfileHash string `json:"measurement_profile_hash,omitempty"`
 }
 
 // PolicyRef is a git ref and the commit it named when the policy was read.
@@ -48,26 +42,12 @@ type PolicyRef struct {
 	SHA string `json:"sha"`
 }
 
-// ProfileHash returns the sha256 of the profile's canonical JSON, or "" for no
-// profile.
-func ProfileHash(p *MeasurementProfile) string {
-	if p == nil {
-		return ""
-	}
-	raw, err := json.Marshal(p)
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
-}
-
 // Line renders the identity as one short line for a footer or a hook message.
 func (i ResultIdentity) Line() string {
 	parts := []string{"engine " + i.EngineVersion}
 	for _, d := range []struct{ name, digest string }{
 		{"policy", i.PolicyDigest}, {"labels", i.LabelsDigest},
-		{"tree", i.HeadTreeDigest}, {"profile", i.MeasurementProfileHash},
+		{"tree", i.HeadTreeDigest},
 	} {
 		parts = append(parts, d.name+" "+shortDigest(d.digest))
 	}

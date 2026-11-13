@@ -34,9 +34,6 @@ func TestNewArchitectureStateIsHonestlyUnmeasured(t *testing.T) {
 	if state.Decision.HardGates != report.HardGateUnmeasured {
 		t.Errorf("Decision.HardGates = %q, want unmeasured", state.Decision.HardGates)
 	}
-	if state.Comparison.Status != report.ComparisonNotRequested {
-		t.Errorf("Comparison.Status = %q, want not_requested", state.Comparison.Status)
-	}
 
 	want := []struct{ name, owner string }{
 		{report.DimensionIntent, report.OwnerIntent},

@@ -43,14 +43,6 @@
             "$ref": "#/$defs/SyntaxFact"
           },
           "type": "array"
-        },
-        "origin": {
-          "type": "string",
-          "enum": [
-            "introduced",
-            "pre_existing",
-            "unknown"
-          ]
         }
       },
       "additionalProperties": false,
@@ -306,14 +298,6 @@
             "type": "string"
           },
           "type": "array"
-        },
-        "origin": {
-          "type": "string",
-          "enum": [
-            "introduced",
-            "pre_existing",
-            "unknown"
-          ]
         }
       },
       "additionalProperties": false,
@@ -410,66 +394,6 @@
       "required": [
         "file",
         "line"
-      ]
-    },
-    "MeasurementProducer": {
-      "properties": {
-        "tool": {
-          "type": "string"
-        },
-        "semantics_version": {
-          "type": "string"
-        },
-        "tool_version": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        },
-        "partial_basis": {
-          "type": "string",
-          "enum": [
-            "unresolved_specifiers",
-            "degraded_precision"
-          ]
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "tool",
-        "semantics_version",
-        "status"
-      ]
-    },
-    "MeasurementProfile": {
-      "properties": {
-        "version": {
-          "type": "string"
-        },
-        "settings_hash": {
-          "type": "string"
-        },
-        "producers": {
-          "items": {
-            "$ref": "#/$defs/MeasurementProducer"
-          },
-          "type": "array"
-        },
-        "unknowns": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "version",
-        "settings_hash",
-        "producers",
-        "unknowns"
       ]
     },
     "MetricDelta": {
@@ -716,9 +640,6 @@
         },
         "engine_version": {
           "type": "string"
-        },
-        "measurement_profile_hash": {
-          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -946,82 +867,6 @@
         "p10",
         "p90",
         "mean"
-      ]
-    },
-    "StateComparison": {
-      "properties": {
-        "status": {
-          "type": "string",
-          "enum": [
-            "not_requested",
-            "comparable",
-            "non_comparable"
-          ]
-        },
-        "base_ref": {
-          "type": "string"
-        },
-        "config_hash": {
-          "type": "string"
-        },
-        "classification_hash": {
-          "type": "string"
-        },
-        "model_hash": {
-          "type": "string"
-        },
-        "labels_hash": {
-          "type": "string"
-        },
-        "rubric_version": {
-          "type": "string"
-        },
-        "measurement_profile": {
-          "$ref": "#/$defs/MeasurementProfile"
-        },
-        "reasons": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "drift": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "origin_status": {
-          "type": "string",
-          "enum": [
-            "comparable",
-            "unknown"
-          ]
-        },
-        "origin_reasons": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "introduced_finding_ids": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "resolved_finding_ids": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "status",
-        "reasons"
       ]
     },
     "StateCoverage": {
@@ -1267,9 +1112,6 @@
     "decision": {
       "$ref": "#/$defs/StateDecision"
     },
-    "comparison": {
-      "$ref": "#/$defs/StateComparison"
-    },
     "measurement": {
       "$ref": "#/$defs/StateMeasurement"
     },
@@ -1308,7 +1150,6 @@
     "verdict",
     "identity",
     "decision",
-    "comparison",
     "measurement",
     "dimensions",
     "coverage",

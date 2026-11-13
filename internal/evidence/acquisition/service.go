@@ -47,7 +47,7 @@ type LabelLoader interface {
 //
 // One Service value describes one tree and one policy. It keeps no result from
 // a previous call: every Acquire returns everything the later stages need, so a
-// base-tree sub-run is a second Service, never a second call with hidden state.
+// Each analysis uses a fresh run context, never hidden state between calls.
 type Service struct {
 	// ConfigPath and Root are the defaults a request may override.
 	ConfigPath string
@@ -60,8 +60,7 @@ type Service struct {
 	Labels   LabelLoader
 	Stderr   io.Writer
 	Progress func(stage string)
-	// WarnLabel prefixes every stderr warning. The base-tree sub-run sets it to
-	// "[base] " so a base-side degradation is never misread as a head regression.
+	// WarnLabel prefixes every stderr warning.
 	WarnLabel string
 	Refresh   bool
 }
@@ -103,7 +102,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if err != nil {
 		return application.Acquired{}, err
 	}
-	resolved.DependencyRoot = req.DependencyRoot
 
 	declaredDeployUnits, ownerProvenance := declaredOperationsFacts(runPolicy)
 	store := factcache.NewStore(factsCacheDir(bundleDir))
@@ -113,9 +111,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 
 	var warnings []string
 	warnLabel := s.WarnLabel
-	if req.WarnLabel != "" {
-		warnLabel = req.WarnLabel
-	}
 	note := func(msg string) {
 		warnings = append(warnings, msg)
 		_, _ = fmt.Fprintln(s.stderr(), "warning: "+warnLabel+msg)
@@ -254,9 +249,8 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		Facts:        snapshot,
 		Observations: observations,
 		Context: application.AnalysisContext{
-			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, coverageGaps, collected.FileClassIndex, history),
-			Scope:              resolved, BaseRef: req.BaseRef,
-			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
+			Scope: resolved,
+			Now:   now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
 			ModelHash:          policy.ModelHash(runPolicy.Topology.Modules),
 			ClassificationHash: ClassificationHash(runPolicy),
 			LabelsHash:         labels.FileHash(pinned),
@@ -515,8 +509,7 @@ func (g gitResolver) Added(ctx context.Context, base string) ([]string, error) {
 
 // configHash returns the sha256 hex digest of the raw config file bytes at
 // path, or "" when the file cannot be read. It is the run's config identity
-// (the App binds it to the protected policy digest); comparability reads the
-// classification hash instead.
+// (the App binds it to the protected policy digest).
 func configHash(path string) string {
 	b, err := os.ReadFile(path) //#nosec G304 -- path comes from the --config CLI flag, not arbitrary user input
 	if err != nil {

@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 
-	"github.com/alexei-led/archfit/v3/internal/application"
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/v3/internal/extract/acquire"
@@ -157,30 +155,6 @@ func (c Config) AcquisitionOptions() acquire.Options {
 		SCIPEnabled: c.ScipEnabled(), SCIPTimeout: c.ToolTimeout(ToolScip),
 		Syntax: c.ForSyntax(), GoExtract: c.ForExtract(LangGo), Languages: c.analysedLanguages(),
 	}
-}
-
-// AnalyzerFamilies projects config into the optional finding-producing
-// analyzer families used by origin comparison.
-func (c Config) AnalyzerFamilies() application.AnalyzerFamilies {
-	return application.AnalyzerFamilies{
-		Patterns:     len(c.ForPatterns()) > 0,
-		Syntax:       c.ForSyntax().Enabled,
-		SCIP:         c.ScipEnabled(),
-		Clones:       c.ClonesEnabled(),
-		CargoModules: c.CargoModulesEnabled(),
-		Roslyn:       c.RoslynEnabled(),
-	}
-}
-
-// WithIndependentModules returns a copy whose module map is independent of the
-// receiver's. Config is a value but its Modules map is shared, and the run's
-// owner/deploy-unit backfill writes through it — without the copy a base-tree
-// sub-run would inherit head-tree owners and skip its own resolution.
-func (c Config) WithIndependentModules() Config {
-	modules := make(map[string]policy.ModuleDef, len(c.Modules))
-	maps.Copy(modules, c.Modules)
-	c.Modules = modules
-	return c
 }
 
 // ValidateRules validates decoded rule definitions at the adapter boundary.

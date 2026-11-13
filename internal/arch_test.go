@@ -47,9 +47,6 @@ var coreRingPkgs = []string{
 	// score synthesises the banded scorecard from an already-computed
 	// Diagnostic — a pure decision over collected facts, no tools or I/O.
 	modulePrefix + "internal/assessment/score",
-	// decision converts a Diagnostic + Scorecard into a human-decision view-model —
-	// pure synthesis, no I/O, no subprocess, no YAML.
-	modulePrefix + "internal/assessment/decision",
 	// The capability migration's assessment packages: evaluation runs the
 	// rule/metric/verdict pass, the other three are its contract types.
 	modulePrefix + "internal/assessment/evaluation",
@@ -157,7 +154,7 @@ func TestCompositionFanoutRatchet(t *testing.T) {
 func TestCLIImportsNoDomainImplementation(t *testing.T) {
 	for _, pkg := range []string{
 		"internal/assessment/rules", "internal/assessment/metrics", "internal/assessment/score",
-		"internal/assessment/status", "internal/assessment/decision", "internal/assessment/finding",
+		"internal/assessment/status", "internal/assessment/finding",
 		"internal/relationship/classify", "internal/relationship/scoring", "internal/relationship/coupling",
 	} {
 		for _, file := range productionImportFiles(t, modulePrefix+pkg) {
@@ -262,7 +259,7 @@ func TestAssessmentConsumesOnlyThePublicRelationshipContract(t *testing.T) {
 // evaluation port. A call site here would make acquisition a second owner of
 // the assessment lifecycle.
 func TestAcquisitionDelegatesAssessmentJudgment(t *testing.T) {
-	for _, pkg := range []string{"status", "staleness", "finding", "rules", "metrics", "score", "decision", "agenttask"} {
+	for _, pkg := range []string{"status", "staleness", "finding", "rules", "metrics", "score", "agenttask"} {
 		for _, file := range productionImportFiles(t, modulePrefix+"internal/assessment/"+pkg) {
 			if strings.HasPrefix(file, "internal/evidence/") {
 				t.Errorf("evidence acquisition must reach assessment through evaluation, not assessment/%s: %s", pkg, file)

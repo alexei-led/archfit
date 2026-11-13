@@ -242,34 +242,6 @@ type UnevaluatedRule struct {
 	Reason string `json:"reason"`
 }
 
-// StateComparison records what this run was compared against and whether the
-// comparison is admissible at all.
-type StateComparison struct {
-	Status             ComparisonStatus    `json:"status"`
-	BaseRef            string              `json:"base_ref,omitempty"`
-	ConfigHash         string              `json:"config_hash,omitempty"`
-	ClassificationHash string              `json:"classification_hash,omitempty"`
-	ModelHash          string              `json:"model_hash,omitempty"`
-	LabelsHash         string              `json:"labels_hash,omitempty"`
-	RubricVersion      string              `json:"rubric_version,omitempty"`
-	MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"`
-	Reasons            []string            `json:"reasons"`
-	Drift              []string            `json:"drift,omitempty"`
-	// OriginStatus is set only with --base: comparable when the analyzer
-	// evidence of both runs pairs, unknown otherwise.
-	OriginStatus string `json:"origin_status,omitempty"`
-	// OriginReasons name each degraded or differing analyzer behind the origin
-	// classification. Set only with --base.
-	OriginReasons []string `json:"origin_reasons,omitempty"`
-	// IntroducedFindingIDs are the findings the change added. Present, as a
-	// possibly empty list, exactly when --base ran.
-	IntroducedFindingIDs *[]string `json:"introduced_finding_ids,omitempty"`
-	// ResolvedFindingIDs are the base findings the change removed. Present, as a
-	// possibly empty list, exactly when --base ran; empty when origin_status is
-	// unknown, because a vanished finding then proves nothing.
-	ResolvedFindingIDs *[]string `json:"resolved_finding_ids,omitempty"`
-}
-
 // StateMeasurement holds deterministic source, history, and tool facts only. It
 // deliberately excludes wall-clock evaluation time, absolute local paths, and
 // process IDs so two identical runs stay byte-identical.
@@ -380,7 +352,6 @@ type ArchitectureState struct {
 	// attention.
 	GateReasons []string         `json:"gate_reasons,omitempty"`
 	Decision    StateDecision    `json:"decision"`
-	Comparison  StateComparison  `json:"comparison"`
 	Measurement StateMeasurement `json:"measurement"`
 	Dimensions  Dimensions       `json:"dimensions"`
 	Coverage    StateCoverage    `json:"coverage"`
@@ -409,7 +380,6 @@ func NewArchitectureState() ArchitectureState {
 		SchemaVersion: StateSchemaVersion,
 		Identity:      ResultIdentity{SchemaVersion: IdentitySchemaVersion},
 		Decision:      StateDecision{HardGates: HardGateUnmeasured, UnknownDimensions: DimensionCount},
-		Comparison:    StateComparison{Status: ComparisonNotRequested, Reasons: []string{}},
 		Measurement:   StateMeasurement{ToolVersions: map[string]string{}},
 		Dimensions: Dimensions{
 			Intent:         newDimension(DimensionIntent, OwnerIntent),

@@ -211,31 +211,3 @@ type SeamScoreDistribution struct {
 	P90    *int    `json:"p90"`
 	Mean   float64 `json:"mean"`
 }
-
-// State comparison statuses. They mirror the architecture-state contract
-// without importing the report DTOs.
-const (
-	StateComparisonComparable    = "comparable"
-	StateComparisonNonComparable = "non_comparable"
-	StateComparisonNotRequested  = "not_requested"
-)
-
-// StateComparison records what a run was compared against and whether the
-// comparison is admissible at all. A non-comparable result always carries at
-// least one reason: "not comparable" with no explanation is indistinguishable
-// from a bug.
-type StateComparison struct {
-	Status  string   `json:"status"`
-	BaseRef string   `json:"base_ref,omitempty"`
-	Reasons []string `json:"reasons"`
-	// Drift lists the input classes that made the comparison non-comparable
-	// (decision.DriftClass values), in the order the reasons name them.
-	Drift []string `json:"drift,omitempty"`
-	// OriginStatus, OriginReasons, IntroducedFindingIDs and ResolvedFindingIDs
-	// are set only by an `analyze/check --base` run; the two lists are then
-	// never nil.
-	OriginStatus         string   `json:"-"`
-	OriginReasons        []string `json:"-"`
-	IntroducedFindingIDs []string `json:"-"`
-	ResolvedFindingIDs   []string `json:"-"`
-}
