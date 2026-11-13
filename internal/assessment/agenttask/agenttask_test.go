@@ -57,14 +57,7 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 		}(),
 	}
 
-	tasks := agenttask.Build(findings,
-		map[string]string{ruleForbidden: ruleTypeForbidden},
-		nil,
-		[]string{"archfit check"},
-		nil,
-		nil,
-		agenttask.PathResolver{},
-	)
+	tasks := agenttask.Build(findings, map[string]string{ruleForbidden: ruleTypeForbidden}, nil, []string{"archfit check"}, nil, agenttask.PathResolver{})
 
 	if len(tasks) != 2 {
 		t.Fatalf("tasks = %d, want 2 (new + expired only); got %+v", len(tasks), tasks)
@@ -82,24 +75,14 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 func TestBuild_OneTaskPerFindingNotPerEdge(t *testing.T) {
 	forbidden := gateFinding("f-forbidden", ruleForbidden, finding.StatusNew)
 	layered := gateFinding("f-layer", "layer-direction", finding.StatusNew)
-	tasks := agenttask.Build([]finding.Finding{forbidden, layered},
-		map[string]string{ruleForbidden: ruleTypeForbidden, "layer-direction": ruleTypeLayer},
-		nil, nil, nil, nil, agenttask.PathResolver{})
+	tasks := agenttask.Build([]finding.Finding{forbidden, layered}, map[string]string{ruleForbidden: ruleTypeForbidden, "layer-direction": ruleTypeLayer}, nil, nil, nil, agenttask.PathResolver{})
 	if len(tasks) != 2 || tasks[0].FindingID != "f-forbidden" || tasks[1].FindingID != "f-layer" {
 		t.Fatalf("tasks = %+v, want one per finding ID", tasks)
 	}
 }
 
 func TestBuild_TaskShape(t *testing.T) {
-	tasks := agenttask.Build(
-		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
-		map[string]string{ruleForbidden: ruleTypePublicAPI},
-		map[string][]string{"b": {"pkg/b/api/**"}},
-		[]string{"archfit check -c .archfit.yaml"},
-		nil,
-		nil,
-		agenttask.PathResolver{},
-	)
+	tasks := agenttask.Build([]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)}, map[string]string{ruleForbidden: ruleTypePublicAPI}, map[string][]string{"b": {"pkg/b/api/**"}}, []string{"archfit check -c .archfit.yaml"}, nil, agenttask.PathResolver{})
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -141,12 +124,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.ruleType, func(t *testing.T) {
-			tasks := agenttask.Build(
-				[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
-				map[string]string{ruleForbidden: tc.ruleType},
-				nil, nil, nil, nil,
-				agenttask.PathResolver{},
-			)
+			tasks := agenttask.Build([]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)}, map[string]string{ruleForbidden: tc.ruleType}, nil, nil, nil, agenttask.PathResolver{})
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
 			}
@@ -158,7 +136,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 }
 
 func TestBuild_EmptyAndDeterministic(t *testing.T) {
-	if got := agenttask.Build(nil, nil, nil, nil, nil, nil, agenttask.PathResolver{}); got == nil || len(got) != 0 {
+	if got := agenttask.Build(nil, nil, nil, nil, nil, agenttask.PathResolver{}); got == nil || len(got) != 0 {
 		t.Errorf("nil findings → %v, want empty non-nil slice", got)
 	}
 
@@ -166,8 +144,8 @@ func TestBuild_EmptyAndDeterministic(t *testing.T) {
 		gateFinding("z", ruleForbidden, finding.StatusNew),
 		gateFinding("a", ruleForbidden, finding.StatusNew),
 	}
-	first := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, nil, agenttask.PathResolver{})
-	second := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, nil, agenttask.PathResolver{})
+	first := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
+	second := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
 	if !reflect.DeepEqual(first, second) {
 		t.Error("two builds differ — must be deterministic")
 	}
@@ -185,15 +163,7 @@ func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
 		{File: "pkg/other/other.go", Kind: kindFunction, Name: "Unrelated", Exported: true, StartLine: 1},
 	}
 
-	tasks := agenttask.Build(
-		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
-		map[string]string{ruleForbidden: "forbidden_dependency"},
-		nil,
-		[]string{validateCmd},
-		sf,
-		nil,
-		agenttask.PathResolver{},
-	)
+	tasks := agenttask.Build([]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)}, map[string]string{ruleForbidden: "forbidden_dependency"}, nil, []string{validateCmd}, sf, agenttask.PathResolver{})
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -233,10 +203,7 @@ func TestBuild_ModuleCycleTaskCarriesNoDeclarations(t *testing.T) {
 		{ruleTypeLayer, 1},
 	} {
 		t.Run(tc.ruleType, func(t *testing.T) {
-			tasks := agenttask.Build(
-				[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
-				map[string]string{ruleForbidden: tc.ruleType}, nil, []string{validateCmd}, facts, nil, agenttask.PathResolver{},
-			)
+			tasks := agenttask.Build([]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)}, map[string]string{ruleForbidden: tc.ruleType}, nil, []string{validateCmd}, facts, agenttask.PathResolver{})
 			if len(tasks) != 1 || len(tasks[0].Declarations) != tc.want {
 				t.Fatalf("%s task declarations = %+v, want %d", tc.ruleType, tasks, tc.want)
 			}
@@ -245,15 +212,7 @@ func TestBuild_ModuleCycleTaskCarriesNoDeclarations(t *testing.T) {
 }
 
 func TestBuild_DeclarationsAbsentWhenSyntaxEmpty(t *testing.T) {
-	tasks := agenttask.Build(
-		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
-		map[string]string{ruleForbidden: "forbidden_dependency"},
-		nil,
-		[]string{validateCmd},
-		nil,
-		nil,
-		agenttask.PathResolver{},
-	)
+	tasks := agenttask.Build([]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)}, map[string]string{ruleForbidden: "forbidden_dependency"}, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -288,9 +247,7 @@ func TestBuild_ModuleCycleGoalBoundsTheMemberList(t *testing.T) {
 		},
 		MatchedBy: map[string]string{matchedByCycleModules: strings.Join(members, ", "), "cycle_size": "60"},
 	}
-	tasks := agenttask.Build([]finding.Finding{f},
-		map[string]string{ruleModuleCycle: ruleTypeCycle}, nil, []string{validateCmd},
-		nil, nil, agenttask.PathResolver{})
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleModuleCycle: ruleTypeCycle}, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -321,14 +278,7 @@ func TestBuild_ModuleCycleTaskAsksToRemoveOneDirection(t *testing.T) {
 		Locations:  []relationship.Location{{File: "billing/app/notify.go", Line: 3}},
 		Constraint: "Remove one direction of the module cycle",
 	}
-	tasks := agenttask.Build([]finding.Finding{f},
-		map[string]string{ruleModuleCycle: ruleTypeCycle},
-		map[string][]string{"shipping": {"shipping/api"}},
-		[]string{validateCmd},
-		nil,
-		nil,
-		agenttask.PathResolver{},
-	)
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleModuleCycle: ruleTypeCycle}, map[string][]string{"shipping": {"shipping/api"}}, []string{validateCmd}, nil, agenttask.PathResolver{})
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -367,14 +317,7 @@ func TestBuild_ForbiddenPatternTaskNamesThePatternAndFile(t *testing.T) {
 		Locations:  []relationship.Location{{File: file, Line: 12}},
 		Constraint: "Remove the construct matching pattern \"clock\"",
 	}
-	tasks := agenttask.Build([]finding.Finding{f},
-		map[string]string{rulePattern: "forbidden_pattern"},
-		map[string][]string{moduleDomain: {"internal/domain"}},
-		[]string{validateCmd},
-		nil,
-		nil,
-		agenttask.PathResolver{},
-	)
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{rulePattern: "forbidden_pattern"}, map[string][]string{moduleDomain: {"internal/domain"}}, []string{validateCmd}, nil, agenttask.PathResolver{})
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}

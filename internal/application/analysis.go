@@ -60,9 +60,6 @@ type Request struct {
 	// AddedBase is the ref the added-file set is measured against when BaseRef
 	// is empty (scope.Config.AddedBase).
 	AddedBase string
-	// GateReasonsInState keeps the coupling gate's reasons off stderr: the
-	// state carries them as gate_reasons and check reports them as attention.
-	GateReasonsInState bool
 	// Identity carries the run facts only the caller can read: the policy
 	// files' bytes, the git tree, the engine build.
 	Identity IdentityInputs
@@ -78,8 +75,6 @@ type AnalysisRequest struct {
 	// ValidationConfig and ValidationRoot: see Request.
 	ValidationConfig string
 	ValidationRoot   string
-	// GateReasonsInState: see Request.
-	GateReasonsInState bool
 	// AddedBase: see Request.
 	AddedBase string
 	// ApplyToolGate lets a missing required analyzer stamp the report verdict fail.
@@ -94,7 +89,6 @@ type AnalysisRequest struct {
 	BundleDir            string
 	Root                 string
 	EvaluatedAt          time.Time
-	SuppressGateReasons  bool
 	CaptureRelationships bool
 }
 
@@ -104,8 +98,6 @@ type AnalysisResult struct {
 	Score              score.Scorecard
 	EnrichmentEvidence *EnrichmentEvidence
 	relationships      relationship.Set
-	// gateReasons are the coupling gate's explanations, carried into the state.
-	gateReasons []string
 }
 
 // PolicyPreparer validates decoded policy and emits config-quality diagnostics
@@ -272,22 +264,13 @@ func (s StageExecutor) assess(_ context.Context, req AnalysisRequest, acquired A
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
 		CoverageGaps: runCtx.CoverageGaps, ApplyToolGate: req.ApplyToolGate,
 	})
-	if !req.SuppressGateReasons && !req.GateReasonsInState {
-		s.discloseGate(scored)
-	}
-	out := AnalysisResult{Score: scored.Score, gateReasons: scored.GateReasons}
+	out := AnalysisResult{Score: scored.Score}
 	out.Diagnostic = diag
 	if req.CaptureRelationships {
 		out.EnrichmentEvidence = projectEnrichmentEvidence(relationships.Relationships)
 		out.relationships = relationships.Relationships
 	}
 	return out, nil
-}
-
-func (s StageExecutor) discloseGate(scored evaluation.Scored) {
-	for _, reason := range scored.GateReasons {
-		_, _ = fmt.Fprintln(s.stderr(), "coupling gate: "+reason)
-	}
 }
 
 func (s StageExecutor) stderr() io.Writer {
@@ -390,7 +373,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
 		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
 		ValidationArgs: req.ValidationArgs, ValidationConfig: req.ValidationConfig, ValidationRoot: req.ValidationRoot,
-		GateReasonsInState: req.GateReasonsInState, AddedBase: req.AddedBase,
+		AddedBase: req.AddedBase,
 	})
 	if err != nil {
 		// A controlled stage failure already carries the user-facing wording; the
@@ -404,7 +387,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	}
 
 	return Response{
-		Document: withRunFacts(projectReport(out.Diagnostic, out.Score), req.Identity, out.gateReasons),
+		Document: withRunFacts(projectReport(out.Diagnostic, out.Score), req.Identity),
 		Formats:  formats,
 		Outcome:  outcomeFor(out),
 	}, nil

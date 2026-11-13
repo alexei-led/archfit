@@ -18,9 +18,8 @@ import (
 )
 
 const (
-	textToolDepcruise       = "dependency-cruiser"
-	textToolGrimp           = "grimp"
-	textStatusNonComparable = "non_comparable"
+	textToolDepcruise = "dependency-cruiser"
+	textToolGrimp     = "grimp"
 )
 
 // toolStderr is two kilobytes of the multi-line stderr a failing analyzer
@@ -150,7 +149,6 @@ func TestProjectedStatePassesTheConsumerTextRules(t *testing.T) {
 	r.State.Decision.UnevaluatedRequiredRules = []state.UnevaluatedRule{{RuleID: "r1", Reason: "dependency-cruiser evidence is partial: " + long}}
 	r.State.Dimensions.Intent.Coverage.Basis = long
 	r.State.Dimensions.Intent.Unknown = []state.UnknownFact{{Fact: long, Reason: long, Owner: "intent"}}
-	r.State.Dimensions.Drift.Delta = &state.Delta{Status: textStatusNonComparable, Reasons: []string{long}}
 
 	doc := projectReport(r, score.Scorecard{})
 	data, err := json.Marshal(doc.State)

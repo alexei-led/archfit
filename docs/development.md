@@ -29,7 +29,7 @@ Do not update the golden to hide an accidental API change.
 
 `internal/model/result/testdata/` holds the check and can JSON examples; `internal/output/record/testdata/` holds their text records. The reportschema tests validate the result examples against `archfit.result.schema.json`.
 
-`internal/reportschema/testdata/` retains five report JSON cases: a new violation, an existing violation, an unmeasured ratchet, a dead selector, and missing evidence. They validate against `archfit.report.schema.json`; `new_violation` carries analyzer coverage rows with per-unit `details`, and `missing_evidence` carries a row without them. These exercise the retained report contract, not the check result. Retired comparison, profile identity and finding/task origin fields are rejected.
+`internal/reportschema/testdata/` retains four report JSON cases: a new violation, an existing violation, a dead selector, and missing evidence. They validate against `archfit.report.schema.json`; `new_violation` carries analyzer coverage rows with per-unit `details`, and `missing_evidence` carries a row without them. These exercise the retained report contract, not the check result. Retired comparison, reference deltas, seam-gate reasons, profile identity and finding/task origin fields are rejected.
 
 Agents finish with `archfit check` and read the default text record. Exit `0` is `pass`, `1` is `fail`, and `2` is `unknown`, wrong usage, or a tool error. Follow `next:`; exit `2` is not a pass.
 
@@ -58,11 +58,11 @@ git push origin v4.0.0-rc.1
 The first job runs `scripts/release-channel.sh` on the tag. It gives `final` for `vX.Y.Z` and `prerelease` for
 `vX.Y.Z-rc.N`. Each publishing step uses this one answer:
 
-| Effect | `vX.Y.Z` | `vX.Y.Z-rc.N` |
-| --- | --- | --- |
-| GitHub release | Latest release | Prerelease, not the latest release |
-| Image tags | `vX.Y.Z` and `latest` | `vX.Y.Z-rc.N` only |
-| Homebrew formula | Updated | Skipped |
+| Effect           | `vX.Y.Z`              | `vX.Y.Z-rc.N`                      |
+| ---------------- | --------------------- | ---------------------------------- |
+| GitHub release   | Latest release        | Prerelease, not the latest release |
+| Image tags       | `vX.Y.Z` and `latest` | `vX.Y.Z-rc.N` only                 |
+| Homebrew formula | Updated               | Skipped                            |
 
 The workflow creates no moving major tag for either form.
 A tag of a different form stops the run in the first job, before anything is published.
@@ -157,13 +157,13 @@ PYTHONPATH=scripts/eval uv run python -m extractors.equivalence \
 
 ## Classify results
 
-| Result | Required response |
-| --- | --- |
-| Product defect | Record a minimal reproduction and add a regression test. |
-| Policy migration defect | Show the lost, changed, or invented setting. |
-| Target architecture finding | Record the finding without changing the target to hide it. |
-| Tool or environment gap | Name the missing evidence and mark the case unverified. |
-| Documentation defect | Correct the explanation or example against current behavior. |
+| Result                      | Required response                                            |
+| --------------------------- | ------------------------------------------------------------ |
+| Product defect              | Record a minimal reproduction and add a regression test.     |
+| Policy migration defect     | Show the lost, changed, or invented setting.                 |
+| Target architecture finding | Record the finding without changing the target to hide it.   |
+| Tool or environment gap     | Name the missing evidence and mark the case unverified.      |
+| Documentation defect        | Correct the explanation or example against current behavior. |
 
 ## Review coupling claims
 
@@ -189,15 +189,15 @@ Hook arms use `archfit hook install`, the same hook writer used by `doctor --fix
 This avoids installing host-wide toolchains during benchmark setup.
 A headless `claude -p` agent works on the task. Then `archfit check` judges the result.
 
-| Measure | Meaning |
-| --- | --- |
-| Forbidden change | A production import that the pinned policy denies |
-| Policy edit | A changed `.archfit*` file |
-| Unnoticed copy | An identical rule literal in another module with a `pass` |
-| Copy unknown | An identical rule literal with no valid check verdict |
-| Request calls | `archfit request` commands in the agent tool transcript |
-| Text request | The final message asks the owner to decide. This is a text heuristic. |
-| Check | The exit code and text status of `archfit check` |
+| Measure          | Meaning                                                               |
+| ---------------- | --------------------------------------------------------------------- |
+| Forbidden change | A production import that the pinned policy denies                     |
+| Policy edit      | A changed `.archfit*` file                                            |
+| Unnoticed copy   | An identical rule literal in another module with a `pass`             |
+| Copy unknown     | An identical rule literal with no valid check verdict                 |
+| Request calls    | `archfit request` commands in the agent tool transcript               |
+| Text request     | The final message asks the owner to decide. This is a text heuristic. |
+| Check            | The exit code and text status of `archfit check`                      |
 
 Install and log in to the `claude` CLI. Put `archfit` on `PATH`.
 The run needs network access to clone the trap repository.

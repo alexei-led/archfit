@@ -137,7 +137,7 @@ func TestStageExecutorRequiresEveryStage(t *testing.T) {
 	}
 }
 
-// The verdict and the hard coupling gate map onto the use-case outcome; the CLI
+// The state verdict maps onto the use-case outcome; the CLI
 // owns the exit code, not this layer.
 func TestServiceOutcomeFromStateVerdict(t *testing.T) {
 	for _, test := range []struct {
@@ -221,9 +221,6 @@ func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 		// required analyzer; report-only stages must not.
 		if !got.ApplyToolGate {
 			t.Errorf("stage request = %+v, want the tool gate enabled for analyze/check", got)
-		}
-		if got.SuppressGateReasons {
-			t.Errorf("stage request = %+v, want analyze to disclose coupling-gate reasons", got)
 		}
 		if len(resp.Formats) != 1 || resp.Formats[0] != FormatJSON {
 			t.Errorf("response formats = %v, want the resolved json format", resp.Formats)

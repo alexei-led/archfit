@@ -229,8 +229,6 @@ func pythonModuleFileCandidates(modulePath string) []string {
 // is disabled). When non-empty, each task is enriched with the declarations
 // found in its referenced files (compact agent context). When empty the output
 // is structurally identical to pre-enrichment builds.
-// seams is the seam ledger. A coupling-gate finding names only a module pair,
-// so its task takes its files from that seam's qualifying edges.
 //
 // Output is sorted by FindingID; all nested slices carry a total order.
 func Build(
@@ -239,7 +237,6 @@ func Build(
 	modulePublic map[string][]string,
 	validation []string,
 	syntaxFacts []evidence.SyntaxFact,
-	seams []result.Seam,
 	resolver PathResolver,
 ) []result.AgentTask {
 	// Build a file→facts index once so the per-task lookup is O(1).
@@ -250,10 +247,6 @@ func Build(
 			factsByFile[sf.File] = append(factsByFile[sf.File], sf)
 		}
 	}
-	seamPaths := make(map[[2]string][]string, len(seams))
-	for _, s := range seams {
-		seamPaths[[2]string{s.FromModule, s.ToModule}] = s.QualifyingPaths
-	}
 
 	tasks := []result.AgentTask{}
 	for _, f := range findings {
@@ -263,12 +256,7 @@ func Build(
 		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredWaiver {
 			continue
 		}
-		seamGate := f.RuleID == finding.RuleIDCouplingGate
-		var seamEvidence []string
-		if seamGate {
-			seamEvidence = seamPaths[[2]string{f.Edge.From.Module, f.Edge.To.Module}]
-		}
-		files := filesFor(f, seamEvidence, resolver)
+		files := filesFor(f, resolver)
 		ruleType := ruleTypes[f.RuleID]
 		task := result.AgentTask{
 			FindingID:   f.ID,
@@ -279,13 +267,12 @@ func Build(
 			Files:       files,
 			Validation:  append([]string{}, validation...),
 		}
-		// A seam task's files span both modules — up to forty paths of
-		// evidence — and a module-pair task's (module_cycle,
-		// module_dependencies, a module-selector forbidden_dependency) span up
+		// A module-pair task's (module_cycle, module_dependencies, or a
+		// module-selector forbidden_dependency) files span up
 		// to fifty import sites of one module, repeated for every pair; their
 		// declarations would bury the import to cut and dominate the report.
 		modulePair := ruleType == ruleTypeModuleCycle || ruleType == ruleTypeModuleDeps || f.Edge.Kind == edgeKindModuleDependency
-		if factsByFile != nil && !seamGate && !modulePair {
+		if factsByFile != nil && !modulePair {
 			task.Declarations = declarationsFor(files, factsByFile)
 		}
 		tasks = append(tasks, task)
@@ -299,10 +286,6 @@ func Build(
 func goalFor(ruleType string, f finding.Finding) string {
 	if f.RuleID == finding.RuleIDMapUncoveredPath {
 		return uncoveredGoal(f)
-	}
-	if finding.IsMetricRatchet(f.RuleID) {
-		return fmt.Sprintf("Restore the %s metric to its accepted value %s; it is now %s. Investigate the difference from the accepted baseline; this comparison alone does not establish which PR introduced it. Ask the architecture owner to review the new value before accepting it.",
-			f.MatchedBy["metric"], f.MatchedBy["before"], f.MatchedBy["after"])
 	}
 	from, to := f.Edge.From.Path, f.Edge.To.Path
 	toMod := f.Edge.To.Module
@@ -439,14 +422,13 @@ func declarationsFor(files []string, factsByFile map[string][]evidence.SyntaxFac
 }
 
 // filesFor returns the deduplicated, sorted repo-relative files involved: edge
-// endpoints plus every finding location, plus seamEvidence (a coupling-gate
-// finding's qualifying-edge paths), each resolved to a path that exists on
-// disk. An entry that cannot be resolved (e.g. a bare config module key or a
+// endpoints plus every finding location, each resolved to a path that exists
+// on disk. An entry that cannot be resolved (e.g. a bare config module key or a
 // dotted/"::" module id copied verbatim onto Edge.From/To.Path) is dropped
 // rather than emitted — this is the contract agents trust blindly. When
 // dropping leaves the set empty, a module root dir (config paths:) is used as
 // a last resort; if that isn't resolvable either, Files is legitimately empty.
-func filesFor(f finding.Finding, seamEvidence []string, r PathResolver) []string {
+func filesFor(f finding.Finding, r PathResolver) []string {
 	set := map[string]struct{}{}
 	add := func(candidate string) {
 		if resolved, ok := r.resolve(candidate); ok {
@@ -469,9 +451,6 @@ func filesFor(f finding.Finding, seamEvidence []string, r PathResolver) []string
 		if p == modKey && locResolved {
 			continue
 		}
-		add(p)
-	}
-	for _, p := range seamEvidence {
 		add(p)
 	}
 
@@ -499,14 +478,14 @@ func filesFor(f finding.Finding, seamEvidence []string, r PathResolver) []string
 
 // rootFallbackModules names the modules whose declared root stands in when no
 // evidence resolved: the module a public_api_* finding is about, or the two
-// ends of a coupling-gate seam or a module_cycle pair, source first because the
+// ends of a module_cycle pair, source first because the
 // repair starts there. A module_cycle pair over cargo-modules crate::mod
 // modules has no import site to locate.
 func rootFallbackModules(f finding.Finding) []string {
 	if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
 		return []string{mod}
 	}
-	if f.RuleID == finding.RuleIDCouplingGate || f.Edge.Kind == edgeKindModuleDependency {
+	if f.Edge.Kind == edgeKindModuleDependency {
 		return []string{f.Edge.From.Module, f.Edge.To.Module}
 	}
 	return nil

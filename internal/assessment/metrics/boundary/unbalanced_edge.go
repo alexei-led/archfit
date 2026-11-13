@@ -105,7 +105,6 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.
 	band = result.ApplyConfidenceCap(band, confidence)
 
 	display := fmt.Sprintf("%d new high-risk unbalanced edges", newHigh)
-	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
 	return assessmentresult.MetricResult{
 		Name:       m.Name(),
@@ -116,14 +115,13 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.
 		Version:    m.Version(),
 		Mode:       result.ModeCount,
 		Definition: "intrusive edges across a module boundary into a high-volatility target",
-		Delta:      delta,
 		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}
 }
 
 // naResult reports unbalanced_edge as indeterminate: intrusive cross-module
 // candidate edges exist, but none has a known volatility, so whether any is
-// unbalanced cannot be decided. Band is result.BandNA (not strong), Delta nil.
+// unbalanced cannot be decided. Band is result.BandNA (not strong).
 func (m UnbalancedEdgeMetric) naResult() assessmentresult.MetricResult {
 	return assessmentresult.MetricResult{
 		Name:       m.Name(),
@@ -134,7 +132,6 @@ func (m UnbalancedEdgeMetric) naResult() assessmentresult.MetricResult {
 		Version:    m.Version(),
 		Mode:       result.ModeCount,
 		Definition: "intrusive edges across a module boundary into a high-volatility target",
-		Delta:      nil,
 		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}
 }

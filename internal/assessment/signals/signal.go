@@ -4,7 +4,6 @@ package signal
 
 import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	assessmentresult "github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
@@ -94,7 +93,6 @@ func NewCoverageView(rows []evidence.Coverage) CoverageView {
 type CommonInput struct {
 	Relationships relationship.Set
 	Findings      []finding.Finding
-	Baseline      assessmentresult.MetricSnapshot
 	Coverage      CoverageView
 	ChangedFiles  []string
 	Symbols       SymbolSignals

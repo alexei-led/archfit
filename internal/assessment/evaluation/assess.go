@@ -137,7 +137,6 @@ type AssessInput struct {
 	Relationships       relationship.Set
 	RelationshipSignals relationship.AssessmentSignals
 	Policy              policy.PolicySnapshot
-	BaseMetrics         result.MetricSnapshot
 	Scope               scope.Scope
 	Now                 time.Time
 	BaseRef             string
@@ -178,8 +177,8 @@ type Assessed struct {
 }
 
 // Assess evaluates rules, metrics, lifecycle status, and the verdict, then
-// assembles the report-only evidence blocks into one diagnostic. Scoring, the
-// coupling gate, and repair tasks follow in Score.
+// assembles the report-only evidence blocks into one diagnostic. Scoring and
+// repair tasks follow in Score.
 func Assess(in AssessInput) (Assessed, error) {
 	ruleConfig := in.Policy.Gates.Rules
 	ruleConfig.ModuleMap = ruleConfig.ModuleMap.WithCrateOwners(in.Facts.CrateOwners)
@@ -197,13 +196,11 @@ func Assess(in AssessInput) (Assessed, error) {
 	}, nil
 }
 
-// ScoreInput carries the explicit values scoring, the coupling gate, and repair
-// tasks need on top of the assessed diagnostic.
+// ScoreInput carries the values scoring and repair tasks need on top of the
+// assessed diagnostic.
 type ScoreInput struct {
-	Policy policy.PolicySnapshot
-	Facts  Observations
-	// Ratchets is the stored reference as the metric ratchets see it.
-	Ratchets       RatchetReference
+	Policy         policy.PolicySnapshot
+	Facts          Observations
 	ConfigSource   string
 	ScanRoot       string
 	Root           string
@@ -220,18 +217,15 @@ type ScoreInput struct {
 	CoverageGaps   []modevidence.CoverageGap
 }
 
-// Scored is the scoring outcome. GateReasons explain the coupling seam gate —
-// a trip when it blocked, an abstention when no comparable reference existed;
-// the caller decides whether to disclose them (only `analyze` does). HardGate
-// reports that a required analyzer gap must fail the run.
+// Scored is the scoring outcome. HardGate reports that a required analyzer gap
+// must fail the run.
 type Scored struct {
-	Score       score.Scorecard
-	GateReasons []string
-	HardGate    bool
+	Score    score.Scorecard
+	HardGate bool
 }
 
-// Score synthesises the scorecard, applies the coupling gate, attaches repair
-// tasks, and stamps the acquisition-resolved coverage evidence onto diag.
+// Score synthesises the scorecard, attaches repair tasks, and stamps the
+// acquisition-resolved coverage evidence onto diag.
 func Score(diag *result.Result, in ScoreInput) Scored {
 	ruleTypes := ruleTypesOf(in.Policy)
 	modulePublic := modulePublicOf(in.Policy)
@@ -246,7 +240,6 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 			knownFiles[file] = struct{}{}
 		}
 	}
-	gate := in.Policy.Gates.Coupling
 	// Stamp the acquisition-resolved coverage BEFORE synthesis. The scorecard's
 	// confidence caps read ToolCoverage — the cargo-modules partial-module-graph
 	// row only ever exists on the marked copy, so scoring off the raw rows makes
@@ -255,7 +248,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	// the marked copy cannot move a measured metric.
 	diag.ToolCoverage = in.MarkedCoverage
 	finalized := finalize(diag, FinalizeInput{
-		Gate: gate, RuleTypes: ruleTypes, ModulePublic: modulePublic,
+		RuleTypes: ruleTypes, ModulePublic: modulePublic,
 		ValidationCommands: []string{validationCommand(in.ConfigSource, in.ScanRoot, in.ValidationArgs...)},
 		KnownFiles:         knownFiles, CrateRootDirs: in.CrateRootDirs,
 		ModuleRootDirs: policy.ModuleRootDirs(in.Policy.Topology.Modules),
@@ -270,9 +263,8 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	hardGate := in.ApplyToolGate && applyToolGate(diag, in.RequireTools)
 	diag.State = buildState(diag, stateInput{
 		Policy: in.Policy, Facts: in.Facts, RuleTypes: ruleTypes, RequiredToolFailure: hardGate,
-		Ratchets: in.Ratchets,
 	})
-	return Scored{Score: finalized.Score, GateReasons: finalized.GateReasons, HardGate: hardGate}
+	return Scored{Score: finalized.Score, HardGate: hardGate}
 }
 
 // runSignals projects the acquired facts into the change signals rule and

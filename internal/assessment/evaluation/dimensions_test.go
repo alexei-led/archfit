@@ -312,7 +312,6 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 		{"pattern", state.DimensionModularity},
 		{finding.RuleIDBCImbalanced, state.DimensionCoupling},
 		{finding.RuleIDDuplicatedKnowledge, state.DimensionCoupling},
-		{finding.RuleIDCouplingGate, state.DimensionCoupling},
 		{"labels/stale", state.DimensionCoupling},
 		{"waiver", state.DimensionIntent},
 		{"nobody_declared_this", state.DimensionIntent},
@@ -880,9 +879,6 @@ func TestDriftDimensionHasNoStoredComparison(t *testing.T) {
 	dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Drift
 	if dim.Status != state.Unmeasured || len(dim.Metrics) != 0 {
 		t.Fatalf("drift = %+v, want unmeasured without fabricated deltas", dim)
-	}
-	if dim.Delta == nil || dim.Delta.Status != state.ComparisonNotRequested {
-		t.Fatalf("delta = %+v, want not requested", dim.Delta)
 	}
 }
 

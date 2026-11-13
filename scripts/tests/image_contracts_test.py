@@ -158,6 +158,17 @@ class ImageContractsTest(unittest.TestCase):
         tools = state["coverage"]["tools"]
         cases = {
             "no state": ({}, stderr),
+            "retired gate reasons": (
+                {**state, "gate_reasons": ["no comparable reference"]},
+                stderr,
+            ),
+            "retired metric delta": (
+                {
+                    **state,
+                    "dimensions": {"drift": {"delta": {"status": "not_requested"}}},
+                },
+                stderr,
+            ),
             "roslyn ok": (
                 {
                     **state,

@@ -401,7 +401,7 @@ func validateWaivers(waivers []policy.WaiverDef, rules []policy.RuleDef) error {
 // distributedMonolithModes are the accepted
 // coupling.gate.distributed_monolith.mode values. Empty means warn.
 var distributedMonolithModes = map[string]struct{}{
-	string(policy.DistributedMonolithWarn): {}, string(policy.DistributedMonolithFail): {},
+	string(GateWarn): {}, string(GateFail): {},
 }
 
 // validateCouplingGate checks the coupling.gate block.

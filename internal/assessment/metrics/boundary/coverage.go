@@ -66,7 +66,6 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) assessmentresult.Metric
 	score := value * 10.0
 	band := result.ApplyConfidenceCap(result.BandScore(score), confidence)
 	display := fmt.Sprintf("%.0f%% coverage", value*100)
-	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
 	return assessmentresult.MetricResult{
 		Name:       m.Name(),
@@ -77,7 +76,6 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) assessmentresult.Metric
 		Version:    m.Version(),
 		Mode:       result.ModeRatio,
 		Definition: "extracted_files / applicable_files",
-		Delta:      delta,
 		Direction:  assessmentresult.DirectionHigherIsBetter,
 	}
 }

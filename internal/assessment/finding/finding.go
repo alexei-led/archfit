@@ -43,14 +43,10 @@ const (
 // once here instead of being repeated as literals at every producer and
 // consumer.
 const (
-	// RuleIDBCImbalanced is the balanced-coupling advisory the coupling gate
-	// promotes to a gate finding.
+	// RuleIDBCImbalanced is the balanced-coupling advisory.
 	RuleIDBCImbalanced = modelrule.RuleIDBCImbalancedCoupling
 	// RuleIDDuplicatedKnowledge is the clone-only coupling advisory.
 	RuleIDDuplicatedKnowledge = modelrule.RuleIDDuplicatedKnowledge
-	// RuleIDCouplingGate is the synthetic finding a tripped coupling gate emits
-	// when it has no promotable advisory.
-	RuleIDCouplingGate = modelrule.RuleIDCouplingGate
 	// RuleIDMapUncoveredPath is the map completeness finding: production
 	// source no declared module owns. module_review.gate: fail makes it a
 	// gate finding.
@@ -58,12 +54,7 @@ const (
 	// RuleIDMapUncoveredChange is a file the change adds that no analysis
 	// covers. A waiver cannot excuse it: unread code is unknown, not accepted.
 	RuleIDMapUncoveredChange = modelrule.RuleIDMapUncoveredChange
-	// RuleIDMetricPrefix starts the rule ID of a tripped metric ratchet.
-	RuleIDMetricPrefix = modelrule.RuleIDMetricPrefix
 )
-
-// IsMetricRatchet reports whether ruleID names a tripped metric ratchet.
-func IsMetricRatchet(ruleID string) bool { return modelrule.IsMetricRatchet(ruleID) }
 
 // Endpoint identifies one side of a finding edge (resolved at diagnostic assembly).
 type Endpoint struct {

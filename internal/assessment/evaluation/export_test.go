@@ -2,19 +2,8 @@ package evaluation
 
 import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
-	"github.com/alexei-led/archfit/v3/internal/assessment/score"
-	"github.com/alexei-led/archfit/v3/internal/policy"
 )
-
-// ApplySeamGate exposes the seam-gate escalation over an explicit ledger and
-// reference, so the block condition can be pinned without a stored input.
-func ApplySeamGate(diag *result.Result, gate policy.CouplingGate, reference score.SeamReference) []string {
-	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(gate), reference)
-	applySeamGate(diag, trip)
-	return trip.Reasons
-}
 
 // RulesetOf and MetricsetOf let the external test package drive Evaluate with
 // explicit fakes. They are test-only: this file is not compiled into the
@@ -41,12 +30,3 @@ var (
 	BuildState        = buildState
 	BuildDimensions   = buildDimensions
 )
-
-// Unevaluated exposes the unmeasured-ratchet decision to the behavior tests.
-func (r RatchetReference) Unevaluated(cfg map[string]policy.MetricConfig) (string, bool) {
-	rule, ok := r.unevaluated(cfg)
-	return rule.Reason, ok
-}
-
-// RatchetFindings exposes the ratchet finding builder to the behavior tests.
-var RatchetFindings = ratchetFindings

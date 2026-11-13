@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	seamTo             = "billing"
 	publicAPIText      = "public API"
 	targetPublicGlob   = "pkg/b/api/**"
 	ruleTypeNewCross   = "new_cross_module_dependency"
@@ -23,7 +24,7 @@ func TestRepairDoesNotSuggestForbiddenPublicRoute(t *testing.T) {
 			f := gateFinding("repair", ruleForbidden, finding.StatusNew)
 			f.Constraint = "Remove the dependency"
 			f.Alternatives = nil
-			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: ruleType}, nil, nil, nil, nil, agenttask.PathResolver{})
+			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: ruleType}, nil, nil, nil, agenttask.PathResolver{})
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
 			}
@@ -60,8 +61,7 @@ func TestConstraintsListTargetPublicSurfaceOnlyWhereItIsARoute(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.ruleType, func(t *testing.T) {
 			f := gateFinding("repair", ruleForbidden, finding.StatusNew)
-			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: tc.ruleType},
-				map[string][]string{"b": {targetPublicGlob}}, nil, nil, nil, agenttask.PathResolver{})
+			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: tc.ruleType}, map[string][]string{"b": {targetPublicGlob}}, nil, nil, agenttask.PathResolver{})
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
 			}
@@ -100,8 +100,7 @@ func TestModuleDependenciesTaskNamesThePairAndTheOwnerPath(t *testing.T) {
 			f.MatchedBy = map[string]string{"violates": tc.violates}
 			f.Locations = []relationship.Location{{File: importer, Line: 3}}
 			facts := []evidence.SyntaxFact{{File: importer, Kind: "function", Name: "Charge", Exported: true, StartLine: 3}}
-			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"boundaries": ruleTypeModuleDeps},
-				map[string][]string{"b": {targetPublicGlob}}, nil, facts, nil, agenttask.PathResolver{})
+			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"boundaries": ruleTypeModuleDeps}, map[string][]string{"b": {targetPublicGlob}}, nil, facts, agenttask.PathResolver{})
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
 			}
@@ -131,8 +130,7 @@ func TestTaskCarriesTheRuleRationale(t *testing.T) {
 	f.Constraint = "Remove the dependency (see docs/adr/003.md)"
 	f.Rationale = "Domain code stays free of I/O"
 	f.Alternatives = []string{"Depend on a port in the application layer"}
-	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"domain_no_http": ruleTypeForbidden},
-		map[string][]string{seamTo: {targetPublicGlob}}, nil, nil, nil, agenttask.PathResolver{})
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"domain_no_http": ruleTypeForbidden}, map[string][]string{seamTo: {targetPublicGlob}}, nil, nil, agenttask.PathResolver{})
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -168,7 +166,7 @@ func TestModuleSelectorTaskCarriesNoDeclarations(t *testing.T) {
 			f := gateFinding("sel", ruleForbidden, finding.StatusNew)
 			f.Edge.Kind = tc.kind
 			f.Locations = []relationship.Location{{File: importer, Line: 3}}
-			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: ruleTypeForbidden}, nil, nil, facts, nil, agenttask.PathResolver{})
+			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: ruleTypeForbidden}, nil, nil, facts, agenttask.PathResolver{})
 			if len(tasks) != 1 || len(tasks[0].Declarations) != tc.wantN {
 				t.Errorf("tasks = %+v, want %d declarations", tasks, tc.wantN)
 			}
@@ -188,7 +186,7 @@ func TestUncoveredSourceTaskAsksTheOwner(t *testing.T) {
 		Locations: []relationship.Location{{File: file}},
 	}
 	resolver := agenttask.NewPathResolver(map[string]struct{}{file: {}}, nil, nil, nil)
-	tasks := agenttask.Build([]finding.Finding{f}, nil, nil, nil, nil, nil, resolver)
+	tasks := agenttask.Build([]finding.Finding{f}, nil, nil, nil, nil, resolver)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
 	}
@@ -202,7 +200,7 @@ func TestUncoveredSourceTaskAsksTheOwner(t *testing.T) {
 		}
 	}
 	f.MatchedBy = map[string]string{"subject": genDir}
-	generic := agenttask.Build([]finding.Finding{f}, nil, nil, nil, nil, nil, resolver)[0].Goal
+	generic := agenttask.Build([]finding.Finding{f}, nil, nil, nil, nil, resolver)[0].Goal
 	if !strings.Contains(generic, "dotted Python module") {
 		t.Errorf("goal without a suggestion = %q, want it to say what a glob must match", generic)
 	}

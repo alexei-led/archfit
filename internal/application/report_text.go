@@ -140,11 +140,6 @@ func boundReportText(doc *report.Document) {
 			dim.Unknown[i].Fact = reportText(dim.Unknown[i].Fact, maxReportTextRunes)
 			dim.Unknown[i].Reason = reportText(dim.Unknown[i].Reason, maxReportTextRunes)
 		}
-		if dim.Delta != nil {
-			delta := *dim.Delta
-			delta.Reasons = reportTexts(delta.Reasons, maxReportTextRunes)
-			dim.Delta = &delta
-		}
 	}
 	for i := range st.Coverage.Tools {
 		st.Coverage.Tools[i].Reason = reportText(st.Coverage.Tools[i].Reason, maxReportTextRunes)
