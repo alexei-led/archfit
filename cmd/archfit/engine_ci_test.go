@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -125,12 +126,18 @@ func TestResultEngineIdentity(t *testing.T) {
 func readOnlyGit(t *testing.T, root string) {
 	t.Helper()
 	modes := map[string]fs.FileMode{}
-	err := filepath.WalkDir(root, func(path string, _ fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		if strings.HasSuffix(entry.Name(), ".lock") {
+			return nil // git's own locks are transient and may vanish before cleanup
+		}
 		info, err := os.Stat(path)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		modes[path] = info.Mode().Perm()
@@ -138,7 +145,7 @@ func readOnlyGit(t *testing.T, root string) {
 	})
 	t.Cleanup(func() {
 		for path, mode := range modes {
-			if err := os.Chmod(path, mode); err != nil {
+			if err := os.Chmod(path, mode); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				t.Error(err)
 			}
 		}
@@ -147,7 +154,7 @@ func readOnlyGit(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	for path, mode := range modes {
-		if err := os.Chmod(path, mode&^0o222); err != nil {
+		if err := os.Chmod(path, mode&^0o222); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			t.Fatal(err)
 		}
 	}
