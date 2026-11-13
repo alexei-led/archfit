@@ -17,6 +17,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -307,6 +308,15 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 	}()
 	stdout, stderr := deps.Stdout, deps.stderr()
 	ctx := deps.runContext()
+	objects, err := gitpkg.NewObjectStore(deps.Runner)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "archfit: %v\n", err)
+		return 3
+	}
+	defer func() { _ = objects.Close() }()
+	scoped := *deps
+	scoped.Runner = objects
+	deps = &scoped
 
 	var c cli
 	parser, err := kong.New(&c,
