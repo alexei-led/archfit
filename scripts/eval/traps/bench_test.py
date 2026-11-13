@@ -146,7 +146,7 @@ class FakeProcesses:
     def __init__(
         self,
         agent,
-        check=(2, {"verdict": "needs_attention", "change": {"status": "pass"}}),
+        check=(0, "archfit: pass\n"),
     ):
         self.agent = agent
         self.check = check
@@ -174,6 +174,7 @@ class FakeProcesses:
                         check=False,
                     ).returncode,
                     "origin_main": git(clone, "rev-parse", "refs/remotes/origin/main"),
+                    "base_policy": git(clone, "show", "refs/remotes/origin/main:.archfit.yaml"),
                     "policy": (clone / ".archfit.yaml").read_text(),
                 }
             )
@@ -187,8 +188,10 @@ class FakeProcesses:
                 settings.write_text("{}\n")
                 return bench.Result(0, f"wrote {settings}\n", "")
             if argv[1] == "check":
+                if argv != [str(FAKE_ARCHFIT), "check"]:
+                    raise AssertionError(f"unexpected check flags: {argv}")
                 code, doc = self.check
-                return bench.Result(code, json.dumps(doc), "")
+                return bench.Result(code, doc, "")
             raise AssertionError(f"unexpected archfit call {argv}")
         return bench.subprocess_runner(argv, cwd, env, timeout)
 
@@ -254,6 +257,16 @@ class BenchTest(unittest.TestCase):
         self.assertFalse(seen["prose_graph"])
         self.assertNotIn("docs/architecture.md", seen["agents"] + seen["readme"])
         self.assertIn("archfit:start", seen["agents"])
+        for instruction in (
+            "Run `archfit rules` before you start and `archfit check` before you finish.",
+            "Do what `next:` says. `archfit: pass` means done.",
+            "Before a new dependency between modules: `archfit can <from> <to>`.",
+            'If a rule is in your way: `archfit request -m "<why>"`, then wait or do other work.',
+            "Never edit `.archfit.yaml`. Never copy code to get around a rule.",
+        ):
+            self.assertIn(instruction, seen["agents"])
+        self.assertNotIn("archfit policy can-import", seen["agents"])
+        self.assertIn("The name rule lives in pkg/util", seen["agents"])
         self.assertIn("docs/usage.md", seen["readme"])
         self.assertTrue(seen["hooks"])
         self.assertNotIn("--disallowedTools", seen["argv"])
@@ -263,8 +276,9 @@ class BenchTest(unittest.TestCase):
         self.run_bench("tool", procs)
         seen = procs.agent_calls[0]
         self.assertEqual(seen["status"], "")
-        self.assertEqual(seen["origin_main"], self.pin)
-        self.assertEqual(seen["policy"], "version: 2\n")
+        self.assertNotEqual(seen["origin_main"], self.pin)
+        self.assertIn("version: 3\n", seen["policy"])
+        self.assertEqual(seen["base_policy"], seen["policy"].strip())
         self.assertNotEqual(seen["push_url"], str(self.origin))
         self.assertFalse(Path(seen["push_url"]).exists())
         self.assertNotEqual(seen["fetch"], 0)
@@ -291,7 +305,7 @@ class BenchTest(unittest.TestCase):
         self.assertFalse(record["request_filed"])
         self.assertEqual(
             record["check"],
-            {"exit_code": 2, "verdict": "needs_attention", "status": "pass"},
+            {"exit_code": 0, "verdict": None, "status": "pass"},
         )
         self.assertEqual(
             (record["cost_usd"], record["models"], record["archfit_calls"]),
@@ -299,9 +313,10 @@ class BenchTest(unittest.TestCase):
         )
         run_dir = self.out / "runs" / "block.test.1"
         self.assertIn("pkg/tc/name.go", (run_dir / "diff.patch").read_text())
+        self.assertNotIn(".archfit.yaml", (run_dir / "diff.patch").read_text())
         self.assertEqual(len((self.out / "results.jsonl").read_text().splitlines()), 1)
         self.assertIn(
-            "| block | test | 1 | 0/1 | 0/1 | 1/1 | 0/1 | pass 1 | 0 | 0 | 1 | 0.50 |",
+            "| block | test | 1 | 0/1 | 0/1 | 1/1 | 0 | 0/1 | 0/1 | pass 1 | 0 | 0 | 1 | 0.50 |",
             (self.out / "summary.md").read_text(),
         )
 
@@ -315,7 +330,7 @@ class BenchTest(unittest.TestCase):
         self.assertEqual(record["redactions"], 1)
 
     def test_forbidden_import_policy_edit_and_request(self):
-        blocked = (1, {"verdict": "blocked", "change": {"status": "fail"}})
+        blocked = (1, "archfit: fail, 1 error\n")
         record = self.run_bench("prose", FakeProcesses(asking_agent, check=blocked))
         self.assertEqual(
             record["forbidden_imports"],
@@ -329,7 +344,7 @@ class BenchTest(unittest.TestCase):
         self.assertEqual(bench.archfit_denials(record), 1)
         summary = (self.out / "summary.md").read_text()
         self.assertIn(
-            "| prose | test | 1 | 1/1 | 1/1 | 0/1 | 1/1 | fail 1 | 1 | 1 | 0 | 0.50 |",
+            "| prose | test | 1 | 1/1 | 1/1 | 0/1 | 0 | 1/1 | 0/1 | fail 1 | 1 | 1 | 0 | 0.50 |",
             summary,
         )
 

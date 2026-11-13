@@ -179,16 +179,23 @@ The trap benchmark measures what coding agents do when the shortest path breaks 
 It runs trap tasks, setups (arms), and models in disposable clones.
 Traps, arms, and default model IDs live in `scripts/eval/traps/definitions.py`.
 
-Each run clones the trap repository at its pinned commit and applies the arm's setup.
+Each run clones the pinned trap commit and commits the schema 3 policy on its default branch.
+The task branch starts from that policy commit. Setup changes are excluded from the measured diff.
+The `prose` arm keeps the prose graph and denies `archfit`.
+The other arms use the five-line block. The `tool` arms remove the prose graph.
+Hook arms use `archfit hook install`, the same hook writer used by `doctor --fix`.
+This avoids installing host-wide toolchains during benchmark setup.
 A headless `claude -p` agent works on the task. Then `archfit check` judges the result.
 
 | Measure | Meaning |
 | --- | --- |
 | Forbidden change | A production import that the pinned policy denies |
 | Policy edit | A changed `.archfit*` file |
-| Unnoticed copy | An identical rule literal in another module that the check did not fail |
-| Request filed | The final message asks the owner to decide. This is a text heuristic. |
-| Check | The exit code and status of `archfit check --format agent` |
+| Unnoticed copy | An identical rule literal in another module with a `pass` |
+| Copy unknown | An identical rule literal with no valid check verdict |
+| Request calls | `archfit request` commands in the agent tool transcript |
+| Text request | The final message asks the owner to decide. This is a text heuristic. |
+| Check | The exit code and text status of `archfit check` |
 
 Install and log in to the `claude` CLI. Put `archfit` on `PATH`.
 The run needs network access to clone the trap repository.
@@ -198,6 +205,7 @@ Each agent run costs money. `--max-budget-usd` caps one run.
 python3 scripts/eval/traps/bench.py --out /tmp/archfit-traps --reps 2 --jobs 3
 ```
 
+Use `--setup-only` to prepare one clone per arm and save its setup diff without calling a model.
 `--out` must be a new directory outside the repository.
 It receives `meta.json`, `results.jsonl`, `summary.md`, and the raw logs of each run.
 Select runs with `--arms`, `--models name=model-id,...`, and `--reps`.
