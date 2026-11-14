@@ -10,7 +10,11 @@
 #     freshly built tree publish identical PATH and environment entries.
 #
 # `install` is slow (it compiles cargo-modules from source) and `export` is free,
-# so a cache hit only verifies the restored tree and exports it.
+# so a cache hit only verifies the restored tree, reinstates the pinned
+# interpreter and exports. The interpreter is not in the cached tree — it lives
+# in the runner's uv install directory, which the cache does not cover — so a
+# hit that skipped it left every later `uv` step with no Python of the pinned
+# version (2026-11-14).
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 prefix=${ARCHFIT_PREFIX:?ARCHFIT_PREFIX must name a runner-owned tool prefix}
@@ -77,8 +81,10 @@ install_toolchain() {
 case $mode in
 auto)
     # A restored toolchain is verified before it is trusted and rebuilt when it
-    # does not verify.
+    # does not verify. A verified tree still needs the pinned interpreter: the
+    # cache cannot carry it, so a hit installs it before anything runs `uv`.
     if [ "${ARCHFIT_TOOLCHAIN_CACHE_HIT:-}" = true ] && toolchain_ready; then
+        ensure_python >/dev/null || exit 1
         export_toolchain
     else
         install_toolchain || exit 1
