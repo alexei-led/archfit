@@ -15,7 +15,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
 	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
@@ -42,18 +41,6 @@ const (
 
 var evaluatedAt = time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 
-// stubRule emits a fixed finding slice so evaluation decisions, not rule
-// matching, are under test.
-type stubRule struct {
-	id       string
-	findings []finding.Finding
-}
-
-func (r stubRule) ID() string { return r.id }
-func (r stubRule) Check(relationship.Set, rules.Evidence) []finding.Finding {
-	return append([]finding.Finding(nil), r.findings...)
-}
-
 // stubMetric supplies a measurement without invoking a real calculator.
 type stubMetric struct{ res result.MetricResult }
 
@@ -63,7 +50,6 @@ func (m stubMetric) Calculate(signal.CollectedSignals) result.MetricResult {
 	return m.res
 }
 
-var _ rules.Rule = stubRule{}
 var _ metrics.Metric = stubMetric{}
 
 func TestEvaluateMetricsAreMeasurements(t *testing.T) {
@@ -78,18 +64,10 @@ func TestEvaluateMetricsAreMeasurements(t *testing.T) {
 			if len(got.Metrics) != 1 || got.Metrics[0].Name != metricName || got.Metrics[0].Value != value {
 				t.Fatalf("metric measurement = %+v, want %s=%v", got.Metrics, metricName, value)
 			}
-			if got.Verdict != result.VerdictPass || len(got.Findings) != 0 || got.GateFindings != 0 || got.Warnings != 0 {
+			if len(got.Findings) != 0 || got.Warnings != 0 {
 				t.Fatalf("measurement changed the verdict: %+v", got)
 			}
 		})
-	}
-}
-
-func gateFinding(id string, sev finding.Severity) finding.Finding {
-	return finding.Finding{
-		ID: id, Kind: finding.KindGate, RuleID: ruleForbidden, Status: finding.StatusNew, Severity: sev,
-		Edge:      finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}, Kind: kindImports},
-		Locations: []relationship.Location{{File: pathA, Line: 3}},
 	}
 }
 
@@ -115,114 +93,6 @@ func findByID(t *testing.T, fs []finding.Finding, id string) finding.Finding {
 	return finding.Finding{}
 }
 
-func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
-	const (
-		fpNew     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-		fpWaived  = "cccccccccccccccccccccccccccccccc"
-		fpExpired = "dddddddddddddddddddddddddddddddd"
-	)
-	future := evaluatedAt.Add(24 * time.Hour).Format("2006-01-02")
-	past := evaluatedAt.Add(-24 * time.Hour).Format("2006-01-02")
-
-	tests := []struct {
-		name            string
-		findings        []finding.Finding
-		waivers         policy.WaiverSet
-		wantStatus      map[string]finding.Status
-		wantGateNew     int
-		wantWaiversUsed int
-		wantVerdict     result.Verdict
-	}{
-		{
-			name:        "unmatched gate finding is new and fails",
-			findings:    []finding.Finding{gateFinding(fpNew, finding.SeverityHigh)},
-			wantStatus:  map[string]finding.Status{fpNew: finding.StatusNew},
-			wantGateNew: 1,
-			wantVerdict: result.VerdictFail,
-		},
-		{
-			name:     "unexpired waiver suppresses the gate and is counted",
-			findings: []finding.Finding{gateFinding(fpWaived, finding.SeverityHigh)},
-			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
-				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: future},
-			}},
-			wantStatus:      map[string]finding.Status{fpWaived: finding.StatusWaived},
-			wantGateNew:     0,
-			wantWaiversUsed: 1,
-			wantVerdict:     result.VerdictPass,
-		},
-		{
-			name:     "expired waiver re-gates the finding",
-			findings: []finding.Finding{gateFinding(fpExpired, finding.SeverityHigh)},
-			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
-				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: past},
-			}},
-			wantStatus:  map[string]finding.Status{fpExpired: finding.StatusExpiredWaiver},
-			wantGateNew: 1,
-			wantVerdict: result.VerdictFail,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := evaluation.Evaluate(evaluation.Input{
-				Rules:  evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: test.findings}),
-				Policy: policy.AssessmentPolicy{Waivers: test.waivers},
-				Now:    evaluatedAt,
-			})
-			for id, want := range test.wantStatus {
-				if s := findByID(t, got.Findings, id).Status; s != want {
-					t.Errorf("finding %s status = %q, want %q", id, s, want)
-				}
-			}
-			if got.GateFindings != test.wantGateNew {
-				t.Errorf("GateFindings = %d, want %d", got.GateFindings, test.wantGateNew)
-			}
-			if got.WaiversUsed != test.wantWaiversUsed {
-				t.Errorf("WaiversUsed = %d, want %d", got.WaiversUsed, test.wantWaiversUsed)
-			}
-			if got.Verdict != test.wantVerdict {
-				t.Errorf("Verdict = %q, want %q", got.Verdict, test.wantVerdict)
-			}
-		})
-	}
-}
-
-// TestEvaluateKeepsTheModulesOfModuleKeyedFindings pins that evidence
-// resolution only fills an empty module on an edge finding: a module-pair
-// finding (module_cycle, module_dependencies) names its modules itself, so
-// resolving its empty paths would erase both modules, and the empty module of
-// an unowned importer must stay empty.
-func TestEvaluateKeepsTheModulesOfModuleKeyedFindings(t *testing.T) {
-	const fromModule, toModule = "orders", "payments"
-	moduleKeyed := finding.Finding{
-		ID: "mod", Kind: finding.KindGate, RuleID: ruleModuleCycle, Status: finding.StatusNew, Severity: finding.SeverityHigh,
-		Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: fromModule}, To: finding.Endpoint{Module: toModule}, Kind: "module_dependency"},
-	}
-	modules := map[string]policy.ModuleDef{assessModA: {Paths: []string{assessPathsA}}, assessModB: {Paths: []string{assessPathsB}}}
-	// An unowned importer of a visible_to module: its path is the unowned
-	// package, and a module map that would claim it must not name its module.
-	unownedImporter := finding.Finding{
-		ID: "unowned", Kind: finding.KindGate, RuleID: ruleModuleCycle, Status: finding.StatusNew, Severity: finding.SeverityHigh,
-		Edge: finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Module: toModule}, Kind: "module_dependency"},
-	}
-	got := evaluation.Evaluate(evaluation.Input{
-		Rules: evaluation.RulesetOf(stubRule{id: ruleModuleCycle, findings: []finding.Finding{
-			moduleKeyed, unownedImporter, gateFinding("edge", finding.SeverityHigh),
-		}}),
-		Policy: policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
-		Now:    evaluatedAt,
-	})
-	if f := findByID(t, got.Findings, "mod"); f.Edge.From.Module != fromModule || f.Edge.To.Module != toModule {
-		t.Errorf("module-keyed edge = %+v, want %s -> %s kept", f.Edge, fromModule, toModule)
-	}
-	if f := findByID(t, got.Findings, "unowned"); f.Edge.From.Module != "" || f.Edge.From.Path != pathA {
-		t.Errorf("unowned importer edge = %+v, want from path %s and no module", f.Edge, pathA)
-	}
-	if f := findByID(t, got.Findings, "edge"); f.Edge.From.Module != assessModA || f.Edge.To.Module != assessModB {
-		t.Errorf("path-keyed edge = %+v, want modules resolved from the paths", f.Edge)
-	}
-}
-
 func TestEvaluateAdvisoryVisibilityAndWarnVerdict(t *testing.T) {
 	candidate := relationship.AdvisoryCandidate{
 		ID: "adv1", RuleID: ruleBC, Kind: finding.KindAdvisory, Severity: relationship.SeverityMedium,
@@ -234,10 +104,9 @@ func TestEvaluateAdvisoryVisibilityAndWarnVerdict(t *testing.T) {
 		includeAdvisories bool
 		wantVisible       int
 		wantWarnings      int
-		wantVerdict       result.Verdict
 	}{
-		{name: "advisories excluded", includeAdvisories: false, wantVisible: 0, wantWarnings: 0, wantVerdict: result.VerdictPass},
-		{name: "advisories included, counted as a warning, verdict stays pass", includeAdvisories: true, wantVisible: 1, wantWarnings: 1, wantVerdict: result.VerdictPass},
+		{name: "advisories excluded", includeAdvisories: false, wantVisible: 0, wantWarnings: 0},
+		{name: "advisories included, counted as a warning, verdict stays pass", includeAdvisories: true, wantVisible: 1, wantWarnings: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -251,63 +120,6 @@ func TestEvaluateAdvisoryVisibilityAndWarnVerdict(t *testing.T) {
 			}
 			if got.Warnings != test.wantWarnings {
 				t.Errorf("Warnings = %d, want %d", got.Warnings, test.wantWarnings)
-			}
-			if got.Verdict != test.wantVerdict {
-				t.Errorf("Verdict = %q, want %q", got.Verdict, test.wantVerdict)
-			}
-		})
-	}
-}
-
-// An advisory carried in by a warn-gated rule is what drives the
-// verdict to warn; the candidate stream is counted separately as warnings.
-func TestEvaluateRuleAdvisoryDrivesWarnVerdict(t *testing.T) {
-	adv := finding.Finding{
-		ID: "carried", Kind: finding.KindAdvisory, RuleID: ruleBC, Status: finding.StatusNew,
-		Severity: finding.SeverityMedium,
-		Edge:     finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}, Kind: kindImports},
-	}
-	got := evaluation.Evaluate(evaluation.Input{
-		Rules: evaluation.RulesetOf(stubRule{id: ruleBC, findings: []finding.Finding{adv}}),
-		Now:   evaluatedAt,
-	})
-	if got.Verdict != result.VerdictWarn {
-		t.Fatalf("Verdict = %q, want warn: an active advisory warns", got.Verdict)
-	}
-	if got.GateFindings != 0 {
-		t.Fatalf("GateFindings = %d, want 0: an advisory never gates", got.GateFindings)
-	}
-}
-
-func TestEvaluateFiltersAdvisoriesByWaiver(t *testing.T) {
-	candidate := relationship.AdvisoryCandidate{
-		ID: "adv-waived", RuleID: ruleBC, Severity: relationship.SeverityHigh,
-		From: pathA, To: pathB, FromModule: "a", ToModule: "b", EdgeKind: kindImports,
-	}
-	tests := []struct {
-		name       string
-		waivers    policy.WaiverSet
-		wantStatus finding.Status
-	}{
-		{name: "new", wantStatus: finding.StatusNew},
-		{
-			name: "waived advisory",
-			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
-				{Rule: ruleBC, From: pathA, To: pathB, Expires: evaluatedAt.Add(24 * time.Hour).Format("2006-01-02")},
-			}},
-			wantStatus: finding.StatusWaived,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := evaluation.Evaluate(evaluation.Input{
-				AdvisoryCandidates: []relationship.AdvisoryCandidate{candidate},
-				Policy:             policy.AssessmentPolicy{Waivers: test.waivers},
-				IncludeAdvisories:  true,
-				Now:                evaluatedAt,
-			})
-			if s := findByID(t, got.Findings, "adv-waived").Status; s != test.wantStatus {
-				t.Errorf("advisory status = %q, want %q", s, test.wantStatus)
 			}
 		})
 	}
@@ -387,76 +199,12 @@ func TestEvaluateRollupKeepsEveryMemberPastTheDisplayCap(t *testing.T) {
 	}
 }
 
-// Gate findings are re-resolved against the relationship set: the classified
-// edge supplies module labels and the severity the classification implies.
-func TestEvaluateResolvesGateEvidenceFromRelationships(t *testing.T) {
-	tests := []struct {
-		name         string
-		edges        []relationship.Edge
-		wantSeverity finding.Severity
-		wantModules  [2]string
-	}{
-		{
-			name: "intrusive cross-module edge is high",
-			edges: []relationship.Edge{{
-				FromPath: pathA, ToPath: pathB, FromModule: "a", ToModule: "b", Kind: kindImports,
-				Strength: relationship.StrengthIntrusive, Distance: relationship.DistanceCrossModuleDiffOwner,
-			}},
-			wantSeverity: finding.SeverityHigh,
-			wantModules:  [2]string{"a", "b"},
-		},
-		{
-			name: "intrusive same-module edge stays medium",
-			edges: []relationship.Edge{{
-				FromPath: pathA, ToPath: pathB, FromModule: "a", ToModule: "a", Kind: kindImports,
-				Strength: relationship.StrengthIntrusive, Distance: relationship.DistanceSameModule,
-			}},
-			wantSeverity: finding.SeverityMedium,
-			wantModules:  [2]string{"a", "a"},
-		},
-		{
-			name: "contract edge stays medium",
-			edges: []relationship.Edge{{
-				FromPath: pathA, ToPath: pathB, FromModule: "a", ToModule: "b", Kind: kindImports,
-				Strength: relationship.StrengthContract, Distance: relationship.DistanceCrossDeployUnit,
-			}},
-			wantSeverity: finding.SeverityMedium,
-			wantModules:  [2]string{"a", "b"},
-		},
-		{
-			name:         "no matching edge leaves the rule severity untouched",
-			edges:        nil,
-			wantSeverity: finding.SeverityCritical,
-			wantModules:  [2]string{"", ""},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := evaluation.Evaluate(evaluation.Input{
-				Relationships: relationship.Set{Edges: test.edges},
-				Rules:         evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", finding.SeverityCritical)}}),
-				Now:           evaluatedAt,
-			})
-			f := findByID(t, got.Findings, "f1")
-			if f.Severity != test.wantSeverity {
-				t.Errorf("severity = %q, want %q", f.Severity, test.wantSeverity)
-			}
-			if got := [2]string{f.Edge.From.Module, f.Edge.To.Module}; got != test.wantModules {
-				t.Errorf("edge modules = %v, want %v", got, test.wantModules)
-			}
-		})
-	}
-}
-
 func TestEvaluateEmptyInputIsPassWithNoFindings(t *testing.T) {
 	got := evaluation.Evaluate(evaluation.Input{IncludeAdvisories: true, Now: evaluatedAt})
 	if len(got.Findings) != 0 || len(got.Metrics) != 0 {
 		t.Fatalf("Result = %+v, want no findings and no metrics", got)
 	}
-	if got.Verdict != result.VerdictPass {
-		t.Fatalf("Verdict = %q, want pass", got.Verdict)
-	}
-	if got.GateFindings != 0 || got.Warnings != 0 || got.WaiversUsed != 0 {
+	if got.Warnings != 0 {
 		t.Fatalf("counts = %+v, want all zero", got)
 	}
 }
@@ -485,8 +233,5 @@ func TestEvaluateEmitsStalenessAdvisoriesFromPolicy(t *testing.T) {
 		if f.Kind != finding.KindAdvisory {
 			t.Errorf("staleness finding %s kind = %q, want advisory", f.ID, f.Kind)
 		}
-	}
-	if on.GateFindings != 0 {
-		t.Errorf("GateFindings = %d, want 0: staleness never gates", on.GateFindings)
 	}
 }

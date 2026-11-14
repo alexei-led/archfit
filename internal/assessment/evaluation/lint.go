@@ -30,52 +30,14 @@ type PolicyDiagnostic struct {
 	Message  string
 }
 
-// PolicyWarnings are the configuration defects analysis runs disclose as
-// config warnings: an unknown module volatility or subdomain, an undeclared
-// layer, and an allowlist entry naming no module (schema v2 still loads them),
-// and a warn-gated rule whose selector matches nothing or that has no allowlist
-// to enforce. A fail-gated vacuous rule is not repeated: the decision's
-// unevaluated required rules already name it.
-func PolicyWarnings(p policy.PolicySnapshot, f Observations) []string {
-	var out []string
+// PolicyWarnings discloses module values the legacy decoder accepts but the
+// report cannot interpret. It never evaluates a rule.
+func PolicyWarnings(p policy.PolicySnapshot, _ Observations) []string {
+	out := make([]string, 0, len(p.Topology.Modules))
 	for _, d := range moduleValueDiagnostics(p.Topology) {
 		out = append(out, d.Path+": "+d.Message)
 	}
-	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
-	for _, rule := range p.Gates.Rules.Rules {
-		if rule.Gate != string(policy.GateWarn) {
-			continue
-		}
-		if rule.Type == ruleTypeModuleDependencies && !declaresAnyAllowlist(p.Topology) {
-			out = append(out, "rules["+rule.ID+"] is not evaluated: "+allowlistsDeclareNothing)
-			continue
-		}
-		if rule.Guard {
-			continue
-		}
-		side, glob, vacuous := inv.vacuousSelector(rule)
-		switch {
-		case !vacuous:
-		case inv.matchesOnlyUnanalysed(rule.Type, side, glob):
-			out = append(out, "rules["+rule.ID+"] is not evaluated: "+inv.vacuityReason(rule.Type, side, glob)+
-				" — its language's extractor finds no project under the analysis root")
-		default:
-			out = append(out, "rules["+rule.ID+"] is not evaluated: "+selectorMatchesNothing(side, glob)+
-				" — fix the selector or set guard: true")
-		}
-	}
 	return out
-}
-
-// declaresAnyAllowlist reports whether any module declares depends_on or
-// visible_to, an empty list included.
-func declaresAnyAllowlist(topology policy.TopologyView) bool {
-	for name := range topology.Modules {
-		if topology.ModuleMap.DeclaresAllowlist(name) {
-			return true
-		}
-	}
-	return false
 }
 
 // moduleValueDiagnostics reports module values the engine cannot read: an

@@ -46,30 +46,6 @@ func chdirIsolated(t *testing.T, dir string) string {
 	return codex
 }
 
-// A forbidden_dependency rule missing from:/to: globs is rejected at config
-// load (rules.New), so doctor surfaces it as a load failure — the old
-// advisory-only "dead by construction" note is gone with the vacuous rule.
-func TestDoctorCmd_VacuousForbiddenDependencyFailsLoad(t *testing.T) {
-	dir := t.TempDir()
-	const yaml = `version: 2
-rules:
-  - id: no-forbidden-deps
-    type: forbidden_dependency
-    gate: warn
-`
-	if err := os.WriteFile(filepath.Join(dir, ".archfit.yaml"), []byte(yaml), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	out := runDoctorCmd(t, dir)
-	if !strings.Contains(out, ".archfit.yaml failed to load") {
-		t.Errorf("expected doctor to surface the config load error, got:\n%s", out)
-	}
-	if !strings.Contains(out, "requires from or from_module") {
-		t.Errorf("expected the load error to explain the empty globs, got:\n%s", out)
-	}
-}
-
 func TestDoctorCmd_LiveForbiddenDependencyRuleLoadsClean(t *testing.T) {
 	dir := t.TempDir()
 	const yaml = `version: 2

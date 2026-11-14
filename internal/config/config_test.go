@@ -15,7 +15,6 @@ import (
 
 	"github.com/alexei-led/archfit/v3/internal/config"
 	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
 
@@ -648,17 +647,6 @@ func TestForClassify(t *testing.T) {
 	}
 }
 
-func TestForRules(t *testing.T) {
-	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	rc := cfg.ForRules()
-	if len(rc.Rules) != len(cfg.Rules) {
-		t.Errorf("ForRules().Rules len=%d, want %d", len(rc.Rules), len(cfg.Rules))
-	}
-}
-
 func TestFunctionLOCThresholdConfig(t *testing.T) {
 	t.Run("absent uses the diagnostic default", func(t *testing.T) {
 		cfg := config.Config{Version: config.SchemaVersion}
@@ -765,17 +753,6 @@ func TestForStaleness_GateOffDisables(t *testing.T) {
 	}
 }
 
-func TestForStatus(t *testing.T) {
-	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	es := cfg.ForWaivers()
-	if len(es.Waivers) != len(cfg.Waivers) {
-		t.Errorf("ForWaivers().Waivers len=%d, want %d", len(es.Waivers), len(cfg.Waivers))
-	}
-}
-
 func TestToolMode_UnmarshalYAML(t *testing.T) {
 	// Inline config struct to test ToolMode decoding directly via Load.
 	tests := []struct {
@@ -856,87 +833,6 @@ func TestLoad_Patterns(t *testing.T) {
 	// Rule without patterns should have nil/empty Patterns slice.
 	if len(cfg.Rules[1].Patterns) != 0 {
 		t.Errorf("Rules[1].Patterns len=%d, want 0", len(cfg.Rules[1].Patterns))
-	}
-}
-
-func TestForPatterns(t *testing.T) {
-	tests := []struct {
-		name    string
-		rules   []policy.RuleDef
-		wantLen int
-		wantIDs []string
-	}{
-		{
-			name:    "no_rules",
-			rules:   nil,
-			wantLen: 0,
-		},
-		{
-			name: "rules_without_patterns",
-			rules: []policy.RuleDef{
-				{ID: "r1", Type: "forbidden_dependency"},
-				{ID: "r2", Type: "public_api_only"},
-			},
-			wantLen: 0,
-		},
-		{
-			name: "one_rule_with_patterns",
-			rules: []policy.RuleDef{
-				{
-					ID:   "r1",
-					Type: "forbidden_dependency",
-					Patterns: []pattern.Def{
-						{ID: "p1", Lang: "go", Rule: "unsafe.Pointer($X)"},
-						{ID: "p2", Lang: "go", Rule: "reflect.ValueOf($X)"},
-					},
-				},
-			},
-			wantLen: 2,
-			wantIDs: []string{"p1", "p2"},
-		},
-		{
-			name: "multiple_rules_with_patterns",
-			rules: []policy.RuleDef{
-				{
-					ID: "r1",
-					Patterns: []pattern.Def{
-						{ID: "p1", Lang: "go", Rule: "foo($X)"},
-					},
-				},
-				{ID: "r2"}, // no patterns
-				{
-					ID: "r3",
-					Patterns: []pattern.Def{
-						{ID: "p2", Lang: langTypeScript, Rule: "bar($X)"},
-						{ID: "p3", Lang: langTypeScript, Rule: "baz($X)"},
-					},
-				},
-			},
-			wantLen: 3,
-			wantIDs: []string{"p1", "p2", "p3"},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := config.Config{
-				Version: 1,
-				Rules:   tc.rules,
-			}
-			got := cfg.ForPatterns()
-			if len(got) != tc.wantLen {
-				t.Errorf("ForPatterns() len=%d, want %d", len(got), tc.wantLen)
-			}
-			for i, wantID := range tc.wantIDs {
-				if i >= len(got) {
-					t.Errorf("ForPatterns()[%d] missing, want ID=%q", i, wantID)
-					continue
-				}
-				if got[i].ID != wantID {
-					t.Errorf("ForPatterns()[%d].ID = %q, want %q", i, got[i].ID, wantID)
-				}
-			}
-		})
 	}
 }
 
@@ -1325,11 +1221,6 @@ func TestLoad_ExistingConfigUnchanged(t *testing.T) {
 			t.Errorf("rule %q: Patterns len=%d, want 0 (existing config has no patterns)", r.ID, len(r.Patterns))
 		}
 	}
-	// ForPatterns on a config with no patterns returns empty, not nil.
-	pc := cfg.ForPatterns()
-	if len(pc) != 0 {
-		t.Errorf("ForPatterns() len=%d on no-patterns config, want 0", len(pc))
-	}
 }
 
 // TestLoad_NewToolsAndMetrics verifies that new tool entries and the three
@@ -1446,7 +1337,7 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 		{"internal/model/report/document.go", "report-contract", "model"},
 		{"internal/policy/module.go", "architecture-policy", layerCore},
 		{"internal/relationship/relationship.go", "relationship-analysis", layerCore},
-		{"internal/assessment/rules/rules.go", "assessment-repair", layerCore},
+		{"internal/assessment/evaluation/evaluation.go", "assessment-repair", layerCore},
 		{"internal/application/analysis.go", "analysis-application", "application"},
 		{"internal/evidence/acquisition/service.go", "evidence-acquisition", layerAdapter},
 		{"cmd/archfit/main.go", "cli-composition", "cmd"},

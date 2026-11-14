@@ -1,8 +1,6 @@
 package evaluation
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"maps"
 	"slices"
 	"sort"
@@ -10,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
@@ -23,81 +20,6 @@ func candidateFindings(candidates []relationship.AdvisoryCandidate) []finding.Fi
 		matched := make(map[string]string, len(c.MatchedBy))
 		maps.Copy(matched, c.MatchedBy)
 		out = append(out, finding.Finding{ID: c.ID, Kind: advisoryKind, RuleID: c.RuleID, Status: finding.StatusNew, Severity: finding.Severity(c.Severity), Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: c.FromModule, Path: c.From}, To: finding.Endpoint{Module: c.ToModule, Path: c.To}, Kind: c.EdgeKind}, Locations: c.Locations, Why: c.Why, MatchedBy: matched})
-	}
-	return out
-}
-
-// resolveEvidence stamps configured module labels on every finding endpoint and
-// joins coupling severity where the finding names a real classified edge.
-//
-// The two lookups are deliberately independent. Module resolution is a plain
-// path -> module answer that must hold for findings that are NOT edges: the
-// cycle rule reports two lexicographically sorted SCC members that need not be
-// directly connected, and public_api_* findings carry a module name as the path
-// with an empty edge kind. Gating the label on an edge match left those
-// findings with empty modules, which also drops the "public surface of module"
-// constraint from their repair tasks.
-func resolveEvidence(s relationship.Set, mm policy.ModuleMap, findings []finding.Finding) []finding.Finding {
-	modules := moduleByPath(s)
-	resolve := func(path string) string {
-		if mod, ok := modules[path]; ok {
-			return mod
-		}
-		mod, _ := mm.ModuleFor(path)
-		return mod
-	}
-	// Index the severity join once. A per-finding scan is O(findings × edges),
-	// and a broad forbidden_dependency or an unbaselined
-	// new_cross_module_dependency makes findings proportional to edges. First
-	// write wins, matching Set.FindByFindingEdge for duplicate stripped pairs.
-	byEdge := make(map[[3]string]relationship.Edge, len(s.Edges))
-	for _, e := range s.Edges {
-		k := [3]string{e.FromPath, e.ToPath, e.Kind}
-		if _, dup := byEdge[k]; !dup {
-			byEdge[k] = e
-		}
-	}
-	out := make([]finding.Finding, 0, len(findings))
-	for _, f := range findings {
-		// A module-pair finding (module_cycle, module_dependencies) names its
-		// modules itself: an empty module there means no declared module owns
-		// the endpoint, and its path is the unowned package, which must not
-		// borrow a synthetic module's name. A pattern finding has no target at
-		// all. Only an empty module with a real path on an edge finding is
-		// resolved.
-		modulePair := f.Edge.Kind == edgeKindModuleDependency
-		if !modulePair && f.Edge.From.Module == "" && f.Edge.From.Path != "" {
-			f.Edge.From.Module = resolve(f.Edge.From.Path)
-		}
-		if !modulePair && f.Edge.To.Module == "" && f.Edge.To.Path != "" {
-			f.Edge.To.Module = resolve(f.Edge.To.Path)
-		}
-		if edge, ok := byEdge[[3]string{f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind}]; ok {
-			f.Severity = severityFor(edge.Strength, edge.Distance)
-		}
-		out = append(out, f)
-	}
-	return out
-}
-
-// edgeKindModuleDependency is the edge kind of a module-pair finding; the
-// rules package stamps it by the same spelling.
-const edgeKindModuleDependency = "module_dependency"
-
-// moduleByPath indexes the classified relationship set by endpoint path. Its
-// edges carry the AUGMENTED module map's answer (synthetic Rust/Go-workspace
-// members included), which the configured policy map alone cannot reproduce —
-// so it is consulted first and the configured map only backstops paths no edge
-// touches.
-func moduleByPath(s relationship.Set) map[string]string {
-	out := make(map[string]string, len(s.Edges)*2)
-	for _, e := range s.Edges {
-		if e.FromModule != "" {
-			out[e.FromPath] = e.FromModule
-		}
-		if e.ToModule != "" {
-			out[e.ToPath] = e.ToModule
-		}
 	}
 	return out
 }
@@ -195,9 +117,4 @@ func groupEdgePaths(members []finding.Finding, locs []relationship.Location) (fr
 		}
 	}
 	return members[0].Edge.From.Path, members[0].Edge.To.Path
-}
-
-func fingerprint(rule, subject string) string {
-	h := sha256.Sum256([]byte(rule + "\x00" + subject))
-	return hex.EncodeToString(h[:16])
 }

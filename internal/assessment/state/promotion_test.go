@@ -16,7 +16,7 @@ var promotionDimensions = []string{
 
 // TestPromotionIsMonotonic pins the shared evidence rule for all nine fixed
 // contracts. Once a dimension is measured, removing any one in-claim fact can
-// only lower it to partial and must name exactly the fact that was removed.
+// only lower it to partial or unmeasured, naming the fact that was removed.
 func TestPromotionIsMonotonic(t *testing.T) {
 	t.Parallel()
 	for _, dimension := range promotionDimensions {
@@ -25,8 +25,8 @@ func TestPromotionIsMonotonic(t *testing.T) {
 			t.Parallel()
 			facts := RequiredFacts(dimension)
 			observed := inClaimFactNames(facts)
-			if len(observed) < 2 {
-				t.Fatalf("%s has %d in-claim facts, want at least two for the monotonic-removal invariant", dimension, len(observed))
+			if len(observed) == 0 {
+				t.Fatalf("%s has %d in-claim facts, want at least one for the monotonic-removal invariant", dimension, len(observed))
 			}
 
 			status, unknown := Promote(dimension, observed, nil)
@@ -37,8 +37,12 @@ func TestPromotionIsMonotonic(t *testing.T) {
 				remaining := append([]string(nil), observed[:i]...)
 				remaining = append(remaining, observed[i+1:]...)
 				status, unknown = Promote(dimension, remaining, nil)
-				if status != Partial {
-					t.Errorf("without %q status = %q, want partial", removed, status)
+				want := Partial
+				if len(remaining) == 0 {
+					want = Unmeasured
+				}
+				if status != want {
+					t.Errorf("without %q status = %q, want %q", removed, status, want)
 				}
 				if len(unknown) != 1 || unknown[0].Fact != removed {
 					t.Errorf("without %q unknown = %+v, want that fact alone", removed, unknown)

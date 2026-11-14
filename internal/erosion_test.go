@@ -27,20 +27,13 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
 )
 
-// decisionPath names the sources that turn evidence into the architecture
-// verdict and the process exit code. Everything a run's decision passes through
-// is listed here; nothing else is.
-//
-// Most entries are whole files or directories. application/analysis.go is
-// scoped to decision functions on purpose: the run result still CARRIES the
-// scorecard for config comparison and AI review. Keeping that internal
-// diagnostic is not the same defect as deciding from it.
+// decisionPath names the Archfit 4 check and repository-state decision sources.
+// Report measurements never decide a check status.
 var decisionPath = []decisionTarget{
-	{path: "assessment/state"},                    // the metric-blind aggregator
-	{path: "assessment/evaluation/state.go"},      // the finding split feeding it
-	{path: "assessment/evaluation/dimensions.go"}, // the nine envelopes it reads
-	{path: "assessment/evaluation/selectors.go"},  // rule-selector vacuity behind unevaluated rules
-	{path: "application/analysis.go", funcs: []string{"outcomeFor"}},
+	{path: "assessment/change"},
+	{path: "assessment/count"},
+	{path: "application/changecheck"},
+	{path: "application/repostate"},
 }
 
 // decisionTarget is one file or directory on the decision path. An empty funcs

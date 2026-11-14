@@ -5,6 +5,7 @@ package acquisition_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/config"
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
@@ -268,5 +270,46 @@ func TestAcquireRequiresARunner(t *testing.T) {
 	svc := &acquisition.Service{ConfigPath: ".archfit.yaml"}
 	if _, err := svc.Acquire(context.Background(), application.AnalysisRequest{}); err == nil {
 		t.Fatal("a nil runner was accepted")
+	}
+}
+
+const retiredPatternTool = "ast-grep"
+
+type rejectPatternRunner struct{ gitOnlyRunner }
+
+func (r *rejectPatternRunner) Detect(ctx context.Context, name string) (toolrun.ToolInfo, bool) {
+	if name == retiredPatternTool {
+		return toolrun.ToolInfo{Name: name}, true
+	}
+	return r.gitOnlyRunner.Detect(ctx, name)
+}
+
+func (r *rejectPatternRunner) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+	if cmd.Name == retiredPatternTool {
+		return toolrun.Output{}, errors.New("legacy pattern command must not run")
+	}
+	return r.gitOnlyRunner.Run(ctx, cmd)
+}
+
+func TestAcquireDoesNotRunLegacyRulePatterns(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cfg := config.Config{Version: 2, Rules: []policy.RuleDef{{
+		ID: "legacy-pattern", Type: "forbidden_pattern",
+		Patterns: []pattern.Def{{ID: "call", Lang: "go", Rule: "legacy($$$)"}},
+	}}}
+	runner := &rejectPatternRunner{gitOnlyRunner{root: root}}
+	svc := acquisition.Service{
+		Root: root, ConfigPath: filepath.Join(root, ".archfit.yaml"),
+		Options: cfg.RunOptions(), Policy: cfg.PolicySnapshot(), Runner: runner, Stderr: io.Discard,
+	}
+	got, err := svc.Acquire(t.Context(), application.AnalysisRequest{})
+	if err != nil {
+		t.Fatalf("report acquisition ran a legacy rule pattern: %v", err)
+	}
+	for _, row := range got.Facts.Coverage {
+		if row.Tool == retiredPatternTool {
+			t.Fatalf("legacy pattern coverage remains: %+v", row)
+		}
 	}
 }

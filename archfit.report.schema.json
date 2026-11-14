@@ -2,61 +2,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.report.schema.json",
   "$defs": {
-    "AgentTask": {
-      "properties": {
-        "finding_id": {
-          "type": "string"
-        },
-        "rule_id": {
-          "type": "string"
-        },
-        "repair_kind": {
-          "type": "string",
-          "enum": [
-            "code_change",
-            "needs_owner_decision"
-          ]
-        },
-        "goal": {
-          "type": "string"
-        },
-        "constraints": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "files": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "validation": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "declarations": {
-          "items": {
-            "$ref": "#/$defs/SyntaxFact"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "finding_id",
-        "rule_id",
-        "repair_kind",
-        "goal",
-        "constraints",
-        "files",
-        "validation"
-      ]
-    },
     "AllowedDependency": {
       "properties": {
         "from": {
@@ -116,9 +61,6 @@
         "confidence": {
           "type": "string"
         },
-        "gate": {
-          "type": "string"
-        },
         "coverage": {
           "$ref": "#/$defs/DimensionCoverage"
         },
@@ -148,7 +90,6 @@
         "owner",
         "status",
         "confidence",
-        "gate",
         "coverage",
         "metrics",
         "findings",
@@ -662,16 +603,6 @@
         },
         "distributed_monolith": {
           "type": "boolean"
-        },
-        "policy": {
-          "type": "string",
-          "enum": [
-            "violation",
-            "accepted",
-            "advisory",
-            "allowed",
-            "observed"
-          ]
         }
       },
       "additionalProperties": false,
@@ -833,41 +764,6 @@
         "tools"
       ]
     },
-    "StateDecision": {
-      "properties": {
-        "hard_gates": {
-          "type": "string",
-          "enum": [
-            "pass",
-            "fail",
-            "unmeasured"
-          ]
-        },
-        "unevaluated_required_rules": {
-          "items": {
-            "$ref": "#/$defs/UnevaluatedRule"
-          },
-          "type": "array"
-        },
-        "active_blockers": {
-          "type": "integer"
-        },
-        "attention_dimensions": {
-          "type": "integer"
-        },
-        "unknown_dimensions": {
-          "type": "integer"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "hard_gates",
-        "active_blockers",
-        "attention_dimensions",
-        "unknown_dimensions"
-      ]
-    },
     "StateMeasurement": {
       "properties": {
         "source_ref": {
@@ -910,65 +806,6 @@
       "required": [
         "tool",
         "status"
-      ]
-    },
-    "SyntaxFact": {
-      "properties": {
-        "language": {
-          "type": "string"
-        },
-        "file": {
-          "type": "string"
-        },
-        "module": {
-          "type": "string"
-        },
-        "kind": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "exported": {
-          "type": "boolean"
-        },
-        "start_line": {
-          "type": "integer"
-        },
-        "end_line": {
-          "type": "integer"
-        },
-        "count": {
-          "type": "integer"
-        },
-        "framework": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "language",
-        "file",
-        "kind",
-        "name",
-        "start_line"
-      ]
-    },
-    "UnevaluatedRule": {
-      "properties": {
-        "rule_id": {
-          "type": "string"
-        },
-        "reason": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "rule_id",
-        "reason"
       ]
     },
     "UnknownFact": {
@@ -1021,19 +858,8 @@
       ],
       "description": "The only architecture-state contract this binary emits."
     },
-    "verdict": {
-      "type": "string",
-      "enum": [
-        "healthy",
-        "needs_attention",
-        "blocked"
-      ]
-    },
     "identity": {
       "$ref": "#/$defs/ResultIdentity"
-    },
-    "decision": {
-      "$ref": "#/$defs/StateDecision"
     },
     "measurement": {
       "$ref": "#/$defs/StateMeasurement"
@@ -1047,12 +873,6 @@
     "findings": {
       "items": {
         "$ref": "#/$defs/Finding"
-      },
-      "type": "array"
-    },
-    "agent_tasks": {
-      "items": {
-        "$ref": "#/$defs/AgentTask"
       },
       "type": "array"
     },
@@ -1070,14 +890,11 @@
   "type": "object",
   "required": [
     "schema_version",
-    "verdict",
     "identity",
-    "decision",
     "measurement",
     "dimensions",
     "coverage",
     "findings",
-    "agent_tasks",
     "seams"
   ]
 }

@@ -2,13 +2,10 @@ package config
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
@@ -36,48 +33,6 @@ func TestRunOptionsThreadsOneMergedExclusionSetThroughEveryStage(t *testing.T) {
 	}
 	if !slices.Equal(options.Acquisition.Exclusions, options.Exclusions) {
 		t.Fatalf("acquisition exclusions = %v, want shared merged exclusions %v", options.Acquisition.Exclusions, options.Exclusions)
-	}
-}
-
-func TestValidateRulesRejectsUnknownRuleType(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), ".archfit.yaml")
-	if err := os.WriteFile(path, []byte("version: 2\nrules:\n  - id: bad\n    type: bogus_type\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateRules(cfg); err == nil || !strings.Contains(err.Error(), "unknown rule type") {
-		t.Fatalf("want unknown-rule-type error, got %v", err)
-	}
-}
-
-// TestPreparerWarnsOnPatternsOutsideForbiddenPattern pins the v2.4 posture
-// for rules[].patterns on any other rule type: the config still loads and the
-// patterns still run, but analyze/check say the matches can never fire.
-func TestPreparerWarnsOnPatternsOutsideForbiddenPattern(t *testing.T) {
-	t.Parallel()
-	patterns := []pattern.Def{{ID: "now", Lang: "go", Rule: "time.Now()"}}
-	cfg := Config{Version: 2, Rules: []policy.RuleDef{
-		{ID: "dead_patterns", Type: "forbidden_dependency", From: globModuleA, To: "b/**", Patterns: patterns},
-		{ID: "live_patterns", Type: "forbidden_pattern", From: globModuleA,
-			Patterns: []pattern.Def{{ID: "env", Lang: "go", Rule: "os.Environ()"}}},
-	}}
-	var buf strings.Builder
-	if err := (Preparer{Config: cfg, Stderr: &buf, DiscloseLint: true}).Prepare(context.Background()); err != nil {
-		t.Fatalf("patterns on another rule type must still load: %v", err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, `warning: rule "dead_patterns"`) || !strings.Contains(out, "only evaluated by forbidden_pattern") {
-		t.Errorf("stderr = %q, want a warning naming dead_patterns", out)
-	}
-	if strings.Contains(out, "live_patterns") {
-		t.Errorf("stderr = %q, want no warning for the forbidden_pattern rule", out)
-	}
-	if got := len(cfg.ForPatterns()); got != 2 {
-		t.Errorf("ForPatterns = %d patterns, want both rules' patterns still collected", got)
 	}
 }
 

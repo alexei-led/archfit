@@ -6,6 +6,8 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
+const modAPI = "api"
+
 func TestProjectSeamsPublishesSameOnlyWhenBothSidesAreKnown(t *testing.T) {
 	const ownerA = "team-a"
 	yes, no := true, false

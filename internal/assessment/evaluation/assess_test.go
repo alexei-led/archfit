@@ -5,7 +5,6 @@
 package evaluation_test
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,10 +92,7 @@ func assessInput() evaluation.AssessInput {
 // identity from acquisition and explicit relationship signals.
 func TestAssessAssemblesTheDiagnosticFromOwnedEvidence(t *testing.T) {
 	t.Parallel()
-	got, err := evaluation.Assess(assessInput())
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := evaluation.Assess(assessInput())
 	diag := got.Diagnostic
 	if diag.SchemaVersion != result.SchemaVersion {
 		t.Errorf("schema_version = %q, want %q", diag.SchemaVersion, result.SchemaVersion)
@@ -123,19 +119,13 @@ func TestAssessAssemblesTheDiagnosticFromOwnedEvidence(t *testing.T) {
 func TestScoreStampsAcquisitionEvidenceAndRepairCommand(t *testing.T) {
 	t.Parallel()
 	in := assessInput()
-	assessed, err := evaluation.Assess(in)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assessed := evaluation.Assess(in)
 	diag := assessed.Diagnostic
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
-		Policy: in.Policy, Facts: in.Facts, ConfigSource: assessCfgPath, ScanRoot: assessRoot,
-		Root: assessRoot, MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
+		Policy: in.Policy, Facts: in.Facts,
+		MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
 		ConfigWarnings: in.ConfigWarnings,
 	})
-	if scored.HardGate {
-		t.Error("a warn-gated coverage gap must not hard-gate without --require-tools")
-	}
 	if len(diag.ToolCoverage) != 1 || diag.ToolCoverage[0].Status != modevidence.StatusDisabled {
 		t.Errorf("tool coverage after scoring = %+v, want the marked rows", diag.ToolCoverage)
 	}
@@ -147,118 +137,13 @@ func TestScoreStampsAcquisitionEvidenceAndRepairCommand(t *testing.T) {
 	}
 }
 
-// TestScoreRequireToolsEscalatesAGap is the --require-tools contract: a
-// disclosed gap that is not an explicit opt-out becomes a hard failure.
-func TestScoreRequireToolsEscalatesAGap(t *testing.T) {
-	t.Parallel()
-	in := assessInput()
-	assessed, err := evaluation.Assess(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	diag := assessed.Diagnostic
-	scored := evaluation.Score(&diag, evaluation.ScoreInput{
-		Policy: in.Policy, Facts: in.Facts, ConfigSource: assessCfgPath, ScanRoot: assessRoot,
-		Root: assessRoot, MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
-		RequireTools: true, ApplyToolGate: true,
-	})
-	if !scored.HardGate || diag.Verdict != result.VerdictFail {
-		t.Fatalf("hardGate = %t verdict = %q, want a required-analyzer failure", scored.HardGate, diag.Verdict)
-	}
-}
-
-// TestScoreWithoutApplyToolGateLeavesTheVerdictAlone pins that only analyze and
-// check may turn a coverage gap into a failure. baseline, explain, enrich,
-// config compare, and the --base sub-run render a verdict nothing consumes as
-// an exit code, so rewriting it there is a report regression, not a gate.
-func TestScoreWithoutApplyToolGateLeavesTheVerdictAlone(t *testing.T) {
-	t.Parallel()
-	in := assessInput()
-	assessed, err := evaluation.Assess(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	diag := assessed.Diagnostic
-	before := diag.Verdict
-	scored := evaluation.Score(&diag, evaluation.ScoreInput{
-		Policy: in.Policy, Facts: in.Facts, ConfigSource: assessCfgPath, ScanRoot: assessRoot,
-		Root: assessRoot, MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
-		RequireTools: true,
-	})
-	if scored.HardGate {
-		t.Error("hardGate = true, want no hard gate outside analyze/check")
-	}
-	if diag.Verdict != before {
-		t.Errorf("verdict = %q, want it unchanged at %q", diag.Verdict, before)
-	}
-}
-
-// TestAssessResolvesRustCrateModNodesThroughObservedCrateRoots pins the wiring
-// behind the yazi false positives: the rules see the declared module map only,
-// where a crate declared by package name (yazi-shared) cannot claim the
-// cargo-modules node yazi_shared::url::buf. Assess must hand the rules the
-// observed crate owners, so a same-crate access is same-module and stays silent
-// while the cross-crate access still fires.
-func TestAssessResolvesRustCrateModNodesThroughObservedCrateOwners(t *testing.T) {
-	t.Parallel()
-	const shared, fs = "yazi-shared", "yazi-fs"
-	modules := map[string]policy.ModuleDef{
-		shared: {Paths: []string{shared}, Internal: []string{"yazi_shared::url::**"}},
-		fs:     {Paths: []string{fs}},
-	}
-	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
-	in := assessInput()
-	in.Policy = policy.New(topology, policy.RelationshipPolicy{Topology: topology}, policy.AssessmentPolicy{Topology: topology},
-		policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{{ID: "public-only", Type: "public_api_only", Gate: "fail"}}}}, nil, nil)
-	in.Facts.CrateOwners = map[string]string{
-		shared: shared, "yazi_shared": shared,
-		fs: fs, "yazi_fs": fs,
-	}
-	rustEdge := func(from, to string) relationship.Edge {
-		return relationship.Edge{FromID: "package:" + from, ToID: "package:" + to, FromPath: from, ToPath: to,
-			Kind: "depends_on", Language: "rust"}
-	}
-	in.Relationships = relationship.Set{Edges: []relationship.Edge{
-		rustEdge("yazi_shared::url::buf", "yazi_shared::url::cov"),
-		rustEdge("yazi_fs::path", "yazi_shared::url::buf"),
-	}}
-	assessed, err := evaluation.Assess(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var gates []string
-	for _, f := range assessed.Diagnostic.Findings {
-		if f.RuleID == "public-only" {
-			gates = append(gates, f.Edge.From.Path+" -> "+f.Edge.To.Path)
-		}
-	}
-	if want := []string{"yazi_fs::path -> yazi_shared::url::buf"}; !slices.Equal(gates, want) {
-		t.Errorf("public-only findings = %v, want %v", gates, want)
-	}
-}
-
-// TestAssessRejectsAnInvalidRuleDefinition pins that a bad policy fails the
-// stage rather than measuring a tree against rules that cannot fire.
-func TestAssessRejectsAnInvalidRuleDefinition(t *testing.T) {
-	t.Parallel()
-	in := assessInput()
-	in.Policy = policy.New(policy.TopologyView{}, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
-		policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{{ID: "bad", Type: "bogus_type"}}}}, nil, nil)
-	if _, err := evaluation.Assess(in); err == nil || !strings.Contains(err.Error(), "unknown rule type") {
-		t.Fatalf("Assess error = %v, want an unknown-rule-type failure", err)
-	}
-}
-
 // TestAssessDisclosesAnUnscoredGraph pins the health disclosure: a run that
 // classified edges but scored none tells the user which command fixes it.
 func TestAssessDisclosesAnUnscoredGraph(t *testing.T) {
 	t.Parallel()
 	in := assessInput()
 	in.RelationshipSignals.ClassifiedEdges = &relationship.ClassifiedEdgeSummary{Total: 12, Scored: 0}
-	got, err := evaluation.Assess(in)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := evaluation.Assess(in)
 	joined := strings.Join(got.Warnings, "\n")
 	if !strings.Contains(joined, "0 of 12 edges scored") || !strings.Contains(joined, "archfit config update") {
 		t.Fatalf("warnings = %q, want an actionable unscored-graph disclosure", joined)
@@ -282,14 +167,11 @@ func TestScoreCapsConfidenceOnAPartialRustModuleGraph(t *testing.T) {
 	in.MarkedCoverage = append(in.MarkedCoverage, modevidence.Coverage{
 		Tool: "cargo-modules", Status: modevidence.StatusPartial, Reason: "2 of 5 crates failed",
 	})
-	assessed, err := evaluation.Assess(in)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assessed := evaluation.Assess(in)
 	diag := assessed.Diagnostic
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
-		Policy: in.Policy, Facts: in.Facts, ConfigSource: assessCfgPath, ScanRoot: assessRoot,
-		Root: assessRoot, MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
+		Policy: in.Policy, Facts: in.Facts,
+		MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
 	})
 	if len(scored.Score.Dimensions) == 0 {
 		t.Fatal("no dimensions synthesised")

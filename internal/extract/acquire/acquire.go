@@ -72,7 +72,6 @@ type Result struct {
 	ExtraCoverage           []evidence.Coverage
 	Resolver                evidenceports.SymbolResolver
 	Syntax                  evidenceports.SyntaxProvider
-	Patterns                evidenceports.PatternProvider
 	LOCError                error
 	CloneError              error
 }
@@ -136,8 +135,5 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 		})
 	}
 
-	patternAdapter := astgrep.New(runner)
-	patternAdapter.Cache = facts
-	out.Patterns = patternAdapter
 	return out
 }

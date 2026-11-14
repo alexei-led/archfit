@@ -17,7 +17,6 @@ const (
 func TestStateSchemaRejectsRetiredLabelAndHistoryFields(t *testing.T) {
 	compiled := compileStateSchema(t)
 	base := report.NewArchitectureState()
-	base.Verdict = report.StateHealthy
 	base.Seams = []report.Seam{{ID: "a-b", FromModule: "a", ToModule: "b", Confidence: "high"}}
 	raw, err := json.Marshal(base)
 	if err != nil {

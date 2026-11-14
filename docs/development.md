@@ -29,7 +29,7 @@ Do not update the golden to hide an accidental API change.
 
 `internal/model/result/testdata/` holds the check and can JSON examples; `internal/output/record/testdata/` holds their text records. The reportschema tests validate the result examples against `archfit.result.schema.json`.
 
-`internal/reportschema/testdata/` retains four report JSON cases: a new violation, an existing violation, a dead selector, and missing evidence. They validate against `archfit.report.schema.json`; `new_violation` carries analyzer coverage rows with per-unit `details`, and `missing_evidence` carries a row without them. These exercise the retained report contract, not the check result. Retired comparison, reference deltas, seam-gate reasons, profile identity, finding/task origins, label identity and seam-label fields, and module-touch history fields are rejected.
+`internal/reportschema/testdata/` retains four report JSON cases: clean, drift, expired exceptions, and missing evidence. They validate against `archfit.report.schema.json`; `drift` carries analyzer coverage rows with per-unit `details`, and `missing_evidence` carries a row without them. These exercise repository state and retained measurements, not the check result. The schema rejects retired comparison, verdict, decision, repair tasks, dimension gates, profile identity, finding origins, label identity, and module-touch history fields.
 
 Agents finish with `archfit check` and read the default text record. Exit `0` is `pass`, `1` is `fail`, and `2` is `unknown`, wrong usage, or a tool error. Follow `next:`; exit `2` is not a pass.
 

@@ -24,7 +24,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/ownership"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship/facts"
@@ -147,14 +146,13 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if err != nil {
 		return application.Acquired{}, err
 	}
-	patternMatches, syntaxFacts, ruleCoverage, err := s.collectRuleEvidence(ctx, resolved, runPolicy, collected)
+	syntaxFacts, ruleCoverage, err := s.collectRuleEvidence(ctx, resolved, runPolicy, collected)
 	if err != nil {
 		return application.Acquired{}, err
 	}
 	// Every extractor has run by now, so the run's cache decisions are known.
 	discloseCacheSkips(s.stderr(), warnLabel, store.Skips())
 	coverage := append(append([]evidence.Coverage(nil), graphResult.Coverages...), ruleCoverage...)
-	crateRootDirs := map[string]string{}
 	// cargo-modules is an opt-in module-graph analyzer, not a file extractor: its
 	// row counts crates, not files. It is report evidence only (ToolCoverage, the
 	// coverage-gap block, the tool gate, the partial-module-graph confidence cap),
@@ -168,7 +166,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 	if ex := registry.RustExtractor(extractors); ex != nil {
 		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastModuleGraphCoverage())
-		crateRootDirs = crateRootDirsOf(ex.LastCrateRoots())
 		rustModuleGraphCrates = ex.LastModuleGraphCrates()
 		rustTargetCrates = ex.LastTargetCrates()
 	}
@@ -194,7 +191,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	marked := markDisabledPrimaries(append(append([]evidence.Coverage(nil), coverage...), reportOnlyCoverage...), s.Options.Coverage, resolved.Root)
 	snapshot := evidencecontract.Facts{
 		Graph: graphResult.Graph, Coverage: coverage, SuppliedCoverage: suppliedCoverage,
-		Symbols: graphResult.SCIPSymbols, PatternMatches: patternMatches,
+		Symbols:     graphResult.SCIPSymbols,
 		SyntaxFacts: syntaxFacts, FileLOC: collected.FileLOC,
 		FileClassIndex: collected.FileClassIndex,
 		FileFacts:      facts.Build(graphResult.SCIPSymbols, collected.FileLOC),
@@ -205,11 +202,9 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		RustTargetCrates:      rustTargetCrates,
 	}
 
-	observations := assessmentObservationsOf(
-		snapshot, ruleScopeObservations(ctx, s.Runner, store, resolved.Root, snapshot, s.Options),
-		declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
-		crateOwnersOf(snapshot, runPolicy.Gates.Rules.ModuleMap),
-	)
+	observations := assessmentObservationsOf(snapshot, declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance)
+	observations.OutOfScopeFiles = declaredOutOfScope(snapshot, s.Options.Exclusions, s.Options.Coverage)
+
 	if ex := registry.DotNetExtractor(extractors); ex != nil {
 		// The .NET file edges come from Roslyn per project, so its gaps are
 		// pinned to the files of incomplete projects; unattributed gaps leave
@@ -220,14 +215,8 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			}
 		}
 	}
-	// The files the change adds: the evidence the uncovered-change check reads.
-	observations.AddedFiles = addedSet(resolved.Added)
-	added := addedFacts(resolved.Added, snapshot, observations.UnwalkedSourceProduction,
-		s.Options.Exclusions, s.Options.Coverage, s.Options.Acquisition.FileClass)
-	observations.UncoveredCauses, observations.AddedClasses, observations.AddedUnread = added.causes, added.classes, added.unread
 	// Config values schema v2 still loads but classification cannot read, and
-	// warn-gated rules whose selector matches nothing, are disclosed with the
-	// run's other config warnings. config lint reports the same defects.
+	// the run's other config warnings are disclosed together.
 	for _, warning := range evaluation.PolicyWarnings(runPolicy, observations) {
 		note(warning)
 	}
@@ -246,7 +235,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			ConfigWarnings:            configWarnings(s.lint(runPolicy.Topology.Modules), warnings, runPolicy.Topology.Modules, configPath),
 			MarkedCoverage:            marked,
 			CoverageGaps:              coverageGaps,
-			CrateRootDirs:             crateRootDirs,
 			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),
 		},
 	}, nil
@@ -264,63 +252,24 @@ func walkedFiles(f evidencecontract.Facts) []string {
 	return slices.Sorted(maps.Keys(set))
 }
 
-// crateRootDirsOf maps each Rust crate spelling to the crate's repo-relative
-// directory: the package name the crate-level nodes use and the crate
-// identifier the cargo-modules "<crate>::<mod>" node IDs start with. A package
-// name wins over another crate's identifier of the same spelling, whatever
-// the member order.
-func crateRootDirsOf(roots []graph.CrateRoot) map[string]string {
-	out := make(map[string]string, 2*len(roots))
-	for _, cr := range roots {
-		out[cr.Name] = cr.Dir
-	}
-	for _, cr := range roots {
-		if _, taken := out[cr.Crate]; !taken && cr.Crate != "" {
-			out[cr.Crate] = cr.Dir
-		}
-	}
-	return out
-}
-
 // assessmentObservationsOf narrows the evidence snapshot to what assessment
-// reads. inventory carries the rule-scope fields (ruleScopeObservations).
+// reads. Rule evaluation receives the separate check-facts contract.
 func assessmentObservationsOf(
 	f evidencecontract.Facts,
-	inventory evaluation.Observations,
 	declaredDeployUnits map[string]string,
 	corroboratedDeployUnits map[string]evidence.CorroboratedDeployUnit,
 	ownerProvenance map[string]evidence.OwnerProvenance,
-	crateOwners map[string]string,
 ) evaluation.Observations {
 	return evaluation.Observations{
 		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
-		SourceSelectors: inventory.SourceSelectors, OutOfScopeFiles: inventory.OutOfScopeFiles,
-		UnanalysedFiles: inventory.UnanalysedFiles, RustModuleNodes: inventory.RustModuleNodes,
-		RustCrates: inventory.RustCrates, RustModuleGraphCrates: inventory.RustModuleGraphCrates,
-		UnwalkedSourceProduction: inventory.UnwalkedSourceProduction,
-		GoModulePaths:            inventory.GoModulePaths, GoStdlibPackages: inventory.GoStdlibPackages,
-		Symbols: f.Symbols, PatternMatches: f.PatternMatches,
+		Symbols:     f.Symbols,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
 		DeprecatedDeps:      f.DeprecatedDeps,
 		DeclaredDeployUnits: declaredDeployUnits, CorroboratedDeployUnits: corroboratedDeployUnits,
-		OwnerProvenance: ownerProvenance, CrateOwners: crateOwners,
+		OwnerProvenance: ownerProvenance,
 	}
-}
-
-// crateOwnersOf resolves each Rust crate the extractor reported to the declared
-// module that owns it, so the rules can place a crate::mod node in its crate's
-// module. Nil without a graph or crate roots.
-func crateOwnersOf(f evidencecontract.Facts, mm policy.ModuleMap) map[string]string {
-	if f.Graph == nil {
-		return nil
-	}
-	roots := f.Graph.CrateRoots()
-	if len(roots) == 0 {
-		return nil
-	}
-	return mm.CrateOwners(roots)
 }
 
 func declaredOperationsFacts(p policy.PolicySnapshot) (map[string]string, map[string]evidence.OwnerProvenance) {
@@ -351,25 +300,19 @@ func configWarnings(lint, runWarnings []string, modules map[string]policy.Module
 // every owner and no repository walk is needed.
 const ownerSourceConfig = "config"
 
-// collectRuleEvidence acquires the pattern and syntax evidence rule evaluation
-// reads. Syntax facts are stamped with their module here because the module map
+// collectRuleEvidence acquires embedded syntax facts for report measurements.
+// Facts are stamped with their module here because the module map
 // is a policy input the later stages must not re-derive.
-func (s *Service) collectRuleEvidence(ctx context.Context, sc scope.Scope, p policy.PolicySnapshot, collected acquire.Result) ([]pattern.Match, []evidence.SyntaxFact, []evidence.Coverage, error) {
-	patternMatches, patternCoverage, err := collected.Patterns.Find(ctx, sc, s.Options.Patterns)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	coverage := make([]evidence.Coverage, 0, 2)
-	coverage = append(coverage, patternCoverage)
+func (s *Service) collectRuleEvidence(ctx context.Context, sc scope.Scope, p policy.PolicySnapshot, collected acquire.Result) ([]evidence.SyntaxFact, []evidence.Coverage, error) {
 	if !s.Options.Syntax.Enabled {
-		return patternMatches, nil, coverage, nil
+		return nil, nil, nil
 	}
 	if collected.Syntax == nil {
-		return nil, nil, nil, errors.New("acquisition: SyntaxCfg.Enabled=true but no Syntax provider")
+		return nil, nil, errors.New("acquisition: SyntaxCfg.Enabled=true but no Syntax provider")
 	}
 	syntaxFacts, syntaxCoverage, err := collected.Syntax.Syntax(ctx, sc, s.Options.Syntax.Languages)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	facts := make([]evidence.SyntaxFact, 0, len(syntaxFacts))
 	cfg := s.Options.Acquisition.FileClass
@@ -380,7 +323,7 @@ func (s *Service) collectRuleEvidence(ctx context.Context, sc scope.Scope, p pol
 		fact.Module, _ = p.Relationship.Topology.ModuleMap.ModuleForFile(fact.File)
 		facts = append(facts, fact)
 	}
-	return patternMatches, facts, append(coverage, syntaxCoverage), nil
+	return facts, []evidence.Coverage{syntaxCoverage}, nil
 }
 
 // syntaxKindRoute is the SyntaxFact kind of one route registration.
@@ -473,16 +416,4 @@ func configHash(path string) string {
 	}
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
-}
-
-// addedSet turns the added file list into a set; nil for no added files.
-func addedSet(added []string) map[string]struct{} {
-	if len(added) == 0 {
-		return nil
-	}
-	out := make(map[string]struct{}, len(added))
-	for _, f := range added {
-		out[f] = struct{}{}
-	}
-	return out
 }

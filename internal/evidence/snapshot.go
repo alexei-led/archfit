@@ -6,7 +6,6 @@ import (
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/model/symbol"
 )
 
@@ -21,7 +20,6 @@ type Facts struct {
 	Coverage          []modevidence.Coverage
 	SuppliedCoverage  []modevidence.CoverageIngest
 	Symbols           symbol.Graph
-	PatternMatches    []pattern.Match
 	SyntaxFacts       []modevidence.SyntaxFact
 	FileLOC           map[string]int
 	FileClassIndex    map[string]fileclass.FileClass

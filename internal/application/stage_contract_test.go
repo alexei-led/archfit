@@ -36,7 +36,7 @@ func (f *contextCarryingStage) Acquire(context.Context, AnalysisRequest) (Acquir
 			ConfigHash: acquiredConfigHash, OwnerSource: acquiredOwnerSource,
 			Policy:         policy.New(policy.TopologyView{}, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil),
 			ConfigWarnings: []string{"acquisition disclosed this"},
-			CoverageGaps:   []modevidence.CoverageGap{{Tool: "grimp", Gate: string(OutcomeWarn)}},
+			CoverageGaps:   []modevidence.CoverageGap{{Tool: "grimp", Gate: "warn"}},
 		},
 	}, nil
 }

@@ -35,13 +35,11 @@ const (
 var coreRingPkgs = []string{
 	modulePrefix + "internal/relationship",
 	modulePrefix + "internal/relationship/classify",
-	modulePrefix + "internal/assessment/rules",
 	modulePrefix + "internal/assessment/metrics",
 	// metrics is split into family sub-packages; assert they all load.
 	modulePrefix + "internal/assessment/metrics/boundary",
 	modulePrefix + "internal/assessment/metrics/modularity",
 	modulePrefix + "internal/assessment/metrics/internal/result",
-	modulePrefix + "internal/assessment/status",
 	modulePrefix + "internal/assessment/staleness",
 	modulePrefix + "internal/relationship/facts",
 	// score synthesises the banded scorecard from an already-computed
@@ -53,7 +51,6 @@ var coreRingPkgs = []string{
 	modulePrefix + "internal/assessment/finding",
 	modulePrefix + "internal/assessment/result",
 	modulePrefix + "internal/assessment/signals",
-	modulePrefix + "internal/assessment/agenttask",
 	// Relationship capability packages split out of the dissolved engine.
 	modulePrefix + "internal/relationship/analysis",
 	modulePrefix + "internal/relationship/scoring",
@@ -152,8 +149,8 @@ func TestCompositionFanoutRatchet(t *testing.T) {
 // published contract in the domain's own vocabulary, which is the point of them.
 func TestCLIImportsNoDomainImplementation(t *testing.T) {
 	for _, pkg := range []string{
-		"internal/assessment/rules", "internal/assessment/metrics", "internal/assessment/score",
-		"internal/assessment/status", "internal/assessment/finding",
+		"internal/assessment/metrics", "internal/assessment/score",
+		"internal/assessment/finding",
 		"internal/relationship/classify", "internal/relationship/scoring", "internal/relationship/coupling",
 	} {
 		for _, file := range productionImportFiles(t, modulePrefix+pkg) {
@@ -258,7 +255,7 @@ func TestAssessmentConsumesOnlyThePublicRelationshipContract(t *testing.T) {
 // evaluation port. A call site here would make acquisition a second owner of
 // the assessment lifecycle.
 func TestAcquisitionDelegatesAssessmentJudgment(t *testing.T) {
-	for _, pkg := range []string{"status", "staleness", "finding", "rules", "metrics", "score", "agenttask"} {
+	for _, pkg := range []string{"staleness", "finding", "metrics", "score"} {
 		for _, file := range productionImportFiles(t, modulePrefix+"internal/assessment/"+pkg) {
 			if strings.HasPrefix(file, "internal/evidence/") {
 				t.Errorf("evidence acquisition must reach assessment through evaluation, not assessment/%s: %s", pkg, file)

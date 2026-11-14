@@ -15,15 +15,10 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 const (
-	ruleNoAToB       = "no_a_to_b"
-	ruleDep          = "dep"
-	rulePublicAPIMax = "public_api_max"
-	gateWarnPosture  = "warn"
 	// toolDepCruiser is the TypeScript primary analyzer's coverage name.
 	toolDepCruiser      = "dependency-cruiser"
 	metricEncapsulation = "encapsulation"
@@ -71,13 +66,8 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 		assessModB: {Paths: []string{assessPathsB}, Owner: assessTeamA},
 	}
 	topology := policy.TopologyView{Modules: modules, Layers: []string{assessCore, "adapter"}, ModuleMap: policy.BuildModuleMap(modules)}
-	gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{
-		{ID: ruleNoAToB, Type: ruleForbidden, Gate: "fail"},
-		{ID: "off_rule", Type: "cycle", Gate: "off"},
-	}}}
 	in := evaluation.StateInput{
-		Policy:    policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
-		RuleTypes: map[string]string{ruleNoAToB: ruleForbidden, "off_rule": metricCycle},
+		Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil),
 		Facts: evaluation.Observations{
 			FileLOC:             map[string]int{assessFileA: 100, assessFileTestA: 40, assessFileB: 250},
 			FileClassIndex:      map[string]fileclass.FileClass{assessFileA: fileclass.Production, assessFileTestA: fileclass.Test, assessFileB: fileclass.Production},
@@ -260,39 +250,18 @@ func TestDimensionConfidenceFollowsTheWeakestEvidence(t *testing.T) {
 // disappearing from every dimension.
 func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 	t.Parallel()
-	ruleTypes := map[string]string{
-		ruleDep: ruleForbidden, "layer": "forbidden_layer_direction", "cyc": metricCycle, "modcyc": "module_cycle",
-		"moddeps": "module_dependencies", "newdep": "new_cross_module_dependency", "pub": "public_api_only", "max": rulePublicAPIMax,
-		"leak": "public_api_type_leak", "internal": "internal_api_access", "waiver": "waiver_expiry",
-		"pattern": ruleTypePattern,
-	}
-	tests := []struct {
-		ruleID string
-		want   string
-	}{
-		{ruleDep, state.DimensionStructure},
-		{"layer", state.DimensionStructure},
-		{"cyc", state.DimensionStructure},
-		{"modcyc", state.DimensionStructure},
-		{"moddeps", state.DimensionStructure},
-		{"newdep", state.DimensionStructure},
-		{"pub", state.DimensionModularity},
-		{"max", state.DimensionModularity},
-		{"leak", state.DimensionModularity},
-		{"internal", state.DimensionModularity},
-		{"pattern", state.DimensionModularity},
+	tests := []struct{ ruleID, want string }{
 		{finding.RuleIDBCImbalanced, state.DimensionCoupling},
 		{finding.RuleIDDuplicatedKnowledge, state.DimensionCoupling},
-		{"waiver", state.DimensionIntent},
-		{"nobody_declared_this", state.DimensionIntent},
+		{"staleness", state.DimensionIntent},
 	}
 	for _, tc := range tests {
 		t.Run(tc.ruleID, func(t *testing.T) {
 			t.Parallel()
 			diag := &result.Result{Findings: []finding.Finding{
-				{ID: tc.ruleID, RuleID: tc.ruleID, Kind: finding.KindGate, Status: finding.StatusNew},
+				{ID: tc.ruleID, RuleID: tc.ruleID, Kind: finding.KindAdvisory, Status: finding.StatusNew},
 			}}
-			st := evaluation.BuildState(diag, evaluation.StateInput{RuleTypes: ruleTypes})
+			st := evaluation.BuildState(diag, evaluation.StateInput{})
 			for _, dim := range st.Dimensions.All() {
 				routed := len(dim.Findings) == 1
 				if routed != (dim.Name == tc.want) {
@@ -300,49 +269,6 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// TestDimensionGatePosture pins that a dimension fails only on a routed hard
-// gate, warns on an active diagnostic, and passes when it measured something
-// with nothing active. An unmeasured dimension gates nothing.
-func TestDimensionGatePosture(t *testing.T) {
-	t.Parallel()
-	ruleTypes := map[string]string{ruleDep: ruleForbidden}
-	tests := []struct {
-		name    string
-		finding *finding.Finding
-		want    state.GateState
-	}{
-		{"nothing active passes", nil, state.GatePass},
-		{"active advisory warns", &finding.Finding{ID: "a", RuleID: ruleDep, Kind: finding.KindAdvisory, Status: finding.StatusNew}, state.GateWarn},
-		{"active gate finding fails", &finding.Finding{ID: "g", RuleID: ruleDep, Kind: finding.KindGate, Status: finding.StatusNew}, state.GateFail},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			diag, in := dimensionsFixture()
-			in.RuleTypes = ruleTypes
-			if tc.finding != nil {
-				diag.Findings = []finding.Finding{*tc.finding}
-			}
-			got := evaluation.BuildState(diag, in).Dimensions.Structure.Gate
-			if got != tc.want {
-				t.Errorf("structure gate = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestOperationsFailsOnARequiredToolPolicyFailure pins the one gate that has no
-// finding behind it: a required analyzer that did not run fails operations even
-// though nothing violated a rule.
-func TestOperationsFailsOnARequiredToolPolicyFailure(t *testing.T) {
-	t.Parallel()
-	diag, in := dimensionsFixture()
-	in.RequiredToolFailure = true
-	if got := evaluation.BuildDimensions(diag, in, nil).Operations.Gate; got != state.GateFail {
-		t.Errorf("operations gate = %q, want %q", got, state.GateFail)
 	}
 }
 
@@ -482,16 +408,6 @@ func TestEvidenceDependentDimensionsRequireCompletedProducers(t *testing.T) {
 			t.Errorf("%s status = %q, want partial with a partial primary extractor", dim.Name, dim.Status)
 		}
 	}
-
-	in.Policy.Gates.Rules.Rules = []policy.RuleDef{{
-		ID: "typescript_dependency", Type: ruleForbidden, Gate: gateWarnPosture,
-		From: "src/core/**/*.ts", To: "src/ui/**/*.ts",
-	}}
-	in.Facts.FileClassIndex["src/core/index.ts"] = fileclass.Production
-	in.Facts.FileClassIndex["src/ui/index.ts"] = fileclass.Production
-	if got := evaluation.BuildDimensions(diag, in, nil).Intent.Status; got != state.Partial {
-		t.Errorf("TypeScript-scoped intent status = %q, want partial with its partial producer", got)
-	}
 }
 
 // TestPartialDotNetEvaluationKeepsModularityPartial pins the offline .NET shape
@@ -517,198 +433,7 @@ func TestPartialDotNetEvaluationKeepsModularityPartial(t *testing.T) {
 	}
 }
 
-// TestIntentRequiresSyntaxEvidenceForSyntaxRules prevents a rule invocation over
-// an empty syntax fact set from being mistaken for a successful conformance
-// result.
-func TestIntentRequiresSyntaxEvidenceForSyntaxRules(t *testing.T) {
-	t.Parallel()
-	diag, in := dimensionsFixture()
-	maxPublicAPIs := 5
-	in.Policy.Gates.Rules.Rules = append(in.Policy.Gates.Rules.Rules, policy.RuleDef{
-		ID: "public_api_limit", Type: rulePublicAPIMax, Gate: gateWarnPosture, Max: &maxPublicAPIs,
-	})
-	dim := evaluation.BuildDimensions(diag, in, nil).Intent
-	if dim.Status != state.Partial {
-		t.Fatalf("intent status = %q, want partial without ast-grep/syntax completion", dim.Status)
-	}
-	if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
-		t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
-	}
-}
-
-// TestIntentDoesNotConformUnsupportedLanguageRules prevents an empty supported-
-// language graph or syntax result from acting as evidence about a rule whose
-// declared scope is Java. Unsupported scope is unknown, not producer-proved n/a.
-func TestIntentDoesNotConformUnsupportedLanguageRules(t *testing.T) {
-	t.Parallel()
-	maxPublicAPIs := 5
-	primaryTools := []string{"go/packages", "dependency-cruiser", "pyimports", toolCargo}
-	absentPrimaries := []modevidence.Coverage{
-		{Tool: primaryTools[0], Status: modevidence.StatusAbsent},
-		{Tool: primaryTools[1], Status: modevidence.StatusAbsent},
-		{Tool: primaryTools[2], Status: modevidence.StatusAbsent},
-		{Tool: primaryTools[3], Status: modevidence.StatusAbsent},
-	}
-	modules := map[string]policy.ModuleDef{
-		"java-service": {Paths: []string{"src/**/*.java"}},
-	}
-	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
-	tests := []struct {
-		name     string
-		rule     policy.RuleDef
-		coverage []modevidence.Coverage
-	}{
-		{
-			name: "dependency rule",
-			rule: policy.RuleDef{ID: "java_dependency", Type: ruleForbidden, Gate: gateWarnPosture,
-				From: "src/domain/**/*.java", To: "src/adapter/**/*.java"},
-			coverage: absentPrimaries,
-		},
-		{
-			name: "dependency target scope",
-			rule: policy.RuleDef{ID: "go_to_java_dependency", Type: ruleForbidden, Gate: gateWarnPosture,
-				From: "src/domain/**/*.go", To: "src/adapter/**/*.java"},
-			coverage: []modevidence.Coverage{
-				{Tool: primaryTools[0], Status: modevidence.StatusOK},
-				{Tool: primaryTools[1], Status: modevidence.StatusAbsent},
-				{Tool: primaryTools[2], Status: modevidence.StatusAbsent},
-				{Tool: primaryTools[3], Status: modevidence.StatusAbsent},
-			},
-		},
-		{
-			name: "syntax rule despite aggregate syntax success",
-			rule: policy.RuleDef{ID: "java_api_limit", Type: rulePublicAPIMax, Gate: gateWarnPosture, Max: &maxPublicAPIs},
-			coverage: append(append([]modevidence.Coverage(nil), absentPrimaries...),
-				modevidence.Coverage{Tool: toolSyntaxAggregate, Status: modevidence.StatusOK}),
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{tc.rule}}}
-			in := evaluation.StateInput{
-				Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
-				Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
-					"src/domain/service.go":   fileclass.Production,
-					"src/domain/Service.java": fileclass.Production,
-				}},
-			}
-			diag := &result.Result{PrimaryExtractorTools: primaryTools, ToolCoverage: tc.coverage}
-			dim := evaluation.BuildDimensions(diag, in, nil).Intent
-			if dim.Status != state.Partial {
-				t.Fatalf("intent status = %q, want partial for unsupported-language rule scope", dim.Status)
-			}
-			if dim.Coverage.Observed != 0 || dim.Coverage.Total != 1 {
-				t.Errorf("intent rule coverage = %d/%d, want 0/1", dim.Coverage.Observed, dim.Coverage.Total)
-			}
-			if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
-				t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
-			}
-		})
-	}
-}
-
-// TestIntentNeverConformsAVacuousRuleScope pins that a selector matching no
-// scanned source is vacuous: the rule cannot have found a violation, so it is
-// not conformance evidence, whatever the selector's language. Only a declared
-// guard (`guard: true`), which matches nothing on purpose, counts as evaluated.
-func TestIntentNeverConformsAVacuousRuleScope(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name       string
-		from       string
-		guard      bool
-		wantStatus state.MeasurementStatus
-		wantSeen   int
-	}{
-		{name: "supported-language selector", from: selMissingGo, wantStatus: state.Partial, wantSeen: 0},
-		{name: "language-ambiguous selector", from: "missing/**", wantStatus: state.Partial, wantSeen: 0},
-		{name: "declared guard", from: selMissingGo, guard: true, wantStatus: state.Measured, wantSeen: 1},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			diag, in := dimensionsFixture()
-			in.Policy.Gates.Rules.Rules = []policy.RuleDef{{
-				ID: "empty_scope", Type: ruleForbidden, Gate: gateWarnPosture,
-				From: tc.from, To: "a/**/*.go", Guard: tc.guard,
-			}}
-			dim := evaluation.BuildDimensions(diag, in, nil).Intent
-			if dim.Status != tc.wantStatus {
-				t.Fatalf("intent status = %q, want %q", dim.Status, tc.wantStatus)
-			}
-			if dim.Coverage.Observed != tc.wantSeen || dim.Coverage.Total != 1 {
-				t.Errorf("intent rule coverage = %d/%d, want %d/1", dim.Coverage.Observed, dim.Coverage.Total, tc.wantSeen)
-			}
-		})
-	}
-}
-
-// TestIntentEvaluatesModuleCycleRules pins that module_cycle has a producer
-// scope — every declared module's source languages — so a completed producer
-// makes it evaluated conformance rather than an unknown rule type, and an
-// incomplete one leaves it unevaluated.
-func TestIntentEvaluatesModuleCycleRules(t *testing.T) {
-	t.Parallel()
-	rule := policy.RuleDef{ID: ruleModuleCycle, Type: "module_cycle", Gate: string(policy.GateFail)}
-
-	diag, in := dimensionsFixture()
-	in.Policy.Gates.Rules.Rules = []policy.RuleDef{rule}
-	dim := evaluation.BuildDimensions(diag, in, nil).Intent
-	if dim.Status != state.Measured || dim.Coverage.Observed != 1 {
-		t.Errorf("intent = %q with %d/%d rules evaluated, want measured 1/1 over a completed go/packages run",
-			dim.Status, dim.Coverage.Observed, dim.Coverage.Total)
-	}
-
-	diag, in = dimensionsFixture()
-	in.Policy.Gates.Rules.Rules = []policy.RuleDef{rule}
-	diag.ToolCoverage[0].Status = modevidence.StatusPartial
-	if got := evaluation.BuildDimensions(diag, in, nil).Intent.Status; got != state.Partial {
-		t.Errorf("intent = %q, want partial while the module graph's producer is incomplete", got)
-	}
-}
-
 // toolAstGrep is the coverage name of the ast-grep pattern pass.
-const toolAstGrep = "ast-grep"
-
-// TestIntentEvaluatesForbiddenPatternOnlyOverACompletedPatternPass pins the
-// readiness of forbidden_pattern: it reads the ast-grep pattern pass, not the
-// dependency graph, so only that pass's coverage row decides whether the rule
-// was evaluated — an absent or partial pass is never zero findings' worth of
-// conformance, and a partial dependency producer does not hold it back.
-func TestIntentEvaluatesForbiddenPatternOnlyOverACompletedPatternPass(t *testing.T) {
-	t.Parallel()
-	rule := policy.RuleDef{ID: "domain_no_clock", Type: ruleTypePattern, Gate: string(policy.GateFail), From: assessPathsA,
-		Patterns: []pattern.Def{{ID: "clock", Lang: "go", Rule: "time.Now()"}}}
-	tests := []struct {
-		name       string
-		patternRow *modevidence.Coverage
-		primary    string
-		want       state.MeasurementStatus
-	}{
-		{"completed pattern pass", &modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusOK}, modevidence.StatusOK, state.Measured},
-		{"completed pattern pass over a partial dependency producer",
-			&modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusOK}, modevidence.StatusPartial, state.Measured},
-		{"absent ast-grep", &modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusAbsent}, modevidence.StatusOK, state.Partial},
-		{"rejected pattern run", &modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusPartial,
-			Reason: `sg rejected pattern "clock" (exit 2)`}, modevidence.StatusOK, state.Partial},
-		{"no pattern row at all", nil, modevidence.StatusOK, state.Partial},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			diag, in := dimensionsFixture()
-			in.Policy.Gates.Rules.Rules = []policy.RuleDef{rule}
-			diag.ToolCoverage[0].Status = tc.primary
-			if tc.patternRow != nil {
-				diag.ToolCoverage = append(diag.ToolCoverage, *tc.patternRow)
-			}
-			if got := evaluation.BuildDimensions(diag, in, nil).Intent.Status; got != tc.want {
-				t.Errorf("intent = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
 
 // TestCompletedEmptyDependencyInventoryIsMeasured pins STR-1: a producer that
 // completed and found zero dependencies observed a zero; it did not abstain.
@@ -1060,144 +785,5 @@ func TestCouplingDimension_QualifyingEdgesMetric(t *testing.T) {
 	}
 	if !found {
 		t.Error("qualifying_edges metric missing")
-	}
-}
-
-// TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled is a regression test
-// for the bug where syntaxEvidenceComplete checked == StatusDisabled instead of
-// != StatusOK. A primary row of StatusAbsent (gapless: the extractor ran but
-// found no applicable files for a language that is present in the topology)
-// incorrectly passed the disabled check, marking a syntax rule as evaluated
-// despite zero actual syntax evidence for that language.
-func TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled(t *testing.T) {
-	t.Parallel()
-	const toolGoPkgs = "go/packages" // local to keep the goconst literal count low
-	maxPublicAPIs := 5
-	// A Go module exists in topology and a Go file is observed, so
-	// moduleRuleScope returns {go} as applicable. The syntax aggregate tool
-	// ran successfully but the Go primary row is StatusAbsent (the extractor
-	// was excluded via config). Old code: StatusAbsent != StatusDisabled →
-	// syntaxEvidenceComplete returned true → rule counted as evaluated (bug).
-	// New code: StatusAbsent != StatusOK → returns false → partial (correct).
-	modules := map[string]policy.ModuleDef{
-		"svc": {Paths: []string{"internal/**/*.go"}, Public: []string{"internal/api"}},
-	}
-	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
-	gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{
-		{ID: "api_surface_limit", Type: rulePublicAPIMax, Gate: gateWarnPosture, Max: &maxPublicAPIs},
-	}}}
-	in := evaluation.StateInput{
-		Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
-		Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
-			"internal/handler/handler.go": fileclass.Production,
-		}},
-	}
-	diag := &result.Result{
-		PrimaryExtractorTools: []string{toolGoPkgs},
-		ToolCoverage: []modevidence.Coverage{
-			// Syntax aggregate: OK (ran for the project).
-			{Tool: toolSyntaxAggregate, Status: modevidence.StatusOK},
-			// Go primary: Absent — extractor was excluded, no applicable files.
-			// This must NOT be treated as "not disabled" and therefore passing.
-			{Tool: toolGoPkgs, Status: modevidence.StatusAbsent},
-		},
-	}
-	dim := evaluation.BuildDimensions(diag, in, nil).Intent
-	if dim.Status != state.Partial {
-		t.Fatalf("intent status = %q, want partial: syntax aggregate OK but Go primary absent should block rule evaluation", dim.Status)
-	}
-	if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
-		t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
-	}
-}
-
-// TestIntentScopesDependencyRulesByTargetVocabulary pins the boundary between
-// "no producer could express this relationship" and "a producer that could is
-// missing". The first must not hold a rule unevaluated; the second must.
-//
-// The shape is archfit's own: a Go project that ships Python helper scripts it
-// runs out-of-process, so .py files sit under a declared module while pyimports is
-// legitimately absent (no Python project). A Go-targeted dependency rule cannot
-// be violated from a Python node — a dotted Python ID never matches a slash
-// path — so the Python parser's absence says nothing about it.
-func TestIntentScopesDependencyRulesByTargetVocabulary(t *testing.T) {
-	t.Parallel()
-	const (
-		toolGoPkgs        = "go/packages"
-		toolPythonImports = "pyimports"
-	)
-	maxPublicAPIs := 5
-	primaryTools := []string{toolGoPkgs, "dependency-cruiser", toolPythonImports, toolCargo}
-	modules := map[string]policy.ModuleDef{
-		"adapters": {Paths: []string{"internal/extract/**"}, Public: []string{"internal/extract"}},
-	}
-	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
-	// pyimports absent WITHOUT a coverage gap: the extractor's probe reports no
-	// Python project. go/packages is OK.
-	coverage := []modevidence.Coverage{
-		{Tool: toolGoPkgs, Status: modevidence.StatusOK},
-		{Tool: toolPythonImports, Status: modevidence.StatusAbsent},
-		{Tool: toolSyntaxAggregate, Status: modevidence.StatusOK},
-	}
-
-	tests := []struct {
-		name       string
-		rule       policy.RuleDef
-		gaps       []modevidence.CoverageGap
-		wantStatus state.MeasurementStatus
-		why        string
-	}{
-		{
-			name: "go-targeted dependency rule ignores the stray python file",
-			rule: policy.RuleDef{ID: "extract_no_config", Type: ruleForbidden, Gate: gateWarnPosture,
-				From: globInternalAll, To: "internal/config"},
-			wantStatus: state.Measured,
-			why:        "a dotted Python node cannot address a slash path, so the Python parser could not have found a violation",
-		},
-		{
-			name: "python-targeted dependency rule still needs the Python parser",
-			rule: policy.RuleDef{ID: "py_no_internal", Type: ruleForbidden, Gate: gateWarnPosture,
-				From: globInternalAll, To: "helpers.**"},
-			wantStatus: state.Partial,
-			why:        "the target IS python vocabulary, so the absent producer leaves the rule unevaluated",
-		},
-		{
-			name: "module-wide syntax rule still spans every language in the module",
-			rule: policy.RuleDef{ID: "api_ceiling", Type: rulePublicAPIMax, Gate: gateWarnPosture,
-				Max: &maxPublicAPIs},
-			wantStatus: state.Partial,
-			why:        "the .py files are real members of the module whose API surface nobody measured",
-		},
-		{
-			name: "an absent producer WITH a gap keeps an addressable language unevaluated",
-			rule: policy.RuleDef{ID: "py_no_internal_gap", Type: ruleForbidden, Gate: gateWarnPosture,
-				From: globInternalAll, To: "helpers.**"},
-			gaps:       []modevidence.CoverageGap{{Tool: toolPythonImports}},
-			wantStatus: state.Partial,
-			why:        "a missing analyzer must never be read as nothing to analyze",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{tc.rule}}}
-			in := evaluation.StateInput{
-				Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
-				Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
-					"internal/extract/pyimports/report.go": fileclass.Production,
-					"internal/extract/scip/scip_reader.py": fileclass.Production,
-					"internal/config/config.go":            fileclass.Production,
-				}},
-			}
-			diag := &result.Result{
-				PrimaryExtractorTools: primaryTools,
-				ToolCoverage:          coverage,
-				CoverageGaps:          tc.gaps,
-			}
-			dim := evaluation.BuildDimensions(diag, in, nil).Intent
-			if dim.Status != tc.wantStatus {
-				t.Errorf("intent status = %q, want %q: %s", dim.Status, tc.wantStatus, tc.why)
-			}
-		})
 	}
 }

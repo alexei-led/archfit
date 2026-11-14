@@ -39,9 +39,6 @@ func TestLoad_ExampleTemplates(t *testing.T) {
 			// Load does not compile rules; analyze/check do, before any tool
 			// runs. A template naming an unknown rule type or an invalid rule
 			// shape would fail the user's first run here.
-			if err := config.ValidateRules(cfg); err != nil {
-				t.Errorf("%s: rules do not compile: %v", name, err)
-			}
 			// Templates are fully specified by design: every module declares an
 			// owner and a subdomain (or explicit volatility) so distance and
 			// volatility classify cleanly and Config.Lint() stays quiet.

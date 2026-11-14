@@ -1,6 +1,4 @@
-// Package evaluation owns assessment decisions after relationship analysis.
-// It consumes only the relationship contract and gathered signals; raw graph
-// and coupling classifier internals never cross this boundary.
+// Package evaluation calculates report measurements from acquired observations.
 package evaluation
 
 import (
@@ -8,161 +6,49 @@ import (
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
 	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
 	"github.com/alexei-led/archfit/v3/internal/assessment/staleness"
-	"github.com/alexei-led/archfit/v3/internal/assessment/status"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/symbol"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
-// Input is the assessment stage boundary. Every value is an assessment or
-// relationship contract; adapters and graph internals stay outside this package.
+// Input carries the measurements and relationship advisories of one report.
 type Input struct {
-	Relationships relationship.Set
-	Evidence      RuleEvidence
-	Rules         Ruleset
-	Metrics       Metricset
-	Signals       signal.RunSignals
-	Symbols       symbol.Graph
-	Coverage      []evidence.Coverage
-	ChangedFiles  []string
-	Policy        policy.AssessmentPolicy
-	// ModuleReview is the module_review gate mode: fail makes production
-	// source no declared module owns a gate finding.
-	ModuleReview policy.GateMode
-	// UncoveredChange is the module_review.change_gate mode; empty means warn.
-	UncoveredChange    policy.GateMode
+	Relationships      relationship.Set
+	Metrics            Metricset
+	Signals            signal.RunSignals
+	Symbols            symbol.Graph
+	Coverage           []evidence.Coverage
+	ChangedFiles       []string
+	Policy             policy.AssessmentPolicy
 	Now                time.Time
 	AdvisoryCandidates []relationship.AdvisoryCandidate
 	IncludeAdvisories  bool
 }
 
-// Result contains gate findings, metric values, and the verdict inputs produced
-// by assessment. Report assembly is deliberately left to the pipeline.
+// Result contains measurements and visible advisories, without a verdict.
 type Result struct {
-	Findings     []finding.Finding
-	Metrics      []result.MetricResult
-	Verdict      result.Verdict
-	GateFindings int
-	Warnings     int
-	WaiversUsed  int
+	Findings []finding.Finding
+	Metrics  []result.MetricResult
+	Warnings int
 }
 
-// evaluate applies rules, statuses, and metrics in their domain order.
 func evaluate(in Input) Result {
-	raw := checkRules(in.Rules, in.Relationships, in.Evidence)
-	adv := candidateFindings(in.AdvisoryCandidates)
-	// An uncovered-source gate finding joins the rule findings, so
-	// waivers treat it as any other blocker; the advisory form
-	// stays with the staleness advisories.
-	for _, f := range uncoveredSource(in.Evidence, in.Policy, in.ModuleReview) {
-		if f.Kind == finding.KindGate {
-			raw = append(raw, f)
-		} else {
-			adv = append(adv, f)
-		}
-	}
-	// Files the change adds that no analysis covers are advisories: visible,
-	// never a repair. The change_gate: fail posture adds a decision entry in
-	// the state instead (uncoveredChangeUnevaluated), so the change is unknown.
-	if in.UncoveredChange != policy.GateOff {
-		adv = append(adv, uncoveredChange(in.Evidence, in.Policy)...)
-	}
-	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
-	tagged := status.Assign(raw, in.Policy.Waivers, in.Now)
 	collected := signal.CollectedSignals{
-		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
+		Common: signal.CommonInput{Relationships: in.Relationships, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
 		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size, Duplication: in.Signals.Duplication,
 	}
 	calculated := make([]result.MetricResult, 0, in.Metrics.Len())
 	for _, metric := range in.Metrics.metrics {
 		calculated = append(calculated, metric.Calculate(collected))
 	}
-	gates := make([]finding.Finding, 0, len(tagged))
-	advisories := 0
-	for _, f := range tagged {
-		if f.Kind == finding.KindGate && f.Status != finding.StatusFixed {
-			gates = append(gates, f)
-		}
-		if f.Kind == finding.KindAdvisory && f.Status != finding.StatusFixed {
-			advisories++
-		}
-	}
-	taggedAdvisories := status.Assign(adv, in.Policy.Waivers, in.Now)
-	adv = adv[:0]
-	for _, f := range taggedAdvisories {
-		if f.Kind == finding.KindAdvisory {
-			adv = append(adv, f)
-		}
-	}
-	adv = groupBCAdvisories(adv)
-	tagged = resolveEvidence(in.Relationships, in.Policy.Topology.ModuleMap, tagged)
-	// Split the rule pass: gatedRule stamps KindAdvisory on findings from a
-	// `gate: warn` rule. Those are advisories, not gate findings — they are
-	// hidden with --no-advisories and counted in summary.warnings, exactly like
-	// the coupling/staleness advisories collected above.
-	base := make([]finding.Finding, 0, len(tagged))
-	ruleAdv := make([]finding.Finding, 0)
-	for _, f := range tagged {
-		if f.Kind == finding.KindAdvisory {
-			ruleAdv = append(ruleAdv, f)
-			continue
-		}
-		base = append(base, f)
-	}
-	gateNew, waiversUsed := 0, 0
-	for _, f := range base {
-		if f.Status == finding.StatusWaived {
-			waiversUsed++
-		}
-		if f.Kind == finding.KindGate && f.Status != finding.StatusFixed && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver) {
-			gateNew++
-		}
-	}
-	visible := base
-	warnings := 0
+	visible := []finding.Finding{}
 	if in.IncludeAdvisories {
-		visible = append(append(append([]finding.Finding(nil), base...), adv...), ruleAdv...)
-		warnings = countActive(adv) + countActive(ruleAdv)
+		visible = candidateFindings(in.AdvisoryCandidates)
+		visible = append(visible, staleness.Check(in.Relationships, in.Policy, in.Now)...)
+		visible = groupBCAdvisories(visible)
 	}
-	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed}
-}
-
-// checkRules runs every compiled rule over the relationships. It is the one
-// rule pass: check and `archfit policy can-import` both call it.
-func checkRules(rs Ruleset, s relationship.Set, ev RuleEvidence) []finding.Finding {
-	raw := make([]finding.Finding, 0, rs.Len())
-	for _, rule := range rs.rules {
-		raw = append(raw, rule.Check(s, rules.Evidence{
-			PatternMatches: ev.PatternMatches, SyntaxFacts: ev.SyntaxFacts, FileClasses: ev.FileClasses,
-			OutOfScopeFiles: ev.OutOfScopeFiles, UnwalkedSourceProduction: ev.UnwalkedSourceProduction,
-		})...)
-	}
-	return raw
-}
-
-func countActive(in []finding.Finding) int {
-	n := 0
-	for _, f := range in {
-		if f.Status != finding.StatusFixed {
-			n++
-		}
-	}
-	return n
-}
-
-// computeVerdict is the assessment verdict, read from findings only.
-func computeVerdict(gates []finding.Finding, advisories int) result.Verdict {
-	for _, f := range gates {
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
-			return result.VerdictFail
-		}
-	}
-	if advisories > 0 {
-		return result.VerdictWarn
-	}
-	return result.VerdictPass
+	return Result{Findings: visible, Metrics: calculated, Warnings: len(visible)}
 }

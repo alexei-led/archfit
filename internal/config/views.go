@@ -7,7 +7,6 @@ import (
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
 	"github.com/alexei-led/archfit/v3/internal/scope"
@@ -53,24 +52,6 @@ func (w LintWarning) String() string {
 // within each is in fixed order. Lint is advisory and never gates.
 func (c Config) Lint() []LintWarning {
 	return LintModules(c.Modules)
-}
-
-// ruleTypeForbiddenPattern is the only rule type that evaluates rules[].patterns.
-const ruleTypeForbiddenPattern = "forbidden_pattern"
-
-// PatternWarnings reports rules that declare `patterns:` on a rule type that
-// never reads them. ast-grep still runs those patterns — ForPatterns keeps
-// collecting every rule's, because their content feeds the measurement settings
-// hash — but only forbidden_pattern turns matches into findings. Schema v2 loads
-// them with this warning rather than rejecting a key it used to accept.
-func (c Config) PatternWarnings() []string {
-	var out []string
-	for _, r := range c.Rules {
-		if len(r.Patterns) > 0 && r.Type != ruleTypeForbiddenPattern {
-			out = append(out, fmt.Sprintf("rule %q (type %s) declares patterns, but patterns are only evaluated by forbidden_pattern rules: its matches never produce a finding", r.ID, r.Type))
-		}
-	}
-	return out
 }
 
 // LintModules is Lint over an arbitrary module set. Acquisition projects it so
@@ -184,15 +165,6 @@ func (c Config) ForClassify() classify.Config {
 	}
 }
 
-// ForRules returns the rule-evaluation policy projection.
-func (c Config) ForRules() policy.RuleConfig {
-	return policy.RuleConfig{
-		Rules:     c.Rules,
-		Layers:    c.Layers,
-		ModuleMap: policy.BuildModuleMap(c.Modules),
-	}
-}
-
 // ForMetric returns the MetricConfig for the named metric.
 // Returns a zero MetricConfig (all knobs unset) if the metric is not
 // configured — the metric stays enabled; only an explicit `enabled: false`
@@ -201,24 +173,9 @@ func (c Config) ForMetric(name string) policy.MetricConfig {
 	return c.Metrics.MetricEntries()[name]
 }
 
-// ForWaivers returns the WaiverSet view consumed by the status stage.
-func (c Config) ForWaivers() policy.WaiverSet {
-	return policy.WaiverSet{Waivers: c.Waivers}
-}
-
 // ModuleMapView returns a policy.ModuleMap built from this Config's Modules.
 func (c Config) ModuleMapView() policy.ModuleMap {
 	return policy.BuildModuleMap(c.Modules)
-}
-
-// ForPatterns returns the PatternConfig view: all PatternDef values collected
-// from rules that declare a patterns: block.
-func (c Config) ForPatterns() pattern.Config {
-	var out pattern.Config
-	for _, r := range c.Rules {
-		out = append(out, r.Patterns...)
-	}
-	return out
 }
 
 // ForSyntax returns the syntax-stage view over the analysed languages.

@@ -13,13 +13,12 @@ import (
 // into the single stable external report contract renderers consume.
 func projectReport(r result.Result, sc score.Scorecard) report.Document {
 	doc := report.Document{
-		SchemaVersion: r.SchemaVersion, Verdict: report.Verdict(r.Verdict), Base: r.Base, Head: r.Head,
+		SchemaVersion: r.SchemaVersion, Base: r.Base, Head: r.Head,
 		ConfigHash: r.ConfigHash, Metrics: projectMetrics(r.Metrics), Findings: projectFindings(r.Findings),
 		FileFacts: projectFileFacts(r.FileFacts), DynamicImports: projectDynamicImports(r.DynamicImports), Connascence: projectConnascence(r.Connascence),
 		DynamicConnascenceSignals: projectDynamicConnascenceSignals(r.DynamicConnascenceSignals), RuntimeAsync: projectRuntimeAsyncModules(r.RuntimeAsync),
 		RuntimeAsyncEdges: projectRuntimeAsyncEdges(r.RuntimeAsyncEdges), DeprecatedDeps: projectDeprecatedDeps(r.DeprecatedDeps),
-		SyntaxFacts: projectSyntaxFacts(r.SyntaxFacts),
-		AgentTasks:  projectAgentTasks(r.AgentTasks), AdvisoryTasks: projectAdvisoryTasks(r.AdvisoryTasks),
+		SyntaxFacts:  projectSyntaxFacts(r.SyntaxFacts),
 		ToolCoverage: projectCoverage(r.ToolCoverage), CoverageGaps: projectCoverageGaps(r.CoverageGaps), OwnerSource: r.OwnerSource,
 		PrimaryExtractorTools: r.PrimaryExtractorTools, ConfigWarnings: r.ConfigWarnings,
 		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: projectDistanceContext(r.DistanceContext),
@@ -58,25 +57,12 @@ func withRunFacts(doc report.Document, in IdentityInputs) report.Document {
 // facts assessment deliberately never sees: which tree was measured, which tool
 // versions produced the evidence.
 //
-// The verdict, the decision counters, and every dimension envelope are copied
-// verbatim. Nothing is decided here — the application projects, it does not
-// judge — so no renderer can reach a different conclusion than the assessment
-// did.
+// Each measurement envelope is copied verbatim. Repository rule errors and
+// exceptions are supplied by repostate, not derived by this projection.
 func projectArchitectureState(r result.Result, doc report.Document) report.ArchitectureState {
 	out := report.NewArchitectureState()
-	out.Verdict = report.StateVerdict(r.State.Verdict)
-	out.Decision = report.StateDecision{
-		HardGates:           report.HardGateState(r.State.Decision.HardGates),
-		ActiveBlockers:      r.State.Decision.ActiveBlockers,
-		AttentionDimensions: r.State.Decision.AttentionDimensions,
-		UnknownDimensions:   r.State.Decision.UnknownDimensions,
-	}
-	for _, rule := range r.State.Decision.UnevaluatedRequiredRules {
-		out.Decision.UnevaluatedRequiredRules = append(out.Decision.UnevaluatedRequiredRules, report.UnevaluatedRule{RuleID: rule.RuleID, Reason: rule.Reason})
-	}
 	out.Dimensions = projectStateDimensions(r.State.Dimensions)
 	out.Findings = doc.Findings
-	out.AgentTasks = doc.AgentTasks
 	out.Measurement.SourceRef = sourceWorktree
 	out.Measurement.ToolVersions, out.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
 
@@ -113,7 +99,7 @@ func projectStateSeams(in []result.Seam) []report.Seam {
 			CriticalSharePct: s.CriticalSharePct, HighOrWorseSharePct: s.HighOrWorseSharePct,
 			Confidence:      s.Confidence,
 			RoleExpectation: s.RoleExpectation, Hypothesis: s.Hypothesis,
-			DistributedMonolith: s.DistributedMonolith, Policy: s.Policy,
+			DistributedMonolith: s.DistributedMonolith,
 		})
 	}
 	return out
@@ -140,7 +126,6 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 	out := report.DimensionState{
 		Name: in.Name, Owner: in.Owner,
 		Status: report.MeasurementStatus(in.Status), Confidence: report.Confidence(in.Confidence),
-		Gate:     report.GateState(in.Gate),
 		Coverage: report.DimensionCoverage{Basis: in.Coverage.Basis, Observed: in.Coverage.Observed, Total: in.Coverage.Total},
 		Metrics:  make([]report.MetricValue, 0, len(in.Metrics)),
 		Findings: make([]report.FindingRef, 0, len(in.Findings)),
@@ -393,22 +378,6 @@ func projectFindings(in []finding.Finding) []report.Finding {
 			},
 			MatchedBy: matchedBy, Locations: locations, Why: f.Why, Constraint: f.Constraint, Alternatives: f.Alternatives,
 		})
-	}
-	return out
-}
-
-func projectAgentTasks(in []result.AgentTask) []report.AgentTask {
-	out := make([]report.AgentTask, 0, len(in))
-	for _, t := range in {
-		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, RepairKind: t.RepairKind, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations)})
-	}
-	return out
-}
-
-func projectAdvisoryTasks(in []result.AdvisoryTask) []report.AdvisoryTask {
-	out := make([]report.AdvisoryTask, 0, len(in))
-	for _, t := range in {
-		out = append(out, report.AdvisoryTask{FindingID: t.FindingID, RuleID: t.RuleID, Status: string(t.Status), Severity: string(t.Severity), GroupCount: t.GroupCount, GroupMembers: t.GroupMembers, Goal: t.Goal, Hypothesis: t.Hypothesis, ScoreValue: t.ScoreValue, TopFiles: t.TopFiles, Constraints: t.Constraints, Validation: t.Validation})
 	}
 	return out
 }

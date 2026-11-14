@@ -1,6 +1,6 @@
 # Evidence contracts
 
-Evidence status describes completeness. It does not describe whether a metric value is good. Findings and gate results remain separate. See [results](results.md) for the public report fields and [metrics](metrics.md) for metric meaning.
+Evidence status describes completeness. It does not describe whether a metric value is good. Report measurements and repository rule errors remain separate. See [results](results.md) for the public report fields and [metrics](metrics.md) for metric meaning.
 
 ## Promotion rule
 
@@ -26,10 +26,10 @@ Required fact names below match `internal/assessment/state.RequiredFacts`. This 
 
 ### `intent`
 
-- **Required facts:** `declared intent inventory`, `active rule conformance`.
-- **Denominator:** Active declared rules over all declared rules. Rules with `gate: off` stay visible but are not evaluated.
-- **Promote when:** Policy declares at least one module or rule. The declaration inventory is observed. Every active rule has an evaluation result. A policy with no active rules proves conformance not applicable after its inventory is observed.
-- **Limits:** Disabled-rule conformance is out of claim.
+- **Required facts:** `declared intent inventory`.
+- **Denominator:** Declared modules.
+- **Promote when:** The policy declares at least one module. Module and layer counts are policy facts, not proof that code follows the rules.
+- **Limits:** Rule errors and exceptions belong to `repository`, not to a second report evaluator.
 
 ### `structure`
 
@@ -166,10 +166,7 @@ Delete `.archfit-cache` to remove cached facts. Cache contents are disposable. A
 
 ## Analyzer trust boundary
 
-A required import rule cannot pass from missing compiler/source evidence. CLI `needs_attention`
-with unmeasured hard gates is not a successful measurement; the App must keep such required-rule
-evidence actionable. A tool version or a nonempty index alone does not establish completeness.
-Rust target attribution uses Cargo metadata and preserves ambiguity on live and cached results.
+Missing parser facts give the check `unknown`, not `pass`. Missing compiler or source evidence keeps the report's affected measurements partial or unmeasured. Repository errors and unread places come from the parser-based check path. A tool version or a nonempty index alone does not establish completeness. Rust target attribution uses Cargo metadata and preserves ambiguity on live and cached results.
 
 Image digests bind installed files, not remote execution. Reports remain self-reported/customer-
 attested. Target code can run in optional indexers/build tools; container network access and
@@ -177,13 +174,14 @@ mounted source remain part of the operator's trust boundary. See [Languages and 
 
 ## .NET trust limits
 
-- **Target code runs.** MSBuild evaluation executes `Directory.Build.props`, imported targets, and SDK props. The Roslyn design-time build also writes generated files under `obj/`. Evaluation runs on the original tree. The helper runs on a disposable snapshot of the analysis root plus the ancestor build inputs up to the repository root, deleted after the run. A build input above the repository root is not in the snapshot: a project that would inherit one is `partial` and names it, so its file edges are not complete evidence and a required rule over its files is unevaluated. A symlink whose target lies outside the analysis root is dropped from the snapshot rather than reproduced, so the build cannot write through it into the original tree; the `roslyn` reason names every dropped link, and the project holding it is `partial`. The image contract analyzes the .NET fixture from a read-only mount and checks the tree is unchanged. This is the same trust class as `go/packages` and cgo. Evaluation leaving `bitwarden/server` clean is a measurement, not a guarantee.
+- **Target code runs.** MSBuild evaluation executes `Directory.Build.props`, imported targets, and SDK props. The Roslyn design-time build also writes generated files under `obj/`. Evaluation runs on the original tree. The helper runs on a disposable snapshot of the analysis root plus the ancestor build inputs up to the repository root, deleted after the run. A build input above the repository root is not in the snapshot: a project that would inherit one is `partial` and names it, so its file edges are not complete evidence. A symlink whose target lies outside the analysis root is dropped from the snapshot rather than reproduced, so the build cannot write through it into the original tree; the `roslyn` reason names every dropped link, and the project holding it is `partial`. The image contract analyzes the .NET fixture from a read-only mount and checks the tree is unchanged. This is the same trust class as `go/packages` and cgo. Evaluation leaving `bitwarden/server` clean is a measurement, not a guarantee.
 - **Helper location.** `ARCHFIT_DOTNET_ROSLYN` must name an absolute directory outside the analysis root, so the target cannot supply the helper. An invalid value drops the .NET graph and makes `dotnet-msbuild` partial; it never falls back silently.
 - **NuGet-resolved SDKs.** The SDK resolver fetches `msbuild-sdks` from `global.json` when the network is reachable. Archfit does not restore packages. Offline, the affected projects are `failed` with the SDK named.
 - **`global.json` pin.** A pin that the installed SDK cannot satisfy makes the projects `failed`. The reason names `global.json`.
 - **Missing reference packs.** A target framework without its reference pack on the host (for example `net8.0` against a 10.0 SDK) leaves the project `partial`, with the pack named. Results depend on the host's installed packs.
 - **Unresolved symbols are missing candidates.** An unresolved reference can hide a cross-boundary edge, so it is not reduced precision. Any `partial` or `failed` project, an evaluated project the helper did not report, or a failed or timed-out helper run keeps the `coupling` dimension from `measured` by blocking `extractor resolution within ceiling`, as TypeScript unresolved specifiers do above the ceiling.
-- **Rules over incomplete projects are unevaluated.** A project's file edges are complete only when the helper loaded it `complete`. A required rule whose dependency source reaches a file of an incomplete project is unevaluated: its `from:` side, the modules a module rule reads, or every file for `cycle`. Incomplete means `partial`, `failed`, not reported, or any project when the helper produced no report. The reason names `roslyn`, each project, and that project's own cause. A rule whose scope is established and that produced a finding is not listed: the finding is its result, and the report must not both publish a rule's violations and say the rule was not evaluated. A rule whose scope the configuration does not establish stays listed even when it produced a finding: that finding comes from a file set the declaration did not define. Its blocker still fails the gate, so the verdict is unchanged. A rule scoped to complete projects stays evaluated, even when the `dotnet-msbuild` or `roslyn` row is `partial`. `ProjectReference` fallback edges do not make a project complete: they match no selector below the project directory, and they omit projects used through a transitive `ProjectReference`. The same files keep `structure`, `modularity`, and `complexity` from `measured`. This follows the Python precedent: unanalysed source in a rule's scope holds that rule, not every rule.
+- **Incomplete projects limit report measurements.** A project's file edges are complete only when the helper loaded it `complete`. Per-file gaps keep `structure`, `modularity`, and `complexity` from `measured`, even when the project-level `dotnet-msbuild` row is `ok`. Reasons name `roslyn`, the projects, and their causes. The report runs no version 2 rules. Repository errors and unread places come from the same parser-based facts as the check, not from Roslyn.
+
 - **Producer identity.** The coverage row version is the helper's `archfit-roslyn <version>; Microsoft.CodeAnalysis <version>; SDK <version>` string.
 
 See [languages](languages.md#net) for statuses and fallback.

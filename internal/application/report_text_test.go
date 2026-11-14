@@ -144,9 +144,6 @@ func TestProjectedStatePassesTheConsumerTextRules(t *testing.T) {
 		ID: "f1", Kind: "gate", RuleID: "r1", Status: finding.StatusNew, Severity: finding.SeverityHigh,
 		Why: long, Constraint: long, Alternatives: alternatives,
 	}}
-	taskConstraints := []string{strings.Repeat(long, 3)}
-	r.AgentTasks = []result.AgentTask{{FindingID: "f1", RuleID: "r1", RepairKind: "code_change", Goal: strings.Repeat(long, 3), Constraints: taskConstraints, Files: []string{}, Validation: []string{"archfit check"}}}
-	r.State.Decision.UnevaluatedRequiredRules = []state.UnevaluatedRule{{RuleID: "r1", Reason: "dependency-cruiser evidence is partial: " + long}}
 	r.State.Dimensions.Intent.Coverage.Basis = long
 	r.State.Dimensions.Intent.Unknown = []state.UnknownFact{{Fact: long, Reason: long, Owner: "intent"}}
 
@@ -165,7 +162,7 @@ func TestProjectedStatePassesTheConsumerTextRules(t *testing.T) {
 	if doc.ConfigWarnings[0] == long || doc.ToolCoverage[0].Reason == long {
 		t.Error("legacy document blocks (markdown config warnings, tool coverage) keep the raw multi-line text")
 	}
-	if alternatives[0] != long || taskConstraints[0] != strings.Repeat(long, 3) {
+	if alternatives[0] != long {
 		t.Error("the projection rewrote the assessment result it projects")
 	}
 	if !slices.Equal(doc.State.Findings[0].Alternatives, doc.Findings[0].Alternatives) {

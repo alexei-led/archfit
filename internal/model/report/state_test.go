@@ -28,12 +28,6 @@ func TestNewArchitectureStateIsHonestlyUnmeasured(t *testing.T) {
 	if state.SchemaVersion != report.StateSchemaVersion {
 		t.Errorf("SchemaVersion = %q, want %q", state.SchemaVersion, report.StateSchemaVersion)
 	}
-	if state.Verdict == report.StateHealthy {
-		t.Error("an unmeasured state must never construct as healthy")
-	}
-	if state.Decision.HardGates != report.HardGateUnmeasured {
-		t.Errorf("Decision.HardGates = %q, want unmeasured", state.Decision.HardGates)
-	}
 
 	want := []struct{ name, owner string }{
 		{report.DimensionIntent, report.OwnerIntent},
@@ -59,9 +53,6 @@ func TestNewArchitectureStateIsHonestlyUnmeasured(t *testing.T) {
 		}
 		if dim.Confidence != report.ConfidenceUnrated {
 			t.Errorf("%s confidence = %q, want unrated", dim.Name, dim.Confidence)
-		}
-		if dim.Gate != report.GateNotApplicable {
-			t.Errorf("%s gate = %q, want not_applicable", dim.Name, dim.Gate)
 		}
 		if dim.Metrics == nil || dim.Findings == nil || dim.Unknown == nil {
 			t.Errorf("%s has a nil collection: metrics=%v findings=%v unknown=%v",

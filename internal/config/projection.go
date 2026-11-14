@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/v3/internal/extract/acquire"
 	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
@@ -35,10 +34,10 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 	relationship := policy.RelationshipPolicy{MinimumSeverity: c.Coupling.MinSeverity, VolatilityCascadeEnabled: c.Coupling.VolatilityCascade, DuplicatedKnowledge: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge)}
 	stale := c.ForStaleness()
 	assessment := policy.AssessmentPolicy{
-		Waivers: c.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold},
+		Staleness:            policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold},
 		FunctionLOCThreshold: c.Metrics.FunctionLOCThresholdValue(),
 	}
-	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics.MetricEntries(), ModuleReview: policy.GateMode(c.ModuleReview.Gate), UncoveredChange: policy.GateMode(c.ModuleReview.ChangeGate)}, owners, deployUnits)
+	return policy.New(topology, relationship, assessment, policy.GatePolicy{Metrics: c.Metrics.MetricEntries(), ModuleReview: policy.GateMode(c.ModuleReview.Gate), UncoveredChange: policy.GateMode(c.ModuleReview.ChangeGate)}, owners, deployUnits)
 }
 
 // CoverageOptions projects analyzer gates and applicability probes. Every probe
@@ -107,7 +106,7 @@ func (c Config) RunOptions() acquisition.RunOptions {
 	acquisitionOpts.Exclusions = exclusions
 	scopeConfig := c.ForScope()
 	scopeConfig.Exclusions = exclusions
-	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Patterns: c.ForPatterns(), Lint: lintWarningStrings, Coverage: c.CoverageOptions(), SuppliedCoverage: c.SuppliedCoverageOptions()}
+	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Lint: lintWarningStrings, Coverage: c.CoverageOptions(), SuppliedCoverage: c.SuppliedCoverageOptions()}
 }
 
 // lintWarningStrings renders LintModules for a resolved module set. Acquisition
@@ -148,12 +147,6 @@ func (c Config) AcquisitionOptions() acquire.Options {
 	}
 }
 
-// ValidateRules validates decoded rule definitions at the adapter boundary.
-func ValidateRules(cfg Config) error {
-	_, err := evaluation.NewRuleset(cfg.ForRules())
-	return err
-}
-
 // ApplyFlagOverrides applies command-line overrides to decoded config.
 func ApplyFlagOverrides(cfg *Config, severity string, lang []string) error {
 	if severity != "" {
@@ -169,31 +162,20 @@ func ApplyFlagOverrides(cfg *Config, severity string, lang []string) error {
 	return nil
 }
 
-// Preparer implements the application's policy-preparation stage: it validates
-// decoded policy and discloses config-quality problems before any tool runs.
-// Validation belongs here because the rule language is this package's lifecycle.
+// Preparer discloses report config warnings before evidence acquisition.
+// File decoding validates syntax; this stage does not evaluate legacy rules.
 type Preparer struct {
 	Config Config
 	Stderr io.Writer
-	// DiscloseLint writes the config-quality block to stderr. Only analyze/check
-	// set it. Every other stage runs the same executor without owning the user's
-	// stderr conversation: baseline/explain/enrich never disclosed it, and
-	// `config compare` builds TWO preparers over one stream, so an ungated
-	// disclosure prints the block twice with nothing naming the side that
-	// produced it — the labelling contract that command documents.
+	// DiscloseLint prints the config-warning block when the report use case
+	// owns stderr. Internal measurement callers can suppress this disclosure.
 	DiscloseLint bool
 }
 
-// Prepare validates rule definitions and writes config-quality warnings.
+// Prepare writes config-quality warnings when disclosure is enabled.
 func (p Preparer) Prepare(context.Context) error {
-	if err := ValidateRules(p.Config); err != nil {
-		return err
-	}
 	if p.DiscloseLint {
 		PrintLint(p.stderr(), p.Config.Lint())
-		for _, warning := range p.Config.PatternWarnings() {
-			_, _ = fmt.Fprintf(p.stderr(), "warning: %s\n", warning)
-		}
 	}
 	return nil
 }

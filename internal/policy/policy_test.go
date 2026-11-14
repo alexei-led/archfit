@@ -19,22 +19,17 @@ const (
 
 func TestNewOwnsTopologyAndPolicyProjections(t *testing.T) {
 	modules := map[string]ModuleDef{policyTestApp: {Owner: policyTestOwner, DeployUnit: policyTestUnit, Paths: []string{"cmd/**"}}}
-	waivers := []WaiverDef{{Rule: "no_cycles", From: policyTestApp}}
 	p := New(
 		TopologyView{Modules: modules, Layers: []string{"model", "cmd"}},
 		RelationshipPolicy{MinimumSeverity: "medium"},
-		AssessmentPolicy{Waivers: WaiverSet{Waivers: waivers}},
+		AssessmentPolicy{},
 		GatePolicy{Metrics: map[string]MetricConfig{"cycle": {}}},
 		map[string]string{"app": "team-a"}, map[string]string{"app": "cli"},
 	)
 
 	modules[policyTestApp] = ModuleDef{}
-	waivers[0] = WaiverDef{Rule: "mutated"}
 	if p.Topology.Modules[policyTestApp].Owner != policyTestOwner || p.DeployUnits[policyTestApp] != policyTestUnit {
 		t.Fatalf("snapshot does not own module projections: %+v", p)
-	}
-	if p.Assessment.Waivers.Waivers[0].Rule != "no_cycles" {
-		t.Fatalf("snapshot aliases waivers: %+v", p.Assessment.Waivers)
 	}
 	if _, ok := p.Relationship.Topology.ModuleMap.ModuleFor("cmd/main.go"); !ok || p.Gates.Metrics == nil {
 		t.Fatal("snapshot did not build narrow topology and gate views")
@@ -117,7 +112,7 @@ func TestCloneKeepsAllowlistAbsence(t *testing.T) {
 	if closed.DependsOn == nil || closed.VisibleTo == nil {
 		t.Errorf("closed module lists = %#v, %#v, want empty, not nil", closed.DependsOn, closed.VisibleTo)
 	}
-	if got := snapshot.Gates.Rules.ModuleMap.DeniedDependency(modAllowOpen, "closed"); len(got) != 1 {
+	if got := snapshot.Topology.ModuleMap.DeniedDependency(modAllowOpen, "closed"); len(got) != 1 {
 		t.Errorf("DeniedDependency(open, closed) on the clone = %v, want visible_to", got)
 	}
 }

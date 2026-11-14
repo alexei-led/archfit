@@ -40,7 +40,6 @@ const DefaultFunctionLOCThreshold = 60
 // AssessmentPolicy contains declarations needed by assessment consumers.
 type AssessmentPolicy struct {
 	Topology             TopologyView
-	Waivers              WaiverSet
 	Staleness            StalenessPolicy
 	FunctionLOCThreshold int
 }
@@ -53,7 +52,6 @@ type StalenessPolicy struct {
 
 // GatePolicy contains rule and metric gate declarations.
 type GatePolicy struct {
-	Rules        RuleConfig
 	Metrics      map[string]MetricConfig
 	ModuleReview GateMode
 	// UncoveredChange is the module_review.change_gate posture; empty means warn.
@@ -80,9 +78,6 @@ func New(topology TopologyView, relationship RelationshipPolicy, assessment Asse
 	topology = cloneTopology(topology)
 	relationship.Topology = topology
 	assessment.Topology = topology
-	assessment.Waivers = cloneWaivers(assessment.Waivers)
-	gates.Rules = cloneRuleConfig(gates.Rules)
-	gates.Rules.ModuleMap = topology.ModuleMap
 	gates.Metrics = cloneMetricConfigs(gates.Metrics)
 	return PolicySnapshot{
 		Topology: topology, Ownership: maps.Clone(ownership), DeployUnits: maps.Clone(deployUnits),
@@ -126,7 +121,6 @@ func (p PolicySnapshot) WithResolvedTopology(owners, deployUnits map[string]stri
 	}
 	out.Topology.ModuleMap = BuildModuleMap(out.Topology.Modules)
 	out.Relationship.Topology, out.Assessment.Topology = out.Topology, out.Topology
-	out.Gates.Rules.ModuleMap = out.Topology.ModuleMap
 	return out
 }
 
@@ -159,14 +153,6 @@ func cloneTopology(in TopologyView) TopologyView {
 		external[name] = def
 	}
 	return TopologyView{Modules: modules, Layers: slices.Clone(in.Layers), ModuleMap: BuildModuleMap(modules), ExternalSystems: external}
-}
-
-func cloneWaivers(in WaiverSet) WaiverSet {
-	return WaiverSet{Waivers: slices.Clone(in.Waivers)}
-}
-
-func cloneRuleConfig(in RuleConfig) RuleConfig {
-	return RuleConfig{Rules: slices.Clone(in.Rules), Layers: slices.Clone(in.Layers), ModuleMap: in.ModuleMap}
 }
 
 func cloneMetricConfigs(in map[string]MetricConfig) map[string]MetricConfig {

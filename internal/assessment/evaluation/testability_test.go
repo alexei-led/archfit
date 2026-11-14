@@ -32,7 +32,6 @@ func TestTestabilityDisabledCoveragePreservesLegacyEnvelope(t *testing.T) {
 	want := state.NewDimension(state.DimensionTestability, state.OwnerTestability)
 	want.Status = state.Partial
 	want.Confidence = state.ConfidenceMedium
-	want.Gate = state.GatePass
 	want.Coverage = state.Coverage{Basis: "classified source files", Observed: 2, Total: 2}
 	want.Metrics = []state.MetricValue{
 		{Name: "test_files", Value: 1, Unit: assessMetricUnitCount, Provenance: []string{assessProvFileClass}},
@@ -135,8 +134,8 @@ func TestTestabilityFreshCoverageMeasuresDeclaredModules(t *testing.T) {
 		assessFileB: {0, 5},
 	})
 	dim := testabilityDimensionForTest(modules, facts)
-	if dim.Status != state.Measured || dim.Confidence != state.ConfidenceHigh || dim.Gate != state.GatePass {
-		t.Fatalf("fresh complete coverage = status %q confidence %q gate %q, want measured/high/pass; unknown=%+v", dim.Status, dim.Confidence, dim.Gate, dim.Unknown)
+	if dim.Status != state.Measured || dim.Confidence != state.ConfidenceHigh {
+		t.Fatalf("fresh complete coverage = status %q confidence %q, want measured/high; unknown=%+v", dim.Status, dim.Confidence, dim.Unknown)
 	}
 	if dim.Coverage.Observed != 2 || dim.Coverage.Total != 2 {
 		t.Fatalf("module coverage = %d/%d, want 2/2", dim.Coverage.Observed, dim.Coverage.Total)
@@ -288,8 +287,8 @@ func TestTestabilityZeroTestsAndZeroCoverageIsStillMeasured(t *testing.T) {
 	}
 	assertTestabilityMetric(t, dim, "test_files", 0, -1, -1)
 	assertTestabilityMetric(t, dim, "coverage_ratio", 0, 0, 10)
-	if len(dim.Findings) != 0 || dim.Gate != state.GatePass {
-		t.Fatalf("zero coverage created a finding or moved a gate: findings=%+v gate=%q", dim.Findings, dim.Gate)
+	if len(dim.Findings) != 0 {
+		t.Fatalf("zero coverage created a finding: findings=%+v", dim.Findings)
 	}
 }
 

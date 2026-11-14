@@ -2,59 +2,11 @@ package evaluation
 
 import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
-// RuleEvidence is the acquired evidence rules match against. It is
-// assessment-owned so stage adapters never name a rule implementation type.
-type RuleEvidence struct {
-	PatternMatches []pattern.Match
-	// SyntaxFacts is nil/empty when the syntax pass is off.
-	SyntaxFacts []evidence.SyntaxFact
-	// FileClasses is the source inventory's file classification, without the
-	// files the configuration declared out of scope.
-	FileClasses map[string]fileclass.FileClass
-	// OutOfScopeFiles are the walked files the configuration declared out of
-	// scope (Observations.OutOfScopeFiles).
-	OutOfScopeFiles map[string]struct{}
-	// UnwalkedSourceProduction is Observations.UnwalkedSourceProduction.
-	UnwalkedSourceProduction map[string]bool
-	// UnanalysedFiles, SourceSelectors and CrateOwners are the Observations
-	// fields of the same names; the map completeness check reads them.
-	UnanalysedFiles map[string]struct{}
-	SourceSelectors map[string]string
-	CrateOwners     map[string]string
-	// AddedFiles and UncoveredCauses are the Observations fields of the same
-	// names; the uncovered-change check reads them.
-	AddedFiles      map[string]struct{}
-	UncoveredCauses map[string]string
-	AddedClasses    map[string]fileclass.FileClass
-	AddedUnread     map[string]struct{}
-}
-
-// Ruleset is the compiled policy rule set. Stage adapters build one and hand it
-// back to evaluate; the rule implementations stay inside assessment.
-type Ruleset struct{ rules []rules.Rule }
-
-// NewRuleset compiles the declared policy rules and reports the first
-// configuration error.
-func NewRuleset(cfg policy.RuleConfig) (Ruleset, error) {
-	compiled, err := rules.New(cfg)
-	if err != nil {
-		return Ruleset{}, err
-	}
-	return Ruleset{rules: compiled}, nil
-}
-
-// Len reports how many rules compiled.
-func (r Ruleset) Len() int { return len(r.rules) }
-
-// Metricset is the compiled metric set, built from the same policy the gate
-// evaluates. It hides the metric implementations from stage adapters.
+// Metricset holds the report metrics and hides their implementations from
+// stage adapters.
 type Metricset struct{ metrics []metrics.Metric }
 
 // newMetricset builds the enabled metrics declared by policy.

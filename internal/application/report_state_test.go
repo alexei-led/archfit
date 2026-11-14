@@ -28,7 +28,6 @@ const (
 // shadow state projection reads.
 func stateFixture() result.Result {
 	diagnostic := result.New()
-	diagnostic.Verdict = result.VerdictWarn
 	diagnostic.Head = stateHeadRef
 	diagnostic.ConfigHash = stateConfigHash
 	diagnostic.ClassificationHash = stateClassHash
@@ -68,9 +67,6 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 	if state.Coverage.Unmeasured != report.DimensionCount {
 		t.Errorf("Coverage.Unmeasured = %d, want %d: the fixture measured nothing", state.Coverage.Unmeasured, report.DimensionCount)
 	}
-	if state.Decision.UnknownDimensions != report.DimensionCount {
-		t.Errorf("Decision.UnknownDimensions = %d, want %d", state.Decision.UnknownDimensions, report.DimensionCount)
-	}
 	for _, dim := range state.Dimensions.All() {
 		if len(dim.Unknown) == 0 {
 			t.Errorf("%s is unmeasured with no stated reason", dim.Name)
@@ -82,52 +78,6 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 	}
 }
 
-// TestShadowStateProjectsTheAssessmentVerdict pins that the projection carries
-// the assessment's decision instead of re-deriving one. A renderer must not be
-// able to reach a different conclusion than the run did.
-func TestShadowStateProjectsTheAssessmentVerdict(t *testing.T) {
-	for _, tc := range []struct {
-		name         string
-		verdict      state.Verdict
-		hardGates    state.HardGateState
-		blockers     int
-		wantVerdict  report.StateVerdict
-		wantGates    report.HardGateState
-		wantBlockers int
-	}{
-		{
-			name: "needs attention", verdict: state.NeedsAttention, hardGates: state.HardGatePass,
-			wantVerdict: report.StateNeedsAttention, wantGates: report.HardGatePass,
-		},
-		{
-			name: "blocked by findings", verdict: state.Blocked, hardGates: state.HardGateFail, blockers: 2,
-			wantVerdict: report.StateBlocked, wantGates: report.HardGateFail, wantBlockers: 2,
-		},
-		{
-			name: "blocked with no finding", verdict: state.Blocked, hardGates: state.HardGateFail,
-			wantVerdict: report.StateBlocked, wantGates: report.HardGateFail,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			diagnostic := stateFixture()
-			diagnostic.State.Verdict = tc.verdict
-			diagnostic.State.Decision.HardGates = tc.hardGates
-			diagnostic.State.Decision.ActiveBlockers = tc.blockers
-
-			projected := projectReport(diagnostic, score.Scorecard{}).State
-			if projected.Verdict != tc.wantVerdict {
-				t.Errorf("Verdict = %q, want %q", projected.Verdict, tc.wantVerdict)
-			}
-			if projected.Decision.HardGates != tc.wantGates {
-				t.Errorf("Decision.HardGates = %q, want %q", projected.Decision.HardGates, tc.wantGates)
-			}
-			if projected.Decision.ActiveBlockers != tc.wantBlockers {
-				t.Errorf("Decision.ActiveBlockers = %d, want %d", projected.Decision.ActiveBlockers, tc.wantBlockers)
-			}
-		})
-	}
-}
-
 // TestShadowStateProjectsEveryEnvelopeField pins the assessment-to-report
 // mapping: the two vocabularies are separate by architecture rule, so a field
 // silently dropped here would be invisible everywhere else.
@@ -136,7 +86,6 @@ func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
 	measured := state.NewDimension(state.DimensionStructure, state.OwnerStructure)
 	measured.Status = state.Measured
 	measured.Confidence = state.ConfidenceMedium
-	measured.Gate = state.GateWarn
 	measured.Coverage = state.Coverage{Basis: "edges", Observed: 7, Total: 9}
 	measured.Metrics = []state.MetricValue{{
 		Name: stateMetricEdges, Value: 7, Unit: "count",
@@ -149,7 +98,7 @@ func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
 	got := projectReport(diagnostic, score.Scorecard{}).State.Dimensions.Structure
 	want := report.DimensionState{
 		Name: state.DimensionStructure, Owner: state.OwnerStructure,
-		Status: report.MeasurementMeasured, Confidence: report.ConfidenceMedium, Gate: report.GateWarn,
+		Status: report.MeasurementMeasured, Confidence: report.ConfidenceMedium,
 		Coverage: report.DimensionCoverage{Basis: "edges", Observed: 7, Total: 9},
 		Metrics: []report.MetricValue{{Name: stateMetricEdges, Value: 7, Unit: "count",
 			Denominator: &report.MetricDenominator{Observed: 7, Total: 9}, Provenance: []string{"relationship/analysis"}}},
@@ -187,7 +136,6 @@ func TestShadowStateReferencesFindingsWithoutCopyingThem(t *testing.T) {
 		{ID: "f1", RuleID: "no_internal_access", Kind: report.FindingKindGate, Status: finding.StatusNew},
 		{ID: "f2", RuleID: "bc/imbalanced_coupling", Kind: report.FindingKindAdvisory, Status: finding.StatusNew},
 	}
-	diagnostic.AgentTasks = []result.AgentTask{{FindingID: "f1", RuleID: "no_internal_access"}}
 
 	document := projectReport(diagnostic, score.Scorecard{})
 	state := document.State
@@ -197,9 +145,6 @@ func TestShadowStateReferencesFindingsWithoutCopyingThem(t *testing.T) {
 	}
 	if !reflect.DeepEqual(state.Findings, document.Findings) {
 		t.Errorf("state findings differ from document findings:\n%+v\n%+v", state.Findings, document.Findings)
-	}
-	if len(state.AgentTasks) != 1 || state.AgentTasks[0].FindingID != "f1" {
-		t.Errorf("AgentTasks = %+v, want the assessment-owned task list verbatim", state.AgentTasks)
 	}
 }
 

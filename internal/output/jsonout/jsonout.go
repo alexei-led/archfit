@@ -9,7 +9,7 @@ import (
 )
 
 // Renderer marshals the architecture-state contract as JSON at the document
-// root, so consumers read .verdict, .decision, and .dimensions directly.
+// root. Measurements and repository errors are separate blocks.
 type Renderer struct{}
 
 var _ reportports.Renderer = (*Renderer)(nil)
