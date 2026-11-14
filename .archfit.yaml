@@ -164,7 +164,6 @@ modules:
       - internal/extract/golang
       - internal/extract/rust
       - internal/extract/dotnet
-      - internal/extract/scip
       - internal/extract/astgrep
       - internal/extract/deployunit
       - internal/extract/runtime
