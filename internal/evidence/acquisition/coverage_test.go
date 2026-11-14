@@ -28,7 +28,6 @@ const (
 	toolCargoModules  = "cargo-modules"
 	toolJscpd         = "jscpd"
 	toolLoc           = "loc"
-	toolScip          = "scip"
 	toolAstGrepSyntax = "ast-grep/syntax"
 	toolSupplied      = "supplied-coverage"
 	toolDotNetMSBuild = "dotnet-msbuild"
@@ -1167,29 +1166,6 @@ func TestGoBuildConstraintWarning(t *testing.T) {
 // CB1: skipped-pass coverage rows (P12 — syntax/scip opt-in honesty)
 // ---------------------------------------------------------------------------
 
-// TestSkippedPassCoverageRows_ScipDisabled asserts that when SCIP is not
-// enabled the pipeline injects an explicit StatusDisabled coverage row for
-// "scip" so tool_coverage reads "disabled" rather than absent/missing. This is
-// the regression for P12: the skipped pass was silently absent from the output.
-func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
-	t.Parallel()
-	cov := evidence.Coverage{Tool: toolScip, Status: evidence.StatusDisabled, Reason: acquire.ReasonSCIPDisabled}
-	if cov.Tool != "scip" {
-		t.Fatalf("disabled SCIP coverage tool = %q, want scip", cov.Tool)
-	}
-	if !strings.Contains(cov.Reason, "analyzers.scip.enabled") {
-		t.Fatalf("disabled SCIP reason = %q, want opt-in config path", cov.Reason)
-	}
-
-	// StatusDisabled must not produce a gap (deliberate opt-out, not a missing tool).
-	gaps := acquisition.BuildCoverageGaps([]evidence.Coverage{cov}, config.Config{}.CoverageOptions(), "")
-	if len(gaps) != 0 {
-		t.Errorf("StatusDisabled scip must not produce a gap; got %+v", gaps)
-	}
-}
-
-// TestSkippedPassCoverageRows_SyntaxDisabled asserts that when syntax is not
-// enabled the pipeline injects an explicit StatusDisabled row for "ast-grep/syntax".
 func TestSkippedPassCoverageRows_SyntaxDisabled(t *testing.T) {
 	t.Parallel()
 	cov := []evidence.Coverage{
@@ -1210,7 +1186,6 @@ func TestSkippedPassCoverageRows_ReasonContent(t *testing.T) {
 		reason string
 		wantIn string
 	}{
-		{toolScip, acquire.ReasonSCIPDisabled, "scip"},
 		{toolAstGrepSyntax, acquire.ReasonSyntaxDisabled, "syntax"},
 	}
 	for _, tc := range cases {

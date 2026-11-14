@@ -10,7 +10,6 @@ import (
 func TestDisabledReasonsExplainWhyAndHow(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"scip":   ReasonSCIPDisabled,
 		"syntax": ReasonSyntaxDisabled,
 	}
 	for name, reason := range cases {

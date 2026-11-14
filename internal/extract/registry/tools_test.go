@@ -20,10 +20,10 @@ func names(tools []Tool) []string {
 func TestToolsPerLanguage(t *testing.T) {
 	t.Parallel()
 	want := map[string]struct{ check, report []string }{
-		"go":         {check: []string{}, report: []string{"go", SCIPGo}},
-		"typescript": {check: []string{ToolAstGrep}, report: []string{SCIPTypeScript}},
-		"python":     {check: []string{ToolAstGrep}, report: []string{SCIPPython}},
-		"rust":       {check: []string{ToolCargo, ToolAstGrep}, report: []string{SCIPRust, ToolCargoModules}},
+		"go":         {check: []string{}, report: []string{"go"}},
+		"typescript": {check: []string{ToolAstGrep}, report: nil},
+		"python":     {check: []string{ToolAstGrep}, report: nil},
+		"rust":       {check: []string{ToolCargo, ToolAstGrep}, report: []string{ToolCargoModules}},
 		"dotnet":     {check: []string{cmdDotNet, ToolAstGrep}, report: []string{"archfit-roslyn"}},
 	}
 	for _, lang := range All() {

@@ -31,38 +31,9 @@ type Result struct {
 	SCIPSymbols symbol.Graph
 }
 
-type connascenceResolver interface {
-	Connascence(context.Context, scope.Scope) (map[string][]graph.ConnascenceHint, evidence.Coverage, error)
-}
-
-type dataStrengthResolver interface {
-	DataStrengths(context.Context, scope.Scope) (map[string]string, evidence.Coverage, error)
-}
-
-// Collect runs symbol resolution, extractor acquisition, semantic edge
-// enrichment, graph build, and coverage collation.
+// Collect runs extractors, builds the graph, and collates coverage.
 func Collect(ctx context.Context, in Input) (Result, error) {
 	var coverages []evidence.Coverage
-
-	scipStrength, scipCov, _ := in.Resolver.Strengths(ctx, in.Scope)
-	if scipCov.Tool != "" {
-		coverages = append(coverages, scipCov)
-	}
-
-	var scipConnascence map[string][]graph.ConnascenceHint
-	if cr, ok := in.Resolver.(connascenceResolver); ok {
-		scipConnascence, _, _ = cr.Connascence(ctx, in.Scope)
-	}
-
-	var scipData map[string]string
-	if dr, ok := in.Resolver.(dataStrengthResolver); ok {
-		scipData, _, _ = dr.DataStrengths(ctx, in.Scope)
-	}
-
-	scipSymbols, scipSymCov, _ := in.Resolver.Symbols(ctx, in.Scope)
-	if scipSymCov.Tool != "" {
-		coverages = append(coverages, scipSymCov)
-	}
 
 	var allFacts []graph.Facts
 	var extractErrs []error
@@ -77,7 +48,6 @@ func Collect(ctx context.Context, in Input) (Result, error) {
 			extractErrs = append(extractErrs, err)
 			continue
 		}
-		enrichEdges(ctx, in.Resolver, scipStrength, scipData, scipConnascence, f)
 		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
 	}
@@ -86,55 +56,5 @@ func Collect(ctx context.Context, in Input) (Result, error) {
 	}
 	g := graph.Build(allFacts)
 	coverages = append(coverages, in.ExtraCoverage...)
-	return Result{Graph: g, Coverages: coverages, SCIPSymbols: scipSymbols}, nil
-}
-
-func enrichEdges(ctx context.Context, sr evidenceports.SymbolResolver, scipStrength, scipData map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) {
-	for i, e := range facts.Edges {
-		fromFile := stripPrefix(e.From)
-		toPath := stripPrefix(e.To)
-		realPath, _ := sr.Resolve(ctx, fromFile, toPath)
-		if realPath != toPath {
-			prefix := e.To[:len(e.To)-len(toPath)]
-			facts.Edges[i].To = prefix + realPath
-		}
-		key := fromFile + "\x00" + toPath
-		if hints := scipConnascence[key]; len(hints) > 0 {
-			facts.Edges[i].ConnascenceHints = appendGraphConnascenceHints(facts.Edges[i].ConnascenceHints, hints...)
-		}
-		if e.Language == graph.LangGo && e.StrengthHint != "" {
-			continue
-		}
-		st, found := scipStrength[key]
-		if found {
-			facts.Edges[i].StrengthHint = st
-		}
-		if ds := scipData[key]; ds != "" {
-			facts.Edges[i].DataStrengthHint = ds
-		}
-	}
-}
-
-func appendGraphConnascenceHints(dst []graph.ConnascenceHint, hints ...graph.ConnascenceHint) []graph.ConnascenceHint {
-	seen := make(map[graph.ConnascenceHint]struct{}, len(dst)+len(hints))
-	for _, h := range dst {
-		seen[h] = struct{}{}
-	}
-	for _, h := range hints {
-		if _, ok := seen[h]; ok {
-			continue
-		}
-		seen[h] = struct{}{}
-		dst = append(dst, h)
-	}
-	return dst
-}
-
-func stripPrefix(id string) string {
-	for i := 0; i < len(id); i++ {
-		if id[i] == ':' {
-			return id[i+1:]
-		}
-	}
-	return id
+	return Result{Graph: g, Coverages: coverages}, nil
 }

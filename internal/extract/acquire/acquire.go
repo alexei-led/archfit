@@ -12,9 +12,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/v3/internal/extract/loc"
 	"github.com/alexei-led/archfit/v3/internal/extract/manifest"
-	"github.com/alexei-led/archfit/v3/internal/extract/registry"
 	runtimedetect "github.com/alexei-led/archfit/v3/internal/extract/runtime"
-	"github.com/alexei-led/archfit/v3/internal/extract/scip"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
 	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
@@ -27,11 +25,6 @@ import (
 const (
 	toolAstGrepSyntax = "ast-grep/syntax"
 )
-
-// ReasonSCIPDisabled is the published Reason on the StatusDisabled coverage row
-// this package emits when the opt-in SCIP pass is off. Exported so tests assert
-// the shipped text rather than a copy of it.
-const ReasonSCIPDisabled = "off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength"
 
 // ReasonSyntaxDisabled is the published Reason on the StatusDisabled coverage
 // row this package emits when the opt-in syntax pass is off.
@@ -51,11 +44,9 @@ type Options struct {
 	CloneTimeout  time.Duration
 	// Languages are the language ids not turned off; clone detection
 	// compares only their source files.
-	Languages   []string
-	SCIPEnabled bool
-	SCIPTimeout time.Duration
-	Syntax      evidenceports.SyntaxConfig
-	GoExtract   evidenceports.ExtractConfig
+	Languages []string
+	Syntax    evidenceports.SyntaxConfig
+	GoExtract evidenceports.ExtractConfig
 }
 
 // Result contains neutral evidence and adapter ports for one pipeline run.
@@ -112,17 +103,6 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 	out.ExtraCoverage = append(out.ExtraCoverage, cloneCoverage)
 
 	out.Resolver = evidenceports.NopSymbolResolver{}
-	if opts.SCIPEnabled {
-		adapter := scip.New(runner, opts.SCIPTimeout)
-		adapter.Cache = facts
-		adapter.GoWorkOff = registry.GoWorkOff(root, opts.GoExtract)
-		out.Resolver = adapter
-	} else {
-		out.ExtraCoverage = append(out.ExtraCoverage, evidence.Coverage{
-			Tool: "scip", Status: evidence.StatusDisabled, Reason: ReasonSCIPDisabled,
-		})
-	}
-
 	out.Syntax = evidenceports.NopSyntaxProvider{}
 	if opts.Syntax.Enabled {
 		adapter := astgrep.New(runner)

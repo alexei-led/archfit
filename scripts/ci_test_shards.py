@@ -17,11 +17,9 @@ import sys
 DEFAULT_COST = 1.2
 
 # Too slow to shard by package, and split by test name across their own runners
-# instead (see the CI job): the CLI package is 56s on its own, and the SCIP
-# package swings between 20s and 78s because its Rust tests compile a workspace.
+# instead (see the CI job): the CLI package is 56s on its own.
 SPLIT = (
     "github.com/alexei-led/archfit/v3/cmd/archfit",
-    "github.com/alexei-led/archfit/v3/internal/extract/scip",
 )
 
 # Measured warm per-package seconds, slowest first. Refresh with the "Run tests"

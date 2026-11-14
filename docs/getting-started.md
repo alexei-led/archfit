@@ -117,10 +117,9 @@ docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.2.0 \
   check --config /repo/.archfit.yaml
 ```
 
-The complete image includes the locked Go, TypeScript/JavaScript, Python, Rust, and .NET toolchains,
-syntax and clone tools, language-specific SCIP indexers, and the Roslyn helper (`archfit-roslyn`).
-Python import analysis and the SCIP
-reader use an installed isolated environment; no analyzer package installation is needed at run time.
+The complete image includes Node, Python, Rust, the .NET SDK, syntax and clone tools, cargo-modules, and the Roslyn helper (`archfit-roslyn`).
+Go is build-only and is not present in the final image.
+No analyzer package installation is needed at run time.
 See [Languages and tools](languages.md) for exact versions, optional execution, and limits.
 
 The image runs as a non-root user and supports an arbitrary numeric UID with `HOME=/tmp`.

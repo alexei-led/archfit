@@ -232,9 +232,7 @@ func (c *DoctorCmd) runFix(ctx context.Context, deps *appDeps) error {
 
 func (c *DoctorCmd) installPy(ctx context.Context, deps *appDeps) error {
 	_, _ = fmt.Fprintln(deps.Stdout, "python tools:")
-	// Only the optional SCIP reader needs Python through uv. Import extraction
-	// uses ast-grep and never starts a Python runtime.
-	return c.ensureTool(ctx, deps, "uv", "uv", "https://docs.astral.sh/uv/getting-started/installation/")
+	return c.ensureTool(ctx, deps, "ast-grep", "ast-grep", "https://ast-grep.github.io/guide/quick-start.html")
 }
 
 func (c *DoctorCmd) installTS(ctx context.Context, deps *appDeps) error {

@@ -71,7 +71,7 @@ archfit report                # for owners: the state of the repository
 
 Read the policy `init` writes, then open a pull request with it. Run `archfit check` in CI. See [Getting started](docs/getting-started.md).
 
-The Docker image includes the locked Go, TypeScript/JavaScript, Python, Rust, and .NET toolchains, plus ast-grep, SCIP indexers, jscpd, cargo-modules, and the Roslyn helper (`archfit-roslyn`). Deeper analyzers remain configuration-controlled. See [Getting started](docs/getting-started.md#use-docker) for details.
+The Docker image includes Node, Python, Rust, the .NET SDK, ast-grep, jscpd, cargo-modules, and the Roslyn helper (`archfit-roslyn`). Go is build-only. Deeper analyzers remain configuration-controlled. See [Getting started](docs/getting-started.md#use-docker) for details.
 
 ## Documentation
 

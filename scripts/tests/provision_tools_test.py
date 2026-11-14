@@ -2,7 +2,6 @@
 """Provisioning regressions; stdlib only and no network."""
 
 import json
-import re
 import unittest
 from pathlib import Path
 
@@ -29,27 +28,22 @@ class ProvisionToolsTest(unittest.TestCase):
         self.assertNotIn("nodesource", dockerfile.lower())
         self.assertNotIn("npm install -g", dockerfile)
         self.assertNotIn("COPY --from=go-builder /usr/local/go", dockerfile)
-        self.assertIn("ARCHFIT_TOOL_PYTHON=/opt/archfit/python/bin/python", dockerfile)
+        self.assertNotIn("ARCHFIT_TOOL_PYTHON", dockerfile)
         self.assertIn("/opt/archfit/analyzers/node/node_modules/.bin", dockerfile)
         for line in dockerfile.splitlines():
             if line.startswith("FROM "):
                 self.assertRegex(line, r"@sha256:[0-9a-f]{64}")
 
-    def test_manifest_consumers_and_hash_locked_python(self):
+    def test_manifest_keeps_runtime_pins_and_removes_scip(self):
         manifest = json.loads((ROOT / "tools/manifest.json").read_text())
         self.assertEqual(manifest["versions"]["python"], "3.14.9")
         self.assertEqual(manifest["versions"]["rust"], "1.99.1")
-        self.assertEqual(
-            manifest["python"],
-            {"protobuf": "7.36.2", "grpcio-tools": "1.84.1"},
-        )
-        lock = (ROOT / "tools/python/requirements.lock").read_text()
-        self.assertNotIn("grimp", lock)
-        for package, version in manifest["python"].items():
-            self.assertIn(f"{package}=={version}", lock)
-        for entry in re.split(r"\n(?=[a-z])", lock):
-            if "==" in entry:
-                self.assertIn("--hash=sha256:", entry)
+        self.assertNotIn("scip-go", manifest["versions"])
+        self.assertNotIn("python", manifest)
+        self.assertNotIn("@sourcegraph/scip-typescript", manifest["node"])
+        self.assertNotIn("@sourcegraph/scip-python", manifest["node"])
+        for artifacts in manifest["artifacts"].values():
+            self.assertNotIn("rust-analyzer", artifacts)
 
 
 if __name__ == "__main__":

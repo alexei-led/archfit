@@ -30,8 +30,7 @@ A callable hint does not raise a `public:` target above `contract`. Data evidenc
 can raise it to `model` for a concrete non-DTO type, field, variable, constant,
 or method on a concrete receiver. A DTO remains `contract`. An `intrusive` hint
 raises it to `intrusive`: a C# `internal` member used through
-`InternalsVisibleTo`, a Python private name, or a private symbol that SCIP
-resolves. Intrusive coupling integrates through details not meant for
+`InternalsVisibleTo` or a Python private name. Intrusive coupling integrates through details not meant for
 integration. A `public:` glob declares a file's intended surface, so it cannot
 make such a use a contract. An
 `internal:` match stays `intrusive` regardless of hints. Without sufficient evidence, strength is
@@ -174,16 +173,14 @@ Only production source of the languages that are not turned off can form a
 clone pair: Go, TypeScript and JavaScript, Python, Rust, and C#. Lock files,
 templates, Dockerfiles, scripts, test files, and generated files never do.
 
-SCIP refines symbol-level hints for TypeScript, Python, and Rust. Go uses
-`go/types` data. .NET uses Roslyn compiler symbols from the `archfit-roslyn` helper. SCIP cannot identify a method receiver, so concrete-method data
-evidence is available only for Go.
+Go uses `go/types` data for report hints. .NET uses Roslyn compiler symbols from the `archfit-roslyn` helper.
 
 Published-language coupling between services has no type edge and is not
 measured in any language: message records duplicated in each service, a
 `.proto` that another project compiles directly, and HTTP or YARP runtime calls.
 Clone evidence can catch duplicated records; the rest stays outside the graph.
 
-TypeScript without SCIP treats runtime imports as functional unless a target
+TypeScript treats runtime imports as functional unless a target
 matches a `public:` glob. Runtime async evidence is report-only. It does not
 change distance or gate results. Unknown facts can lower confidence or leave a
 dimension partial. See [evidence](evidence.md) for claim boundaries and

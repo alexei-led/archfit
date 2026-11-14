@@ -3,8 +3,7 @@
 # TypeScript dependency nodes are repo-relative file paths, so module paths and
 # rule from/to use file-path globs. Each workspace package is a module; cross-
 # package imports must go through the package entry point (public), not deep
-# internal files. Install ast-grep and, for semantic strength
-# (SCIP coupling-strength hints), run `npm ci` so node_modules exists.
+# internal files. Install ast-grep; project dependencies are not required.
 #   archfit analyze --config .archfit.yaml
 version: 2
 coupling:

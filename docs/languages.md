@@ -23,12 +23,12 @@ The TypeScript and Python check and report use `ast-grep` with a built-in resolv
 | Language | Do this first | Configure when auto-detection is wrong |
 | --- | --- | --- |
 | Go | a `go.mod` (or a supported `go.work`); install `go` and resolve dependencies only for typed report detail | `languages.go.modules` to select workspace members, `exclude` for generated trees |
-| TypeScript / JavaScript | `git` and `ast-grep`; project dependencies are not needed for imports | `analyzers.scip` for symbol-level strength, `exclude` for generated code |
+| TypeScript / JavaScript | `git` and `ast-grep`; project dependencies are not needed for imports | `exclude` for generated code |
 | Python | `git` and `ast-grep`; no Python interpreter or installed project dependencies | `languages.python.package` to select one package instead of discovering flat or `src/` packages |
 | Rust | a root `Cargo.toml` and `cargo` | `languages.rust.manifest`, `languages.rust.features`, `languages.rust.include_dev_deps` |
 | .NET | the `dotnet` SDK on `PATH`, and `ARCHFIT_DOTNET_ROSLYN` set to the absolute path of the built Roslyn helper, outside the target (`make dotnet-roslyn`). Restore NuGet packages (`dotnet restore`) in the environment that runs archfit; archfit never restores, and unrestored package symbols leave projects `partial`. Network is optional, but without it MSBuild SDKs resolved through NuGet cannot load | `languages.dotnet.projects` to select solutions or projects, `analyzers.roslyn.enabled: false` for the project-only graph (map and report only; .NET rule gates need the helper, which the image ships) |
 
-The shipped image contains Node for optional SCIP tools, Python for the optional SCIP reader (without grimp), Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
+The shipped image contains Node, Python, Rust, the .NET SDK with the Roslyn helper, ast-grep, jscpd, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
 
 ## When evidence is absent, disabled, or partial
 
@@ -44,8 +44,7 @@ Every analyzer reports one status per tool in `coverage.tools[]`. The status tel
 
 The partial results people hit first:
 
-- **TypeScript / JavaScript.** A `tsimports` partial row names unresolved imports or unread `tsconfig` inputs. Fix the import or make `extends` a relative path inside the repository. Package-based `extends` is not read, even if dependencies are installed; affected bare imports remain unknown. Optional `scip-typescript` needs `node_modules`.
-- **Rust.** `Rust target attribution partial` means rust-analyzer saw symbols it cannot pin to exactly one Cargo target (macros, generated code, several targets). Crate-level structure is still measured. Narrow `languages.rust.manifest` to the workspace you care about, or set `analyzers.scip.enabled: false` to rely on crate-level coupling only.
+- **TypeScript / JavaScript.** A `tsimports` partial row names unresolved imports or unread `tsconfig` inputs. Fix the import or make `extends` a relative path inside the repository. Package-based `extends` is not read, even if dependencies are installed; affected bare imports remain unknown.
 - **.NET.** `N of M projects partial, K failed, U unresolved symbols` on the `roslyn` row means packages or reference packs are missing: restore the projects in the environment that runs archfit, or install the targeting pack the reason names. `MSB4236` on the `dotnet-msbuild` row means an MSBuild SDK resolved through NuGet could not be fetched, whether `global.json` `msbuild-sdks` lists it or the project pins it inline (`<Project Sdk="Aspire.AppHost.Sdk/13.6.0">`): run with NuGet access. `NETSDK1147: workload X not installed` means a MAUI, Android, or iOS project needs an SDK workload: run `dotnet workload install X` on the host, or exclude the project. `NETSDK1178` means the workload packs do not exist for this host's OS: analyze on a host that has them, or exclude the project.
 
 ### Go
@@ -80,7 +79,7 @@ Standard-library and third-party imports are external. A first-party module with
 
 The report does not infer symbol/type strength from import spelling. Duplicate bodies for one dotted module, such as `app.py` and `app/__init__.py`, do not prove both source files were scanned.
 
-The image still sets `ARCHFIT_TOOL_PYTHON` to its locked Python environment for the optional SCIP reader only, with `protobuf` and `grpcio-tools`. Python imports do not read that variable. CI's src-layout `testdata/python314` regression checks the parser producer, the real forbidden import and complete rule evaluation; native image jobs also verify that grimp is not installed.
+CI checks the src-layout `testdata/python314` regression and verifies that grimp is absent from the image.
 
 ### Rust
 
@@ -88,15 +87,11 @@ Archfit runs `cargo metadata --format-version 1 --no-deps`. Each workspace membe
 
 The default graph is crate-level. One crate alone has no internal dependency edges. Set `languages.rust.manifest` to use a non-root manifest or to require Rust analysis when no root manifest exists. Set `languages.rust.features` to pass Cargo features to metadata discovery.
 
-`archfit config init` and `archfit config update --apply` add Rust deep-analysis defaults when they find a root `Cargo.toml`. These defaults enable `analyzers.cargo_modules` and `analyzers.scip`.
-
-`cargo-modules` adds intra-crate module nodes and `uses` edges. `rust-analyzer` produces SCIP symbols for more precise edge strength. Install `cargo-modules` to use the first pass. Install the Rust Analyzer component to use the second. `uv` is also required to read SCIP indexes. Missing tools create coverage gaps and do not fail the run.
+The optional `cargo-modules` tool adds intra-crate module nodes and `uses` edges. Missing tools create coverage gaps.
 
 Rust selectors use package names from `Cargo.toml`, such as `grep-cli`. With cargo-modules,
 module names use target crate identifiers, such as `grep_cli::args`; custom lib/bin target names
 can differ from the package name. Cover both vocabularies when the policy uses both graph levels.
-SCIP joins use Cargo target metadata. When rust-analyzer cannot distinguish multi-target symbols,
-Archfit abstains and reports partial attribution instead of inventing a module identity.
 Bench/example-only targets can lack a supported module graph; read the named coverage gap.
 
 ### .NET
@@ -233,22 +228,14 @@ Enable optional tools under `analyzers`. `roslyn` is the exception: it is on unl
 | Tool | Evidence | Required program |
 | --- | --- | --- |
 | `ast-grep` | Structural patterns and embedded syntax rules | `ast-grep` executable |
-| `scip` | Language-specific symbol and edge-strength evidence | `scip-go`, `scip-typescript`, `scip-python`, or `rust-analyzer`, plus `uv` |
 | `clones` | Duplicate-code evidence | `jscpd` |
 | `cargo_modules` | Rust intra-crate module graph | `cargo-modules` |
 | `dotnet-msbuild` | .NET project graph from MSBuild evaluation. Reported in `coverage.tools[]`; configured by `languages.dotnet`, not under `analyzers` | `dotnet` SDK |
 | `roslyn` | .NET type-level file graph and coupling strength | `dotnet` SDK and the `archfit-roslyn` helper (`ARCHFIT_DOTNET_ROSLYN`) |
 
-SCIP indexers are language-specific. Install the matching indexer for the language under analysis. TypeScript SCIP needs a data-only TypeScript project and installed target dependencies to resolve imports. For JavaScript, provide a `tsconfig.json` with `allowJs: true`. .NET has no SCIP indexer; the Roslyn helper supplies its strength hints. Archfit invokes tools found on `PATH`.
-
-The v3.2 image includes all listed tools except the .NET SDK and the Roslyn helper, which images after v3.2.3 add. Optional execution is still controlled by `analyzers`;
-installation alone does not enable it. Generated Rust configurations already enable cargo-modules
-and SCIP. The [tool manifest](../tools/manifest.json) and dependency locks own the image/CI versions.
-See the [Dockerfile](../Dockerfile) for native SDK and runtime provisioning.
+The release image includes the listed tools. Optional execution is controlled by `analyzers`. The [tool manifest](../tools/manifest.json) and dependency locks own image and CI versions. See the [Dockerfile](../Dockerfile) for provisioning.
 
 Use `archfit doctor` to inspect tool discovery. A missing optional tool leaves its dependent evidence unavailable. A missing required language tool makes that language's evidence incomplete or causes the required-tool check to fail.
-
-Tool discovery does not execute the pinned Python analyzer environment. When uv's Python downloads are disabled, provide Python 3.14 separately and read the analysis coverage to confirm that the producer ran.
 
 ## Install analyzers
 
@@ -261,28 +248,22 @@ The complete release image is the simplest fixed tool environment. The tool vers
 | .NET SDK | 10.0.402 |
 | archfit-roslyn / Microsoft.CodeAnalysis | 1.1.0 / 5.6.0 |
 | ast-grep / jscpd | 0.51.0 / 5.4.2 |
-| scip-go / scip-typescript / scip-python | 0.2.9 / 0.5.2 / 0.6.8 |
-| Rust, Cargo, rust-src, bundled rust-analyzer | 1.99.1 |
+| Rust, Cargo, rust-src | 1.99.1 |
 | cargo-modules | 0.28.0 |
 
-Use the Rust component listed here, not the newer standalone rust-analyzer with a different SCIP
-namespace. SCIP Python has an older semantic core: a nonempty index does not guarantee complete
-Python 3.14 type/grammar support. Python import-rule evidence comes from `pyimports`, not SCIP.
-
 For a host CLI, use a separate owned tool directory outside every target checkout. From this
-release's source checkout, `make host-tools` installs the Node and Python locks without target
+release's source checkout, `make host-tools` installs the Node lock without target
 project hooks. It uses `~/.local/share/archfit-tools` unless you set `HOST_TOOLS_DIR`:
 
 ```sh
 make host-tools
 prefix="$HOME/.local/share/archfit-tools"
 export PATH="$prefix/node/node_modules/.bin:$PATH"
-export ARCHFIT_TOOL_PYTHON="$prefix/python/bin/python"
 ```
 
 That `PATH` line puts the locked `sg` and `jscpd` ahead of your own. Link only the tools you need if you prefer not to change `PATH`.
 
-Optional SCIP tooling needs a compatible owned Node interpreter on `PATH`; do not launch it through a target package-manager script. For host Rust/Go semantic tools, install the manifest versions using the
+For host Rust/Go semantic tools, install the manifest versions using the
 official platform toolchains (`rust-src` is required). `scripts/ci-provision-tools.sh` is Linux
 build/CI provisioning, not a portable runtime installer. Never install target dependencies as part
 of the Python import producer. Runtime tool discovery does not certify the complete environment.
