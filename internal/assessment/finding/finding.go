@@ -43,8 +43,6 @@ const (
 const (
 	// RuleIDBCImbalanced is the balanced-coupling advisory.
 	RuleIDBCImbalanced = modelrule.RuleIDBCImbalancedCoupling
-	// RuleIDDuplicatedKnowledge is the clone-only coupling advisory.
-	RuleIDDuplicatedKnowledge = modelrule.RuleIDDuplicatedKnowledge
 	// RuleIDMapUncoveredPath is the map completeness finding: production
 	// source no declared module owns. module_review.gate: fail makes it a
 	// gate finding.

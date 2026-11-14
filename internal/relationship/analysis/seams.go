@@ -19,9 +19,6 @@ type seamInput struct {
 	Graph           *graph.Graph
 	// Tree is the containment tree of the classified module map.
 	Tree classify.Containment
-	// ClonePairs are the clone facts. A pair whose modules share an import edge
-	// attaches to that seam; a clone-only pair has no seam and is ignored here.
-	ClonePairs []relationship.ClonePair
 }
 
 // buildSeams groups the classified cross-boundary edges into one record per
@@ -31,9 +28,8 @@ type seamInput struct {
 // seam can be expressed by forty imports, and counting the imports reports it
 // as forty times the risk of an identical seam written once (plan R4).
 //
-// Only source-graph edges between two resolved modules take part. A clone-only
-// duplicated-knowledge pair has no import edge, so it is not a seam; it keeps
-// its own report block. An edge whose target left the declared modules has no
+// Only source-graph edges between two resolved modules take part. An edge
+// whose target left the declared modules has no
 // second module, so it is external dependency hygiene, not an internal seam.
 func buildSeams(in seamInput) []relationship.Seam {
 	acc := map[string]*seamAccumulator{}
@@ -58,7 +54,6 @@ func buildSeams(in seamInput) []relationship.Seam {
 		}
 		a.add(e, classify.CohesiveRole(in.Config.Modules[e.FromModule].Role))
 	}
-	attachCloneFacts(acc, in.ClonePairs)
 	sort.Strings(order)
 	volatility := classify.VolatilityProvenanceByModule(in.Graph, in.DeclaredModules, in.Config)
 	out := make([]relationship.Seam, 0, len(order))
@@ -96,10 +91,6 @@ type seamAccumulator struct {
 	// is the driving edge, so strength, volatility, reason and qualification all
 	// describe the same edge.
 	qualWorst *relationship.Edge
-	// worstClone is set when a clone fact outscores every edge: the driving fact
-	// is then symmetric coupling with no import edge behind it.
-	worstClone *relationship.ClonePair
-	cloneFacts int
 }
 
 // qualifyingEdgeCap bounds the repair evidence a seam keeps. A seam can be
@@ -213,7 +204,7 @@ func (a *seamAccumulator) seam(in seamInput, volatility map[string]classify.Modu
 
 // applyDrivingFact sets the fields that describe the seam's driving fact: the
 // lowest-balance qualifying edge when the seam qualifies, else the lowest-balance
-// scored edge or clone fact. Strength, volatility, quadrant and hypothesis then
+// scored edge. Strength, volatility, quadrant and hypothesis then
 // all describe the same fact a reader can go and look at.
 func (a *seamAccumulator) applyDrivingFact(s *relationship.Seam, toDef policy.ModuleDef, cohesive bool) {
 	in := relationship.HypothesisInput{TargetPublic: len(toDef.Public) > 0, CohesiveRole: cohesive}
@@ -222,10 +213,6 @@ func (a *seamAccumulator) applyDrivingFact(s *relationship.Seam, toDef policy.Mo
 		e := a.qualWorst
 		s.Strength, s.Volatility = e.Strength, e.Volatility
 		in.Strength, in.Volatility, in.Band = e.Strength, e.Volatility, e.Classified.Score.Band
-	case a.worstClone != nil:
-		c := a.worstClone
-		s.Strength, s.Volatility = relationship.StrengthSymmetric, c.Volatility
-		in.Strength, in.Volatility, in.Band, in.Clone = relationship.StrengthSymmetric, c.Volatility, c.Classified.Score.Band, true
 	case a.worst != nil:
 		e := a.worst
 		s.Strength, s.Volatility = e.Strength, e.Volatility
@@ -269,58 +256,6 @@ func lowerEdge(e, cur *relationship.Edge) bool {
 		return ed > cd
 	}
 	return e.FromID+"\x00"+e.ToID < cur.FromID+"\x00"+cur.ToID
-}
-
-// attachCloneFacts adds each connected clone pair to one seam. A pair between A
-// and B attaches to A→B or B→A, whichever exists; when both exist, to the seam
-// whose ID sorts first. A clone fact scores like an edge (symmetric, D=9, the
-// worse volatility of the pair) and can set the seam's severity and hypothesis.
-// It counts in scored edges, never in edges, and it never makes a seam qualify.
-func attachCloneFacts(acc map[string]*seamAccumulator, pairs []relationship.ClonePair) {
-	for i := range pairs {
-		p := &pairs[i]
-		if !p.Connected {
-			continue
-		}
-		fwd, rev := acc[p.FromModule+"\x00"+p.ToModule], acc[p.ToModule+"\x00"+p.FromModule]
-		target := fwd
-		switch {
-		case fwd == nil:
-			target = rev
-		case rev != nil && relationship.SeamID(rev.from, rev.to) < relationship.SeamID(fwd.from, fwd.to):
-			target = rev
-		}
-		if target != nil {
-			target.addClone(p)
-		}
-	}
-}
-
-func (a *seamAccumulator) addClone(p *relationship.ClonePair) {
-	a.cloneFacts++
-	sc := p.Classified.Score
-	if !sc.Scored || sc.Balance <= 0 {
-		a.abstained++
-		return
-	}
-	a.scored++
-	a.balances = append(a.balances, sc.Balance)
-	if severityRank(sc.Band) > severityRank(a.severity) {
-		a.severity = sc.Band
-	}
-	if sc.Band == relationship.SeverityCritical {
-		a.critical++
-	}
-	if sc.Band == relationship.SeverityCritical || sc.Band == relationship.SeverityHigh {
-		a.highOrWorse++
-	}
-	// A clone fact is symmetric (S=9): at an equal balance it outranks an edge of
-	// lower strength, as lowerEdge does between edges.
-	if a.worst == nil || sc.Balance < a.worst.Classified.Score.Balance ||
-		(sc.Balance == a.worst.Classified.Score.Balance && sc.Breakdown.StrengthValue > a.worstStrength) {
-		a.worstClone = p
-		a.worstStrength, a.worstDistOr = sc.Breakdown.StrengthValue, sc.Breakdown.DistanceValue
-	}
 }
 
 // qualifyingEdges returns the distributed-monolith edges in endpoint-ID order,

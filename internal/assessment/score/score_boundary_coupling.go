@@ -21,8 +21,7 @@ const (
 // Vlad Khononov's balance formula from _Balancing Coupling in Software Design_ Ch10.
 //
 // When a ClassifiedEdgeSummary is supplied (populated from the full coupling.Index
-// before advisory filtering, plus score-bearing clone-only duplicated-knowledge
-// pairs when configured), the value comes from the mean book balance over all
+// before advisory filtering), the value comes from the mean book balance over all
 // scored cross-boundary coupling facts:
 //
 //	value = round(100 × (MeanBalance − 1) / 9)
@@ -41,9 +40,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *result.ClassifiedE
 
 	// Degenerate import graph: <2 modules joined by dependency edges. That is
 	// unmeasurable only when the classified summary has no internal cross-boundary
-	// coupling facts either. Clone-only duplicated knowledge is deliberately a
-	// score-bearing coupling fact without an import edge, so it must be allowed to
-	// reach the summary path.
+	// coupling facts either.
 	if degenerateGraph(mi) && (summary == nil || summary.Scored+summary.Abstained == 0) {
 		dim.Band = BandNA
 		dim.Confidence = ConfidenceLow
@@ -78,11 +75,6 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *result.ClassifiedE
 			dim.Evidence = []string{
 				"0 scored internal cross-boundary edges — coupling balance unconfirmed (edge classification absent or all edges abstained)",
 				fmt.Sprintf("worst-case (critical band) edges: %d", worst),
-			}
-			if summary.CloneOnlyScored > 0 || summary.CloneOnlyAdvisory > 0 {
-				dim.Evidence = append(dim.Evidence,
-					fmt.Sprintf("clone-only duplicated-knowledge pairs: %d scored, %d advisory-only",
-						summary.CloneOnlyScored, summary.CloneOnlyAdvisory))
 			}
 			if summary.External > 0 {
 				dim.Evidence = append(dim.Evidence,
@@ -225,11 +217,6 @@ func appendTailRiskEvidence(evidence []string, summary *result.ClassifiedEdgeSum
 		fmt.Sprintf("tail risk: worst balance %d/10, lower-decile balance %d/10, high-or-worse edges %d/%d (%d%%), critical %d, distributed-monolith %d",
 			tr.WorstBalance, tr.LowerDecileBalance, tr.HighOrWorseEdges, summary.Scored,
 			tr.HighOrWorseSharePct, tr.CriticalEdges, tr.DistributedMonolithEdges))
-	if tr.CloneOnlyScored > 0 {
-		evidence = append(evidence,
-			fmt.Sprintf("clone-only tail: worst balance %d/10, high-or-worse %d/%d scored clone-only pairs",
-				tr.CloneOnlyWorstBalance, tr.CloneOnlyHighOrWorseEdges, tr.CloneOnlyScored))
-	}
 	return evidence
 }
 
@@ -262,9 +249,6 @@ func appendCouplingEvidence(evidence []string, summary *result.ClassifiedEdgeSum
 	evidence = append(evidence, capReasons...)
 	if summary.DeclaredExternal > 0 {
 		evidence = append(evidence, fmt.Sprintf("%d declared external-system edges scored at D=10 (external_systems)", summary.DeclaredExternal))
-	}
-	if summary.CloneOnlyScored > 0 || summary.CloneOnlyAdvisory > 0 {
-		evidence = append(evidence, fmt.Sprintf("clone-only duplicated-knowledge pairs: %d scored, %d advisory-only", summary.CloneOnlyScored, summary.CloneOnlyAdvisory))
 	}
 	if summary.External > 0 {
 		evidence = append(evidence, fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))

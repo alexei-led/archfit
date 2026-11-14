@@ -3,18 +3,15 @@ package acquire
 
 import (
 	"context"
-	"time"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/extract/astgrep"
-	"github.com/alexei-led/archfit/v3/internal/extract/clones"
 	"github.com/alexei-led/archfit/v3/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/v3/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/v3/internal/extract/loc"
 	"github.com/alexei-led/archfit/v3/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/v3/internal/extract/runtime"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
-	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/policy"
@@ -30,23 +27,13 @@ const (
 // row this package emits when the opt-in syntax pass is off.
 const ReasonSyntaxDisabled = "off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface"
 
-var cloneTestGenGlobs = []string{
-	"**/*_test.go", "**/*_test.ts", "**/*_test.py", "**/mock_*.go", "**/*_mock.go",
-	"**/*_moq.go", "**/*.pb.go", "**/*_gen.go", "**/mocks/**", "**/__mocks__/**",
-}
-
 // Options contains projected adapter configuration for one acquisition run.
 type Options struct {
-	Exclusions    []string
-	FileClass     syntax.FileClassConfig
-	ModuleMap     policy.ModuleMap
-	ClonesEnabled bool
-	CloneTimeout  time.Duration
-	// Languages are the language ids not turned off; clone detection
-	// compares only their source files.
-	Languages []string
-	Syntax    evidenceports.SyntaxConfig
-	GoExtract evidenceports.ExtractConfig
+	Exclusions []string
+	FileClass  syntax.FileClassConfig
+	ModuleMap  policy.ModuleMap
+	Syntax     evidenceports.SyntaxConfig
+	GoExtract  evidenceports.ExtractConfig
 }
 
 // Result contains neutral evidence and adapter ports for one pipeline run.
@@ -59,12 +46,10 @@ type Result struct {
 	RuntimeConfidence       string
 	DeployUnitsByModule     map[string]string
 	CorroboratedDeployUnits map[string]evidence.CorroboratedDeployUnit
-	DuplicationClusters     []clone.Cluster
 	ExtraCoverage           []evidence.Coverage
 	Resolver                evidenceports.SymbolResolver
 	Syntax                  evidenceports.SyntaxProvider
 	LOCError                error
-	CloneError              error
 }
 
 // Collect runs auxiliary evidence adapters without leaking their concrete types to the CLI.
@@ -94,13 +79,6 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 		out.DeployUnitsByModule[module] = fact.Unit
 	}
 	out.ExtraCoverage = append(out.ExtraCoverage, deployResult.Coverage)
-
-	cloneExclusions := append(append([]string(nil), opts.Exclusions...), cloneTestGenGlobs...)
-	var cloneCoverage evidence.Coverage
-	out.DuplicationClusters, cloneCoverage, out.CloneError = clones.Run(
-		ctx, runner, root, opts.ClonesEnabled, opts.CloneTimeout, cloneExclusions, opts.Languages, facts,
-	)
-	out.ExtraCoverage = append(out.ExtraCoverage, cloneCoverage)
 
 	out.Resolver = evidenceports.NopSymbolResolver{}
 	out.Syntax = evidenceports.NopSyntaxProvider{}

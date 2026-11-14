@@ -175,7 +175,6 @@ func relate(acquired Acquired) relationship.AnalysisResult {
 	facts, runCtx := acquired.Facts, acquired.Context
 	return analysis.Analyze(analysis.Input{
 		Graph: facts.Graph, Policy: runCtx.Policy.Relationship,
-		CloneClusters: facts.Clones, FileClassIndex: facts.FileClassIndex,
 		RuntimeSites: facts.RuntimeAsyncSites, RuntimeConfidence: facts.RuntimeConfidence,
 		DynamicImportSites: facts.DynamicImports,
 	})

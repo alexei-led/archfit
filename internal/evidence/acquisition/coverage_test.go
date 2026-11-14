@@ -26,7 +26,6 @@ const (
 	toolPythonImports = "pyimports"
 	toolCargo         = "cargo"
 	toolCargoModules  = "cargo-modules"
-	toolJscpd         = "jscpd"
 	toolLoc           = "loc"
 	toolAstGrepSyntax = "ast-grep/syntax"
 	toolSupplied      = "supplied-coverage"
@@ -117,23 +116,23 @@ func TestBuildCoverageGaps(t *testing.T) {
 			cov: []evidence.Coverage{
 				{Tool: toolPythonImports, Status: evidence.StatusAbsent},
 				{Tool: toolGoPackages, Status: evidence.StatusAbsent},
-				{Tool: toolJscpd, Status: evidence.StatusAbsent},
+				{Tool: toolCargoModules, Status: evidence.StatusAbsent},
 			},
 			cfg:       cfgWarn,
-			wantTools: []string{toolGoPackages, toolJscpd, toolPythonImports},
+			wantTools: []string{toolCargoModules, toolGoPackages, toolPythonImports},
 		},
 		{
 			// A tool disabled by config (StatusDisabled) must NOT produce a coverage
 			// gap — the user deliberately opted out; telling them to "install" is wrong.
 			name:      "disabled-by-config tool produces no gap",
-			cov:       []evidence.Coverage{{Tool: toolJscpd, Status: evidence.StatusDisabled}},
+			cov:       []evidence.Coverage{{Tool: toolCargoModules, Status: evidence.StatusDisabled}},
 			cfg:       cfgWarn,
 			wantTools: nil,
 		},
 		{
 			// Partial coverage is informational, not an install prompt.
 			name:      "partial tool produces no gap",
-			cov:       []evidence.Coverage{{Tool: toolJscpd, Status: evidence.StatusPartial}},
+			cov:       []evidence.Coverage{{Tool: toolCargoModules, Status: evidence.StatusPartial}},
 			cfg:       cfgWarn,
 			wantTools: nil,
 		},
@@ -738,7 +737,7 @@ func testMarkDisabledPrimaries(t *testing.T) {
 	t.Run("non-primary and non-absent rows are untouched", func(t *testing.T) {
 		t.Parallel()
 		in := []evidence.Coverage{
-			{Tool: toolJscpd, Status: evidence.StatusAbsent},
+			{Tool: toolCargoModules, Status: evidence.StatusAbsent},
 			{Tool: toolDepCruiser, Status: evidence.StatusOK},
 		}
 		cov := acquisition.MarkDisabledPrimaries(in, off.CoverageOptions(), tsDir)

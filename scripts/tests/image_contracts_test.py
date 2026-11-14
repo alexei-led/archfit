@@ -23,7 +23,7 @@ class ImageContractsTest(unittest.TestCase):
             with patch.object(contract, "run") as run:
                 image.inventory(contract)
             script = run.call_args.args[2]
-            for name in ("depcruise", "scip-go", "scip-typescript", "scip-python", "rust-analyzer"):
+            for name in ("depcruise", "scip-go", "scip-typescript", "scip-python", "rust-analyzer", "jscpd"):
                 with self.subTest(tool=name):
                     probe = next(part for part in script.split(";") if f"command -v {name}" in part)
                     tool = root / name

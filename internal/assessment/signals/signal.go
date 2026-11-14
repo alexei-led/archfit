@@ -4,7 +4,6 @@ package signal
 
 import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/symbol"
@@ -22,9 +21,6 @@ type SizeSignals struct {
 	FileClassIndex map[string]fileclass.FileClass
 }
 
-// DuplicationSignals carries the clone facts assessment metrics read.
-type DuplicationSignals struct{ Clusters []clone.Cluster }
-
 // DynamicImportSignals carries the dynamic-import facts assessment reports.
 type DynamicImportSignals struct{ Sites []evidence.DynamicImportSite }
 
@@ -39,7 +35,6 @@ type RuntimeAsyncSignals struct {
 // evidence snapshot itself.
 type RunSignals struct {
 	Size           SizeSignals
-	Duplication    DuplicationSignals
 	ExtraCoverage  []evidence.Coverage
 	DynamicImports DynamicImportSignals
 	RuntimeAsync   RuntimeAsyncSignals
@@ -102,10 +97,9 @@ type CommonInput struct {
 // a run. It never reaches metric logic directly — the engine projects it to the
 // common input each metric declares via AsCommon below.
 type CollectedSignals struct {
-	Common      CommonInput
-	Symbol      SymbolSignals
-	Size        SizeSignals
-	Duplication DuplicationSignals
+	Common CommonInput
+	Symbol SymbolSignals
+	Size   SizeSignals
 }
 
 // AsCommon projects to the common input.

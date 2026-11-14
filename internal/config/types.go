@@ -161,9 +161,7 @@ type CouplingConfig struct {
 	// well-designed codebases; high/critical surface only intrusive/functional
 	// coupling across large boundaries.
 	MinSeverity string `yaml:"min_severity,omitempty"`
-	// DuplicatedKnowledge controls clone-only duplicated knowledge (cross-module
-	// clone pairs with no import edge). "score" (default) includes those pairs in
-	// coupling_balance; "advisory" preserves the v4 report-only behavior.
+	// DuplicatedKnowledge retains a retired Archfit 3 setting for conversion.
 	DuplicatedKnowledge policy.DuplicatedKnowledgePolicy `yaml:"duplicated_knowledge,omitempty"`
 	// VolatilityCascade enables the book Ch9 propagation pass: a module strongly
 	// coupled to a high-effective-volatility module inherits raised effective

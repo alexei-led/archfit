@@ -20,25 +20,12 @@ type ExternalSystemDef struct {
 	Volatility string `yaml:"volatility,omitempty"`
 }
 
-// DuplicatedKnowledgePolicy controls whether clone-only duplicated knowledge
-// enters the headline coupling_balance score or remains advisory-only.
+// DuplicatedKnowledgePolicy preserves the retired Archfit 3 YAML values for conversion.
 type DuplicatedKnowledgePolicy string
 
 const (
-	// DuplicatedKnowledgePolicyScore includes clone-only cross-module pairs in
-	// coupling_balance as symmetric-strength coupling facts. This is the default
-	// v5 policy: the book's Ch7 duplicated-knowledge case affects the flagship score.
+	// DuplicatedKnowledgePolicyScore is the retired score mode.
 	DuplicatedKnowledgePolicyScore DuplicatedKnowledgePolicy = "score"
-	// DuplicatedKnowledgePolicyAdvisory preserves the v4 behavior: clone-only
-	// pairs emit bc/duplicated_knowledge advisories but stay out of coupling_balance.
+	// DuplicatedKnowledgePolicyAdvisory is the retired advisory mode.
 	DuplicatedKnowledgePolicyAdvisory DuplicatedKnowledgePolicy = "advisory"
 )
-
-// NormalizeDuplicatedKnowledgePolicy applies the default policy for omitted YAML and
-// direct literals. Empty means score.
-func NormalizeDuplicatedKnowledgePolicy(p DuplicatedKnowledgePolicy) DuplicatedKnowledgePolicy {
-	if p == "" {
-		return DuplicatedKnowledgePolicyScore
-	}
-	return p
-}

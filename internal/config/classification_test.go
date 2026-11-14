@@ -43,7 +43,7 @@ var leafClasses = map[string]leafClass{
 	"coverage.gate":                  classProfile, // same, through the supplied-coverage producer status
 	"ai":                             classGovernance,
 	"coupling.min_severity":          classGovernance, // filters advisories, not facts
-	"coupling.duplicated_knowledge":  classClassification,
+	"coupling.duplicated_knowledge":  classGovernance, // retained only for Archfit 3 conversion
 	"coupling.volatility_cascade":    classClassification,
 	"coupling.gate":                  classGovernance,
 	"layers":                         classGovernance, // findings and seam policy; module layer is model
@@ -215,7 +215,7 @@ func TestClassificationHashFollowsTheLeafClasses(t *testing.T) {
 		{"coupling gate", classificationBaseYAML + "coupling:\n  gate:\n    distributed_monolith: {mode: fail}\n", false},
 		{"metric gate", classificationBaseYAML + "metrics:\n  cycle: {gate: warn}\n", false},
 		{"volatility cascade", classificationBaseYAML + "coupling:\n  volatility_cascade: true\n", true},
-		{"duplicated knowledge", classificationBaseYAML + "coupling:\n  duplicated_knowledge: advisory\n", true},
+		{"retired duplicated knowledge", classificationBaseYAML + "coupling:\n  duplicated_knowledge: advisory\n", false},
 		{"external system", classificationBaseYAML + "external_systems:\n  aws: {targets: [\"aws/**\"], volatility: high}\n", true},
 		{"function loc threshold", classificationBaseYAML + "metrics:\n  function_loc_threshold: 80\n", true},
 		{"metric disabled", classificationBaseYAML + "metrics:\n  cycle: {enabled: false}\n", true},

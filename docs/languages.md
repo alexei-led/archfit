@@ -28,7 +28,7 @@ The TypeScript and Python check and report use `ast-grep` with a built-in resolv
 | Rust | a root `Cargo.toml` and `cargo` | `languages.rust.manifest`, `languages.rust.features`, `languages.rust.include_dev_deps` |
 | .NET | the `dotnet` SDK on `PATH`, and `ARCHFIT_DOTNET_ROSLYN` set to the absolute path of the built Roslyn helper, outside the target (`make dotnet-roslyn`). Restore NuGet packages (`dotnet restore`) in the environment that runs archfit; archfit never restores, and unrestored package symbols leave projects `partial`. Network is optional, but without it MSBuild SDKs resolved through NuGet cannot load | `languages.dotnet.projects` to select solutions or projects, `analyzers.roslyn.enabled: false` for the project-only graph (map and report only; .NET rule gates need the helper, which the image ships) |
 
-The shipped image contains Node, Python, Rust, the .NET SDK with the Roslyn helper, ast-grep, jscpd, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
+The shipped image contains Node, Python, Rust, the .NET SDK with the Roslyn helper, ast-grep and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
 
 ## When evidence is absent, disabled, or partial
 
@@ -117,7 +117,7 @@ Coupling strength comes from compiler symbols. The extractor emits hints and doe
 
 The strongest use wins per file pair. Data uses (`model`, `dto`) also travel in a separate data channel, which lifts a `public:` target from `contract` to `model` for a concrete type. An `intrusive` hint lifts a `public:` target to `intrusive`: an `internal` constructor in a file under a `public:` glob is still not part of the published surface. A `dto` stays `contract` across a `public:` glob and reads `model` elsewhere. Known gap: invoking a delegate stored in a field counts as a data use.
 
-Only compiler-resolved type references become edges. Published-language coupling between services is not measured: integration-event records duplicated per service, a `.proto` file that another project compiles directly (eShop `WebApp` compiles `Basket.API`'s), and HTTP, gRPC, or YARP calls resolved at runtime produce no type edge. See [coupling](coupling.md#clones-and-limits).
+Only compiler-resolved type references become edges. Published-language coupling between services is not measured: integration-event records duplicated per service, a `.proto` file that another project compiles directly (eShop `WebApp` compiles `Basket.API`'s), and HTTP, gRPC, or YARP calls resolved at runtime produce no type edge. See [coupling](coupling.md#copies-and-limits).
 
 The `intrusive` hint feeds the `encapsulation` metric. `InternalsVisibleTo` declarations are reported as coverage detail only; a declaration is not a usage edge.
 
@@ -228,7 +228,6 @@ Enable optional tools under `analyzers`. `roslyn` is the exception: it is on unl
 | Tool | Evidence | Required program |
 | --- | --- | --- |
 | `ast-grep` | Structural patterns and embedded syntax rules | `ast-grep` executable |
-| `clones` | Duplicate-code evidence | `jscpd` |
 | `cargo_modules` | Rust intra-crate module graph | `cargo-modules` |
 | `dotnet-msbuild` | .NET project graph from MSBuild evaluation. Reported in `coverage.tools[]`; configured by `languages.dotnet`, not under `analyzers` | `dotnet` SDK |
 | `roslyn` | .NET type-level file graph and coupling strength | `dotnet` SDK and the `archfit-roslyn` helper (`ARCHFIT_DOTNET_ROSLYN`) |
@@ -247,7 +246,7 @@ The complete release image is the simplest fixed tool environment. The tool vers
 | Go (build-only; absent from the final image) | 1.27.4 |
 | .NET SDK | 10.0.402 |
 | archfit-roslyn / Microsoft.CodeAnalysis | 1.1.0 / 5.6.0 |
-| ast-grep / jscpd | 0.51.0 / 5.4.2 |
+| ast-grep | 0.51.0 |
 | Rust, Cargo, rust-src | 1.99.1 |
 | cargo-modules | 0.28.0 |
 
@@ -261,7 +260,7 @@ prefix="$HOME/.local/share/archfit-tools"
 export PATH="$prefix/node/node_modules/.bin:$PATH"
 ```
 
-That `PATH` line puts the locked `sg` and `jscpd` ahead of your own. Link only the tools you need if you prefer not to change `PATH`.
+That `PATH` line puts the locked `sg` ahead of your own. Link only the tools you need if you prefer not to change `PATH`.
 
 For host Rust/Go semantic tools, install the manifest versions using the
 official platform toolchains (`rust-src` is required). `scripts/ci-provision-tools.sh` is Linux

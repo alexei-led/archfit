@@ -21,7 +21,7 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 		ByDistanceBasis: in.ByDistanceBasis, ByVolatility: in.ByVolatility, BySeverity: in.BySeverity,
 		ByBalanceDriver: in.ByBalanceDriver, ByCriticalDriver: in.ByCriticalDriver, ByModulePair: in.ByModulePair,
 		DistributedMonolith: in.DistributedMonolith, External: in.External, DeclaredExternal: in.DeclaredExternal,
-		ConnectedModules: in.ConnectedModules, CloneOnlyScored: in.CloneOnlyScored, CloneOnlyAdvisory: in.CloneOnlyAdvisory,
+		ConnectedModules: in.ConnectedModules,
 	}
 	if in.VolatilityProvenance != nil {
 		out.VolatilityProvenance = &result.VolatilityProvenance{Declared: in.VolatilityProvenance.Declared, Inherited: in.VolatilityProvenance.Inherited, Cascade: in.VolatilityProvenance.Cascade, Undeclared: in.VolatilityProvenance.Undeclared}
@@ -41,7 +41,7 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 	}
 	if in.TailRisk != nil {
 		t := in.TailRisk
-		out.TailRisk = &result.CouplingTailRiskSummary{WorstBalance: t.WorstBalance, LowerDecileBalance: t.LowerDecileBalance, HighOrWorseEdges: t.HighOrWorseEdges, HighOrWorseSharePct: t.HighOrWorseSharePct, CriticalEdges: t.CriticalEdges, DistributedMonolithEdges: t.DistributedMonolithEdges, CloneOnlyScored: t.CloneOnlyScored, CloneOnlyHighOrWorseEdges: t.CloneOnlyHighOrWorseEdges, CloneOnlyWorstBalance: t.CloneOnlyWorstBalance}
+		out.TailRisk = &result.CouplingTailRiskSummary{WorstBalance: t.WorstBalance, LowerDecileBalance: t.LowerDecileBalance, HighOrWorseEdges: t.HighOrWorseEdges, HighOrWorseSharePct: t.HighOrWorseSharePct, CriticalEdges: t.CriticalEdges, DistributedMonolithEdges: t.DistributedMonolithEdges}
 	}
 	return out
 }

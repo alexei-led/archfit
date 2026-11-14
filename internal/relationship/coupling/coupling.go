@@ -98,12 +98,6 @@ type ConnascenceEvidence struct {
 	Detail string          `json:"detail,omitempty"`
 }
 
-// Location is a report-only file location attached to coupling evidence.
-type Location struct {
-	File string `json:"file"`
-	Line int    `json:"line,omitempty"`
-}
-
 // Explicitness classifies whether the coupling is via a declared contract.
 type Explicitness string
 
@@ -162,14 +156,6 @@ type Classification struct {
 	// DistanceBasis records which signal drove the composite distance.
 	// Report-only — not fed into severity or scoring.
 	DistanceBasis DistanceBasis `json:"distance_basis,omitempty"`
-	// CloneLocations carries the real duplicated-code file:line locations (both
-	// sides) that drove a Symmetric-strength upgrade from cross-module clone
-	// detection. Populated only when the upgrade actually fired from a clone
-	// pair (classify.go); empty for edges whose Symmetric strength came from any
-	// other source, including an extractor's Symmetric StrengthHint. Report-only
-	// — appended onto the finding's Locations downstream (engine/advisories.go),
-	// never fed into distance/volatility/scoring.
-	CloneLocations []Location `json:"clone_locations,omitempty"`
 	// Connascence carries deterministic static connascence evidence for this edge.
 	// The evidence is report-only: it never sets strength, distance or volatility.
 	Connascence []ConnascenceEvidence `json:"connascence,omitempty"`

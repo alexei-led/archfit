@@ -31,7 +31,6 @@ var coverageToolConfigKey = buildCoverageToolConfigKey()
 
 func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
-		toolJscpd:                 "clones",
 		registry.ToolCargoModules: "cargo-modules",
 		registry.ToolRoslyn:       "roslyn",
 		suppliedcoverage.ToolName: suppliedcoverage.ToolName,
@@ -63,7 +62,6 @@ var toolAffectedMetrics = buildToolAffectedMetrics()
 
 func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
-		toolJscpd:                 {"npm install -g jscpd", []string{metricCouplingBalance}},
 		registry.ToolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{metricCycle, metricBlastRadius, metricEncapsulation}},
 		registry.ToolRoslyn:       {"build the helper with `make dotnet-roslyn` and set ARCHFIT_DOTNET_ROSLYN to its directory (the image sets it)", []string{metricCouplingBalance, metricEncapsulation}},
 		suppliedcoverage.ToolName: {"provide the configured coverage artifact", []string{"testability"}},

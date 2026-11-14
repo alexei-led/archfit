@@ -69,23 +69,18 @@ type ClassifiedEdgeSummary struct {
 	External                       int                         `json:"external,omitempty"`
 	DeclaredExternal               int                         `json:"declared_external,omitempty"`
 	ConnectedModules               int                         `json:"connected_modules,omitempty"`
-	CloneOnlyScored                int                         `json:"clone_only_scored,omitempty"`
-	CloneOnlyAdvisory              int                         `json:"clone_only_advisory,omitempty"`
 	VolatilityProvenance           *VolatilityProvenance       `json:"volatility_provenance,omitempty"`
 	DistanceCompression            *DistanceCompressionSummary `json:"distance_compression,omitempty"`
 }
 
 // CouplingTailRiskSummary records lower-tail relationship statistics.
 type CouplingTailRiskSummary struct {
-	WorstBalance              int `json:"worst_balance"`
-	LowerDecileBalance        int `json:"lower_decile_balance"`
-	HighOrWorseEdges          int `json:"high_or_worse_edges"`
-	HighOrWorseSharePct       int `json:"high_or_worse_share_pct"`
-	CriticalEdges             int `json:"critical_edges"`
-	DistributedMonolithEdges  int `json:"distributed_monolith_edges"`
-	CloneOnlyScored           int `json:"clone_only_scored,omitempty"`
-	CloneOnlyHighOrWorseEdges int `json:"clone_only_high_or_worse_edges,omitempty"`
-	CloneOnlyWorstBalance     int `json:"clone_only_worst_balance,omitempty"`
+	WorstBalance             int `json:"worst_balance"`
+	LowerDecileBalance       int `json:"lower_decile_balance"`
+	HighOrWorseEdges         int `json:"high_or_worse_edges"`
+	HighOrWorseSharePct      int `json:"high_or_worse_share_pct"`
+	CriticalEdges            int `json:"critical_edges"`
+	DistributedMonolithEdges int `json:"distributed_monolith_edges"`
 }
 
 // DistanceCompressionSummary records deterministic distance-ladder coverage.

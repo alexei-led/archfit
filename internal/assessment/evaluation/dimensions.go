@@ -71,7 +71,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 // dimensionForRule routes report advisories to the measurement they describe.
 func dimensionForRule(ruleID string) string {
 	switch ruleID {
-	case finding.RuleIDBCImbalanced, finding.RuleIDDuplicatedKnowledge:
+	case finding.RuleIDBCImbalanced:
 		return state.DimensionCoupling
 	default:
 		return state.DimensionIntent
@@ -388,7 +388,6 @@ func couplingDimension(diag *result.Result) state.Dimension {
 			Provenance:  []string{provRelationship}},
 		count("abstained_edges", ce.Abstained, provRelationship),
 		count("declared_external_edges", ce.DeclaredExternal, provRelationship),
-		count("clone_only_seams", ce.CloneOnlyScored, provRelationship),
 	}
 	if tail := ce.TailRisk; tail != nil {
 		dim.Metrics = append(dim.Metrics,

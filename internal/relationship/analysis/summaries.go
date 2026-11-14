@@ -13,7 +13,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/relationship/scoring"
 )
 
-func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePair, duplicated policy.DuplicatedKnowledgePolicy, tree classify.Containment, modules map[string]policy.ModuleDef) *relationship.ClassifiedEdgeSummary {
+func buildClassifiedSummary(set relationship.Set, tree classify.Containment, modules map[string]policy.ModuleDef) *relationship.ClassifiedEdgeSummary {
 	s := &relationship.ClassifiedEdgeSummary{ByStrength: map[string]int{}, ByDistance: map[string]int{}, ByDistanceBasis: map[string]int{}, ByVolatility: map[string]int{}, BySeverity: map[string]int{}, ByBalanceDriver: map[string]int{}, ByCriticalDriver: map[string]int{}, ByModulePair: map[string]int{}, DistanceCompression: distanceCompression()}
 	firstParty := make(map[string]bool, len(set.Nodes))
 	for _, n := range set.Nodes {
@@ -66,32 +66,12 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePai
 		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, qualifies)
 		unrated.addEdge(e.Classified, e.Distance, e.Volatility, e.Strength, e.FromModule, e.ToModule, modules)
 		addDriver(s, e.Classified, e.Distance, e.FromModule, e.ToModule)
-		tail.add(e.Classified, e.Distance, false, qualifies)
+		tail.add(e.Classified, e.Distance, qualifies)
 		if e.Distance != relationship.DistanceSameModule && e.Distance != relationship.DistanceUnknown {
 			connected[e.FromModule] = struct{}{}
 			connected[e.ToModule] = struct{}{}
 		}
 		span.add(tree, e.FromModule, e.ToModule, e.Distance)
-	}
-	if policy.NormalizeDuplicatedKnowledgePolicy(duplicated) == policy.DuplicatedKnowledgePolicyScore {
-		for _, p := range clones {
-			if !p.Connected {
-				s.CloneOnlyScored++
-			}
-			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, false)
-			unrated.addEdge(p.Classified, p.Distance, p.Volatility, relationship.StrengthSymmetric, p.FromModule, p.ToModule, modules)
-			addDriver(s, p.Classified, p.Distance, p.FromModule, p.ToModule)
-			tail.add(p.Classified, p.Distance, !p.Connected, false)
-			connected[p.FromModule] = struct{}{}
-			connected[p.ToModule] = struct{}{}
-			span.add(tree, p.FromModule, p.ToModule, p.Distance)
-		}
-	} else {
-		for _, p := range clones {
-			if !p.Connected {
-				s.CloneOnlyAdvisory++
-			}
-		}
 	}
 	for k := range connected {
 		if k != "" {
@@ -166,8 +146,8 @@ func addDriver(s *relationship.ClassifiedEdgeSummary, c relationship.Classificat
 }
 
 type tailAccumulator struct {
-	balances                                                        []int
-	high, critical, distributed, cloneScored, cloneHigh, cloneWorst int
+	balances                    []int
+	high, critical, distributed int
 }
 
 // add records one scored CROSS-BOUNDARY edge. Same-module and unknown-distance
@@ -176,22 +156,13 @@ type tailAccumulator struct {
 // 505-edge numerator over a 362-edge denominator. Band "none" (balance 9-10) is
 // a well-balanced cross-boundary edge and belongs in the balance distribution —
 // it is what makes WorstBalance and LowerDecileBalance honest.
-func (a *tailAccumulator) add(c relationship.Classification, distance relationship.Distance, clone, qualifies bool) {
+func (a *tailAccumulator) add(c relationship.Classification, distance relationship.Distance, qualifies bool) {
 	if !c.Score.Scored || distance == relationship.DistanceSameModule || distance == relationship.DistanceUnknown || c.Score.Balance <= 0 {
 		return
 	}
 	a.balances = append(a.balances, c.Score.Balance)
-	if clone {
-		a.cloneScored++
-		if a.cloneWorst == 0 || c.Score.Balance < a.cloneWorst {
-			a.cloneWorst = c.Score.Balance
-		}
-	}
 	if c.Score.Band == relationship.SeverityHigh || c.Score.Band == relationship.SeverityCritical {
 		a.high++
-		if clone {
-			a.cloneHigh++
-		}
 	}
 	if c.Score.Band == relationship.SeverityCritical {
 		a.critical++
@@ -210,7 +181,7 @@ func (a tailAccumulator) result(total int) *relationship.CouplingTailRiskSummary
 	if total > 0 {
 		share = a.high * 100 / total
 	}
-	return &relationship.CouplingTailRiskSummary{WorstBalance: a.balances[0], LowerDecileBalance: a.balances[rank-1], HighOrWorseEdges: a.high, HighOrWorseSharePct: share, CriticalEdges: a.critical, DistributedMonolithEdges: a.distributed, CloneOnlyScored: a.cloneScored, CloneOnlyHighOrWorseEdges: a.cloneHigh, CloneOnlyWorstBalance: a.cloneWorst}
+	return &relationship.CouplingTailRiskSummary{WorstBalance: a.balances[0], LowerDecileBalance: a.balances[rank-1], HighOrWorseEdges: a.high, HighOrWorseSharePct: share, CriticalEdges: a.critical, DistributedMonolithEdges: a.distributed}
 }
 
 func distanceCompression() *relationship.DistanceCompressionSummary {

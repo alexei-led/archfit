@@ -96,13 +96,12 @@ type Summary struct {
 }
 
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
-// coupling.Index produced by classify.Run plus score-bearing clone-only
-// duplicated-knowledge pairs when that policy is enabled. Stdlib-only (no
+// coupling.Index produced by classify.Run. Stdlib-only (no
 // coupling imports). Populated in engine.go; consumed by score.go to drive
 // coupling_balance.
 type ClassifiedEdgeSummary struct {
 	// Total is the total classified coupling fact count (all graph edges,
-	// including same_module, plus scored clone-only pairs when enabled).
+	// including same_module).
 	Total int `json:"total"`
 	// Scored is the count of cross-boundary edges with a concrete book balance
 	// (Scored=true on EdgeScore, i.e. strength and distance both known).
@@ -162,16 +161,7 @@ type ClassifiedEdgeSummary struct {
 	// in scored/abstained cross-boundary coupling facts. It feeds confidence only:
 	// a tiny connected module sample cannot claim high-confidence architecture health.
 	ConnectedModules int `json:"connected_modules,omitempty"`
-	// CloneOnlyScored counts clone-only duplicated-knowledge pairs included in
-	// coupling_balance by coupling.duplicated_knowledge: score. They are
-	// score-bearing coupling facts, not graph import edges.
-	CloneOnlyScored int `json:"clone_only_scored,omitempty"`
-	// CloneOnlyAdvisory counts clone-only duplicated-knowledge pairs held out of
-	// coupling_balance by coupling.duplicated_knowledge: advisory. They may still
-	// emit bc/duplicated_knowledge advisories after severity/status filtering.
-	CloneOnlyAdvisory int `json:"clone_only_advisory,omitempty"`
-	// VolatilityProvenance counts MODULES (not edges) by the source of their
-	// volatility. Nil when no modules were resolved.
+	// VolatilityProvenance counts modules by the source of their volatility.
 	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`
 	// DistanceCompression discloses which book distance rungs this deterministic
 	// instrumentation implements and which middle rungs remain compressed instead
@@ -183,15 +173,12 @@ type ClassifiedEdgeSummary struct {
 // cross-boundary coupling facts. Lower book balance is worse, so WorstBalance
 // and LowerDecileBalance expose concentrated hot spots that MeanBalance can hide.
 type CouplingTailRiskSummary struct {
-	WorstBalance              int `json:"worst_balance"`
-	LowerDecileBalance        int `json:"lower_decile_balance"`
-	HighOrWorseEdges          int `json:"high_or_worse_edges"`
-	HighOrWorseSharePct       int `json:"high_or_worse_share_pct"`
-	CriticalEdges             int `json:"critical_edges"`
-	DistributedMonolithEdges  int `json:"distributed_monolith_edges"`
-	CloneOnlyScored           int `json:"clone_only_scored,omitempty"`
-	CloneOnlyHighOrWorseEdges int `json:"clone_only_high_or_worse_edges,omitempty"`
-	CloneOnlyWorstBalance     int `json:"clone_only_worst_balance,omitempty"`
+	WorstBalance             int `json:"worst_balance"`
+	LowerDecileBalance       int `json:"lower_decile_balance"`
+	HighOrWorseEdges         int `json:"high_or_worse_edges"`
+	HighOrWorseSharePct      int `json:"high_or_worse_share_pct"`
+	CriticalEdges            int `json:"critical_edges"`
+	DistributedMonolithEdges int `json:"distributed_monolith_edges"`
 }
 
 // DistanceCompressionSummary records archfit's deterministic distance-ladder

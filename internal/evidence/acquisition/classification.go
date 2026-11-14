@@ -13,8 +13,8 @@ import (
 )
 
 // ClassificationHash fingerprints the policy leaves that change the compared
-// facts without being modules: the volatility cascade, the duplicated-knowledge
-// mode, the declared external systems, the function-size threshold, and the
+// facts without being modules: the volatility cascade, the declared external
+// systems, the function-size threshold, and the
 // metrics switched off with `enabled: false`.
 //
 // Comparability reads this hash, never the raw config bytes. Comments, waivers,
@@ -28,7 +28,6 @@ func ClassificationHash(p policy.PolicySnapshot) string {
 		_, _ = io.WriteString(h, strings.Join(parts, "\x01")+"\x00")
 	}
 	write("cascade", strconv.FormatBool(p.Relationship.VolatilityCascadeEnabled))
-	write("duplicated_knowledge", string(policy.NormalizeDuplicatedKnowledgePolicy(p.Relationship.DuplicatedKnowledge)))
 	write("function_loc_threshold", strconv.Itoa(p.Assessment.FunctionLOCThreshold))
 	disabled := make([]string, 0, len(p.Gates.Metrics))
 	for name, cfg := range p.Gates.Metrics {

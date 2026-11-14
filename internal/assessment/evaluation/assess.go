@@ -6,7 +6,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
 	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
-	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/symbol"
@@ -32,7 +31,6 @@ type Observations struct {
 	// project-level producer cannot falsely complete a report dimension.
 	ScopedDependencyEvidence map[string]ScopedDependencyEvidence
 	FileFacts                []modevidence.FileFact
-	Clones                   []clone.Cluster
 	DynamicImports           []modevidence.DynamicImportSite
 	RuntimeAsyncSites        []modevidence.RuntimeAsyncSite
 	RuntimeConfidence        string
@@ -154,7 +152,6 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 func runSignals(f Observations) signal.RunSignals {
 	return signal.RunSignals{
 		Size:           signal.SizeSignals{FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex},
-		Duplication:    signal.DuplicationSignals{Clusters: f.Clones},
 		DynamicImports: signal.DynamicImportSignals{Sites: f.DynamicImports},
 		RuntimeAsync:   signal.RuntimeAsyncSignals{Sites: f.RuntimeAsyncSites, Confidence: f.RuntimeConfidence},
 		DeprecatedDeps: f.DeprecatedDeps,

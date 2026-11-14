@@ -530,8 +530,7 @@ func validateGate(field, gate string) error {
 
 // Default returns a Config suitable for use when no archfit.yaml is present.
 // All language modes are auto, coupling advisory minimum severity is medium,
-// clone-only duplicated knowledge is score-bearing, and no modules, layers, or
-// rules are defined — only metric checks run.
+// and no modules, layers, or rules are defined — only metric checks run.
 func Default() Config {
 	return Config{
 		Version: SchemaVersion,

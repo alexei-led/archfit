@@ -287,7 +287,6 @@ func TestDoctorJSONToolGroups(t *testing.T) {
 		"git":      {Group: toolGroupCheck},
 		"ast-grep": {Group: toolGroupCheck, Languages: []string{config.LangTypeScript, config.LangPython, config.LangRust, config.LangDotNet}},
 		"go":       {Group: toolGroupReport, Languages: []string{config.LangGo}},
-		"jscpd":    {Group: toolGroupReport},
 	} {
 		got := rows[name]
 		if got.Group != want.Group || !slices.Equal(got.Languages, want.Languages) {

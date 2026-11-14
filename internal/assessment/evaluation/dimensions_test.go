@@ -253,7 +253,6 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 	t.Parallel()
 	tests := []struct{ ruleID, want string }{
 		{finding.RuleIDBCImbalanced, state.DimensionCoupling},
-		{finding.RuleIDDuplicatedKnowledge, state.DimensionCoupling},
 		{"staleness", state.DimensionIntent},
 	}
 	for _, tc := range tests {

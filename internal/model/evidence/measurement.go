@@ -18,7 +18,7 @@ func MeasurementContract(tool string) (semantics string, external bool) {
 		return "scip.v3", true
 	case "go/packages", "dependency-cruiser", "scip-symbols", "ast-grep/syntax", "cargo-modules":
 		return tool + ".v2", true
-	case "cargo", "ast-grep", "jscpd", "dotnet-msbuild", "roslyn":
+	case "cargo", "ast-grep", "dotnet-msbuild", "roslyn":
 		return tool + ".v1", true
 	case "pyimports", "tsimports":
 		return tool + ".v1", true

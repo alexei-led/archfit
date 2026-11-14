@@ -226,26 +226,6 @@ func TestCouplingBalance_EmptyEdges(t *testing.T) {
 		}
 	})
 
-	t.Run("degenerate import graph + scored clone-only evidence still measures", func(t *testing.T) {
-		degen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 0, "n/a", "low")}
-		summary := &result.ClassifiedEdgeSummary{
-			Scored:           1,
-			MeanBalance:      6,
-			CloneOnlyScored:  1,
-			ConnectedModules: 2,
-		}
-		got := couplingBalance(nil, degen, summary)
-		if got.Band == BandNA {
-			t.Fatal("band = n/a with scored clone-only duplicated knowledge; clone-only pairs must enter coupling_balance even without import edges")
-		}
-		if got.Value == 0 {
-			t.Fatal("value = 0 with scored clone-only duplicated knowledge; want measured coupling_balance")
-		}
-		if !evidenceContains(got.Evidence, "clone-only duplicated-knowledge pairs: 1 scored, 0 advisory-only") {
-			t.Errorf("expected clone-only evidence, got: %v", got.Evidence)
-		}
-	})
-
 	t.Run("blast_radius disabled by config is NOT degeneracy — scored summary still measures", func(t *testing.T) {
 		summary := &result.ClassifiedEdgeSummary{Scored: 10, MeanBalance: 8.2}
 		got := couplingBalance(nil, metricIndex{}, summary)
@@ -543,57 +523,26 @@ func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
 	}
 }
 
-func TestCouplingBalance_CloneOnlyEvidenceString(t *testing.T) {
-	nonDegen := nonDegenMetricIndex()
-	sum := &result.ClassifiedEdgeSummary{
-		Total:             3,
-		Scored:            3,
-		MeanBalance:       7.0,
-		BySeverity:        map[string]int{sevLow: 3},
-		CloneOnlyScored:   2,
-		CloneOnlyAdvisory: 1,
-	}
-
-	got := couplingBalance(nil, nonDegen, sum)
-	found := false
-	for _, ev := range got.Evidence {
-		if strings.Contains(ev, "clone-only duplicated-knowledge pairs: 2 scored, 1 advisory-only") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected clone-only policy counts in evidence, got: %v", got.Evidence)
-	}
-}
-
 func TestCouplingBalance_TailRiskEvidenceString(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 	sum := &result.ClassifiedEdgeSummary{
-		Total:             20,
-		Scored:            20,
-		MeanBalance:       8.5,
-		BySeverity:        map[string]int{sevLow: 18, sevCritical: 2},
-		CloneOnlyScored:   4,
-		CloneOnlyAdvisory: 1,
+		Total:       20,
+		Scored:      20,
+		MeanBalance: 8.5,
+		BySeverity:  map[string]int{sevLow: 18, sevCritical: 2},
 		TailRisk: &result.CouplingTailRiskSummary{
-			WorstBalance:              3,
-			LowerDecileBalance:        5,
-			HighOrWorseEdges:          2,
-			HighOrWorseSharePct:       10,
-			CriticalEdges:             1,
-			DistributedMonolithEdges:  1,
-			CloneOnlyScored:           4,
-			CloneOnlyHighOrWorseEdges: 1,
-			CloneOnlyWorstBalance:     3,
+			WorstBalance:             3,
+			LowerDecileBalance:       5,
+			HighOrWorseEdges:         2,
+			HighOrWorseSharePct:      10,
+			CriticalEdges:            1,
+			DistributedMonolithEdges: 1,
 		},
 	}
 
 	got := couplingBalance(nil, nonDegen, sum)
 	if !evidenceContains(got.Evidence, "tail risk: worst balance 3/10, lower-decile balance 5/10, high-or-worse edges 2/20 (10%), critical 1, distributed-monolith 1") {
 		t.Errorf("expected tail-risk evidence, got: %v", got.Evidence)
-	}
-	if !evidenceContains(got.Evidence, "clone-only tail: worst balance 3/10, high-or-worse 1/4 scored clone-only pairs") {
-		t.Errorf("expected clone-only tail evidence, got: %v", got.Evidence)
 	}
 }
 
