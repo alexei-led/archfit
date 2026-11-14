@@ -1,13 +1,13 @@
-"""Extractor equivalence test: today's extractor versus the parser-based one.
+"""Go extractor equivalence: the typed extractor versus the parser-based one.
 
-Archfit 4 design, sections 11.8 and 15.2. For one repository and language it
+Archfit 4 design, sections 11.8 and 15.2. For one Go repository it
 runs both sides, maps every node to its declared module with the engine's own
 module map, and compares first-party edges file by file and module pair by
 module pair. Run it on a disposable clone: today's extractors may write caches.
 
     go build -o /tmp/gofacts ./scripts/eval/extractors/gofacts
     PYTHONPATH=scripts/eval uv run python -m extractors.equivalence \\
-        --lang python --root CLONE --config CLONE/.archfit.yaml \\
+        --lang go --root CLONE --config CLONE/.archfit.yaml \\
         --gofacts /tmp/gofacts --out OUTDIR
 """
 
@@ -166,7 +166,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--lang", required=True, choices=["go", "typescript", "python"])
+    parser.add_argument("--lang", required=True, choices=["go"])
     parser.add_argument(
         "--root", required=True, type=Path, help="a disposable clone of the repository"
     )

@@ -1,6 +1,6 @@
 # Configuration
 
-The policy is the file `.archfit.yaml` at the root of the repository: modules, allowed dependencies, rules, and exceptions. `archfit check`, `archfit can`, and `archfit rules` read policy version 3, described on this page. The decoder rejects unknown keys and names the key of each problem. A version 2 file is the Archfit 3 format: see [Version 2 (Archfit 3)](#version-2-archfit-3).
+The policy is the file `.archfit.yaml` at the root of the repository: modules, allowed dependencies, rules, and exceptions. All commands except `init` conversion read policy version 3, described on this page. The decoder rejects unknown keys and names the key of each problem. A version 2 file is the Archfit 3 format: see [Version 2 (Archfit 3)](#version-2-archfit-3).
 
 The smallest valid policy:
 
@@ -178,11 +178,11 @@ The policy version is separate from the Archfit release version.
 
 ## Version 2 (Archfit 3)
 
-A version 2 file is the Archfit 3 format. `archfit report` can still measure it, but it has no repository state until conversion. `archfit init` converts it to version 3; see [Migration](migration.md). The full reference is the [Configuration page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md). The starter configurations in [`examples/`](../examples) are version 2 files.
+A version 2 file is the Archfit 3 format. Only `archfit init` reads it, for conversion. Other commands reject it and name `archfit init`. `archfit init` converts it to version 3; see [Migration](migration.md). The full reference is the [Configuration page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md). The starter configurations in [`examples/`](../examples) are version 2 files.
 
 ### AI provider
 
-The version 2 key `ai` is still decoded for legacy files, but no command uses a model. `archfit init` drops these settings during conversion. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#ai-provider).
+No command uses a model. `archfit init` drops these settings during conversion. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#ai-provider).
 
 ### Labels and draft files
 
@@ -190,8 +190,8 @@ Analysis ignores `.archfit-labels.yaml` and the value draft files at every polic
 
 ### Module review
 
-The version 2 key `module_review` reviews module owners and review dates. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#module-review).
+Archfit 3 used `module_review` for module owners and review dates. Conversion drops this key. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#module-review).
 
 ### Metrics
 
-The version 2 key `metrics` sets metric gates and baseline thresholds. Version 3 has no metric gates. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#metrics).
+Archfit 3 used `metrics` for metric gates and baseline thresholds. Conversion drops this key. Version 3 has no metric gates. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#metrics).

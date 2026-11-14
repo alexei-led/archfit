@@ -10,7 +10,7 @@ func TestReportIgnoresRetiredLabelsFile(t *testing.T) {
 	const invalidDraft = "drafts: [invalid"
 	for _, policy := range []string{
 		fixturePolicy,
-		"version: 2\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n    volatility: low\n    subdomain: generic\n",
+		"version: 3\nowners: [owner]\nmodules:\n  all:\n    paths: ['**']\n    volatility: low\n    subdomain: generic\n",
 	} {
 		files := with(fixtureFiles(), map[string]string{
 			defaultConfigPath:          policy,

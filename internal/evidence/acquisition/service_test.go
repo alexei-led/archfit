@@ -19,7 +19,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/config"
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
@@ -56,7 +55,7 @@ func (r *gitOnlyRunner) Run(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Out
 
 func acquisitionService(t *testing.T, root string, runner toolrun.Runner, stderr *bytes.Buffer) *acquisition.Service {
 	t.Helper()
-	cfg := config.Config{Version: 1, Modules: map[string]policy.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		"a": {Paths: []string{"a/**"}},
 	}}
 	return &acquisition.Service{
@@ -166,7 +165,6 @@ func TestAcquireThreadsMissingSuppliedCoverageIntoTheExistingGapGate(t *testing.
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Version: config.SchemaVersion,
 		Modules: map[string]policy.ModuleDef{"a": {Paths: []string{"a/**"}}},
 		Coverage: config.CoverageConfig{
 			Enabled: true,
@@ -294,10 +292,7 @@ func (r *rejectPatternRunner) Run(ctx context.Context, cmd toolrun.ToolCmd) (too
 func TestAcquireDoesNotRunLegacyRulePatterns(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	cfg := config.Config{Version: 2, Rules: []policy.RuleDef{{
-		ID: "legacy-pattern", Type: "forbidden_pattern",
-		Patterns: []pattern.Def{{ID: "call", Lang: "go", Rule: "legacy($$$)"}},
-	}}}
+	cfg := config.Default()
 	runner := &rejectPatternRunner{gitOnlyRunner{root: root}}
 	svc := acquisition.Service{
 		Root: root, ConfigPath: filepath.Join(root, ".archfit.yaml"),

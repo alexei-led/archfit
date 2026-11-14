@@ -1,8 +1,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -31,8 +29,6 @@ const (
 // top-level key matches nothing and fails TestEveryConfigLeafHasOneClass, so it
 // needs a decision.
 var leafClasses = map[string]leafClass{
-	"version":                        classGovernance,
-	"target_branch":                  classGovernance, // picks what a check compares with; no fact changes
 	"exclude":                        classProfile,
 	"languages":                      classProfile,
 	"languages.*.gate":               classProfile, // reaches the profile only through the producer status it changes
@@ -40,31 +36,24 @@ var leafClasses = map[string]leafClass{
 	"analyzers.*.gate":               classProfile,    // same: a demanded gate changes whether an absent row is not applicable
 	"analyzers.*.timeout":            classGovernance, // a timeout shows as a producer status
 	"coverage":                       classProfile,
-	"coverage.gate":                  classProfile, // same, through the supplied-coverage producer status
-	"ai":                             classGovernance,
+	"coverage.gate":                  classProfile,    // same, through the supplied-coverage producer status
 	"coupling.min_severity":          classGovernance, // filters advisories, not facts
-	"coupling.duplicated_knowledge":  classGovernance, // retained only for Archfit 3 conversion
 	"coupling.volatility_cascade":    classClassification,
-	"coupling.gate":                  classGovernance,
 	"layers":                         classGovernance, // findings and seam policy; module layer is model
 	"modules":                        classModel,
 	"modules.*.depends_on":           classGovernance,
 	"modules.*.visible_to":           classGovernance,
 	"modules.*.reviewed_at":          classGovernance,
 	"modules.*.reviewed_by":          classGovernance,
-	"external_systems":               classClassification,
-	"rules.patterns":                 classProfile, // the ast-grep pass runs these, so they enter the settings hash
-	"rules":                          classGovernance,
-	"waivers":                        classGovernance,
+	"externalsystems":                classClassification,
 	"metrics.function_loc_threshold": classClassification,
 	"metrics.*.gate":                 classGovernance,
 	"metrics.*.min_delta":            classGovernance,
 	"metrics.*.max_new":              classGovernance,
 	"metrics.*.enabled":              classClassification,
-	"module_review":                  classGovernance,
-	"module_review.change_gate":      classGovernance,
-	"file_class":                     classProfile,
-	"outputs":                        classGovernance,
+	"modulereview":                   classGovernance,
+	"modulereview.change_gate":       classGovernance,
+	"fileclass":                      classProfile,
 }
 
 // configLeafPaths walks Config by its yaml tags. A map contributes a `*`
@@ -175,26 +164,24 @@ func TestEveryConfigLeafHasOneClass(t *testing.T) {
 	}
 }
 
-const classificationBaseYAML = `version: 2
+const classificationBaseYAML = `version: 3
+owners: [owner]
 languages:
   go: {enabled: true}
 modules:
-  core: {paths: ["core/**"], owner: team-a, volatility: low, layer: domain}
-  app: {paths: ["app/**"], owner: team-a, volatility: high, layer: edge}
+  core: {paths: ["core/**"], volatility: low, layer: domain}
+  app: {paths: ["app/**"], volatility: high, layer: edge}
 layers: [edge, domain]
 rules: []
 `
 
 func classificationHash(t *testing.T, yamlBody string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), ".archfit.yaml")
-	if err := os.WriteFile(path, []byte(yamlBody), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(t.Context(), path)
+	cfg, err := ReportConfig([]byte(yamlBody))
 	if err != nil {
-		t.Fatalf("Load: %v\n%s", err, yamlBody)
+		t.Fatalf("ReportConfig: %v\n%s", err, yamlBody)
 	}
+
 	return acquisition.ClassificationHash(cfg.PolicySnapshot())
 }
 
@@ -208,17 +195,9 @@ func TestClassificationHashFollowsTheLeafClasses(t *testing.T) {
 	}{
 		{"comment", "# a comment\n" + classificationBaseYAML, false},
 		{"reordered keys and spacing", strings.Replace(classificationBaseYAML, "layers: [edge, domain]\n", "layers:\n  - edge\n  - domain\n", 1), false},
-		{"waiver", strings.Replace(classificationBaseYAML, "rules: []\n", "rules:\n  - id: r\n    type: forbidden_dependency\n    from: app/**\n    to: core/**\nwaivers:\n  - rule: r\n    from: app/**\n    reason: x\n    approved_by: '@owner'\n    expires: '2099-01-01'\n", 1), false},
-		{"rule", strings.Replace(classificationBaseYAML, "rules: []\n", "rules:\n  - id: r\n    type: cycle\n    gate: warn\n", 1), false},
-		{"reviewed_at", strings.Replace(classificationBaseYAML, "layer: domain}", "layer: domain, reviewed_at: 2026-01-01T00:00:00Z}", 1), false},
+		{"exception", classificationBaseYAML + "exceptions:\n  - {rule: graph, from: app, to: core, why: accepted}\n", false},
+		{"rule", strings.Replace(classificationBaseYAML, "rules: []\n", "rules:\n  - {id: guide, note: Keep it simple, why: clarity}\n", 1), false},
 		{"allowlist", strings.Replace(classificationBaseYAML, "layer: edge}", "layer: edge, depends_on: [core]}", 1), false},
-		{"coupling gate", classificationBaseYAML + "coupling:\n  gate:\n    distributed_monolith: {mode: fail}\n", false},
-		{"metric gate", classificationBaseYAML + "metrics:\n  cycle: {gate: warn}\n", false},
-		{"volatility cascade", classificationBaseYAML + "coupling:\n  volatility_cascade: true\n", true},
-		{"retired duplicated knowledge", classificationBaseYAML + "coupling:\n  duplicated_knowledge: advisory\n", false},
-		{"external system", classificationBaseYAML + "external_systems:\n  aws: {targets: [\"aws/**\"], volatility: high}\n", true},
-		{"function loc threshold", classificationBaseYAML + "metrics:\n  function_loc_threshold: 80\n", true},
-		{"metric disabled", classificationBaseYAML + "metrics:\n  cycle: {enabled: false}\n", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

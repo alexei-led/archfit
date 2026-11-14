@@ -112,17 +112,14 @@ func TestReportConfigRemovesGating(t *testing.T) {
 			}
 			for _, id := range []string{
 				config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust, config.LangDotNet,
-				config.ToolSyntax, config.ToolScip, config.ToolClones, config.ToolCargoModules, config.ToolRoslyn,
+				config.ToolSyntax, config.ToolCargoModules, config.ToolRoslyn,
 			} {
 				if g := cfg.ToolGate(id); g != "" {
 					t.Errorf("tool gate %s = %q, want the warn default", id, g)
 				}
 			}
-			if cfg.ScipEnabled() || cfg.ClonesEnabled() {
-				t.Errorf("scip %v, clones %v: want both off", cfg.ScipEnabled(), cfg.ClonesEnabled())
-			}
-			if cfg.AI != (config.AIConfig{}) || len(cfg.ExternalSystems) != 0 || cfg.TargetBranch != "" {
-				t.Errorf("ai, external systems or target branch set: %+v", cfg)
+			if len(cfg.ExternalSystems) != 0 {
+				t.Errorf("external systems set: %+v", cfg.ExternalSystems)
 			}
 		})
 	}

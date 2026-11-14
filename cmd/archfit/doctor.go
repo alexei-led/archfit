@@ -81,8 +81,11 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 			rows = append(rows, row)
 		}
 	}
-	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
-	loop := agentLoopStatus(ctx, deps, cfg.TargetBranch)
+	_, cfgErr := loadConfig(defaultConfigPath)
+	if cfgErr != nil {
+		invalid = append(invalid, cfgErr)
+	}
+	loop := agentLoopStatus(ctx, deps, "")
 	// The Claude harness config is resolved at the repository root by agentLoopStatus.
 	plugin := claudePluginStatus(filepath.Dir(filepath.Dir(loop.Harnesses[0].Config)))
 	if c.Format == formatJSON {

@@ -129,7 +129,7 @@ func TestAcquireKeepsModuleGraphCoverageOutOfTheRawRows(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := config.Config{Version: 1}
+	cfg := config.Config{}
 	cfg.Languages.Rust.Enabled = evidenceports.ModeOn
 	cfg.Analyzers.CargoModules.Enabled = evidenceports.ModeOn
 	svc := &acquisition.Service{

@@ -105,7 +105,6 @@ modules:
       - internal/configschema/**
     public:
       - internal/initcfg/policy3
-      - internal/initcfg
       - internal/configschema
     volatility: medium
     subdomain: supporting

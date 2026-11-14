@@ -4,7 +4,7 @@ Archfit has seven public commands. Run `archfit <command> --help` for their flag
 
 ## Policy version
 
-`check`, `can`, `rules` and `request` need a version 3 `.archfit.yaml`. In an Archfit 3 repository, run `archfit init` to convert it before checking a change. See [Migration](migration.md). `report` can still read a version 2 policy for its measurements only.
+`check`, `can`, `rules`, `request`, and `report` need a version 3 `.archfit.yaml`. In an Archfit 3 repository, run `archfit init` to convert it before checking a change. See [Migration](migration.md).
 
 ## Choose a command
 
@@ -200,7 +200,7 @@ measurements:
 policy: not protected
 ```
 
-On a version 2 policy the report shows the measurements only, says to run `archfit init`, and has no `policy:` line. On a version 3 policy, the report does not yet place Python code in its modules, so the coupling measurements of a Python repository are `n/a`.
+A version 2 policy stops the report with exit `2` and guidance to run `archfit init`.
 
 `--format json` writes the `archfit.architecture-state.v1` document of `archfit.report.schema.json`. On a version 3 policy, its `repository` object holds the state and each list above.
 

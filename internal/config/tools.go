@@ -25,8 +25,6 @@ const (
 // internal id may differ from its YAML key (e.g. ToolCargoModules vs cargo_modules).
 const (
 	ToolSyntax       = "syntax"
-	ToolScip         = "scip"
-	ToolClones       = "clones"
 	ToolCargoModules = "cargo-modules"
 	ToolRoslyn       = "roslyn"
 )
@@ -104,10 +102,8 @@ type Analyzer struct {
 	Gate    GateMode               `yaml:"gate,omitempty"`
 }
 
-// TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`,
-// `analyzers.clones`, `analyzers.roslyn`). Timeout is a Go duration string (e.g. "5m").
-// On a SCIP or clones timeout the result is dropped and dependent metrics report
-// n/a. On a Roslyn timeout the projects fall back to their ProjectReference
+// TimedAnalyzer adds a per-run timeout for Roslyn (a Go duration, e.g. "5m").
+// On a Roslyn timeout the projects fall back to their ProjectReference
 // edges and the coupling dimension cannot reach measured: it stays partial.
 // The run continues either way.
 type TimedAnalyzer struct {
@@ -119,29 +115,9 @@ type TimedAnalyzer struct {
 // AnalyzersConfig groups the opt-in analyzer settings (`analyzers:`).
 type AnalyzersConfig struct {
 	Syntax       Analyzer      `yaml:"syntax,omitempty"`
-	Scip         TimedAnalyzer `yaml:"scip,omitempty"`
-	Clones       TimedAnalyzer `yaml:"clones,omitempty"`
 	CargoModules Analyzer      `yaml:"cargo_modules,omitempty"`
 	Roslyn       TimedAnalyzer `yaml:"roslyn,omitempty"`
 }
-
-// ---------------------------------------------------------------------------
-// Legacy version 2 AI settings.
-// ---------------------------------------------------------------------------
-
-// AIConfig decodes legacy version 2 settings. No analysis or provider reads it.
-type AIConfig struct {
-	Provider  string `yaml:"provider,omitempty" jsonschema:"enum=anthropic,enum=openai,enum=ollama,enum=deepseek,enum=openai-compatible"`
-	Model     string `yaml:"model,omitempty"`
-	BaseURL   string `yaml:"base_url,omitempty"`
-	APIKeyEnv string `yaml:"api_key_env,omitempty"`
-	Effort    string `yaml:"effort,omitempty" jsonschema:"enum=none,enum=minimal,enum=low,enum=medium,enum=high,enum=xhigh,enum=max"`
-	MaxTokens int    `yaml:"max_tokens,omitempty"`
-	Timeout   string `yaml:"timeout,omitempty"`
-}
-
-// LLMProviders are the accepted ai.provider values.
-var LLMProviders = map[string]struct{}{"anthropic": {}, "openai": {}, "ollama": {}, "deepseek": {}, providerCompatible: {}}
 
 // ---------------------------------------------------------------------------
 // Enable-state accessors. Signatures are stable across the schema rewrite so
@@ -151,16 +127,6 @@ var LLMProviders = map[string]struct{}{"anthropic": {}, "openai": {}, "ollama": 
 // SyntaxEnabled reports whether the syntax-facts provider is explicitly enabled
 // (analyzers.syntax.enabled: true). Opt-in only — auto/false/absent all disable it.
 func (c Config) SyntaxEnabled() bool { return c.Analyzers.Syntax.Enabled == evidenceports.ModeOn }
-
-// ScipEnabled reports whether the SCIP strength provider is explicitly enabled
-// (analyzers.scip.enabled: true). Opt-in only — running a SCIP indexer is
-// whole-repo and slow, so it must not run on the fast gate path by default.
-// Config-driven (not PATH presence) preserves same-config→same-metrics.
-func (c Config) ScipEnabled() bool { return c.Analyzers.Scip.Enabled == evidenceports.ModeOn }
-
-// ClonesEnabled reports whether the clone-detection analyzer is explicitly
-// enabled (analyzers.clones.enabled: true). Opt-in only.
-func (c Config) ClonesEnabled() bool { return c.Analyzers.Clones.Enabled == evidenceports.ModeOn }
 
 // CargoModulesEnabled reports whether the cargo-modules intra-crate module-graph
 // analyzer is explicitly enabled (analyzers.cargo_modules.enabled: true). Opt-in
@@ -178,16 +144,11 @@ func (c Config) RoslynEnabled() bool {
 }
 
 // ToolTimeout returns the configured per-analyzer subprocess timeout for the
-// given analyzer id (ToolScip, ToolClones, ToolRoslyn). Returns 0 when not set or unparseable
+// given analyzer id (ToolRoslyn). Returns 0 when not set or unparseable
 // (callers use their built-in default).
 func (c Config) ToolTimeout(id string) time.Duration {
 	var s string
-	switch id {
-	case ToolScip:
-		s = c.Analyzers.Scip.Timeout
-	case ToolClones:
-		s = c.Analyzers.Clones.Timeout
-	case ToolRoslyn:
+	if id == ToolRoslyn {
 		s = c.Analyzers.Roslyn.Timeout
 	}
 	if s == "" {
@@ -218,10 +179,6 @@ func (c Config) ToolMode(id string) evidenceports.ToolMode {
 		return c.Languages.DotNet.Enabled
 	case ToolSyntax:
 		return c.Analyzers.Syntax.Enabled
-	case ToolScip:
-		return c.Analyzers.Scip.Enabled
-	case ToolClones:
-		return c.Analyzers.Clones.Enabled
 	case ToolCargoModules:
 		return c.Analyzers.CargoModules.Enabled
 	case ToolRoslyn:
@@ -247,10 +204,6 @@ func (c Config) ToolGate(id string) GateMode {
 		return c.Languages.DotNet.Gate
 	case ToolSyntax:
 		return c.Analyzers.Syntax.Gate
-	case ToolScip:
-		return c.Analyzers.Scip.Gate
-	case ToolClones:
-		return c.Analyzers.Clones.Gate
 	case ToolCargoModules:
 		return c.Analyzers.CargoModules.Gate
 	case ToolRoslyn:
@@ -276,10 +229,6 @@ func (c *Config) SetToolMode(id string, mode evidenceports.ToolMode) {
 		c.Languages.DotNet.Enabled = mode
 	case ToolSyntax:
 		c.Analyzers.Syntax.Enabled = mode
-	case ToolScip:
-		c.Analyzers.Scip.Enabled = mode
-	case ToolClones:
-		c.Analyzers.Clones.Enabled = mode
 	case ToolCargoModules:
 		c.Analyzers.CargoModules.Enabled = mode
 	case ToolRoslyn:

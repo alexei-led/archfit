@@ -19,13 +19,3 @@ type ExternalSystemDef struct {
 	// system is a generic capability, presumed stable unless declared otherwise).
 	Volatility string `yaml:"volatility,omitempty"`
 }
-
-// DuplicatedKnowledgePolicy preserves the retired Archfit 3 YAML values for conversion.
-type DuplicatedKnowledgePolicy string
-
-const (
-	// DuplicatedKnowledgePolicyScore is the retired score mode.
-	DuplicatedKnowledgePolicyScore DuplicatedKnowledgePolicy = "score"
-	// DuplicatedKnowledgePolicyAdvisory is the retired advisory mode.
-	DuplicatedKnowledgePolicyAdvisory DuplicatedKnowledgePolicy = "advisory"
-)

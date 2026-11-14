@@ -16,7 +16,7 @@ import (
 
 // ReportCmd is `archfit report`: the repository-wide picture for owners. It
 // runs the measurements of the report pipeline (D2: today's analyze pipeline,
-// with no verdict) and, on a version 3 policy, the state of the repository
+// with no verdict) and the state of the repository under a version 3 policy
 // (internal/application/repostate). It never runs on the check path.
 type ReportCmd struct {
 	Format string `help:"Output: text or json." enum:"text,json" default:"text"`
@@ -36,7 +36,7 @@ The state judges the whole tree with the rules and exceptions of
 
 Beside the state: the places the check could not read, the exceptions close
 to their date, the rules nothing checks, and the balance of each allowed
-dependency. A version 2 policy gives the measurements only: run archfit init.
+dependency. A version 2 policy is rejected: run archfit init to convert it.
 
 The report decides nothing: it exits 0 whatever it shows.
 
@@ -59,20 +59,13 @@ func (c *ReportCmd) Run(deps *appDeps) error {
 		return noVerdict(errNoPolicy)
 	}
 
-	var cfg config.Config
-	var repo *report.RepositoryState
-	if isVersion3(data) {
-		// The state comes first: a policy that does not fit the tree stops
-		// the report before the slow measurements.
-		state, err := co.repositoryState(ctx)
-		if err != nil {
-			return noVerdict(err)
-		}
-		repo = &state
-		if cfg, err = config.ReportConfig(data); err != nil {
-			return noVerdict(err)
-		}
-	} else if cfg, err = loadAnalysisConfig(ctx, co.policyPath("")); err != nil {
+	// The state comes first: an invalid policy stops slow measurements.
+	state, err := co.repositoryState(ctx)
+	if err != nil {
+		return noVerdict(err)
+	}
+	cfg, err := config.ReportConfig(data)
+	if err != nil {
 		return noVerdict(err)
 	}
 
@@ -80,7 +73,7 @@ func (c *ReportCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return noVerdict(err)
 	}
-	doc.State.Repository = repo
+	doc.State.Repository = &state
 	var r reportports.Renderer = reporttext.New()
 	if c.Format == formatJSON {
 		r = jsonout.New()

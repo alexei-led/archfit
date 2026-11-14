@@ -1,11 +1,5 @@
 package policy
 
-import (
-	"slices"
-
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
-)
-
 // GateMode controls how a missing tool or regressed metric affects the verdict.
 type GateMode string
 
@@ -15,62 +9,6 @@ const (
 	GateWarn GateMode = "warn"
 	GateFail GateMode = "fail"
 )
-
-// RuleDef declares a single architecture rule.
-type RuleDef struct {
-	ID        string        `yaml:"id"`
-	Type      string        `yaml:"type"`
-	Gate      string        `yaml:"gate"`
-	From      string        `yaml:"from"`
-	To        string        `yaml:"to"`
-	Max       *int          `yaml:"max,omitempty"`       // public_api_max: exported-declaration ceiling per module
-	Threshold *int          `yaml:"threshold,omitempty"` // reserved: per-rule integer threshold
-	Patterns  []pattern.Def `yaml:"patterns,omitempty"`
-	// Guard marks an intentional guard rule whose from:/to: selector is expected
-	// to match nothing, such as a ban on re-introducing a deleted package. A
-	// guard counts as evaluated while its selector matches nothing; any other
-	// rule with a selector that matches nothing is reported as not evaluated.
-	Guard bool `yaml:"guard,omitempty"`
-	// FromModule selects the importing modules of a forbidden_dependency rule
-	// instead of from: "layer:<name>" selects every module with that layer,
-	// "role:<role>" every module with that role, and any other text is a glob
-	// over declared module names. A module selector matches only edges between
-	// two different modules.
-	FromModule string `yaml:"from_module,omitempty"`
-	// ToModule selects the imported modules of a forbidden_dependency rule
-	// instead of to:, with the same selector forms as from_module.
-	ToModule string `yaml:"to_module,omitempty"`
-	// Rationale says why the rule exists. It is appended to every finding's
-	// why as " — <rationale>" and repeated in the repair task's constraints.
-	Rationale string `yaml:"rationale,omitempty"`
-	// Alternatives name what to do instead. They become the finding's
-	// allowed_alternatives and repair-task constraints.
-	Alternatives []string `yaml:"alternatives,omitempty"`
-	// Docs points at the document that explains the rule, such as an ADR. It
-	// is appended to every finding's why and constraint as " (see <docs>)".
-	Docs string `yaml:"docs,omitempty"`
-}
-
-// ruleTypes are the built-in `rules[].type` values, sorted. The published
-// config schema enumerates them; rules.New is the evaluator that accepts them,
-// and rules.TestRuleTypesMatchNew holds the two equal in both directions.
-var ruleTypes = []string{
-	"cycle",
-	"forbidden_dependency",
-	"forbidden_layer_direction",
-	"forbidden_pattern",
-	"internal_api_access",
-	"module_cycle",
-	"module_dependencies",
-	"new_cross_module_dependency",
-	"public_api_change",
-	"public_api_max",
-	"public_api_only",
-	"public_api_type_leak",
-}
-
-// RuleTypes returns the built-in rule type names `rules[].type` accepts, sorted.
-func RuleTypes() []string { return slices.Clone(ruleTypes) }
 
 // MetricEntry holds the settings for a single metric inside the metrics map.
 // Gate sets what a baseline regression does to the verdict: off skips the
@@ -92,15 +30,3 @@ type MetricEntry struct {
 
 // MetricConfig is the per-metric policy projection.
 type MetricConfig = MetricEntry
-
-// WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`).
-// A finding matching a waiver is suppressed until `expires` passes, after which
-// it gates again. reason/approved_by record the governance trail.
-type WaiverDef struct {
-	Rule       string `yaml:"rule" jsonschema:"required,minLength=1"`
-	From       string `yaml:"from"`
-	To         string `yaml:"to"`
-	Reason     string `yaml:"reason" jsonschema:"required,minLength=1"`
-	ApprovedBy string `yaml:"approved_by" jsonschema:"required,minLength=1"`
-	Expires    string `yaml:"expires" jsonschema:"required,minLength=1,format=date"`
-}

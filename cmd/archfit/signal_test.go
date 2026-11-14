@@ -58,7 +58,7 @@ func TestSignal_StopsToolsAndRemovesTheSnapshot(t *testing.T) {
 	mustWrite("bin/dotnet", fakeDotnet, 0o700)
 	mustWrite("helper/archfit-roslyn.dll", "", 0o600)
 	mustWrite("repo/A/A.csproj", `<Project Sdk="Microsoft.NET.Sdk"/>`, 0o600)
-	mustWrite("repo/.archfit.yaml", "version: 2\nmodules:\n  a:\n    paths: [\"A/**\"]\n", 0o600)
+	mustWrite("repo/.archfit.yaml", "version: 3\nowners: [owner]\nmodules:\n  a:\n    paths: [\"A/**\"]\n", 0o600)
 	tmp := filepath.Join(dir, "tmp")
 	if err := os.Mkdir(tmp, 0o700); err != nil {
 		t.Fatal(err)

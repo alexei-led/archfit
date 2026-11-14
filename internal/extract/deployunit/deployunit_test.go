@@ -61,7 +61,6 @@ func emptyModuleMap() policy.ModuleMap {
 // singleModuleMap builds a ModuleMap with one module covering the given path glob.
 func singleModuleMap(name, pathGlob string) policy.ModuleMap {
 	cfg := config.Config{
-		Version: 1,
 		Modules: map[string]policy.ModuleDef{
 			name: {Paths: []string{pathGlob}},
 		},
@@ -477,7 +476,6 @@ func TestKeyCorroboratedByModuleRetainsSource(t *testing.T) {
 // and empty modules are filled from the resolved map.
 func TestFillMissingDeployUnits(t *testing.T) {
 	cfg := config.Config{
-		Version: 1,
 		Modules: map[string]policy.ModuleDef{
 			"api":   {Paths: []string{"api/**"}, DeployUnit: unitAPIService}, // config wins
 			"web":   {Paths: []string{"web/**"}},                             // empty — should be filled
@@ -517,7 +515,6 @@ func TestKeyByModule_RemapsPathToModule(t *testing.T) {
 		unmatched = "vendor/x"      // path no module owns
 	)
 	cfg := config.Config{
-		Version: 1,
 		Modules: map[string]policy.ModuleDef{
 			mod: {Paths: []string{modPath + "/**"}},
 		},
@@ -550,7 +547,6 @@ func TestKeyByModule_RemapsPathToModule(t *testing.T) {
 func TestKeyByModule_ExactKeyFallback(t *testing.T) {
 	const key = "cmd/tool" // module key equals the detected path
 	cfg := config.Config{
-		Version: 1,
 		Modules: map[string]policy.ModuleDef{
 			key: {Paths: []string{"cmd/tool/*.go"}}, // matches children, not the bare dir
 		},
