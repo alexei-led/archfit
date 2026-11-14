@@ -351,7 +351,7 @@ func couplingDimension(diag *result.Result) state.Dimension {
 		state.FactCouplingStrength:                 "integration strength is unknown on one or more cross-boundary candidates, so no rung is invented",
 		state.FactCouplingDistance:                 "architectural distance is unknown on one or more cross-boundary candidates, so no rung is invented",
 		state.FactCouplingVolatility:               "volatility is undeclared on one or more scored cross-boundary edges, so no rung is invented",
-		state.FactExtractorResolutionWithinCeiling: "dependency-cruiser left more than a tenth of import specifiers unresolved; omitted edges may understate the candidate denominator",
+		state.FactExtractorResolutionWithinCeiling: "TypeScript imports or resolution inputs are incomplete; omitted edges may understate the candidate denominator",
 	}
 	tsPartial, roslyn := score.TSUnresolvedPartial(*diag), score.RoslynIncomplete(*diag)
 	if roslyn {

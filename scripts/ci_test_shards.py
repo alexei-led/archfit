@@ -28,7 +28,6 @@ SPLIT = (
 # durations in a CI log; only the relative order matters for the split.
 COSTS = {
     "github.com/alexei-led/archfit/v3/internal/toolrun": 26.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/ts": 25.0,
     "github.com/alexei-led/archfit/v3/internal": 11.0,
     "github.com/alexei-led/archfit/v3/internal/extract/golang": 4.5,
 }

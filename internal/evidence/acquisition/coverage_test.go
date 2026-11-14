@@ -22,7 +22,7 @@ const (
 	// constants on purpose: both are part of the reported contract, so a test
 	// reading the production symbol could not catch a rename.
 	toolGoPackages    = "go/packages"
-	toolDepCruiser    = "dependency-cruiser"
+	toolDepCruiser    = "tsimports"
 	toolPythonImports = "pyimports"
 	toolCargo         = "cargo"
 	toolCargoModules  = "cargo-modules"
@@ -459,12 +459,7 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 	})
 }
 
-// testTSProjectMarkerGaps pins that the TypeScript probe uses the extractor's
-// own applicability test (ts.Applicable — package.json in the scan root). The
-// registry's marker list also accepted tsconfig.json, which dependency-cruiser
-// never looks at: a tsconfig-only repo raised an install prompt for an analyzer
-// that would have reported absent regardless, and `typescript.enabled: false`
-// over it was disclosed as a switched-off language that was never there.
+// testTSProjectMarkerGaps pins applicability to source files, not metadata.
 func testTSProjectMarkerGaps(t *testing.T) {
 	t.Parallel()
 	tsAbsent := func() []evidence.Coverage {
@@ -472,12 +467,12 @@ func testTSProjectMarkerGaps(t *testing.T) {
 	}
 	cfg := config.Config{Exclude: scope.MergeExclusions(nil)}
 
-	t.Run("package.json keeps the gap", func(t *testing.T) {
+	t.Run("source file keeps the gap without package.json", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		writeFileAt(t, root, "package.json", "{}\n")
+		writeFileAt(t, root, "src/app.ts", "export {}\n")
 		if !hasCoverageGap(acquisition.BuildCoverageGaps(tsAbsent(), cfg.CoverageOptions(), root), toolDepCruiser) {
-			t.Error("expected a dependency-cruiser gap for a repo with package.json")
+			t.Error("expected a tsimports gap for a repo with TypeScript source")
 		}
 	})
 
@@ -690,9 +685,9 @@ func testMarkDisabledPrimaries(t *testing.T) {
 	offGated := config.Config{Languages: config.LanguagesConfig{
 		TypeScript: config.TypeScriptLanguage{Enabled: evidenceports.ModeOff, Gate: config.GateFail},
 	}}
-	// A repo that HAS TypeScript: package.json is dependency-cruiser's marker.
+	// A repo that HAS TypeScript source.
 	tsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tsDir, "package.json"), []byte("{}\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tsDir, "app.ts"), []byte("export {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// A repo that does not: only go.mod.
@@ -1062,7 +1057,7 @@ func TestOwnerDegradationWarning(t *testing.T) {
 	}
 }
 
-// TestTSUnresolvedWarning pins the disclosure rule: a dependency-cruiser
+// TestTSUnresolvedWarning pins the disclosure rule: a tsimports
 // coverage record only warns when it is partial AND carries a Reason; ok
 // status, other tools, and a partial record with no reason all stay silent.
 func TestTSUnresolvedWarning(t *testing.T) {

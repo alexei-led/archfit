@@ -218,7 +218,7 @@ The tools come in two tables:
 | Group | Tools | Without the tool |
 | --- | --- | --- |
 | Needed for the check | `git` for every language. `ast-grep` for TypeScript, JavaScript and Python imports, and for the literals of every language but Go. `cargo` for Rust. `dotnet` for C#. | The check is `unknown` for the code it cannot read. |
-| Optional, for the report | `go`, `scip-go`, `node`, `depcruise`, `scip-typescript`, `uv`, `python3`, `scip-python`, `rust-analyzer`, `cargo-modules`, `archfit-roslyn`, `jscpd` | `report` measures less. The check never runs these tools. |
+| Optional, for the report | `go`, `scip-go`, `scip-typescript`, `uv`, `python3`, `scip-python`, `rust-analyzer`, `cargo-modules`, `archfit-roslyn`, `jscpd` | `report` measures less. The check never runs these tools. |
 
 A Go repository needs only `git`. Each row shows the tool, its status (`ok`, `missing`, or `invalid`), the languages that use it, and its path or install hint. For .NET, doctor prints the SDK and helper versions that the current directory's `global.json` selects, and fails when that pin cannot be satisfied.
 

@@ -10,13 +10,11 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
 	goextract "github.com/alexei-led/archfit/v3/internal/extract/golang"
 	"github.com/alexei-led/archfit/v3/internal/extract/registry"
-	"github.com/alexei-led/archfit/v3/internal/extract/ts"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 // Use adapter names so a rename cannot silently change coverage classification.
 var (
-	toolDepCruiserName    = ts.New(nil, evidenceports.ExtractConfig{}).CoverageTool()
 	toolGoPackagesName    = goextract.New(evidenceports.ExtractConfig{}).CoverageTool()
 	toolDotNetMSBuildName = dotnet.New(nil, evidenceports.ExtractConfig{}, nil).CoverageTool()
 	toolRoslynName        = dotnet.New(nil, evidenceports.ExtractConfig{}, nil).LastTypeGraphCoverage().Tool
@@ -29,7 +27,6 @@ func TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames(t *testing.T) {
 		tool string
 		want bool
 	}{
-		{"dependency-cruiser completes with unresolved specifiers", toolDepCruiserName, true},
 		{"go/packages counts packages it could not load", toolGoPackagesName, false},
 	}
 	for _, tc := range tests {

@@ -91,17 +91,10 @@ func Synthesize(d result.Result) Scorecard {
 			"module graph partial (some crates failed cargo-modules) — high confidence disallowed")
 	}
 
-	// A TypeScript unresolved-specifier ratio above the ceiling means
-	// dependency-cruiser could not resolve a meaningful fraction of import
-	// specifiers (missing tsconfig path/baseUrl alias, uninstalled dependency) —
-	// those edges silently land in the external bucket instead of coupling_balance's
-	// internal-edge denominator, so the measured balance reads better than reality.
-	// Cap to medium (mirrors the cargo-modules cap above) so a high-noise TS
-	// extraction cannot read as a confident verdict.
+	// Any unread TypeScript imports or configuration can hide an internal edge.
 	if TSUnresolvedPartial(d) {
 		applyMediumConfidenceCap(&cb,
-			"TypeScript unresolved-specifier ratio exceeds threshold — high confidence disallowed "+
-				"(path aliases or missing installs may be dropping internal edges as external)")
+			"TypeScript imports or configuration incomplete (unresolved-specifier ratio or unread inputs) — high confidence disallowed")
 	}
 
 	// A partial or timed-out Roslyn run left symbols unresolved or projects
@@ -185,38 +178,13 @@ func cargoModulesPartial(d result.Result) bool {
 	return false
 }
 
-// tsUnresolvedRatioCeiling is the unresolved/total-import-specifiers ratio
-// above which dependency-cruiser's coverage is noisy enough to cap
-// coupling_balance confidence — the SAME ratio the coverage Reason string
-// discloses, so the cap and the disclosure can never contradict each other.
-// Deliberate simplification: 10% is a round ceiling, not a
-// calibrated figure — raise it if legitimate repos trip this on ordinary
-// tsconfig-less noise, lower it if a 10%-noisy extraction still reads as
-// confident in practice.
-const tsUnresolvedRatioCeiling = 0.10
+const toolTSImports = "tsimports"
 
-// toolDepCruiser is the ToolCoverage name the TypeScript extractor reports under.
-const toolDepCruiser = "dependency-cruiser"
-
-// TSUnresolvedPartial reports whether the TypeScript extractor (dependency-cruiser)
-// reported partial coverage with an unresolved-specifier ratio above
-// tsUnresolvedRatioCeiling — a signal that path-alias or module-resolution
-// failures are dropping internal edges into the external bucket, which
-// coupling_balance excludes from its denominator entirely. SpecifiersSeen 0
-// (an extractor that does not track specifier totals) abstains rather than
-// divide by a proxy denominator.
-//
-// It is exported because the architecture-state coupling envelope must reach
-// the SAME conclusion this package's confidence cap does. Re-deriving the ratio
-// there would let the primary contract and the metric disagree about the same
-// run, which is exactly what happened before: coupling_balance disclosed
-// "high confidence disallowed" while dimensions.coupling reported high.
+// TSUnresolvedPartial keeps incomplete TypeScript evidence from raising confidence.
+// The coupling dimension and the score use the same predicate.
 func TSUnresolvedPartial(d result.Result) bool {
 	for _, c := range d.ToolCoverage {
-		if c.Tool != toolDepCruiser || c.Status != evidence.StatusPartial || c.SpecifiersSeen == 0 {
-			continue
-		}
-		if float64(c.Unresolved)/float64(c.SpecifiersSeen) > tsUnresolvedRatioCeiling {
+		if c.Tool == toolTSImports && (c.Status == evidence.StatusPartial || c.Status == evidence.StatusTimedOut) {
 			return true
 		}
 	}

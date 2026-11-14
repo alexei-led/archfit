@@ -104,7 +104,8 @@ func (t tsOptions) settings() settings {
 }
 
 // tsconfig returns the settings of the nearest tsconfig.json at or above the
-// root-relative directory dir, cached per directory.
+// root-relative directory dir, falling back to the root tsconfig.base.json.
+// Results are cached per directory.
 func (r *resolver) tsconfig(dir string) settings {
 	if s, ok := r.configs[dir]; ok {
 		return s
@@ -118,6 +119,9 @@ func (r *resolver) tsconfig(dir string) settings {
 		}
 		if current == "." {
 			s = tsOptions{}.settings()
+			if r.isFile("tsconfig.base.json") {
+				s = r.tsconfigOptions("tsconfig.base.json", 0).settings()
+			}
 			break
 		}
 	}

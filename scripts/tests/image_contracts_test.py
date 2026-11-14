@@ -16,6 +16,28 @@ import image_contracts as image
 
 
 class ImageContractsTest(unittest.TestCase):
+    def test_image_inventory_rejects_the_removed_dependency_cruiser(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            contract = image.ImageContract("local:contract", "colima", root)
+            with patch.object(contract, "run") as run:
+                image.inventory(contract)
+            script = run.call_args.args[2]
+            probe = next(
+                part for part in script.split(";") if "command -v depcruise" in part
+            )
+            tool = root / "depcruise"
+            tool.write_text("#!/bin/sh\nexit 0\n")
+            tool.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", "-ec", probe + "; printf bypass"],
+                env={**os.environ, "PATH": str(root)},
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("bypass", result.stdout)
+
     def test_only_the_changes_deny_error_is_a_forbidden_dependency(self):
         def error(rule, from_change):
             return {"rule": rule, "from_change": from_change}
@@ -366,6 +388,106 @@ class ImageContractsTest(unittest.TestCase):
                     with patch.object(bad, "run", side_effect=run):
                         image.python314_case(bad)
                     self.assertTrue(all(not row["passed"] for row in bad.assertions))
+
+    def test_typescript_image_checks_real_gate_and_report_producer(self):
+        spec = next(s for s in image.lc.FIXTURES if s.name == "typescript")
+        pin = f"ast-grep {image.lc.TOOL_MANIFEST['node']['@ast-grep/cli']}"
+        good = {
+            "schema_version": "archfit.architecture-state.v1",
+            "measurement": {"tool_versions": {"tsimports": pin}},
+            "coverage": {"tools": [{"tool": "tsimports", "status": "ok"}]},
+        }
+        check = {
+            "schema": image.lc.RESULT_SCHEMA,
+            "status": "fail",
+            "unknown": [],
+            "errors": [{"rule": image.lc.RULE_ID, "from_change": True}],
+        }
+
+        def exercise(state, record, rc, parser_unknown=True):
+            with tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+                contract = image.ImageContract("local:contract", "colima", output)
+
+                def run(name, uid, script, fixture):
+                    self.assertIn(
+                        spec.forbidden["src/core/index.ts"],
+                        (fixture / "src/core/index.ts").read_text(),
+                    )
+                    self.assertIn("archfit report -C /tmp/repo --format json", script)
+                    self.assertIn("PATH=/usr/local/bin:/usr/bin:/bin", script)
+                    result = output / name
+                    result.mkdir()
+                    (result / "primary.json").write_text(json.dumps(record))
+                    (result / "primary.rc").write_text(rc)
+                    (result / "report.json").write_text(json.dumps(state))
+                    (result / "report.rc").write_text("0")
+                    (result / "no-parser.json").write_text(
+                        json.dumps(
+                            {
+                                "schema": image.lc.RESULT_SCHEMA,
+                                "status": "unknown" if parser_unknown else "pass",
+                                "errors": [],
+                                "unknown": [{"what": "ast-grep is not installed"}]
+                                if parser_unknown
+                                else [],
+                            }
+                        )
+                    )
+                    (result / "no-parser.rc").write_text("2" if parser_unknown else "0")
+                    return result
+
+                with (
+                    patch.object(image.lc, "FIXTURES", (spec,)),
+                    patch.object(contract, "run", side_effect=run),
+                ):
+                    image.language_cases(contract)
+                return all(row["passed"] for row in contract.assertions)
+
+        self.assertTrue(exercise(good, check, "1"))
+        self.assertFalse(exercise(good, check, "1", parser_unknown=False))
+        for name, state, record, rc in [
+            ("missing coverage", {**good, "coverage": {"tools": []}}, check, "1"),
+            (
+                "old producer",
+                {
+                    **good,
+                    "coverage": {
+                        "tools": [{"tool": "dependency-cruiser", "status": "ok"}]
+                    },
+                },
+                check,
+                "1",
+            ),
+            (
+                "partial parser",
+                {
+                    **good,
+                    "coverage": {"tools": [{"tool": "tsimports", "status": "partial"}]},
+                },
+                check,
+                "1",
+            ),
+            (
+                "missing version",
+                {**good, "measurement": {"tool_versions": {}}},
+                check,
+                "1",
+            ),
+            (
+                "wrong version",
+                {
+                    **good,
+                    "measurement": {"tool_versions": {"tsimports": "ast-grep 0.0.0"}},
+                },
+                check,
+                "1",
+            ),
+            ("no forbidden edge", good, {**check, "errors": []}, "1"),
+            ("passing exit", good, check, "0"),
+        ]:
+            with self.subTest(name=name):
+                self.assertFalse(exercise(state, record, rc))
 
     def test_readonly_report_trusts_only_the_host_owned_fixture(self):
         with tempfile.TemporaryDirectory() as temporary:

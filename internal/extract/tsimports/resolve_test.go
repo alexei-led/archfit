@@ -364,3 +364,32 @@ func TestReadJSONC(t *testing.T) {
 		}
 	}
 }
+
+func TestRootBaseConfigFallback(t *testing.T) {
+	t.Parallel()
+	const base = "tsconfig.base.json"
+	for _, tc := range []struct {
+		name    string
+		configs map[string]string
+		kind    Kind
+		target  string
+		unread  int
+	}{
+		{"base aliases", map[string]string{base: `{"compilerOptions":{"paths":{"@app/*":["src/*"]}}}`}, KindFile, srcA, 0},
+		{"root config wins", map[string]string{base: `{"compilerOptions":{"paths":{"@app/*":["missing/*"]}}}`, tsconfigJSON: `{"compilerOptions":{"paths":{"@app/*":["src/*"]}}}`}, KindFile, srcA, 0},
+		{"nearest config wins", map[string]string{base: `{"compilerOptions":{"paths":{"@app/*":["missing/*"]}}}`, "src/tsconfig.json": `{"compilerOptions":{"paths":{"@app/*":["./*"]}}}`}, KindFile, srcA, 0},
+		{"unread base keeps imports unknown", map[string]string{base: `{`}, KindUnknown, "", 1},
+		{"no config keeps external imports external", nil, KindExternal, "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			files := map[string]string{srcX: "", srcA: ""}
+			maps.Copy(files, tc.configs)
+			r := newResolver(tree(files))
+			kind, target := r.resolve(srcX, "@app/a")
+			if kind != tc.kind || target != tc.target || len(r.tsconfig("src").unread) != tc.unread {
+				t.Fatalf("resolved=(%s, %q), unread=%+v", kind, target, r.tsconfig("src").unread)
+			}
+		})
+	}
+}

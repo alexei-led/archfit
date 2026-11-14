@@ -172,7 +172,7 @@ def inventory(contract: ImageContract) -> None:
         f"cargo modules --version | grep -F {pins['versions']['cargo-modules']}; "
         f"uv --version | grep -F {pins['versions']['uv']}; scip-go --version | grep -F {pins['versions']['scip-go']}; "
         f'node -e {shlex.quote(node_script)}; "$ARCHFIT_TOOL_PYTHON" -I -c {shlex.quote(py_script)}; '
-        "depcruise --version; ast-grep --version; jscpd --version; scip-typescript --version; scip-python --version; "
+        'test -z "$(command -v depcruise)"; ast-grep --version; jscpd --version; scip-typescript --version; scip-python --version; '
         'mkdir -p "$CARGO_HOME" "$XDG_CACHE_HOME" "$UV_CACHE_DIR" "$npm_config_cache"; '
         "archfit --version"
     )
@@ -186,6 +186,16 @@ def language_cases(contract: ImageContract) -> None:
         before = tree_hash(fixture)
         for uid in ("65532:65532", "27182:27182"):
             script = saved_command("primary", CHECK)
+            if spec.name in ("typescript", "javascript"):
+                script = (
+                    saved_command(
+                        "no-parser", f"env PATH=/usr/local/bin:/usr/bin:/bin {CHECK}"
+                    )
+                    + script
+                )
+                script += saved_command(
+                    "report", "archfit report -C /tmp/repo --format json"
+                )
             if spec.name == "go":
                 script = NO_GO + script
                 files = " ".join(shlex.quote(name) for name in spec.forbidden)
@@ -210,6 +220,32 @@ def language_cases(contract: ImageContract) -> None:
                 and doc.get("unknown") == [],
                 doc.get("unknown"),
             )
+            if spec.name in ("typescript", "javascript"):
+                missing = contract.read_result(output, "no-parser")
+                contract.expect(
+                    f"{output.name}: absent parser is unknown",
+                    exit_code(output, "no-parser") == "2"
+                    and missing.get("status") == "unknown"
+                    and any(
+                        "ast-grep" in item.get("what", "")
+                        for item in missing.get("unknown", [])
+                    ),
+                    missing,
+                )
+                state = contract.read_state(output, "report")
+                version = (
+                    state.get("measurement", {})
+                    .get("tool_versions", {})
+                    .get("tsimports", "")
+                )
+                pin = f"ast-grep {lc.TOOL_MANIFEST['node']['@ast-grep/cli']}"
+                contract.expect(
+                    f"{output.name}: tsimports producer and coverage",
+                    exit_code(output, "report") == "0"
+                    and rows(state).get("tsimports", {}).get("status") == "ok"
+                    and version == pin,
+                    {"coverage": rows(state), "version": version},
+                )
             if spec.name == "go":
                 clean = contract.read_result(output, "clean")
                 contract.expect(

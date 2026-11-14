@@ -13,8 +13,9 @@ class ProvisionToolsTest(unittest.TestCase):
     def test_owned_node_compiler_and_locked_closure(self):
         package = json.loads((ROOT / "tools/node/package.json").read_text())
         lock = json.loads((ROOT / "tools/node/package-lock.json").read_text())
-        self.assertEqual(package["dependencies"]["typescript"], "6.0.3")
-        self.assertEqual(package["dependencies"]["dependency-cruiser"], "18.7.0")
+        self.assertNotIn("typescript", package["dependencies"])
+        self.assertNotIn("dependency-cruiser", package["dependencies"])
+        self.assertIn("@ast-grep/cli", package["dependencies"])
         self.assertEqual(lock["packages"][""]["dependencies"], package["dependencies"])
         for name, item in lock["packages"].items():
             if name:

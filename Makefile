@@ -181,7 +181,7 @@ host-tools: ## install locked Node analyzers and the Python SCIP reader under HO
 	npm ci --prefix "$(HOST_TOOLS_DIR)/node" --no-audit --no-fund
 	uv venv --clear --python $(TOOL_PYTHON_VERSION) "$(HOST_TOOLS_DIR)/python"
 	uv pip sync --python "$(HOST_TOOLS_DIR)/python/bin/python" --require-hashes --only-binary :all: tools/python/requirements.lock
-	@echo "depcruise: $(HOST_TOOLS_DIR)/node/node_modules/.bin/depcruise"
+	@echo "ast-grep: $(HOST_TOOLS_DIR)/node/node_modules/.bin/ast-grep"
 	@echo "ARCHFIT_TOOL_PYTHON=$(HOST_TOOLS_DIR)/python/bin/python"
 
 ## release: cross-compile for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 into dist/
