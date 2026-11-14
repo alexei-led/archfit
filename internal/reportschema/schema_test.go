@@ -78,14 +78,6 @@ func TestStateSchemaDeclaresTheContractVocabulary(t *testing.T) {
 	if want := []string{report.StateSchemaVersion}; !slices.Equal(doc.Properties.SchemaVersion.Enum, want) {
 		t.Errorf("schema_version enum = %v, want %v", doc.Properties.SchemaVersion.Enum, want)
 	}
-	want := []string{
-		string(report.StateHealthy),
-		string(report.StateNeedsAttention),
-		string(report.StateBlocked),
-	}
-	if !slices.Equal(doc.Properties.Verdict.Enum, want) {
-		t.Errorf("verdict enum = %v, want %v", doc.Properties.Verdict.Enum, want)
-	}
 }
 
 // TestStateSchemaAcceptsEveryCommittedStateDocument validates the real
@@ -149,7 +141,7 @@ func mustRel(t *testing.T, path string) string {
 func TestStateSchemaRejectsRetiredReferenceFields(t *testing.T) {
 	const notRequested, statusKey = "not_requested", "status"
 	compiled := compileStateSchema(t)
-	raw, err := os.ReadFile("testdata/new_violation.state.json")
+	raw, err := os.ReadFile("testdata/drift.state.json")
 	if err != nil {
 		t.Fatal(err)
 	}

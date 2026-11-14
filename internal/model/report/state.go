@@ -5,24 +5,6 @@ package report
 // internal adapter input rather than a second wire format.
 const StateSchemaVersion = "archfit.architecture-state.v1"
 
-// StateVerdict is the primary architecture decision. It replaces the banded
-// repository scalar: no averaged score may produce or move it.
-type StateVerdict string
-
-// Architecture-state verdicts. JSON stores lower case; human formats display
-// upper case.
-const (
-	// StateHealthy requires every dimension measured, every hard gate passing,
-	// and no active diagnostic. It is never produced by treating an unsupported
-	// collector as zero.
-	StateHealthy StateVerdict = "healthy"
-	// StateNeedsAttention means no blocker, but at least one active diagnostic
-	// exists or at least one dimension is partial/unmeasured.
-	StateNeedsAttention StateVerdict = "needs_attention"
-	// StateBlocked means at least one active hard-gate finding is reportable.
-	StateBlocked StateVerdict = "blocked"
-)
-
 // MeasurementStatus records whether a dimension's evidence was actually
 // gathered. Missing evidence is explicit, never an implicit green result.
 type MeasurementStatus string
@@ -32,30 +14,6 @@ const (
 	MeasurementMeasured   MeasurementStatus = "measured"
 	MeasurementPartial    MeasurementStatus = "partial"
 	MeasurementUnmeasured MeasurementStatus = "unmeasured"
-)
-
-// GateState is one dimension's gate posture. It is deliberately a different
-// enum from HardGateState: a dimension may warn, the repository decision may
-// not.
-type GateState string
-
-// Per-dimension gate postures.
-const (
-	GatePass          GateState = "pass"
-	GateWarn          GateState = "warn"
-	GateFail          GateState = "fail"
-	GateNotApplicable GateState = "not_applicable"
-)
-
-// HardGateState is the repository-level hard-gate result carried by
-// StateDecision. Only a named hard rule can set it to fail.
-type HardGateState string
-
-// Repository hard-gate results.
-const (
-	HardGatePass       HardGateState = "pass"
-	HardGateFail       HardGateState = "fail"
-	HardGateUnmeasured HardGateState = "unmeasured"
 )
 
 // ConfidenceUnrated marks a dimension whose evidence does not support any
@@ -148,7 +106,6 @@ type DimensionState struct {
 	Owner      string            `json:"owner"`
 	Status     MeasurementStatus `json:"status"`
 	Confidence Confidence        `json:"confidence"`
-	Gate       GateState         `json:"gate"`
 	Coverage   DimensionCoverage `json:"coverage"`
 	Metrics    []MetricValue     `json:"metrics"`
 	Findings   []FindingRef      `json:"findings"`
@@ -179,8 +136,7 @@ func (d Dimensions) All() []DimensionState {
 }
 
 // CountStatuses tallies the nine envelopes by measurement status. It is purely
-// mechanical — no policy, no thresholds — so the coverage block and the
-// decision counters cannot disagree about what was measured.
+// mechanical — no policy or thresholds participate.
 func (d Dimensions) CountStatuses() (measured, partial, unmeasured int) {
 	for _, dim := range d.All() {
 		switch dim.Status {
@@ -193,23 +149,6 @@ func (d Dimensions) CountStatuses() (measured, partial, unmeasured int) {
 		}
 	}
 	return measured, partial, unmeasured
-}
-
-// StateDecision holds the explicit inputs to the verdict. The aggregator reads
-// only these classifications plus dimension status; it may never inspect a
-// dimension's metrics or derive an implicit threshold from them.
-type StateDecision struct {
-	HardGates                HardGateState     `json:"hard_gates"`
-	UnevaluatedRequiredRules []UnevaluatedRule `json:"unevaluated_required_rules,omitempty"`
-	ActiveBlockers           int               `json:"active_blockers"`
-	AttentionDimensions      int               `json:"attention_dimensions"`
-	UnknownDimensions        int               `json:"unknown_dimensions"`
-}
-
-// UnevaluatedRule identifies a required rule whose producer evidence is incomplete.
-type UnevaluatedRule struct {
-	RuleID string `json:"rule_id"`
-	Reason string `json:"reason"`
 }
 
 // StateMeasurement holds deterministic source and tool facts only. It
@@ -296,33 +235,20 @@ type Seam struct {
 	RoleExpectation      string                `json:"role_expectation,omitempty"`
 	Hypothesis           string                `json:"hypothesis,omitempty"`
 	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
-	// Policy is what the policy says about the pair, the first that matches:
-	// violation (an active gate finding names it), accepted (a
-	// waived gate finding), advisory (another active finding), allowed (a
-	// fail-gated allowlist or layer rule permits it), or observed. Every
-	// assessed seam carries one; the key is optional only so documents written
-	// before it existed still validate.
-	Policy string `json:"policy,omitempty"`
 }
 
 // ArchitectureState is the versioned architecture-state report contract. It has
-// no repository-level scalar by construction: the verdict comes from explicit
-// hard gates, diagnostics, and evidence coverage.
+// no verdict: measurement completeness and repository state remain separate.
 type ArchitectureState struct {
-	SchemaVersion string       `json:"schema_version"`
-	Verdict       StateVerdict `json:"verdict"`
+	SchemaVersion string `json:"schema_version"`
 	// Identity names what the run was judged under.
 	Identity    ResultIdentity   `json:"identity"`
-	Decision    StateDecision    `json:"decision"`
 	Measurement StateMeasurement `json:"measurement"`
 	Dimensions  Dimensions       `json:"dimensions"`
 	Coverage    StateCoverage    `json:"coverage"`
 	// Findings carries the run's findings unchanged; dimension envelopes point
 	// into it by ID so finding identity has exactly one owner.
 	Findings []Finding `json:"findings"`
-	// AgentTasks is projected from the Assessment-owned agent-task result. State
-	// aggregation never derives a second task list.
-	AgentTasks []AgentTask `json:"agent_tasks"`
 	// Seams is the coupling dimension's evidence: one record per ordered module
 	// pair. It is published beside the dimensions, not inside one, for the same
 	// reason findings are — the ledger has exactly one owner and the coupling
@@ -341,7 +267,6 @@ func NewArchitectureState() ArchitectureState {
 	return ArchitectureState{
 		SchemaVersion: StateSchemaVersion,
 		Identity:      ResultIdentity{SchemaVersion: IdentitySchemaVersion},
-		Decision:      StateDecision{HardGates: HardGateUnmeasured, UnknownDimensions: DimensionCount},
 		Measurement:   StateMeasurement{ToolVersions: map[string]string{}},
 		Dimensions: Dimensions{
 			Intent:         newDimension(DimensionIntent, OwnerIntent),
@@ -354,17 +279,16 @@ func NewArchitectureState() ArchitectureState {
 			Operations:     newDimension(DimensionOperations, OwnerOperations),
 			Drift:          newDimension(DimensionDrift, OwnerDrift),
 		},
-		Coverage:   StateCoverage{Unmeasured: DimensionCount, Tools: []StateToolCoverage{}},
-		Findings:   []Finding{},
-		AgentTasks: []AgentTask{},
-		Seams:      []Seam{},
+		Coverage: StateCoverage{Unmeasured: DimensionCount, Tools: []StateToolCoverage{}},
+		Findings: []Finding{},
+		Seams:    []Seam{},
 	}
 }
 
 func newDimension(name, owner string) DimensionState {
 	return DimensionState{
 		Name: name, Owner: owner,
-		Status: MeasurementUnmeasured, Confidence: ConfidenceUnrated, Gate: GateNotApplicable,
+		Status: MeasurementUnmeasured, Confidence: ConfidenceUnrated,
 		Metrics: []MetricValue{}, Findings: []FindingRef{}, Unknown: []UnknownFact{},
 	}
 }

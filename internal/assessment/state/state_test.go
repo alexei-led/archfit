@@ -15,15 +15,6 @@ import (
 func TestNewMeasuresNothing(t *testing.T) {
 	t.Parallel()
 	st := state.New()
-	if st.Verdict != state.NeedsAttention {
-		t.Errorf("verdict = %q, want %q: nine unknown dimensions cannot be healthy", st.Verdict, state.NeedsAttention)
-	}
-	if st.Decision.HardGates != state.HardGateUnmeasured {
-		t.Errorf("hard gates = %q, want %q", st.Decision.HardGates, state.HardGateUnmeasured)
-	}
-	if st.Decision.UnknownDimensions != state.DimensionCount {
-		t.Errorf("unknown dimensions = %d, want %d", st.Decision.UnknownDimensions, state.DimensionCount)
-	}
 	measured, partial, unmeasured := st.Dimensions.CountStatuses()
 	if measured != 0 || partial != 0 || unmeasured != state.DimensionCount {
 		t.Errorf("statuses = (%d, %d, %d), want (0, 0, %d)", measured, partial, unmeasured, state.DimensionCount)
@@ -51,8 +42,8 @@ func TestNewNamesAndOwnsEveryDimension(t *testing.T) {
 		if dim.Owner == "" {
 			t.Errorf("dimension %q has no evidence owner", dim.Name)
 		}
-		if dim.Confidence != state.ConfidenceUnrated || dim.Gate != state.GateNotApplicable {
-			t.Errorf("dimension %q = (%q, %q), want an unrated, non-applicable default", dim.Name, dim.Confidence, dim.Gate)
+		if dim.Confidence != state.ConfidenceUnrated {
+			t.Errorf("dimension %q = %q, want an unrated default", dim.Name, dim.Confidence)
 		}
 		if dim.Metrics == nil || dim.Findings == nil || dim.Unknown == nil {
 			t.Errorf("dimension %q has a nil collection; serialization must be deterministic", dim.Name)

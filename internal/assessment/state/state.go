@@ -1,33 +1,7 @@
-// Package state owns the architecture-state contract as assessment sees it:
-// the nine dimension envelopes, the explicit finding classification, and the
-// deterministic healthy/needs_attention/blocked decision.
-//
-// It is deliberately dependency-free. Assessment must not import the external
-// report DTOs (`assessment_no_report_dtos`), so this package mirrors the wire
-// contract the same way `result` mirrors `report.Document`; the application
-// projects one onto the other. It must also not import `internal/assessment/
-// score` (`assessment_no_score_decision`): the architecture decision is made
-// from explicit gate results and finding classifications, never from an
-// averaged repository scalar.
+// Package state owns the report's nine measurement envelopes and evidence
+// completeness contracts. It is dependency-free; application projects these
+// values into the report DTOs.
 package state
-
-// Verdict is the primary architecture decision. No averaged score may produce
-// or move it.
-type Verdict string
-
-// Architecture verdicts.
-const (
-	// Healthy requires every dimension measured, every hard gate passing, and
-	// no active diagnostic. It is never produced by treating an unsupported
-	// collector as zero.
-	Healthy Verdict = "healthy"
-	// NeedsAttention means no blocker, but at least one active diagnostic
-	// exists or at least one dimension is partial/unmeasured.
-	NeedsAttention Verdict = "needs_attention"
-	// Blocked means at least one active hard-gate finding, or a reportable
-	// required-tool policy failure.
-	Blocked Verdict = "blocked"
-)
 
 // MeasurementStatus records whether a dimension's evidence was actually
 // gathered. Missing evidence is explicit, never an implicit green result.
@@ -50,30 +24,6 @@ const (
 	ConfidenceMedium  Confidence = "medium"
 	ConfidenceLow     Confidence = "low"
 	ConfidenceUnrated Confidence = "unrated"
-)
-
-// GateState is one dimension's gate posture. It is a different enum from
-// HardGateState on purpose: a dimension may warn, the repository decision may
-// not.
-type GateState string
-
-// Per-dimension gate postures.
-const (
-	GatePass          GateState = "pass"
-	GateWarn          GateState = "warn"
-	GateFail          GateState = "fail"
-	GateNotApplicable GateState = "not_applicable"
-)
-
-// HardGateState is the repository-level hard-gate result. Only a named hard
-// rule or a required-tool policy failure can set it to fail.
-type HardGateState string
-
-// Repository hard-gate results.
-const (
-	HardGatePass       HardGateState = "pass"
-	HardGateFail       HardGateState = "fail"
-	HardGateUnmeasured HardGateState = "unmeasured"
 )
 
 // DimensionCount is the fixed number of architecture-state dimensions. Coverage
@@ -154,8 +104,6 @@ type RequiredFact struct {
 // out-of-claim disclosures without matching prose.
 const (
 	FactDeclaredIntentInventory          = "declared intent inventory"
-	FactActiveRuleConformance            = "active rule conformance"
-	FactDisabledRuleConformance          = "disabled rule conformance"
 	FactPrimaryDependencyInventory       = "primary dependency inventory"
 	FactInternalEdgeClassification       = "internal edge classification"
 	FactExternalDependencyStructure      = "external dependency structure"
@@ -212,8 +160,6 @@ func RequiredFacts(dimension string) []RequiredFact {
 	case DimensionIntent:
 		return []RequiredFact{
 			required(FactDeclaredIntentInventory, OwnerIntent),
-			required(FactActiveRuleConformance, OwnerIntent),
-			outOfClaim(FactDisabledRuleConformance, OwnerIntent),
 		}
 	case DimensionStructure:
 		return []RequiredFact{
@@ -348,7 +294,6 @@ type Dimension struct {
 	Owner      string
 	Status     MeasurementStatus
 	Confidence Confidence
-	Gate       GateState
 	Coverage   Coverage
 	Metrics    []MetricValue
 	Findings   []FindingRef
@@ -388,8 +333,7 @@ func (d *Dimensions) Each() []*Dimension {
 }
 
 // CountStatuses tallies the nine envelopes by measurement status. It is purely
-// mechanical — no policy, no thresholds — so the coverage block and the
-// decision counters cannot disagree about what was measured.
+// mechanical — no policy or thresholds participate.
 func (d Dimensions) CountStatuses() (measured, partial, unmeasured int) {
 	for _, dim := range d.All() {
 		switch dim.Status {
@@ -404,45 +348,8 @@ func (d Dimensions) CountStatuses() (measured, partial, unmeasured int) {
 	return measured, partial, unmeasured
 }
 
-// Decision holds the explicit inputs to the verdict. The aggregator reads only
-// these classifications plus dimension status; it may never inspect a
-// dimension's metrics or derive an implicit threshold from them.
-type Decision struct {
-	HardGates                HardGateState
-	UnevaluatedRequiredRules []UnevaluatedRule
-	ActiveBlockers           int
-	AttentionDimensions      int
-	UnknownDimensions        int
-}
-
-// UnevaluatedRule identifies a required rule whose producer evidence is incomplete.
-type UnevaluatedRule struct {
-	RuleID string
-	Reason string
-}
-
-// Architecture is the assessment-owned architecture state. It has no
-// repository-level scalar by construction.
-//
-// Blockers and Diagnostics are the two finding populations the decision reads.
-// Both hold references into the diagnostic's own findings slice, which stays
-// the single owner of finding identity, status, and order.
-type Architecture struct {
-	Verdict    Verdict
-	Decision   Decision
-	Dimensions Dimensions
-	// Blockers are active hard-gate findings: kind gate, status new or
-	// expired_waiver. A baseline-accepted or waived gate finding is not one.
-	Blockers []FindingRef
-	// Diagnostics are active advisories: kind advisory, status new or
-	// expired_waiver. Accepted and waived advisories are excluded — they were
-	// decided already and must not re-open the verdict.
-	Diagnostics []FindingRef
-	// RequiredToolFailure records a reportable required-tool policy failure. It
-	// blocks without producing a finding, so it is carried separately rather
-	// than faked as one.
-	RequiredToolFailure bool
-}
+// Architecture contains the report measurement envelopes, without a verdict.
+type Architecture struct{ Dimensions Dimensions }
 
 // ConfidenceFor is the confidence a measurement status supports on its own.
 //
@@ -466,16 +373,13 @@ func ConfidenceFor(s MeasurementStatus) Confidence {
 func NewDimension(name, owner string) Dimension {
 	return Dimension{
 		Name: name, Owner: owner,
-		Status: Unmeasured, Confidence: ConfidenceUnrated, Gate: GateNotApplicable,
+		Status: Unmeasured, Confidence: ConfidenceUnrated,
 		Metrics: []MetricValue{}, Findings: []FindingRef{}, Unknown: []UnknownFact{},
 	}
 }
 
-// New returns a state whose nine envelopes are named, owned, and honestly
-// unmeasured, with deterministic non-nil collections, already decided from that
-// evidence: nine unknown dimensions and no evaluated gate can only be
-// needs_attention. A caller that measures nothing therefore reports nothing
-// measured — never an implicit green result, and never an undecided one.
+// New returns nine named, owned, unmeasured envelopes with deterministic
+// collections and explicit missing-evidence reasons.
 func New() Architecture {
 	st := Architecture{
 		Dimensions: Dimensions{
@@ -489,8 +393,6 @@ func New() Architecture {
 			Operations:     NewDimension(DimensionOperations, OwnerOperations),
 			Drift:          NewDimension(DimensionDrift, OwnerDrift),
 		},
-		Blockers:    []FindingRef{},
-		Diagnostics: []FindingRef{},
 	}
 	for _, dim := range st.Dimensions.Each() {
 		// An unmeasured envelope with no stated reason is indistinguishable from
@@ -503,8 +405,5 @@ func New() Architecture {
 			Owner:  dim.Owner,
 		}}
 	}
-	st.Verdict, st.Decision = Decide(DecisionInput{
-		HardGates: HardGateUnmeasured, Dimensions: st.Dimensions.Signals(),
-	})
 	return st
 }

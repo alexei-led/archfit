@@ -3,24 +3,10 @@ package report
 // SchemaVersion identifies the external report document contract.
 const SchemaVersion = "archfit.diagnostic.v2"
 
-// AgentTask is the structured repair task for an active gate finding.
-type AgentTask struct {
-	FindingID    string       `json:"finding_id"`
-	RuleID       string       `json:"rule_id"`
-	RepairKind   string       `json:"repair_kind"`
-	Goal         string       `json:"goal"`
-	Constraints  []string     `json:"constraints"`
-	Files        []string     `json:"files"`
-	Validation   []string     `json:"validation"`
-	Declarations []SyntaxFact `json:"declarations,omitempty"`
-}
-
 // FindingStatus values describe the lifecycle state of a report finding.
 const (
-	FindingStatusNew           = "new"
-	FindingStatusWaived        = "waived"
-	FindingStatusExpiredWaiver = "expired_waiver"
-	FindingStatusFixed         = "fixed"
+	FindingStatusNew   = "new"
+	FindingStatusFixed = "fixed"
 )
 
 // FindingKind values classify blocking gates and non-blocking advisories.
@@ -72,26 +58,9 @@ type Location struct {
 	Line int    `json:"line"`
 }
 
-// AdvisoryTask is a report-only remediation prompt for grouped advisories.
-type AdvisoryTask struct {
-	FindingID    string   `json:"finding_id"`
-	RuleID       string   `json:"rule_id"`
-	Status       string   `json:"status"`
-	Severity     string   `json:"severity"`
-	GroupCount   int      `json:"group_count"`
-	GroupMembers []string `json:"group_members,omitempty"`
-	Goal         string   `json:"goal"`
-	Hypothesis   string   `json:"hypothesis,omitempty"`
-	ScoreValue   int      `json:"score_value,omitempty"`
-	TopFiles     []string `json:"top_files"`
-	Constraints  []string `json:"constraints"`
-	Validation   []string `json:"validation"`
-}
-
 // Document is the versioned output contract consumed by report adapters.
 type Document struct {
 	SchemaVersion             string                     `json:"schema_version"`
-	Verdict                   Verdict                    `json:"verdict"`
 	Base                      string                     `json:"base"`
 	Head                      string                     `json:"head"`
 	ConfigHash                string                     `json:"config_hash,omitempty"`
@@ -105,8 +74,6 @@ type Document struct {
 	RuntimeAsyncEdges         []RuntimeAsyncEdge         `json:"runtime_async_edges,omitempty"`
 	DeprecatedDeps            []DeprecatedDep            `json:"deprecated_deps,omitempty"`
 	SyntaxFacts               []SyntaxFact               `json:"syntax_facts,omitempty"`
-	AgentTasks                []AgentTask                `json:"agent_tasks"`
-	AdvisoryTasks             []AdvisoryTask             `json:"advisory_tasks"`
 	ToolCoverage              []Coverage                 `json:"tool_coverage"`
 	CoverageGaps              []CoverageGap              `json:"coverage_gaps,omitempty"`
 	OwnerSource               string                     `json:"owner_source,omitempty"`
@@ -137,8 +104,6 @@ func NewDocument() Document {
 		Findings:       []Finding{},
 		FileFacts:      []FileFact{},
 		DynamicImports: []DynamicImport{},
-		AgentTasks:     []AgentTask{},
-		AdvisoryTasks:  []AdvisoryTask{},
 		ToolCoverage:   []Coverage{},
 		State:          NewArchitectureState(),
 	}

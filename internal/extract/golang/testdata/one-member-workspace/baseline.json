@@ -1,22 +1,4 @@
 {
-  "agent_tasks": [
-    {
-      "constraints": [
-        "Remove the dependency or move the code"
-      ],
-      "files": [
-        "pkg/a/a.go",
-        "pkg/b"
-      ],
-      "finding_id": "ba3803eca947bf3c1b7efa8f37854d5e",
-      "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.",
-      "repair_kind": "code_change",
-      "rule_id": "no_direct_b_dependency",
-      "validation": [
-        "archfit check -c <ROOT>/.archfit.yaml"
-      ]
-    }
-  ],
   "coverage": {
     "measured": 5,
     "partial": 2,
@@ -84,12 +66,6 @@
     ],
     "unmeasured": 2
   },
-  "decision": {
-    "active_blockers": 1,
-    "attention_dimensions": 2,
-    "hard_gates": "fail",
-    "unknown_dimensions": 4
-  },
   "dimensions": {
     "change_locality": {
       "confidence": "unrated",
@@ -99,7 +75,6 @@
         "total": 0
       },
       "findings": [],
-      "gate": "not_applicable",
       "metrics": [],
       "name": "change_locality",
       "owner": "history/git",
@@ -125,7 +100,6 @@
         "total": 2
       },
       "findings": [],
-      "gate": "pass",
       "metrics": [
         {
           "denominator": {
@@ -220,7 +194,6 @@
           "status": "new"
         }
       ],
-      "gate": "warn",
       "metrics": [
         {
           "denominator": {
@@ -340,7 +313,6 @@
         "total": 0
       },
       "findings": [],
-      "gate": "not_applicable",
       "metrics": [],
       "name": "drift",
       "owner": "assessment/decision",
@@ -366,7 +338,6 @@
         "total": 1
       },
       "findings": [],
-      "gate": "pass",
       "metrics": [
         {
           "name": "declared_modules",
@@ -380,42 +351,6 @@
           "name": "declared_layers",
           "provenance": [
             "policy"
-          ],
-          "unit": "count",
-          "value": 0
-        },
-        {
-          "denominator": {
-            "observed": 1,
-            "total": 1
-          },
-          "name": "declared_rules",
-          "provenance": [
-            "policy"
-          ],
-          "unit": "count",
-          "value": 1
-        },
-        {
-          "name": "declared_waivers",
-          "provenance": [
-            "policy"
-          ],
-          "unit": "count",
-          "value": 0
-        },
-        {
-          "name": "waivers_used",
-          "provenance": [
-            "assessment/evaluation"
-          ],
-          "unit": "count",
-          "value": 0
-        },
-        {
-          "name": "expired_waivers",
-          "provenance": [
-            "assessment/evaluation"
           ],
           "unit": "count",
           "value": 0
@@ -434,7 +369,6 @@
         "total": 2
       },
       "findings": [],
-      "gate": "pass",
       "metrics": [
         {
           "name": "declared_modules",
@@ -492,7 +426,6 @@
         "total": 2
       },
       "findings": [],
-      "gate": "pass",
       "metrics": [
         {
           "denominator": {
@@ -659,16 +592,7 @@
         "observed": 1,
         "total": 1
       },
-      "findings": [
-        {
-          "id": "ba3803eca947bf3c1b7efa8f37854d5e",
-          "kind": "gate",
-          "rule_id": "no_direct_b_dependency",
-          "severity": "medium",
-          "status": "new"
-        }
-      ],
-      "gate": "fail",
+      "findings": [],
       "metrics": [
         {
           "name": "internal_edges",
@@ -732,7 +656,6 @@
         "total": 2
       },
       "findings": [],
-      "gate": "pass",
       "metrics": [
         {
           "name": "test_files",
@@ -791,37 +714,6 @@
     }
   },
   "findings": [
-    {
-      "confidence": "",
-      "constraint": "Remove the dependency or move the code",
-      "edge": {
-        "from": {
-          "module": "a",
-          "path": "pkg/a/a.go"
-        },
-        "kind": "imports",
-        "to": {
-          "module": "b",
-          "path": "pkg/b"
-        }
-      },
-      "id": "ba3803eca947bf3c1b7efa8f37854d5e",
-      "kind": "gate",
-      "locations": [
-        {
-          "file": "pkg/a/a.go",
-          "line": 3
-        }
-      ],
-      "matched_by": {
-        "from_glob": "pkg/a/**",
-        "to_glob": "pkg/b/**"
-      },
-      "rule_id": "no_direct_b_dependency",
-      "severity": "medium",
-      "status": "new",
-      "why": "Import from pkg/a/** to pkg/b/** is explicitly forbidden"
-    },
     {
       "confidence": "",
       "constraint": "",
@@ -886,7 +778,6 @@
       "high_or_worse_share_pct": 0,
       "hypothesis": "follow_rule",
       "id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
-      "policy": "violation",
       "quadrant": "tight",
       "raw_distance": {
         "basis": "ownership@system",
@@ -914,6 +805,5 @@
       "volatility": "medium",
       "volatility_provenance": "declared"
     }
-  ],
-  "verdict": "blocked"
+  ]
 }

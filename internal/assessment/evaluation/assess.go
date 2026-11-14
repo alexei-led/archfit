@@ -9,7 +9,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/model/symbol"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
@@ -25,85 +24,19 @@ type Observations struct {
 	Coverage         []modevidence.Coverage
 	SuppliedCoverage []modevidence.CoverageIngest
 	Symbols          symbol.Graph
-	PatternMatches   []pattern.Match
 	SyntaxFacts      []modevidence.SyntaxFact
 	FileLOC          map[string]int
 	FileClassIndex   map[string]fileclass.FileClass
-	SourceSelectors  map[string]string
-	// OutOfScopeFiles are walked source files the configuration declared
-	// outside the analysis scope: an `exclude:` glob matches them, or their
-	// language is switched off. Rule scope skips them, so a stray tooling script
-	// cannot hold a rule unevaluated for an analyzer the config turned off.
-	// Metrics and file classes still count them; nil excludes nothing.
-	OutOfScopeFiles map[string]struct{}
-	// AddedFiles are the files the change adds (Scope.Added): added, renamed
-	// to, or untracked since the base. Nil without a base.
-	AddedFiles map[string]struct{}
-	// UncoveredCauses names, for the added production source files declared out
-	// of scope, the `exclude:` glob or language switch that did it.
-	UncoveredCauses map[string]string
-	// AddedClasses classifies by path the added files the source walk skipped.
-	AddedClasses map[string]fileclass.FileClass
-	// AddedUnread are walk-skipped added production files no analyzer reported.
-	AddedUnread map[string]struct{}
-	// UnanalysedFiles are in-scope walked source files no dependency producer
-	// analyses: their language's extractor applicability probe finds no
-	// project under the root (TypeScript below a directory with no root
-	// package.json, Go files with no go.mod), which is exactly when the
-	// language's primary coverage row is gapless absent, or they are Rust files
-	// outside every cargo workspace member. Dependency and module rule scope
-	// skips them; forbidden_pattern, which reads the ast-grep pattern pass,
-	// keeps them. Nil excludes nothing.
-	UnanalysedFiles map[string]struct{}
-	// ScopedDependencyEvidence is keyed by language. A listed language has
-	// every incompleteness of its dependency producers pinned to source files
-	// here, so a dependency rule over it is judged by the files in its own
-	// scope instead of by the language's primary coverage row: a rule clear of
-	// the incomplete files is evaluated while the rows are partial, and one
-	// that reaches them is not. Nil judges every language by its primary row.
+	OutOfScopeFiles  map[string]struct{}
+	// ScopedDependencyEvidence names per-file incompleteness, so a completed
+	// project-level producer cannot falsely complete a report dimension.
 	ScopedDependencyEvidence map[string]ScopedDependencyEvidence
-	// RustModuleNodes are the crate::mod node IDs of the Rust module graph
-	// (cargo-modules), sorted. A crate::mod selector under a crate the module
-	// graph covers (RustModuleGraphCrates, or a crate with nodes here) is
-	// judged against them; under a loaded crate it does not cover it stays
-	// undecidable, so a missing module graph never reads as an empty one.
-	RustModuleNodes []string
-	// RustCrates are the loaded Rust crates (cargo metadata): the crate
-	// identifier crate::mod node IDs start with, the library spelling of the
-	// package name, and the crate name of every other target of the package.
-	// A loaded crate is first-party even when no file selector spells it
-	// (binary target yazi of package yazi-fm, binary tool_cli beside lib tool).
-	RustCrates []string
-	// RustModuleGraphCrates are the crate identifiers cargo-modules graphed,
-	// a crate with no submodule included: its module graph is empty, so a
-	// crate::mod selector under it provably matches nothing.
-	RustModuleGraphCrates []string
-	// UnwalkedSourceProduction says, for each dependency-edge source file the
-	// LOC walk never visited (a dot directory, target/), whether it is
-	// production: a path-only FileClass with the configured globs, false when
-	// declared out of scope. module_cycle reads it.
-	UnwalkedSourceProduction map[string]bool
-	// GoModulePaths are the first-party Go module paths. Go node IDs drop them,
-	// so a rule selector spelled with one can never match.
-	GoModulePaths []string
-	// GoStdlibPackages are the importable Go standard-library package paths of
-	// the toolchain that analyses the tree (internal and vendor packages
-	// dropped). A to: selector naming one is an external ban even when a
-	// first-party directory shares its first segment (database/sql beside a
-	// top-level database/). Nil when Go is absent or the toolchain probe failed.
-	GoStdlibPackages []string
-	// CrateOwners maps each Rust crate spelling (package name and crate
-	// identifier) to the declared module that owns the crate, resolved by
-	// acquisition (policy.ModuleMap.CrateOwners). The rules use it to place a
-	// Rust node no path glob claims, such as a cargo-modules crate::mod node,
-	// in its crate's module. Nil when Rust is absent.
-	CrateOwners       map[string]string
-	FileFacts         []modevidence.FileFact
-	Clones            []clone.Cluster
-	DynamicImports    []modevidence.DynamicImportSite
-	RuntimeAsyncSites []modevidence.RuntimeAsyncSite
-	RuntimeConfidence string
-	DeprecatedDeps    []modevidence.DeprecatedDep
+	FileFacts                []modevidence.FileFact
+	Clones                   []clone.Cluster
+	DynamicImports           []modevidence.DynamicImportSite
+	RuntimeAsyncSites        []modevidence.RuntimeAsyncSite
+	RuntimeConfidence        string
+	DeprecatedDeps           []modevidence.DeprecatedDep
 
 	// Declared and corroborated deploy units remain separate. The corroborated
 	// map is keyed by declared module only after acquisition has attributed the
@@ -174,94 +107,46 @@ type Assessed struct {
 	Warnings   []string
 }
 
-// Assess evaluates rules, metrics, lifecycle status, and the verdict, then
-// assembles the report-only evidence blocks into one diagnostic. Scoring and
-// repair tasks follow in Score.
-func Assess(in AssessInput) (Assessed, error) {
-	ruleConfig := in.Policy.Gates.Rules
-	ruleConfig.ModuleMap = ruleConfig.ModuleMap.WithCrateOwners(in.Facts.CrateOwners)
-	ruleset, err := NewRuleset(ruleConfig)
-	if err != nil {
-		return Assessed{}, err
-	}
-	diag := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
-	diag.SeamEndpointModules = seamEndpointModules(in.Relationships)
+// Assess calculates metrics and relationship advisories, then assembles the
+// report evidence. Repository errors and exceptions are evaluated separately.
+func Assess(in AssessInput) Assessed {
+	diag := project(in, newMetricset(in.Policy.Gates.Metrics))
 	diag.OwnerSource = in.OwnerSource
 	return Assessed{
 		Diagnostic: diag,
 		Warnings:   healthWarnings(diag, in.CoverageGaps, in.Policy.Topology, in.Facts.FileLOC, in.ScanRoot, in.ConfigSource),
-	}, nil
+	}
 }
 
-// ScoreInput carries the values scoring and repair tasks need on top of the
-// assessed diagnostic.
+// ScoreInput carries measurement and acquisition context for report scoring.
 type ScoreInput struct {
 	Policy         policy.PolicySnapshot
 	Facts          Observations
-	ConfigSource   string
-	ScanRoot       string
-	Root           string
-	CrateRootDirs  map[string]string
-	RequireTools   bool
-	ValidationArgs []string
-	// ApplyToolGate enables the coverage-gap hard gate. Only the analyze/check
-	// use case sets it: every other stage renders a verdict nothing consumes as
-	// an exit code, so a required-analyzer gap must not rewrite it there.
-	ApplyToolGate bool
-
 	ConfigWarnings []string
 	MarkedCoverage []modevidence.Coverage
 	CoverageGaps   []modevidence.CoverageGap
 }
 
-// Scored is the scoring outcome. HardGate reports that a required analyzer gap
-// must fail the run.
+// Scored holds the diagnostic scorecard.
 type Scored struct {
-	Score    score.Scorecard
-	HardGate bool
+	Score score.Scorecard
 }
 
-// Score synthesises the scorecard, attaches repair tasks, and stamps the
-// acquisition-resolved coverage evidence onto diag.
+// Score synthesises the scorecard and measurement envelopes using the
+// acquisition-resolved coverage evidence. It produces no verdict.
 func Score(diag *result.Result, in ScoreInput) Scored {
-	ruleTypes := ruleTypesOf(in.Policy)
-	modulePublic := modulePublicOf(in.Policy)
-	// A nil FileClassIndex (the LOC walk did not run) leaves knownFiles nil,
-	// which disables agent-task path resolution rather than resolving every
-	// candidate against os.Stat alone. Allocating unconditionally would make
-	// PathResolver's documented nil contract unreachable.
-	var knownFiles map[string]struct{}
-	if in.Facts.FileClassIndex != nil {
-		knownFiles = make(map[string]struct{}, len(in.Facts.FileClassIndex))
-		for file := range in.Facts.FileClassIndex {
-			knownFiles[file] = struct{}{}
-		}
-	}
 	// Stamp the acquisition-resolved coverage BEFORE synthesis. The scorecard's
 	// confidence caps read ToolCoverage — the cargo-modules partial-module-graph
 	// row only ever exists on the marked copy, so scoring off the raw rows makes
 	// that cap dead and reports high confidence over an incomplete Rust graph.
-	// Rule and metric evaluation already ran in Assess against the raw rows, so
+	// Metric evaluation already ran in Assess against the raw rows, so
 	// the marked copy cannot move a measured metric.
 	diag.ToolCoverage = in.MarkedCoverage
-	finalized := finalize(diag, FinalizeInput{
-		RuleTypes: ruleTypes, ModulePublic: modulePublic,
-		ValidationCommands: []string{validationCommand(in.ConfigSource, in.ScanRoot, in.ValidationArgs...)},
-		KnownFiles:         knownFiles, CrateRootDirs: in.CrateRootDirs,
-		ModuleRootDirs: policy.ModuleRootDirs(in.Policy.Topology.Modules),
-		OnDisk:         scope.OnDiskWithin(in.Root),
-	})
+	card := score.Synthesize(*diag)
 	diag.CoverageGaps = in.CoverageGaps
 	diag.ConfigWarnings = in.ConfigWarnings
-	attachSeamPolicy(diag, in.Policy)
-	// The tool gate runs before the state is built, not inside the returned
-	// literal: it can rewrite the verdict, and the state must classify the
-	// finalized run, not the one halfway through it.
-	hardGate := in.ApplyToolGate && applyToolGate(diag, in.RequireTools)
-	diag.State = buildState(diag, stateInput{
-		Policy: in.Policy, Facts: in.Facts, RuleTypes: ruleTypes, RequiredToolFailure: hardGate,
-	})
-	return Scored{Score: finalized.Score, HardGate: hardGate}
+	diag.State = buildState(diag, stateInput{Policy: in.Policy, Facts: in.Facts})
+	return Scored{Score: card}
 }
 
 // runSignals projects the acquired facts into the change signals rule and

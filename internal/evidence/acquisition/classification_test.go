@@ -36,7 +36,6 @@ func TestClassificationHash(t *testing.T) {
 			p.Relationship.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyScore
 		}, false},
 		{"minimum severity is governance", func(p *policy.PolicySnapshot) { p.Relationship.MinimumSeverity = "high" }, false},
-		{"waivers are governance", func(p *policy.PolicySnapshot) { p.Assessment.Waivers = policy.WaiverSet{} }, false},
 		{"volatility cascade", func(p *policy.PolicySnapshot) { p.Relationship.VolatilityCascadeEnabled = true }, true},
 		{"advisory duplicated_knowledge", func(p *policy.PolicySnapshot) { p.Relationship.DuplicatedKnowledge = "advisory" }, true},
 		{"metric switched off", func(p *policy.PolicySnapshot) {

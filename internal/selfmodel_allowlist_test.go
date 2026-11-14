@@ -28,7 +28,7 @@ var retiredDenyRules = []retiredDenyRule{
 	{"policy_no_config", "internal/policy/**", pkgConfig, "internal/policy/module.go", pkgConfig},
 	{"evidence_no_config", "internal/evidence/**", pkgConfig, "internal/evidence/acquisition/coverage.go", pkgConfig},
 	{"classify_no_config", "internal/relationship/**", pkgConfig, "internal/relationship/classify/classify.go", pkgConfig},
-	{"assessment_no_config", "internal/assessment/**", pkgConfig, "internal/assessment/rules/rules.go", pkgConfig},
+	{"assessment_no_config", "internal/assessment/**", pkgConfig, "internal/assessment/evaluation/evaluation.go", pkgConfig},
 	{"extract_no_config", "internal/extract/**", pkgConfig, "internal/extract/golang/golang.go", pkgConfig},
 	{"scope_no_config", "internal/scope/**", pkgConfig, "internal/scope/scope.go", pkgConfig},
 	{"facts_no_config", "internal/relationship/facts/**", pkgConfig, "internal/relationship/facts/facts.go", pkgConfig},

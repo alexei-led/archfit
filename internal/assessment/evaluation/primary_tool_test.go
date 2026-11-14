@@ -16,9 +16,9 @@ func TestPrimaryToolForLanguageFollowsRegistryOrder(t *testing.T) {
 		want     string
 	}{
 		{"go", all, "go/packages"},
-		{languageTypeScript, all, "dependency-cruiser"},
-		{languagePython, all, "pyimports"},
-		{languageRust, all, "cargo"},
+		{"typescript", all, "dependency-cruiser"},
+		{"python", all, "pyimports"},
+		{"rust", all, "cargo"},
 		{"dotnet", all, "dotnet-msbuild"},
 		{"dotnet", short, ""}, // a registry without the .NET row abstains
 		{"java", all, ""},

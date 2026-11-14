@@ -248,8 +248,19 @@ class ImageContractsTest(unittest.TestCase):
                     }
                 },
                 "coverage": {"tools": [{"tool": "pyimports", "status": "ok"}]},
-                "decision": {"hard_gates": "fail"},
-                "findings": [{"rule_id": "no-core-to-adapter", "kind": "gate"}],
+                "repository": {
+                    "state": "drift",
+                    "drift": [
+                        {
+                            "rule": "no-core-to-adapter",
+                            "from": "core",
+                            "to": "adapter",
+                            "path": "src/modern314/core.py",
+                            "line": 2,
+                        }
+                    ],
+                    "unread": [],
+                },
             }
 
             report_rc = "0"
@@ -283,14 +294,57 @@ class ImageContractsTest(unittest.TestCase):
                 "wrong version": {
                     "measurement": {"tool_versions": {"pyimports": "ast-grep 0.0.0"}}
                 },
-                "gate passed": {"decision": {"hard_gates": "pass"}},
-                "unevaluated rule": {
-                    "decision": {
-                        "hard_gates": "fail",
-                        "unevaluated_required_rules": ["missing"],
+                "no repository state": {"repository": {}},
+                "clean state": {
+                    "repository": {"state": "clean", "drift": [], "unread": []}
+                },
+                "unread source": {
+                    "repository": {
+                        **state["repository"],
+                        "unread": [{"path": "src/modern314/core.py"}],
                     }
                 },
-                "missing finding": {"findings": []},
+                "unread absent": {
+                    "repository": {
+                        "state": "drift",
+                        "drift": state["repository"]["drift"],
+                    }
+                },
+                "no deny error": {"repository": {**state["repository"], "drift": []}},
+                "wrong rule": {
+                    "repository": {
+                        **state["repository"],
+                        "drift": [{**state["repository"]["drift"][0], "rule": "graph"}],
+                    }
+                },
+                "wrong place": {
+                    "repository": {
+                        **state["repository"],
+                        "drift": [
+                            {**state["repository"]["drift"][0], "path": "wrong.py"}
+                        ],
+                    }
+                },
+                "wrong line": {
+                    "repository": {
+                        **state["repository"],
+                        "drift": [{**state["repository"]["drift"][0], "line": 1}],
+                    }
+                },
+                "wrong source": {
+                    "repository": {
+                        **state["repository"],
+                        "drift": [
+                            {**state["repository"]["drift"][0], "from": "adapter"}
+                        ],
+                    }
+                },
+                "wrong target": {
+                    "repository": {
+                        **state["repository"],
+                        "drift": [{**state["repository"]["drift"][0], "to": "core"}],
+                    }
+                },
             }
             good = state.copy()
             for name, change in negatives.items():

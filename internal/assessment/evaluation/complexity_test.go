@@ -12,6 +12,8 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
+const toolGoPackages = "go/packages"
+
 func TestComplexityModuleGraphDistribution(t *testing.T) {
 	modules := complexityModules("a", "b", "c", "d", "e")
 	graph := relationship.Set{Edges: []relationship.Edge{

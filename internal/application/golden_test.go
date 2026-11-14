@@ -49,14 +49,7 @@ func goldenPolicy() policy.PolicySnapshot {
 		"b": {Paths: []string{globModuleB}, Public: []string{globModuleB}, Internal: []string{globModuleBInternal}},
 	}
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
-	gates := policy.GatePolicy{Rules: policy.RuleConfig{
-		Rules: []policy.RuleDef{{
-			ID: "no_internal_access", Type: "forbidden_dependency", Gate: "fail",
-			From: globModuleA, To: globModuleBInternal,
-		}},
-		ModuleMap: topology.ModuleMap,
-	}}
-	return policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{Topology: topology}, gates, nil, nil)
+	return policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{Topology: topology}, policy.GatePolicy{}, nil, nil)
 }
 
 // goldenEvidence is a fixed-context evidence stage: it runs the real Go

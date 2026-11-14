@@ -19,9 +19,6 @@ func loadConfig(ctx context.Context, path string) (config.Config, error) {
 		}
 		return config.Config{}, err
 	}
-	if err := config.ValidateRules(cfg); err != nil {
-		return config.Config{}, err
-	}
 	return cfg, nil
 }
 
@@ -33,9 +30,6 @@ func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error)
 		if errors.Is(err, os.ErrNotExist) {
 			return config.Config{}, &exitError{code: exitUnknown, msg: fmt.Sprintf("archfit: policy not found: %s\nnext: run archfit init", path)}
 		}
-		return config.Config{}, err
-	}
-	if err := config.ValidateRules(cfg); err != nil {
 		return config.Config{}, err
 	}
 	return cfg, nil

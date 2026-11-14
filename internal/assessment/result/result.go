@@ -12,38 +12,9 @@ import (
 // depend on the external report DTO package.
 const SchemaVersion = "archfit.diagnostic.v2"
 
-// AgentTask is the assessment repair task before report projection.
-type AgentTask struct {
-	FindingID    string                `json:"finding_id"`
-	RuleID       string                `json:"rule_id"`
-	RepairKind   string                `json:"repair_kind"`
-	Goal         string                `json:"goal"`
-	Constraints  []string              `json:"constraints"`
-	Files        []string              `json:"files"`
-	Validation   []string              `json:"validation"`
-	Declarations []evidence.SyntaxFact `json:"declarations,omitempty"`
-}
-
-// AdvisoryTask is the assessment advisory task before report projection.
-type AdvisoryTask struct {
-	FindingID    string           `json:"finding_id"`
-	RuleID       string           `json:"rule_id"`
-	Status       finding.Status   `json:"status"`
-	Severity     finding.Severity `json:"severity"`
-	GroupCount   int              `json:"group_count"`
-	GroupMembers []string         `json:"group_members,omitempty"`
-	Goal         string           `json:"goal"`
-	Hypothesis   string           `json:"hypothesis,omitempty"`
-	ScoreValue   int              `json:"score_value,omitempty"`
-	TopFiles     []string         `json:"top_files"`
-	Constraints  []string         `json:"constraints"`
-	Validation   []string         `json:"validation"`
-}
-
 // Result is the assessment result before report projection.
 type Result struct {
 	SchemaVersion             string                              `json:"schema_version"`
-	Verdict                   Verdict                             `json:"verdict"`
 	Base                      string                              `json:"base"`
 	Head                      string                              `json:"head"`
 	ConfigHash                string                              `json:"config_hash,omitempty"`
@@ -57,8 +28,6 @@ type Result struct {
 	RuntimeAsyncEdges         []evidence.RuntimeAsyncEdge         `json:"runtime_async_edges,omitempty"`
 	DeprecatedDeps            []evidence.DeprecatedDep            `json:"deprecated_deps,omitempty"`
 	SyntaxFacts               []evidence.SyntaxFact               `json:"syntax_facts,omitempty"`
-	AgentTasks                []AgentTask                         `json:"agent_tasks"`
-	AdvisoryTasks             []AdvisoryTask                      `json:"advisory_tasks"`
 	ToolCoverage              []evidence.Coverage                 `json:"tool_coverage"`
 	CoverageGaps              []evidence.CoverageGap              `json:"coverage_gaps,omitempty"`
 	OwnerSource               string                              `json:"owner_source,omitempty"`
@@ -74,20 +43,12 @@ type Result struct {
 	ModuleGraphComplexity *ModuleGraphComplexity `json:"-"`
 	// Seams is the logical coupling seam ledger, one record per ordered module
 	// pair. It reaches the wire only through the architecture-state contract.
-	Seams []Seam `json:"-"`
-	// SeamEndpointModules maps each graph-node path an edge names (and the
-	// directory of an importing file) to the module the seam ledger keys it
-	// under, synthetic go.work and crate::mod modules included. The seam
-	// policy places a finding on its seam through it, since a module-pair or
-	// mixed-side finding names declared modules only, or none.
-	SeamEndpointModules      map[string]string                  `json:"-"`
+	Seams                    []Seam                             `json:"-"`
 	DistanceContext          *evidence.DistanceContext          `json:"distance_context,omitempty"`
 	DistanceConfigCandidates []evidence.DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
 	LocalCoupling            []evidence.LocalCouplingModule     `json:"local_coupling,omitempty"`
 	Summary                  Summary                            `json:"summary"`
-	// State is the architecture-state result. It rides the assessment result
-	// rather than a parallel return value so every stage carries the same verdict
-	// state. The application projects it onto the canonical wire contract.
+	// State contains measurement envelopes for the canonical report projection.
 	State state.Architecture `json:"-"`
 }
 
@@ -99,8 +60,6 @@ func New() Result {
 		Findings:       []finding.Finding{},
 		FileFacts:      []evidence.FileFact{},
 		DynamicImports: []evidence.DynamicImport{},
-		AgentTasks:     []AgentTask{},
-		AdvisoryTasks:  []AdvisoryTask{},
 		ToolCoverage:   []evidence.Coverage{},
 		State:          state.New(),
 	}

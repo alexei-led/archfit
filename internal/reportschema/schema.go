@@ -74,13 +74,6 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			version.Enum = []any{report.StateSchemaVersion}
 			version.Description = "The only architecture-state contract this binary emits."
 		}
-		if verdict, ok := schema.Properties.Get("verdict"); ok {
-			verdict.Enum = []any{
-				string(report.StateHealthy),
-				string(report.StateNeedsAttention),
-				string(report.StateBlocked),
-			}
-		}
 	}
 	for name, def := range schema.Definitions {
 		if def.Properties == nil {
@@ -89,10 +82,6 @@ func patchDefinitions(schema *jsonschema.Schema) {
 		switch name {
 		case "ResultIdentity":
 			pinIdentityVersion(def)
-		case "AgentTask":
-			if kind, ok := def.Properties.Get("repair_kind"); ok {
-				kind.Enum = []any{"code_change", "needs_owner_decision"}
-			}
 		case "DimensionState":
 			if status, ok := def.Properties.Get("status"); ok {
 				status.Enum = []any{
@@ -100,10 +89,6 @@ func patchDefinitions(schema *jsonschema.Schema) {
 					string(report.MeasurementPartial),
 					string(report.MeasurementUnmeasured),
 				}
-			}
-		case "Seam":
-			if policy, ok := def.Properties.Get("policy"); ok {
-				policy.Enum = []any{"violation", "accepted", "advisory", "allowed", "observed"}
 			}
 		case "SeamScoreDistribution":
 			// p10/p90 are *int and serialize as null below ten samples: a
@@ -130,14 +115,6 @@ func patchDefinitions(schema *jsonschema.Schema) {
 				same.Type = ""
 				same.OneOf = []*jsonschema.Schema{{Type: "boolean"}, {Type: "null"}}
 				same.Description = "Whether both sides share the value, or null unless both sides are known."
-			}
-		case "StateDecision":
-			if gates, ok := def.Properties.Get("hard_gates"); ok {
-				gates.Enum = []any{
-					string(report.HardGatePass),
-					string(report.HardGateFail),
-					string(report.HardGateUnmeasured),
-				}
 			}
 		}
 	}

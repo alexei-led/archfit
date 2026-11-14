@@ -138,7 +138,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *result.ClassifiedE
 		// Legacy path only (summary == nil): unreachable from engine.go, which always
 		// populates ClassifiedEdges. Calibration suites construct bare diagnostics and
 		// rely on this returning a non-penalising sentinel (e.g. all advisory edges
-		// waived/baselined → triaged, not unmeasured). The n/a honesty fix applies to
+		// no active advisory does not mean the edges were unmeasured). The n/a honesty fix applies to
 		// the production summary path (Scored == 0) and the degenerate-graph path above.
 		dim.Confidence = ConfidenceLow
 		dim.Value = 60
@@ -352,11 +352,7 @@ func (e bcEdge) worstCase() bool {
 
 // bcEdges extracts the active Balanced-Coupling advisory edges from the findings,
 // parsing the strength/distance/volatility/score fields the engine stamped into
-// MatchedBy. Only active advisories (status new or expired_waiver) count —
-// the same filter IsActiveGateFinding and the gate verdict use. Baseline-accepted
-// and waived edges are operator-suppressed debt; counting them would deflate
-// coupling_balance for a repo that has triaged its coupling, diverging from the
-// gate's own view. Fixed (resolved) advisories are skipped too.
+// MatchedBy. Only current advisories contribute to the diagnostic score.
 func bcEdges(fs []finding.Finding) []bcEdge {
 	var out []bcEdge
 	for _, f := range fs {
@@ -383,11 +379,10 @@ func bcEdges(fs []finding.Finding) []bcEdge {
 	return out
 }
 
-// IsActiveGateFinding reports whether f is an active gate finding — one that
-// counts against the verdict (status new or expired_waiver). Shared with
-// internal/assessment/decision so the recommendation buckets match the gate verdict.
+// IsActiveGateFinding reports whether a diagnostic is current. Historical
+// fixed diagnostics do not describe the measured tree.
 func IsActiveGateFinding(f finding.Finding) bool {
-	return f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver
+	return f.Status == finding.StatusNew
 }
 
 // effortFromSeverity approximates a 0-10 maintenance-effort score for a BC edge

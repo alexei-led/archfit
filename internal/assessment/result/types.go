@@ -1,17 +1,5 @@
 package result
 
-// Verdict is the top-level assessment outcome.
-type Verdict string
-
-const (
-	// VerdictPass means all blocking checks passed.
-	VerdictPass Verdict = "pass"
-	// VerdictFail means at least one blocking check failed.
-	VerdictFail Verdict = "fail"
-	// VerdictWarn means checks passed with warnings.
-	VerdictWarn Verdict = "warn"
-)
-
 // Direction records whether a rising metric is an improvement or regression.
 type Direction string
 
@@ -35,11 +23,9 @@ type MetricResult struct {
 	Direction  Direction `json:"direction,omitempty"`
 }
 
-// Summary holds gate, warning, and waiver counts.
+// Summary counts diagnostic warnings.
 type Summary struct {
-	GateFindings int `json:"gate_findings"`
-	Warnings     int `json:"warnings"`
-	WaiversUsed  int `json:"waivers_used"`
+	Warnings int `json:"warnings"`
 }
 
 // ModuleGraphComplexity is the architecture-level distribution over the
@@ -165,13 +151,6 @@ type Seam struct {
 	RoleExpectation      string                `json:"role_expectation,omitempty"`
 	Hypothesis           string                `json:"hypothesis,omitempty"`
 	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
-	// Policy is the seam's policy status: violation, accepted, advisory,
-	// allowed, or observed (the first that matches).
-	Policy string `json:"policy,omitempty"`
-	// QualifyingPaths are the node paths and import-site files of the seam's
-	// capped qualifying edges, in edge order. They are repair evidence for a
-	// seam-gate task and never part of the published seam record.
-	QualifyingPaths []string `json:"-"`
 }
 
 // SeamDistance is the raw distance evidence behind a seam's collapsed rung.

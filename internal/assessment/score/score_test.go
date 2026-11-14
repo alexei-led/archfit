@@ -185,7 +185,7 @@ func TestCouplingBalance(t *testing.T) {
 		}
 	})
 
-	t.Run("waived edges do not count", func(t *testing.T) {
+	t.Run("fixed edges do not count", func(t *testing.T) {
 		withStatus := func(f finding.Finding, s finding.Status) finding.Finding {
 			f.Status = s
 			return f
@@ -194,10 +194,10 @@ func TestCouplingBalance(t *testing.T) {
 			return bcAdv(from, to, "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 10)
 		}
 		got := cb(
-			withStatus(worst("a", "b"), finding.StatusWaived),
+			withStatus(worst("a", "b"), finding.StatusFixed),
 		)
 		if got.Value <= 40 {
-			t.Errorf("suppressed edges value = %d, want > poor (>40); waived findings must not penalise", got.Value)
+			t.Errorf("suppressed edges value = %d, want > poor (>40); fixed findings must not penalise", got.Value)
 		}
 		if got.Value > 60 {
 			t.Errorf("suppressed edges value = %d, want ≤60 (no counted edges = unconfirmed, not strong)", got.Value)

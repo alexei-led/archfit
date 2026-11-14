@@ -2,7 +2,6 @@
 package application
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
-	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 	"github.com/alexei-led/archfit/v3/internal/evidence"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
@@ -36,7 +34,7 @@ const (
 	FormatScorecard = "scorecard"
 )
 
-// Request contains the user intent shared by analyze and check.
+// Request contains the report measurement inputs.
 type Request struct {
 	ConfigSource string
 	BundleDir    string
@@ -47,18 +45,8 @@ type Request struct {
 	SARIF    bool
 	Formats  []string
 
-	NoAdvisories   bool
-	RequireTools   bool
-	ValidationArgs []string
-	// ValidationConfig and ValidationRoot replace the config and root a repair's
-	// validation command names; empty keeps the run's own. The staged-index git
-	// hook analyses a temporary checkout that is gone when the reader runs the
-	// command, so it names the repository instead.
-	ValidationConfig string
-	ValidationRoot   string
-	// AddedBase is the ref the added-file set is measured against when BaseRef
-	// is empty (scope.Config.AddedBase).
-	AddedBase string
+	NoAdvisories bool
+	AddedBase    string
 	// Identity carries the run facts only the caller can read: the policy
 	// files' bytes, the git tree, the engine build.
 	Identity IdentityInputs
@@ -67,17 +55,9 @@ type Request struct {
 // AnalysisRequest is the narrow technical-stage input. The application owns
 // validation and sequencing; the stage owns evidence collection and scoring.
 type AnalysisRequest struct {
-	BaseRef        string
-	NoAdvisories   bool
-	RequireTools   bool
-	ValidationArgs []string
-	// ValidationConfig and ValidationRoot: see Request.
-	ValidationConfig string
-	ValidationRoot   string
-	// AddedBase: see Request.
-	AddedBase string
-	// ApplyToolGate lets a missing required analyzer stamp the report verdict fail.
-	ApplyToolGate bool
+	BaseRef      string
+	NoAdvisories bool
+	AddedBase    string
 	// DiscloseHealthWarnings prints assessment health hints on the report path.
 	DiscloseHealthWarnings bool
 	// Use-case stages may override the technical context while
@@ -94,9 +74,8 @@ type AnalysisResult struct {
 	Score      score.Scorecard
 }
 
-// PolicyPreparer validates decoded policy and emits config-quality diagnostics
-// before any technical stage runs. It is a real boundary: validation reads the
-// policy language the config adapter owns.
+// PolicyPreparer discloses report config warnings before evidence acquisition.
+// Decoding and tree validation belong to the policy adapters.
 type PolicyPreparer interface {
 	Prepare(context.Context) error
 }
@@ -138,18 +117,11 @@ type AnalysisContext struct {
 	// acquisition rewrote the rows of primaries the config switched off over a
 	// language that IS present. They are resolved here because both depend on
 	// analyzer applicability probes and the source tree, which only acquisition
-	// may touch. Rule and metric evaluation deliberately reads the RAW coverage
+	// may touch. Metric evaluation deliberately reads the RAW coverage
 	// on Facts, so a config opt-out cannot move a measured metric.
 	//
-	// CoverageGaps elements are mutated IN PLACE by the assessment stage: under
-	// --require-tools, the tool gate stamps Gate on the gap it fails on. An
-	// AnalysisContext must therefore never be cached or shared across two
-	// scorings: acquisition allocates a fresh slice per run.
 	MarkedCoverage []modevidence.Coverage
 	CoverageGaps   []modevidence.CoverageGap
-	// CrateRootDirs maps a Rust crate name to its repo-relative source dir, for
-	// resolving crate-scoped repair-task paths.
-	CrateRootDirs map[string]string
 	// DeployUnitDetectedModules counts the modules deploy-unit detection mapped.
 	// It is report-only distance context and is NOT the declared-unit count.
 	DeployUnitDetectedModules int
@@ -194,11 +166,7 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 		return AnalysisResult{}, fmt.Errorf("evidence acquisition: %w", err)
 	}
 	discloseRawCoverageReasons(s.stderr(), "", acquired.Context.MarkedCoverage)
-	assessed, err := s.assess(ctx, req, acquired)
-	if err != nil {
-		return AnalysisResult{}, fmt.Errorf("assessment: %w", err)
-	}
-	return assessed, nil
+	return s.assess(req, acquired), nil
 }
 
 // relate runs the relationship stage. It is a pure decision over the acquired
@@ -214,12 +182,12 @@ func relate(acquired Acquired) relationship.AnalysisResult {
 }
 
 // assess runs relationship analysis, assessment, and scoring in one shared order.
-func (s StageExecutor) assess(_ context.Context, req AnalysisRequest, acquired Acquired) (AnalysisResult, error) {
+func (s StageExecutor) assess(req AnalysisRequest, acquired Acquired) AnalysisResult {
 	runCtx := acquired.Context
 	facts := acquired.Observations
 	s.reportPhase("Analyzing dependencies")
 	relationships := relate(acquired)
-	assessed, err := evaluation.Assess(evaluation.AssessInput{
+	assessed := evaluation.Assess(evaluation.AssessInput{
 		Facts: facts, Relationships: relationships.Relationships, RelationshipSignals: relationships.Assessment, Policy: runCtx.Policy,
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory:     !req.NoAdvisories,
@@ -230,9 +198,6 @@ func (s StageExecutor) assess(_ context.Context, req AnalysisRequest, acquired A
 		CoverageGaps:              runCtx.CoverageGaps,
 		DeployUnitDetectedModules: runCtx.DeployUnitDetectedModules,
 	})
-	if err != nil {
-		return AnalysisResult{}, err
-	}
 	diag := assessed.Diagnostic
 	attachRelationshipEvidence(&diag, relationships.Evidence)
 	diag.DistanceContext = buildDistanceContext(diag, runCtx.Policy, runCtx.DeployUnitDetectedModules)
@@ -244,17 +209,12 @@ func (s StageExecutor) assess(_ context.Context, req AnalysisRequest, acquired A
 	s.reportPhase("Scoring architecture")
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
 		Policy: runCtx.Policy, Facts: facts,
-		ConfigSource:  cmp.Or(req.ValidationConfig, runCtx.ConfigSource),
-		ScanRoot:      cmp.Or(req.ValidationRoot, runCtx.ScanRoot),
-		Root:          runCtx.Scope.Root,
-		CrateRootDirs: runCtx.CrateRootDirs, RequireTools: req.RequireTools,
-		ValidationArgs: req.ValidationArgs,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
-		CoverageGaps: runCtx.CoverageGaps, ApplyToolGate: req.ApplyToolGate,
+		CoverageGaps: runCtx.CoverageGaps,
 	})
 	out := AnalysisResult{Score: scored.Score}
 	out.Diagnostic = diag
-	return out, nil
+	return out
 }
 
 func (s StageExecutor) stderr() io.Writer {
@@ -278,20 +238,7 @@ func (s StageExecutor) reportPhase(stage string) {
 type Response struct {
 	Document report.Document
 	Formats  []string
-	Outcome  Outcome
 }
-
-// Outcome is the typed Analyze/Check result. It is not a CLI exit code: cmd
-// translates it to a process exit status (and report-only analyze always exits
-// zero regardless of the underlying verdict).
-type Outcome string
-
-// Outcome values for the Analyze/Check use case.
-const (
-	OutcomePass Outcome = "pass"
-	OutcomeFail Outcome = "fail"
-	OutcomeWarn Outcome = "warn"
-)
 
 // InvalidFormatsError reports mutually exclusive output format flags.
 type InvalidFormatsError struct{ Message string }
@@ -336,14 +283,14 @@ func resolveFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([
 	}
 }
 
-// Service owns the Analyze/Check use case. Cmd supplies the four explicit
-// staged ports and renders the returned document.
+// Service owns the report measurement pipeline. Cmd supplies its stages and
+// renders the completed document.
 type Service struct {
 	Stages StageExecutor
 }
 
 // Execute validates the request, invokes the technical stage, projects the
-// report, and assigns outcome semantics.
+// report, without deciding a check outcome.
 func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	formats, err := resolveFormats(req.JSON, req.Markdown, req.SARIF, req.Formats)
 	if err != nil {
@@ -355,9 +302,8 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	out, err := s.Stages.Execute(ctx, AnalysisRequest{
 		ConfigSource: req.ConfigSource, BundleDir: req.BundleDir,
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
-		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
-		ValidationArgs: req.ValidationArgs, ValidationConfig: req.ValidationConfig, ValidationRoot: req.ValidationRoot,
-		AddedBase: req.AddedBase,
+		DiscloseHealthWarnings: true,
+		AddedBase:              req.AddedBase,
 	})
 	if err != nil {
 		// A controlled stage failure already carries the user-facing wording; the
@@ -373,28 +319,5 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	return Response{
 		Document: withRunFacts(projectReport(out.Diagnostic, out.Score), req.Identity),
 		Formats:  formats,
-		Outcome:  outcomeFor(out),
 	}, nil
-}
-
-// outcomeFor maps the architecture verdict onto the use-case outcome.
-//
-// The verdict is the single source: blocked → fail, needs_attention → warn,
-// healthy → pass. A required-analyzer gate and a failing hard rule both reach
-// the verdict through the state's own hard-gate result, so there is nothing left
-// to outrank it here — a second condition at this layer could only disagree with
-// the report the same run just printed.
-//
-// A run with only coupling advisories is needs_attention, which is exit 2 for
-// check and still exit 0 for analyze. It is never exit 1: a diagnostic is not a
-// blocker.
-func outcomeFor(out AnalysisResult) Outcome {
-	switch out.Diagnostic.State.Verdict {
-	case state.Blocked:
-		return OutcomeFail
-	case state.NeedsAttention:
-		return OutcomeWarn
-	default:
-		return OutcomePass
-	}
 }

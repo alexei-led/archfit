@@ -37,8 +37,8 @@ func TestReportKeepsMetricsAndSeamsWithoutStoredReferences(t *testing.T) {
 	if !found {
 		t.Fatalf("state metric measurement lost: %+v", document.State.Dimensions.Structure.Metrics)
 	}
-	if document.State.Decision.HardGates != "pass" || len(document.Findings) != 0 {
-		t.Fatalf("measurements became blockers: %+v", document.State.Decision)
+	if len(document.Findings) != 0 {
+		t.Fatalf("measurements became blockers: %+v", document.State)
 	}
 	raw, err := json.Marshal(document.State)
 	if err != nil {

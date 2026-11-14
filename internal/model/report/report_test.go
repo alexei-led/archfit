@@ -24,20 +24,11 @@ func TestNew_ZeroValue(t *testing.T) {
 	if d.SchemaVersion != "archfit.diagnostic.v2" {
 		t.Errorf("schema_version = %q; want \"archfit.diagnostic.v2\"", d.SchemaVersion)
 	}
-	if d.Verdict != "" {
-		t.Errorf("verdict = %q; want empty", d.Verdict)
-	}
 	if d.Metrics == nil {
 		t.Error("Metrics must be non-nil (empty slice, not nil)")
 	}
 	if d.Findings == nil {
 		t.Error("Findings must be non-nil (empty slice, not nil)")
-	}
-	if d.AgentTasks == nil {
-		t.Error("AgentTasks must be non-nil (empty slice, not nil)")
-	}
-	if d.AdvisoryTasks == nil {
-		t.Error("AdvisoryTasks must be non-nil (empty slice, not nil)")
 	}
 	if d.ToolCoverage == nil {
 		t.Error("ToolCoverage must be non-nil (empty slice, not nil)")
@@ -46,7 +37,6 @@ func TestNew_ZeroValue(t *testing.T) {
 
 func TestDiagnostic_JSONFieldNames(t *testing.T) {
 	d := report.NewDocument()
-	d.Verdict = report.VerdictPass
 	d.Base = "main"
 	d.Head = "abc123"
 
@@ -62,59 +52,16 @@ func TestDiagnostic_JSONFieldNames(t *testing.T) {
 
 	requiredFields := []string{
 		"schema_version",
-		"verdict",
 		"base",
 		"head",
 		"metrics",
 		"findings",
-		"agent_tasks",
-		"advisory_tasks",
 		"tool_coverage",
 		"summary",
 	}
 	for _, f := range requiredFields {
 		if _, ok := m[f]; !ok {
 			t.Errorf("JSON field %q missing", f)
-		}
-	}
-}
-
-func TestAgentTasks_SerializesAsEmptyArray(t *testing.T) {
-	d := report.NewDocument()
-
-	data, err := json.Marshal(d)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-
-	for _, field := range []string{"agent_tasks", "advisory_tasks"} {
-		raw, ok := m[field]
-		if !ok {
-			t.Fatalf("%s field missing from JSON", field)
-		}
-		if string(raw) != "[]" {
-			t.Errorf("%s = %s; want []", field, raw)
-		}
-	}
-}
-
-func TestVerdict_Constants(t *testing.T) {
-	tests := []struct {
-		v    report.Verdict
-		want string
-	}{
-		{report.VerdictPass, "pass"},
-		{report.VerdictFail, "fail"},
-		{report.VerdictWarn, gateWarn},
-	}
-	for _, tt := range tests {
-		if string(tt.v) != tt.want {
-			t.Errorf("Verdict %q = %q; want %q", tt.v, string(tt.v), tt.want)
 		}
 	}
 }
@@ -180,9 +127,7 @@ func TestMetricResultHasNoReferenceDelta(t *testing.T) {
 
 func TestSummary_JSONFieldNames(t *testing.T) {
 	s := report.Summary{
-		GateFindings: 3,
-		Warnings:     1,
-		WaiversUsed:  2,
+		Warnings: 1,
 	}
 
 	data, err := json.Marshal(s)
@@ -195,7 +140,7 @@ func TestSummary_JSONFieldNames(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	for _, f := range []string{"gate_findings", "warnings", "waivers_used"} {
+	for _, f := range []string{"warnings"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("Summary JSON field %q missing", f)
 		}

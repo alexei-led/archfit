@@ -5,7 +5,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/extract/acquire"
 	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
 	"github.com/alexei-led/archfit/v3/internal/extract/registry"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/scope"
 )
@@ -47,7 +46,6 @@ type RunOptions struct {
 	Extractors  registry.Configs
 	Acquisition acquire.Options
 	Syntax      evidenceports.SyntaxConfig
-	Patterns    pattern.Config
 	// Lint reports the config-quality warnings for a module set. It is a
 	// function, not a precomputed slice, because it must run against the run's
 	// RESOLVED modules: a module whose owner CODEOWNERS filled is not missing an

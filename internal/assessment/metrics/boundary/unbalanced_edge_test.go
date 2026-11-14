@@ -122,8 +122,8 @@ func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	// Two findings share the same edge pair with different statuses. The
 	// first (StatusNew, priority 4) is listed before the second
-	// (StatusWaived, priority 2) — a naive "last write wins" index would
-	// keep StatusWaived and drop the count to 0; the actual statusPriority
+	// (StatusFixed, priority 0) — a naive "last write wins" index would
+	// keep StatusFixed and drop the count to 0; the actual statusPriority
 	// logic must keep the higher-priority StatusNew regardless of order.
 	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
 	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
@@ -139,14 +139,14 @@ func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	edgeEv := finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}}
 	findings := []finding.Finding{
 		{Edge: edgeEv, Status: finding.StatusNew},
-		{Edge: edgeEv, Status: finding.StatusWaived},
+		{Edge: edgeEv, Status: finding.StatusFixed},
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
 	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx), Findings: findings})
 
 	if result.Value != 1 {
-		t.Errorf("expected value 1 (higher-priority StatusNew must win over StatusWaived) got %v", result.Value)
+		t.Errorf("expected value 1 (higher-priority StatusNew must win over StatusFixed) got %v", result.Value)
 	}
 	if result.Band != bandCritical {
 		t.Errorf("expected band critical got %q", result.Band)

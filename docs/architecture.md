@@ -22,21 +22,20 @@ flowchart LR
   cli[CLI composition] --> prep[Prepare policy and scope]
   prep --> acquire[Acquire evidence]
   acquire --> relate[Classify relationships]
-  relate --> assess[Assess rules and metrics]
+  relate --> assess[Calculate measurements and advisories]
   assess --> project[Project report]
   project --> output[Render output]
   adapters[Config, tools, stores] --> acquire
-  stores[Labels] --> prep
   classDef neutral fill:#f1f5f9,stroke:#64748b,color:#0f172a
   classDef process fill:#e0f2fe,stroke:#0284c7,color:#082f49
   classDef healthy fill:#dcfce7,stroke:#16a34a,color:#14532d
   classDef attention fill:#fef3c7,stroke:#d97706,color:#451a03
   classDef blocked fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
   class cli,prep,acquire,relate,assess,project,output process
-  class adapters,stores neutral
+  class adapters neutral
 ```
 
-The application owns the stage order. Acquisition returns observations. Relationship analysis turns graph evidence into a classified relationship set. Assessment evaluates policy and evidence. Projection maps internal results to the report contract. Renderers consume that contract.
+The application owns the stage order. Acquisition returns observations. Relationship analysis turns graph evidence into a classified relationship set. Assessment calculates report measurements and diagnostic advisories. Repository errors and exceptions come separately from `internal/application/repostate`, using the check rules on the whole tree. Projection maps internal results to the report contract. Renderers consume that contract.
 
 ## Check flow
 
@@ -99,7 +98,7 @@ Git object writes use a private directory for the command, with the repository's
 | Add policy syntax or boundary semantics | `internal/policy` and config adapters |
 | Add source or tool observations | Evidence contracts, then the relevant acquisition adapter |
 | Change relationship classification or coupling | `internal/relationship` |
-| Change findings, metrics, verdicts, or repair tasks | `internal/assessment` |
+| Change check errors or report measurements | `internal/assessment` |
 | Change command workflow or stage order | `internal/application` |
 | Change public report fields | `internal/model/report` and its schema |
 | Change rendering | `internal/output/**` |

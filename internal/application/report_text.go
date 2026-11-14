@@ -13,13 +13,12 @@ import (
 
 // Report text bounds. A strict state consumer (the archfit App) rejects any
 // string holding a control character or a line/paragraph separator, caps free
-// text at 500 runes and an agent task's goal and constraints at 4096, and a
+// text at 500 runes and a
 // single rejected string invalidates the whole report. Tool stderr, error
 // chains, and config globs reach these fields verbatim, so every free-text
 // field is bounded here, once, below those caps.
 const (
-	maxReportTextRunes     = 400
-	maxReportTaskTextRunes = 3600
+	maxReportTextRunes = 400
 )
 
 // reportEllipsis marks text the projection shortened; the full text went to stderr.
@@ -108,28 +107,13 @@ func boundReportText(doc *report.Document) {
 		f.Constraint = reportText(f.Constraint, maxReportTextRunes)
 		f.Alternatives = reportTexts(f.Alternatives, maxReportTextRunes)
 	}
-	for i := range doc.AgentTasks {
-		t := &doc.AgentTasks[i]
-		t.Goal = reportText(t.Goal, maxReportTaskTextRunes)
-		t.Constraints = reportTexts(t.Constraints, maxReportTaskTextRunes)
-	}
-	for i := range doc.AdvisoryTasks {
-		t := &doc.AdvisoryTasks[i]
-		t.Goal = reportText(t.Goal, maxReportTaskTextRunes)
-		t.Hypothesis = reportText(t.Hypothesis, maxReportTaskTextRunes)
-		t.Constraints = reportTexts(t.Constraints, maxReportTaskTextRunes)
-	}
 	for i := range doc.ToolCoverage {
 		doc.ToolCoverage[i].Reason = reportText(doc.ToolCoverage[i].Reason, maxReportTextRunes)
 	}
 	doc.ConfigWarnings = reportTexts(doc.ConfigWarnings, maxReportTextRunes)
 
 	st := &doc.State
-	st.Findings, st.AgentTasks = doc.Findings, doc.AgentTasks
-	for i := range st.Decision.UnevaluatedRequiredRules {
-		rule := &st.Decision.UnevaluatedRequiredRules[i]
-		rule.Reason = reportText(rule.Reason, maxReportTextRunes)
-	}
+	st.Findings = doc.Findings
 	for _, dim := range []*report.DimensionState{
 		&st.Dimensions.Intent, &st.Dimensions.Structure, &st.Dimensions.Modularity, &st.Dimensions.Coupling,
 		&st.Dimensions.ChangeLocality, &st.Dimensions.Complexity, &st.Dimensions.Testability,

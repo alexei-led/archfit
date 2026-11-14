@@ -7,9 +7,6 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
@@ -20,114 +17,6 @@ const (
 	fpWarnAdv = "11111111111111111111111111111111"
 	fpGate    = "22222222222222222222222222222222"
 )
-
-// warnRuleFinding is what gatedRule emits for a `gate: warn` rule: a rule
-// finding stamped KindAdvisory.
-func warnRuleFinding(id string) finding.Finding {
-	return finding.Finding{
-		ID: id, Kind: finding.KindAdvisory, RuleID: ruleWarn, Status: finding.StatusNew,
-		Severity: finding.SeverityMedium,
-		Edge:     finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}, Kind: kindImports},
-	}
-}
-
-// TestEvaluateHidesWarnRuleAdvisoriesWithoutAdvisories pins the --no-advisories
-// contract for `gate: warn` rules. They are advisories, not gate findings: they
-// must not appear in findings[] when advisories are off.
-func TestEvaluateHidesWarnRuleAdvisoriesWithoutAdvisories(t *testing.T) {
-	in := func(include bool) evaluation.Input {
-		return evaluation.Input{
-			Rules:             evaluation.RulesetOf(stubRule{id: ruleWarn, findings: []finding.Finding{warnRuleFinding(fpWarnAdv)}}),
-			IncludeAdvisories: include, Now: evaluatedAt,
-		}
-	}
-	off := evaluation.Evaluate(in(false))
-	if ids := findingIDs(off.Findings, ruleWarn); len(ids) != 0 {
-		t.Errorf("findings with --no-advisories = %v, want the warn-rule advisory suppressed", ids)
-	}
-	if off.Warnings != 0 {
-		t.Errorf("warnings with --no-advisories = %d, want 0", off.Warnings)
-	}
-	if off.Verdict != result.VerdictWarn {
-		t.Errorf("verdict = %q, want warn: an active warn-rule finding warns even when hidden", off.Verdict)
-	}
-
-	on := evaluation.Evaluate(in(true))
-	if ids := findingIDs(on.Findings, ruleWarn); len(ids) != 1 {
-		t.Errorf("findings with advisories = %v, want the warn-rule advisory visible", ids)
-	}
-	if on.Warnings != 1 {
-		t.Errorf("warnings = %d, want the warn-rule advisory counted", on.Warnings)
-	}
-	// Pinned on BOTH sides of the flag. Asserting the verdict only when
-	// advisories are hidden lets a regression that drops the warn verdict while
-	// keeping the count correct pass unnoticed.
-	if on.Verdict != result.VerdictWarn {
-		t.Errorf("verdict with advisories = %q, want warn", on.Verdict)
-	}
-}
-
-// TestEvaluateCountsRuleAndCouplingAdvisoriesInWarnings pins that
-// summary.warnings covers BOTH advisory sources. Counting only the coupling
-// half let the report list advisories while claiming zero warnings.
-func TestEvaluateCountsRuleAndCouplingAdvisoriesInWarnings(t *testing.T) {
-	got := evaluation.Evaluate(evaluation.Input{
-		Rules: evaluation.RulesetOf(stubRule{id: ruleWarn, findings: []finding.Finding{warnRuleFinding(fpWarnAdv)}}),
-		AdvisoryCandidates: []relationship.AdvisoryCandidate{{
-			ID: "adv-1", RuleID: ruleBC, Severity: relationship.SeverityHigh,
-			From: pathA, To: pathB, FromModule: moduleA, ToModule: moduleB, EdgeKind: kindImports,
-		}},
-		IncludeAdvisories: true, Now: evaluatedAt,
-	})
-	if got.Warnings != 2 {
-		t.Errorf("warnings = %d, want both the coupling and the warn-rule advisory", got.Warnings)
-	}
-}
-
-// TestEvaluateLabelsFindingEndpointsWithoutAMatchingEdge pins that module
-// labels are a path lookup, not an edge-match side effect. The cycle rule
-// reports two sorted SCC members that need not be directly connected; gating
-// the label on an edge match left those findings with empty modules and dropped
-// the "public surface of module" constraint from their repair tasks.
-func TestEvaluateLabelsFindingEndpointsWithoutAMatchingEdge(t *testing.T) {
-	set := relationship.Set{Edges: []relationship.Edge{
-		{FromID: "file:" + pathA, ToID: "file:" + pathB, FromPath: pathA, ToPath: pathB,
-			FromModule: moduleA, ToModule: moduleB, Kind: kindImports,
-			Strength: relationship.StrengthFunctional, Distance: relationship.DistanceCrossModuleDiffOwner},
-	}}
-	// The finding names the same two endpoints but a kind no edge carries, so
-	// FindByFindingEdge cannot match it.
-	f := gateFinding(fpGate, finding.SeverityHigh)
-	f.Edge.Kind = metricCycle
-
-	got := evaluation.Evaluate(evaluation.Input{
-		Relationships: set,
-		Rules:         evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{f}}),
-		Now:           evaluatedAt,
-	})
-	out := findByID(t, got.Findings, fpGate)
-	if out.Edge.From.Module != moduleA || out.Edge.To.Module != moduleB {
-		t.Errorf("endpoint modules = %q -> %q, want %q -> %q",
-			out.Edge.From.Module, out.Edge.To.Module, moduleA, moduleB)
-	}
-}
-
-// A path no edge touches still resolves through the configured module map.
-func TestEvaluateLabelsFindingEndpointsFromConfiguredModules(t *testing.T) {
-	modules := map[string]policy.ModuleDef{
-		moduleA: {Paths: []string{assessPathsA}},
-		moduleB: {Paths: []string{assessPathsB}},
-	}
-	got := evaluation.Evaluate(evaluation.Input{
-		Rules:  evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding(fpGate, finding.SeverityHigh)}}),
-		Policy: policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
-		Now:    evaluatedAt,
-	})
-	out := findByID(t, got.Findings, fpGate)
-	if out.Edge.From.Module != moduleA || out.Edge.To.Module != moduleB {
-		t.Errorf("endpoint modules = %q -> %q, want the configured modules", out.Edge.From.Module, out.Edge.To.Module)
-	}
-}
 
 // TestEvaluateRolledUpAdvisoryReportsTheFirstLocationsOwner pins that a
 // rolled-up advisory's from/to paths name the member owning locations[0], so
@@ -159,5 +48,36 @@ func TestEvaluateRolledUpAdvisoryReportsTheFirstLocationsOwner(t *testing.T) {
 	if rep.Edge.From.Path != "a/first.go" || rep.Edge.To.Path != "b/first.go" {
 		t.Errorf("rolled-up paths = %q -> %q, want the member owning locations[0]",
 			rep.Edge.From.Path, rep.Edge.To.Path)
+	}
+}
+
+func TestEvaluatePreservesAdvisorySeverity(t *testing.T) {
+	t.Parallel()
+	for _, severity := range []relationship.Severity{
+		relationship.SeverityCritical, relationship.SeverityHigh,
+		relationship.SeverityMedium, relationship.SeverityLow,
+	} {
+		t.Run(string(severity), func(t *testing.T) {
+			t.Parallel()
+			candidate := relationship.AdvisoryCandidate{
+				ID: "advisory", RuleID: ruleBC, Severity: severity,
+				From: pathA, To: pathB, FromModule: moduleA, ToModule: moduleB, EdgeKind: kindImports,
+				MatchedBy: map[string]string{"score_band": string(severity)},
+			}
+			got := evaluation.Evaluate(evaluation.Input{
+				Relationships: relationship.Set{Edges: []relationship.Edge{{
+					FromPath: pathA, ToPath: pathB, Kind: kindImports,
+					Strength: relationship.StrengthFunctional, Distance: relationship.DistanceCrossModule,
+				}}},
+				AdvisoryCandidates: []relationship.AdvisoryCandidate{candidate}, IncludeAdvisories: true,
+			})
+			if len(got.Findings) != 1 {
+				t.Fatalf("findings = %+v, want one advisory", got.Findings)
+			}
+			f := got.Findings[0]
+			if string(f.Severity) != string(severity) || f.MatchedBy["score_band"] != string(severity) {
+				t.Fatalf("severity = %s, score band = %s, want %s unchanged", f.Severity, f.MatchedBy["score_band"], severity)
+			}
+		})
 	}
 }

@@ -10,10 +10,9 @@ import (
 
 func TestProjectReportPreservesAssessmentAndScorecardContracts(t *testing.T) {
 	diagnostic := result.New()
-	diagnostic.Verdict = result.VerdictWarn
 	diagnostic.Base = blockBaseRef
 	diagnostic.Head = stateHeadRef
-	diagnostic.Summary = result.Summary{Warnings: 2, WaiversUsed: 1}
+	diagnostic.Summary = result.Summary{Warnings: 2}
 	diagnostic.ToolCoverage = []evidence.Coverage{{Tool: stateToolSCIP, Status: evidence.StatusPartial, FilesSeen: 4, FilesApplicable: 5}}
 	diagnostic.ClassifiedEdges = &result.ClassifiedEdgeSummary{Total: 7, Scored: 5, MeanBalance: 4.5}
 
@@ -26,10 +25,10 @@ func TestProjectReportPreservesAssessmentAndScorecardContracts(t *testing.T) {
 		}},
 	}
 	document := projectReport(diagnostic, scorecard)
-	if string(document.Verdict) != string(OutcomeWarn) || document.Base != blockBaseRef || document.Head != stateHeadRef {
+	if document.Base != blockBaseRef || document.Head != stateHeadRef {
 		t.Fatalf("assessment identity projection lost data: %+v", document)
 	}
-	if document.Summary.Warnings != 2 || document.Summary.WaiversUsed != 1 {
+	if document.Summary.Warnings != 2 {
 		t.Fatalf("summary projection = %+v", document.Summary)
 	}
 	if len(document.ToolCoverage) != 1 || document.ToolCoverage[0].Tool != "scip" || document.ToolCoverage[0].FilesApplicable != 5 {

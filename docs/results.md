@@ -147,7 +147,7 @@ Both commands keep their JSON document, with the git tree id of the working tree
 
 ## The report
 
-`archfit report --format json` writes the `archfit.architecture-state.v1` document of [`archfit.report.schema.json`](../archfit.report.schema.json). On a version 3 policy it has a `repository` object: `state` (`clean`, `drift`, or `expired`), `drift` and `expired` (the errors, in the fields of the record), `expiring` (exceptions within 14 days of their date), `not_checked` (the notes), `balances` (each allowed dependency), `unread` (the places the check could not read, which `state` does not cover), and `protected`. A reader that shows `state` shows `unread` beside it. The report decides nothing and exits `0` whatever it shows. The document still carries the Archfit 3 `verdict` and `decision` fields: read `repository` instead. See [commands](commands.md#report).
+`archfit report --format json` writes the `archfit.architecture-state.v1` document of [`archfit.report.schema.json`](../archfit.report.schema.json). On a version 3 policy it has a `repository` object: `state` (`clean`, `drift`, or `expired`), `drift` and `expired` (the errors, in the fields of the record), `expiring` (exceptions within 14 days of their date), `not_checked` (the notes), `balances` (each allowed dependency), `unread` (the places the check could not read, which `state` does not cover), and `protected`. A reader that shows `state` shows `unread` beside it. The report decides nothing and exits `0` whatever it shows. It has no Archfit 3 rule evaluation, waiver status, verdict, decision, or repair tasks. Exceptions affect repository errors, not the measurements. See [commands](commands.md#report).
 
 ## Retired Archfit 3 outputs
 

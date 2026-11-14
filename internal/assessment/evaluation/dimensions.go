@@ -3,13 +3,10 @@ package evaluation
 import (
 	"fmt"
 	"maps"
-	"path"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
@@ -24,8 +21,9 @@ import (
 // Metric units. They mirror the existing metric Mode vocabulary so a dimension
 // metric and the metric it came from cannot disagree about what the number is.
 const (
-	unitCount = "count"
-	unitRatio = "ratio"
+	unitCount  = "count"
+	goLanguage = "go"
+	unitRatio  = "ratio"
 )
 
 // Provenance names. Each says which capability observed the fact, so a reader
@@ -39,10 +37,6 @@ const (
 	provGitHistory   = "history/git"
 	provAssessment   = "assessment/evaluation"
 )
-
-// gateOffPosture is the rule gate that switches a declared rule off entirely.
-// It is the same vocabulary the coverage-gap gate uses.
-const gateOffPosture = gateOff
 
 // buildDimensions populates the nine architecture-state envelopes from facts
 // this run already produced. It measures nothing new: every number here is a
@@ -63,95 +57,30 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		ChangeLocality: changeLocalityDimension(),
 		Complexity:     complexityDimension(diag, in.Policy, in.Facts),
 		Testability:    testabilityDimension(in.Policy, in.Facts),
-		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
+		Operations:     operationsDimension(diag, in.Policy, in.Facts),
 		Drift:          driftDimension(),
 	}
 	for _, dim := range dims.Each() {
 		if refs := routed[dim.Name]; len(refs) > 0 {
 			dim.Findings = refs
 		}
-		dim.Gate = gateFor(*dim)
 	}
 	return dims
 }
 
-// gateFor is one dimension's gate posture, read from its own classified
-// findings. A dimension fails only when a hard-gate finding was routed to it,
-// which by construction can only happen where a named hard rule lives; an
-// active diagnostic warns; a measured dimension with nothing active passes.
-//
-// A dimension that already declared a failure keeps it: the required-tool
-// policy fails without producing a finding, so its gate cannot be inferred
-// from the finding list.
-func gateFor(d state.Dimension) state.GateState {
-	if d.Gate == state.GateFail {
-		return state.GateFail
-	}
-	// A hard-gate finding fails its dimension even when the dimension is
-	// unmeasured: a rule violation was found in the observed edges, so the
-	// blocker is real regardless of evidence completeness.
-	for _, ref := range d.Findings {
-		if ref.Kind == finding.KindGate {
-			return state.GateFail
-		}
-	}
-	if d.Status == state.Unmeasured {
-		return state.GateNotApplicable
-	}
-	if len(d.Findings) > 0 {
-		return state.GateWarn
-	}
-	return state.GatePass
-}
-
-// dimensionForRule routes one finding to the dimension that owns its subject.
-//
-// Assessment's own rule IDs are matched first because they are not declared in
-// config and therefore have no type. Declared rules route by type: dependency
-// direction, layering, and cycles are structure facts; every public-surface and
-// internal-access rule is a modularity fact.
-//
-// An unrecognised rule ID lands in intent — a finding from a rule nobody can
-// classify is still evidence about configured intent, and dropping it would
-// hide it from every dimension at once.
-func dimensionForRule(ruleID string, ruleTypes map[string]string) string {
+// dimensionForRule routes report advisories to the measurement they describe.
+func dimensionForRule(ruleID string) string {
 	switch ruleID {
 	case finding.RuleIDBCImbalanced, finding.RuleIDDuplicatedKnowledge:
 		return state.DimensionCoupling
+	default:
+		return state.DimensionIntent
 	}
-	switch ruleTypes[ruleID] {
-	case "forbidden_dependency", "forbidden_layer_direction", "cycle", ruleTypeModuleCycle, ruleTypeModuleDependencies,
-		"new_cross_module_dependency":
-		return state.DimensionStructure
-	case "public_api_only", "public_api_max", "public_api_change", "public_api_type_leak", "internal_api_access",
-		ruleTypeForbiddenPattern:
-		return state.DimensionModularity
-	}
-	return state.DimensionIntent
 }
 
 // ---------------------------------------------------------------------------
 // Dimension collectors
 // ---------------------------------------------------------------------------
-
-const (
-	syntaxCoverageTool      = "ast-grep/syntax"
-	ruleTypePublicAPIMax    = "public_api_max"
-	ruleTypePublicAPIChange = "public_api_change"
-	ruleTypePublicAPILeak   = "public_api_type_leak"
-	ruleTypeModuleCycle     = "module_cycle"
-	// ruleTypeModuleDependencies enforces the module allowlists (depends_on,
-	// visible_to); its scope is the modules that declare one.
-	ruleTypeModuleDependencies = "module_dependencies"
-	// ruleTypeForbiddenPattern reads the pattern pass, whose coverage row is
-	// patternCoverageTool.
-	ruleTypeForbiddenPattern = "forbidden_pattern"
-	patternCoverageTool      = "ast-grep"
-	// The rule types that read their from:/to: selectors.
-	ruleTypeForbiddenDependency = "forbidden_dependency"
-	ruleTypePublicAPIOnly       = "public_api_only"
-	ruleTypeInternalAPIAccess   = "internal_api_access"
-)
 
 type primaryInventory struct {
 	known      bool
@@ -220,524 +149,6 @@ func (p primaryInventory) complete() bool {
 	return p.known && p.applicable > 0 && p.completed == p.applicable
 }
 
-func ruleNeedsSyntax(ruleType string) bool {
-	switch ruleType {
-	case ruleTypePublicAPIMax, ruleTypePublicAPIChange, ruleTypePublicAPILeak:
-		return true
-	default:
-		return false
-	}
-}
-
-func ruleNeedsDependencies(ruleType string) bool {
-	return ruleType != ruleTypePublicAPIMax && ruleType != ruleTypePublicAPIChange && ruleType != ruleTypeForbiddenPattern
-}
-
-// ruleNeedsPatterns reports whether a rule type reads the ast-grep pattern
-// pass: it is evaluated only when that pass completed.
-func ruleNeedsPatterns(ruleType string) bool {
-	return ruleType == ruleTypeForbiddenPattern
-}
-
-func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}, f Observations) bool {
-	rows := coverageRows(diag.ToolCoverage, syntaxCoverageTool)
-	if len(rows) != 1 || rows[0].Status != modevidence.StatusOK {
-		return false
-	}
-	// The syntax row is aggregate, while language opt-outs are reported on the
-	// per-language primary rows. An aggregate success cannot cover a scoped
-	// language that configuration removed from the syntax invocation. A
-	// language with scoped dependency evidence ran its producers, so its
-	// partial rows name dependency gaps, not an opt-out.
-	for language := range languages {
-		if _, scoped := f.ScopedDependencyEvidence[language]; scoped {
-			continue
-		}
-		tool, ok := primaryToolForLanguage(diag, language)
-		if !ok {
-			return false
-		}
-		primaryRows := coverageRows(diag.ToolCoverage, tool)
-		if len(primaryRows) != 1 || primaryRows[0].Status != modevidence.StatusOK {
-			return false
-		}
-	}
-	return true
-}
-
-type ruleScopeStatus uint8
-
-const (
-	ruleScopeUnknown ruleScopeStatus = iota
-	ruleScopeApplicable
-	ruleScopeNotApplicable
-)
-
-type ruleScope struct {
-	status    ruleScopeStatus
-	languages map[string]struct{}
-	// reason replaces the generic unknown-scope reason when the scope is
-	// unknown for a specific, nameable cause.
-	reason string
-}
-
-// ruleProducerScope derives the language denominator of one rule from the
-// files its own selectors can reach. A selector over an unsupported language
-// remains unknown: the supported-source inventory cannot prove that scope
-// empty, so a rule invocation over an empty graph is not conformance evidence.
-//
-// Every rule type but forbidden_pattern reads dependency edges, so its scope is
-// the files a dependency producer analyses (selectorInventory.analysedFiles):
-// a language whose extractor finds no project under the root is not waited
-// for. forbidden_pattern reads the ast-grep pattern pass and keeps them.
-//
-// A selector that provably matches nothing makes the rule vacuous, never
-// conformant: its scope is unknown with a reason naming the selector. A guard
-// rule (`guard: true`) matches nothing on purpose, so its empty selector is
-// not a defect.
-func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.PolicySnapshot, f Observations) ruleScope {
-	// The observed crate owners place a Rust file whose crate a module declares
-	// by another spelling, exactly as map completeness places it (fileOwner).
-	p.Topology.ModuleMap = p.Topology.ModuleMap.WithCrateOwners(f.CrateOwners)
-	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
-	if diag != nil {
-		rows := coverageRows(diag.ToolCoverage, toolPythonImports)
-		inv.pythonComplete = len(rows) == 1 && rows[0].Status == modevidence.StatusOK
-	}
-	files := inv.analysedFiles()
-	switch rule.Type {
-	case ruleTypePublicAPIMax, ruleTypePublicAPIChange:
-		return moduleRuleScope(p.Topology, inv)
-	case ruleTypePublicAPILeak:
-		// The current type-leak producer is explicitly Go-only.
-		return restrictRuleScopeLanguages(moduleRuleScope(p.Topology, inv), "go")
-	case ruleTypeForbiddenDependency, ruleTypePublicAPIOnly, ruleTypeInternalAPIAccess:
-		if scope, decided := vacuityScope(rule, inv); decided {
-			return scope
-		}
-		if inv.pythonTargetAddressable(rule, p.Topology) {
-			if reason := inv.unscannedPythonSelector(rule); reason != "" {
-				return ruleScope{status: ruleScopeUnknown, reason: reason}
-			}
-		} else {
-			inv.pythonComplete = false
-		}
-		if rule.FromModule != "" || rule.ToModule != "" {
-			return moduleSelectorScope(rule, p.Topology, inv, files, f)
-		}
-		// Dependency producers are selected by the source endpoint language, but
-		// an explicitly unsupported target scope is still unevaluated: no
-		// producer can emit a relationship to that source-file vocabulary.
-		if unsupportedOrAmbiguousSourcePattern(p.Topology.ModuleMap, rule.To) &&
-			!knownSourceVocabulary(p.Topology.ModuleMap, rule.To, files, f.SourceSelectors) {
-			return unsupportedTargetScope(rule.To)
-		}
-		return restrictToTargetVocabulary(
-			patternRuleScope(p.Topology.ModuleMap, rule.From, files, f.SourceSelectors, inv.rustModules),
-			p.Topology.ModuleMap.SelectorLanguages(rule.To))
-	case "forbidden_layer_direction":
-		return moduleRuleScope(p.Topology, inv)
-	case "new_cross_module_dependency", ruleTypeModuleCycle:
-		// Both read module pairs, and a pair needs two declared modules. A
-		// module cycle is module-wide: every declared module can close one.
-		if len(p.Topology.Modules) < 2 {
-			return ruleScope{status: ruleScopeNotApplicable}
-		}
-		return moduleRuleScope(p.Topology, inv)
-	case ruleTypeModuleDependencies:
-		return allowlistRuleScope(p.Topology, inv)
-	case "cycle":
-		if reason := inv.unscannedPythonSelector(policy.RuleDef{Type: rule.Type}); reason != "" {
-			return ruleScope{status: ruleScopeUnknown, reason: reason}
-		}
-		return allSourceScope(p.Topology.ModuleMap, files)
-	case ruleTypeForbiddenPattern:
-		if scope, decided := vacuityScope(rule, inv); decided {
-			return scope
-		}
-		// nil projected selectors: the rule matches from: against the file path
-		// or its convention selector, and its scope must use the same matcher,
-		// or a from: glob could scope as applicable yet never match a file.
-		return patternRuleScope(p.Topology.ModuleMap, rule.From, inv.files, nil, nil)
-	default:
-		return ruleScope{status: ruleScopeUnknown}
-	}
-}
-
-// vacuityScope decides the scope of a rule whose selector matches nothing: a
-// policy defect unless the rule is a guard. A guard holds while either side
-// matches nothing: no edge can start at a source that is not there or reach a
-// target that is not there, whatever state the dependency producer is in, so a
-// partial producer run cannot hold it unevaluated. A selector spelled as a graph
-// node ID is the exception: it can never match, however the tree changes, so a
-// guard cannot hold it. vacuous() already refuses a selector the inventory
-// cannot judge. A selector that matches only source no dependency producer
-// analyses is neither: the code is there and nothing reads its relationships, so
-// guard or not the rule stays unevaluated with a reason saying so. decided is
-// false when the selectors are live, so the caller scopes the rule as usual.
-func vacuityScope(rule policy.RuleDef, inv selectorInventory) (scope ruleScope, decided bool) {
-	side, glob, vacuous := inv.vacuousSelector(rule)
-	switch {
-	case !vacuous:
-		return ruleScope{}, false
-	case !rule.Guard || nodeKindedSelector(glob) || inv.matchesOnlyUnanalysed(rule.Type, side, glob):
-		return ruleScope{status: ruleScopeUnknown, reason: inv.vacuityReason(rule.Type, side, glob)}, true
-	default:
-		return ruleScope{status: ruleScopeNotApplicable}, true
-	}
-}
-
-// sourceInventoryFiles is the rule-scope source inventory: every walked source
-// file inside the declared analysis scope. A file the configuration declared out
-// of scope is not part of any rule's scope, whatever its language.
-func sourceInventoryFiles(f Observations) []string {
-	set := make(map[string]struct{}, len(f.FileClassIndex)+len(f.FileLOC))
-	for file := range f.FileClassIndex {
-		set[file] = struct{}{}
-	}
-	for file := range f.FileLOC {
-		set[file] = struct{}{}
-	}
-	files := make([]string, 0, len(set))
-	for file := range set {
-		if _, outOfScope := f.OutOfScopeFiles[file]; outOfScope {
-			continue
-		}
-		files = append(files, file)
-	}
-	sort.Strings(files)
-	return files
-}
-
-func allSourceScope(moduleMap policy.ModuleMap, files []string) ruleScope {
-	languages := make(map[string]struct{})
-	for _, file := range files {
-		language, _, supported := moduleMap.RuleSelectorForFile(file)
-		if !supported {
-			return ruleScope{status: ruleScopeUnknown}
-		}
-		languages[language] = struct{}{}
-	}
-	if len(languages) == 0 {
-		return ruleScope{status: ruleScopeUnknown}
-	}
-	return ruleScope{status: ruleScopeApplicable, languages: languages}
-}
-
-// moduleRuleScope is the scope of a module-wide rule: the languages of every
-// declared module's analysed source. A module whose walked source all lies
-// outside the rule's scope (declared out of scope, or unanalysed) contributes
-// nothing; a module declared by Rust crate::mod paths is judged against the
-// module graph (selectorInventory.rustModulePath).
-func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleScope {
-	if len(topology.Modules) == 0 {
-		return ruleScope{status: ruleScopeNotApplicable}
-	}
-	owner := func(file string) (string, bool) {
-		language, selector, _ := ruleFileSelector(topology.ModuleMap, file, inv.selectors)
-		return fileOwner(topology.ModuleMap, file, language, selector)
-	}
-	languages := make(map[string]struct{})
-	modulesWithFiles := make(map[string]struct{})
-	for _, file := range inv.files {
-		module, owned := owner(file)
-		if _, inScope := topology.Modules[module]; !owned || !inScope {
-			continue
-		}
-		modulesWithFiles[module] = struct{}{}
-		if _, unanalysed := inv.unanalysed[file]; unanalysed {
-			if inv.pythonComplete && strings.HasSuffix(file, ".py") {
-				return ruleScope{status: ruleScopeUnknown, reason: unscannedPythonReason(file)}
-			}
-			continue
-		}
-		language, _, supported := topology.ModuleMap.RuleSelectorForFile(file)
-		if !supported {
-			return ruleScope{status: ruleScopeUnknown}
-		}
-		languages[language] = struct{}{}
-	}
-	for file := range inv.outOfScope {
-		if module, owned := owner(file); owned {
-			modulesWithFiles[module] = struct{}{}
-		}
-	}
-	// Every declared module is part of a public-surface or module relationship
-	// rule's scope. An explicitly unsupported extension prevents conformance;
-	// otherwise the complete supported-source inventory proves an empty module
-	// scope n/a for the producers Archfit can invoke.
-	for _, module := range sortedModuleNames(topology.Modules) {
-		if _, hasFile := modulesWithFiles[module]; hasFile {
-			continue
-		}
-		def := topology.Modules[module]
-		if len(def.Paths) == 0 {
-			return ruleScope{status: ruleScopeUnknown}
-		}
-		for _, pattern := range def.Paths {
-			if strings.Contains(pattern, sepCrate) {
-				matched, decided := inv.rustModulePath(pattern)
-				if !decided {
-					return ruleScope{status: ruleScopeUnknown, reason: rustModuleGraphMissing(module, pattern)}
-				}
-				if matched {
-					languages[languageRust] = struct{}{}
-				}
-				continue
-			}
-			if !explicitlySupportedSourcePattern(topology.ModuleMap, pattern) {
-				return ruleScope{status: ruleScopeUnknown}
-			}
-		}
-	}
-	if len(languages) > 0 {
-		return ruleScope{status: ruleScopeApplicable, languages: languages}
-	}
-	return ruleScope{status: ruleScopeNotApplicable}
-}
-
-// moduleSelectorScope is the scope of a forbidden_dependency rule with a module
-// selector. A from_module side scopes like a module rule over the modules it
-// selects (selectedModuleScope), and a from: glob like any dependency rule. A
-// to_module side keeps the languages its selected modules' source speaks,
-// since no producer emits an edge across languages; a to: glob keeps the
-// languages its spelling addresses (restrictToTargetVocabulary).
-func moduleSelectorScope(rule policy.RuleDef, topology policy.TopologyView, inv selectorInventory, files []string, f Observations) ruleScope {
-	scope := patternRuleScope(topology.ModuleMap, rule.From, files, f.SourceSelectors, inv.rustModules)
-	if rule.FromModule != "" {
-		scope = selectedModuleScope(topology, inv, topology.ModuleMap.ModulesSelected(rule.FromModule))
-	}
-	if rule.ToModule == "" {
-		if unsupportedOrAmbiguousSourcePattern(topology.ModuleMap, rule.To) &&
-			!knownSourceVocabulary(topology.ModuleMap, rule.To, files, f.SourceSelectors) {
-			return unsupportedTargetScope(rule.To)
-		}
-		return restrictToTargetVocabulary(scope, topology.ModuleMap.SelectorLanguages(rule.To))
-	}
-	// A target scope that cannot be established keeps the rule unevaluated,
-	// and a target with no analysed source can receive no edge: the rule is
-	// not applicable, as when the from_module side selects no analysed source.
-	// Neither may fall back to the from side and count as evaluated.
-	target := selectedModuleScope(topology, inv, topology.ModuleMap.ModulesSelected(rule.ToModule))
-	if target.status != ruleScopeApplicable || scope.status != ruleScopeApplicable {
-		if scope.status == ruleScopeUnknown {
-			return scope
-		}
-		if target.status != ruleScopeApplicable {
-			return target
-		}
-		return scope
-	}
-	return restrictToTargetVocabulary(scope, target.languages)
-}
-
-// selectedModuleScope is moduleRuleScope over the named declared modules only.
-func selectedModuleScope(topology policy.TopologyView, inv selectorInventory, modules []string) ruleScope {
-	selected := make(map[string]policy.ModuleDef, len(modules))
-	for _, name := range modules {
-		selected[name] = topology.Modules[name]
-	}
-	scoped := topology
-	scoped.Modules = selected
-	return moduleRuleScope(scoped, inv)
-}
-
-// allowlistRuleScope is the scope of module_dependencies: the languages of the
-// modules that declare depends_on or visible_to. A declaring module's
-// importers and targets speak its own node vocabulary, so a module that owns
-// only Go source stays evaluated when another language's producer is missing.
-// With no declaring module the rule enforces nothing, which is a policy defect
-// reported like a selector that matches nothing.
-func allowlistRuleScope(topology policy.TopologyView, inv selectorInventory) ruleScope {
-	var declaring []string
-	for name := range topology.Modules {
-		if topology.ModuleMap.DeclaresAllowlist(name) {
-			declaring = append(declaring, name)
-		}
-	}
-	if len(declaring) == 0 {
-		return ruleScope{status: ruleScopeUnknown, reason: allowlistsDeclareNothing}
-	}
-	return selectedModuleScope(topology, inv, declaring)
-}
-
-// allowlistsDeclareNothing is the unevaluated reason of a module_dependencies
-// rule no module gives a list to enforce. It carries the selector-defect prefix
-// because a consumer reads that prefix as a policy defect, which this is.
-const allowlistsDeclareNothing = selectorMatchesNothingPrefix + "no module declares depends_on or visible_to"
-
-// rustModuleGraphMissing is the unknown-scope reason for a module declared by
-// a crate::mod path the Rust module graph does not cover.
-func rustModuleGraphMissing(module, pattern string) string {
-	return "module " + module + " path " + pattern + " names Rust modules the module graph (cargo-modules) does not cover"
-}
-
-func restrictRuleScopeLanguages(scope ruleScope, allowed ...string) ruleScope {
-	if scope.status != ruleScopeApplicable {
-		return scope
-	}
-	allowedSet := make(map[string]struct{}, len(allowed))
-	for _, language := range allowed {
-		allowedSet[language] = struct{}{}
-	}
-	languages := make(map[string]struct{})
-	for language := range scope.languages {
-		if _, ok := allowedSet[language]; ok {
-			languages[language] = struct{}{}
-		}
-	}
-	if len(languages) == 0 {
-		return ruleScope{status: ruleScopeNotApplicable}
-	}
-	return ruleScope{status: ruleScopeApplicable, languages: languages}
-}
-
-// patternRuleScope is the scope of a rule whose source selector is pattern:
-// the languages of the files it matches, and Rust when it matches a node of the
-// Rust module graph (rustModules), whose crate::mod nodes have no file.
-func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string, rustModules []string) ruleScope {
-	if pattern == "" {
-		return allSourceScope(moduleMap, files)
-	}
-	languages := make(map[string]struct{})
-	for _, file := range files {
-		language, selector, supported := ruleFileSelector(moduleMap, file, selectors)
-		if !supported {
-			if matched, _ := doublestar.Match(pattern, file); matched {
-				return ruleScope{status: ruleScopeUnknown}
-			}
-			continue
-		}
-		if rulePatternMatches(pattern, file, selector) {
-			languages[language] = struct{}{}
-		}
-	}
-	for _, node := range rustModules {
-		if matched, _ := doublestar.Match(pattern, node); matched {
-			languages[languageRust] = struct{}{}
-			break
-		}
-	}
-	if len(languages) > 0 {
-		return ruleScope{status: ruleScopeApplicable, languages: languages}
-	}
-	// A selector that matches no supported source was either reported vacuous
-	// by ruleProducerScope or is one the inventory cannot judge.
-	return ruleScope{status: ruleScopeUnknown}
-}
-
-func ruleFileSelector(moduleMap policy.ModuleMap, file string, selectors map[string]string) (string, string, bool) {
-	language, selector, supported := moduleMap.RuleSelectorForFile(file)
-	if projected, ok := selectors[file]; ok {
-		selector = projected
-	}
-	return language, selector, supported
-}
-
-// unsupportedTargetPrefix starts the unevaluated reason of a rule whose to:
-// path names a file type no dependency producer analyses. Like a dead selector
-// it is the owner's to fix: no analyzer install can make the rule evaluable.
-// The brief and agent digest read the same prefix.
-const unsupportedTargetPrefix = "selector names a file type no dependency producer analyses: "
-
-// unsupportedTargetScope is the unknown scope of a rule whose to: path names a
-// file type no dependency producer analyses.
-func unsupportedTargetScope(glob string) ruleScope {
-	return ruleScope{status: ruleScopeUnknown, reason: unsupportedTargetPrefix + selectorTo + " " + glob}
-}
-
-func knownSourceVocabulary(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string) bool {
-	for _, file := range files {
-		_, selector, supported := ruleFileSelector(moduleMap, file, selectors)
-		if supported && selector != "" && rulePatternMatches(pattern, file, selector) {
-			return true
-		}
-	}
-	return false
-}
-
-func rulePatternMatches(pattern, file, selector string) bool {
-	if matched, _ := doublestar.Match(pattern, file); matched {
-		return true
-	}
-	if selector == "" || selector == file {
-		return false
-	}
-	matched, _ := doublestar.Match(pattern, selector)
-	return matched
-}
-
-func explicitlySupportedSourcePattern(moduleMap policy.ModuleMap, pattern string) bool {
-	ext := path.Ext(pattern)
-	if ext == "" || strings.ContainsAny(ext, "*?[{") {
-		return false
-	}
-	_, _, supported := moduleMap.RuleSelectorForFile("scope" + ext)
-	return supported
-}
-
-// unsupportedOrAmbiguousSourcePattern reports a selector spelled as a source
-// file path whose extension names no supported language, or names one only
-// through a wildcard. Only a file path has an extension: a selector without a
-// slash names a dotted module or package (a Python module, a .NET assembly such
-// as Microsoft.EntityFrameworkCore*), and one led by a dotted segment names a
-// Go import path (gopkg.in/yaml.v3). Their last dot separates a name segment.
-func unsupportedOrAmbiguousSourcePattern(moduleMap policy.ModuleMap, pattern string) bool {
-	if !strings.Contains(pattern, sepPath) || importPathDomain(pattern) {
-		return false
-	}
-	ext := path.Ext(pattern)
-	return ext != "" && !explicitlySupportedSourcePattern(moduleMap, pattern)
-}
-
-// importPathDomain reports a slash selector whose leading segment holds a dot:
-// a Go import-path domain (go.uber.org, k8s.io, github.com), never a
-// first-party directory.
-func importPathDomain(pattern string) bool {
-	segment, _, _ := strings.Cut(literalPrefix(pattern), sepPath)
-	return strings.Contains(segment, sepDotted)
-}
-
-// restrictToTargetVocabulary drops languages whose node vocabulary the rule's
-// TARGET selector cannot address.
-//
-// This extends the reasoning one line above — "no producer can emit a
-// relationship to that source-file vocabulary" — from the target side to the
-// source side. The source scope is derived from file extensions found under the
-// `from:` glob, and a glob picks up whatever happens to sit there: archfit
-// itself ships a Python helper script for the SCIP reader
-// (internal/extract/scip/scip_reader.py), so `from: internal/**` put python
-// in scope for rules whose `to:` is a Go package path. pyimports is absent
-// on a repository with no Python
-// project, so those rules were then reported unevaluated for want of evidence
-// that could not have changed their outcome: no Python edge can target a slash
-// path. On this repository that was 8 of 60 rules, holding `intent` at
-// `partial` permanently and putting exit 0 out of reach.
-//
-// Only availability-independent facts are used. A language is dropped because
-// its vocabulary cannot express the relationship, never because its analyzer
-// did not run — an absent producer for a language the rule CAN address still
-// leaves the rule unevaluated, which is what keeps a missing analyzer honest.
-//
-// An empty intersection is not applicable rather than unknown: every language
-// the `from:` glob selected is one whose nodes cannot address the target, so no
-// producer could have found a violation to begin with.
-func restrictToTargetVocabulary(s ruleScope, addressable map[string]struct{}) ruleScope {
-	if s.status != ruleScopeApplicable || len(addressable) == 0 {
-		return s
-	}
-	kept := make(map[string]struct{}, len(s.languages))
-	for language := range s.languages {
-		if _, ok := addressable[language]; ok {
-			kept[language] = struct{}{}
-		}
-	}
-	if len(kept) == 0 {
-		return ruleScope{status: ruleScopeNotApplicable}
-	}
-	return ruleScope{status: ruleScopeApplicable, languages: kept}
-}
-
 func primaryToolForLanguage(diag *result.Result, language string) (string, bool) {
 	// PrimaryExtractorTools is injected in the registry's append-only language
 	// order (Go, TypeScript, Python, Rust, .NET). Keep adapter tool names out of core;
@@ -761,23 +172,6 @@ func primaryToolForLanguage(diag *result.Result, language string) (string, bool)
 	return diag.PrimaryExtractorTools[index], true
 }
 
-func primaryEvidenceComplete(diag *result.Result, languages map[string]struct{}) bool {
-	if len(languages) == 0 {
-		return false
-	}
-	for language := range languages {
-		tool, ok := primaryToolForLanguage(diag, language)
-		if !ok {
-			return false
-		}
-		rows := coverageRows(diag.ToolCoverage, tool)
-		if len(rows) != 1 || rows[0].Status != modevidence.StatusOK {
-			return false
-		}
-	}
-	return true
-}
-
 func metricsProduced(computed []result.MetricResult, names ...string) bool {
 	for _, name := range names {
 		if _, ok := metricByName(computed, name); !ok {
@@ -799,66 +193,21 @@ func applyPromotion(dim *state.Dimension, observed, notApplicable []string, reas
 	dim.Unknown = append(dim.Unknown, missing...)
 }
 
-// intentDimension reports configured intent and gate conformance: what the
-// configuration declares and how much of it was actually evaluated. A config
-// that declares neither a module nor a rule states no intent, so there is
-// nothing to conform to and nothing to measure.
-func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observations) state.Dimension {
+// intentDimension inventories the declared modules and layers. Rule errors
+// belong to the repository state, not to a second report evaluator.
+func intentDimension(_ *result.Result, p policy.PolicySnapshot, _ Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionIntent, state.OwnerIntent)
-	rules := p.Gates.Rules.Rules
-	modules := len(p.Topology.Modules)
-	reasons := map[string]string{
-		state.FactDeclaredIntentInventory: "the configuration declares no module and no rule, so there is no stated intent to inventory",
-		state.FactActiveRuleConformance:   "one or more active rules lack the completed producer evidence their checks require",
-	}
-	if len(rules) == 0 && modules == 0 {
-		applyPromotion(&dim, nil, nil, reasons)
+	if len(p.Topology.Modules) == 0 {
+		applyPromotion(&dim, nil, nil, map[string]string{
+			state.FactDeclaredIntentInventory: "the policy declares no modules",
+		})
 		return dim
 	}
-
-	active, evaluated := 0, 0
-	var unevaluatedRules []string
-	fired := firedRules(diag.Findings)
-	for _, rule := range rules {
-		if rule.Gate == gateOffPosture {
-			continue
-		}
-		active++
-		if ruleUnevaluatedReason(diag, rule, p, f, fired) == "" {
-			evaluated++
-		} else {
-			unevaluatedRules = append(unevaluatedRules, rule.ID)
-		}
-	}
-	if len(unevaluatedRules) > 0 {
-		sort.Strings(unevaluatedRules)
-		reasons[state.FactActiveRuleConformance] += ": " + strings.Join(unevaluatedRules, ", ")
-	}
-	observed := []string{state.FactDeclaredIntentInventory}
-	var notApplicable []string
-	if active == 0 {
-		notApplicable = append(notApplicable, state.FactActiveRuleConformance)
-	} else if evaluated == active {
-		observed = append(observed, state.FactActiveRuleConformance)
-	}
-	applyPromotion(&dim, observed, notApplicable, reasons)
-	dim.Coverage = state.Coverage{Basis: "declared rules evaluated", Observed: evaluated, Total: len(rules)}
+	applyPromotion(&dim, []string{state.FactDeclaredIntentInventory}, nil, nil)
+	dim.Coverage = state.Coverage{Basis: "declared modules", Observed: len(p.Topology.Modules), Total: len(p.Topology.Modules)}
 	dim.Metrics = []state.MetricValue{
-		count("declared_modules", modules, provPolicy),
+		count("declared_modules", len(p.Topology.Modules), provPolicy),
 		count("declared_layers", len(p.Topology.Layers), provPolicy),
-		{Name: "declared_rules", Value: float64(len(rules)), Unit: unitCount,
-			Denominator: &state.MetricDenominator{Observed: evaluated, Total: len(rules)},
-			Provenance:  []string{provPolicy}},
-		count("declared_waivers", len(p.Assessment.Waivers.Waivers), provPolicy),
-		count("waivers_used", diag.Summary.WaiversUsed, provAssessment),
-		count("expired_waivers", countStatus(diag.Findings, finding.StatusExpiredWaiver), provAssessment),
-	}
-	if off := len(rules) - active; off > 0 {
-		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   state.FactDisabledRuleConformance,
-			Reason: "conformance to " + strconv.Itoa(off) + " declared rules was compiled out by gate: off",
-			Owner:  state.OwnerIntent,
-		})
 	}
 	return dim
 }
@@ -1563,10 +912,7 @@ func coverageRatio(covered, total int) float64 {
 // Repository manifests corroborate declarations but never claim that a unit is
 // running. Analyzer health remains an out-of-claim disclosure and cannot move
 // this status or confidence.
-//
-// It is the one dimension that can fail without a finding — the required-tool
-// policy is a gate over evidence, not over a violation.
-func operationsDimension(diag *result.Result, p policy.PolicySnapshot, f Observations, requiredToolFailure bool) state.Dimension {
+func operationsDimension(diag *result.Result, p policy.PolicySnapshot, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionOperations, state.OwnerOperations)
 	modules := len(p.Topology.Modules)
 	reasons := map[string]string{
@@ -1577,9 +923,6 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, f Observa
 	}
 	if modules == 0 {
 		applyPromotion(&dim, nil, nil, reasons)
-		if requiredToolFailure {
-			dim.Gate = state.GateFail
-		}
 		return dim
 	}
 
@@ -1658,9 +1001,6 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, f Observa
 			Reason: "analyzer " + gap.Tool + " did not run over this tree (gate: " + gap.Gate + "); install it with: " + gap.InstallCmd,
 			Owner:  state.OwnerOperations,
 		})
-	}
-	if requiredToolFailure {
-		dim.Gate = state.GateFail
 	}
 	return dim
 }
@@ -1912,16 +1252,6 @@ func confidenceRank(c state.Confidence) int {
 	default:
 		return 0
 	}
-}
-
-func countStatus(findings []finding.Finding, want finding.Status) int {
-	n := 0
-	for _, f := range findings {
-		if f.Status == want {
-			n++
-		}
-	}
-	return n
 }
 
 // classOf resolves a file's class, defaulting to production when the walk did

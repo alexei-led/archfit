@@ -14,10 +14,8 @@ type Status string
 
 // Status constants for finding lifecycle (spec §9).
 const (
-	StatusNew           Status = "new"
-	StatusWaived        Status = "waived"
-	StatusExpiredWaiver Status = "expired_waiver"
-	StatusFixed         Status = "fixed"
+	StatusNew   Status = "new"
+	StatusFixed Status = "fixed"
 )
 
 // Severity represents the severity level of a finding.

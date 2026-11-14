@@ -7,12 +7,8 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	"github.com/alexei-led/archfit/v3/internal/assessment/score"
-	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
@@ -107,17 +103,6 @@ func TestStageExecutorWrapsStageErrorsWithStageName(t *testing.T) {
 	}
 }
 
-// An invalid rule definition surfaces from the assessment stage, named as such.
-func TestStageExecutorWrapsAssessmentErrors(t *testing.T) {
-	stage := newLifecycleStage()
-	stage.policy = policy.New(policy.TopologyView{}, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
-		policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{{ID: "bad", Type: "bogus_type"}}}}, nil, nil)
-	_, err := executor(stage).Execute(t.Context(), AnalysisRequest{})
-	if err == nil || !strings.HasPrefix(err.Error(), "assessment: ") {
-		t.Fatalf("Execute error = %v, want an assessment-stage error", err)
-	}
-}
-
 func TestStageExecutorRequiresEveryStage(t *testing.T) {
 	stage := newLifecycleStage()
 	for _, test := range []struct {
@@ -137,71 +122,6 @@ func TestStageExecutorRequiresEveryStage(t *testing.T) {
 	}
 }
 
-// The state verdict maps onto the use-case outcome; the CLI
-// owns the exit code, not this layer.
-func TestServiceOutcomeFromStateVerdict(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		verdict state.Verdict
-		want    Outcome
-	}{
-		{name: "healthy", verdict: state.Healthy, want: OutcomePass},
-		{name: string(OutcomeWarn), verdict: state.NeedsAttention, want: OutcomeWarn},
-		{name: "blocked", verdict: state.Blocked, want: OutcomeFail},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			got := outcomeFor(AnalysisResult{
-				Diagnostic: result.Result{State: state.Architecture{Verdict: test.verdict}},
-				Score:      score.Scorecard{},
-			})
-			if got != test.want {
-				t.Errorf("Outcome = %q, want %q", got, test.want)
-			}
-		})
-	}
-}
-
-// TestServiceOutcomeUsesStateVerdict verifies that the architecture state is
-// the single source for the exit code.
-func TestServiceOutcomeIgnoresTheLegacyVerdict(t *testing.T) {
-	got := outcomeFor(AnalysisResult{
-		Diagnostic: result.Result{
-			Verdict: result.VerdictFail,
-			State:   state.Architecture{Verdict: state.NeedsAttention},
-		},
-	})
-	if got != OutcomeWarn {
-		t.Errorf("Outcome = %q, want %q — the state verdict decides", got, OutcomeWarn)
-	}
-}
-
-// TestCouplingDiagnosticsNeverBlock is the migration's exit-code fitness gate:
-// a run whose only active findings are coupling advisories is needs_attention,
-// which is exit 2 for check and exit 0 for analyze. It is never exit 1.
-func TestCouplingDiagnosticsNeverBlock(t *testing.T) {
-	dims := state.New().Dimensions
-	for _, dim := range dims.Each() {
-		dim.Status = state.Measured
-	}
-	dims.Coupling.Gate = state.GateWarn
-	dims.Coupling.Findings = []state.FindingRef{
-		{ID: "adv-1", RuleID: "bc/imbalanced_coupling", Kind: "advisory", Status: configUpdateTestNew},
-	}
-	verdict, decision := state.Decide(state.DecisionInput{
-		HardGates: state.HardGatePass, ActiveBlockers: 0, ActiveDiagnostics: 1,
-		Dimensions: dims.Signals(),
-	})
-	if verdict != state.NeedsAttention {
-		t.Fatalf("verdict = %q, want %q for a coupling-advisories-only run", verdict, state.NeedsAttention)
-	}
-	if decision.ActiveBlockers != 0 {
-		t.Errorf("active blockers = %d, want 0 — a diagnostic is not a blocker", decision.ActiveBlockers)
-	}
-	if got := outcomeFor(AnalysisResult{Diagnostic: result.Result{State: state.Architecture{Verdict: verdict}}}); got != OutcomeWarn {
-		t.Errorf("Outcome = %q, want %q (check exit 2, analyze exit 0, never exit 1)", got, OutcomeWarn)
-	}
-}
-
 // The stage-bound request flags reach the stage, the resolved formats stay on
 // the response (no stage reads them), and a stage failure is reported as a
 // controlled use-case error, not a raw stage error.
@@ -210,17 +130,12 @@ func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 		var got AnalysisRequest
 		stage := &requestCaptureStage{lifecycleStage: newLifecycleStage(), captured: &got}
 		resp, err := (Service{Stages: StageExecutor{Preparer: stage, Evidence: stage, Stderr: io.Discard}}).
-			Execute(t.Context(), Request{JSON: true, NoAdvisories: true, RequireTools: true})
+			Execute(t.Context(), Request{JSON: true, NoAdvisories: true})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !got.NoAdvisories || !got.RequireTools {
+		if !got.NoAdvisories {
 			t.Errorf("stage request = %+v, want the user intent forwarded", got)
-		}
-		// Analyze/check are the only use cases that may hard-gate on a missing
-		// required analyzer; report-only stages must not.
-		if !got.ApplyToolGate {
-			t.Errorf("stage request = %+v, want the tool gate enabled for analyze/check", got)
 		}
 		if len(resp.Formats) != 1 || resp.Formats[0] != FormatJSON {
 			t.Errorf("response formats = %v, want the resolved json format", resp.Formats)

@@ -64,16 +64,6 @@ type Scorecard struct {
 	Dimensions    []Dimension `json:"dimensions"`
 }
 
-// Verdict is the top-level pass/fail/warn outcome of an archfit run (spec §12).
-type Verdict string
-
-// Verdict constants.
-const (
-	VerdictPass Verdict = "pass"
-	VerdictFail Verdict = "fail"
-	VerdictWarn Verdict = "warn"
-)
-
 // Direction records whether a rising metric value is an improvement or a
 // regression. It is a property of the metric's definition, not a user choice
 // (Technical Details, docs/archived/plans/20260702-wave1-gate-integrity.md): the metric
@@ -100,11 +90,9 @@ type MetricResult struct {
 	Direction  Direction `json:"direction,omitempty"`
 }
 
-// Summary holds the gate/warning/exception counts for the top-level summary block (spec §12).
+// Summary counts report diagnostic warnings.
 type Summary struct {
-	GateFindings int `json:"gate_findings"`
-	Warnings     int `json:"warnings"`
-	WaiversUsed  int `json:"waivers_used"`
+	Warnings int `json:"warnings"`
 }
 
 // ClassifiedEdgeSummary holds aggregate distribution counts over the

@@ -2,13 +2,16 @@ package reportschema_test
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
+
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 func TestStateSchemaRejectsRetiredMeasurementFields(t *testing.T) {
 	compiled := compileStateSchema(t)
-	raw, err := os.ReadFile("testdata/new_violation.state.json")
+	base := report.NewArchitectureState()
+	base.Findings = []report.Finding{{ID: "advisory", Kind: report.FindingKindAdvisory, Status: report.FindingStatusNew, MatchedBy: map[string]string{}, Locations: []report.Location{}}}
+	raw, err := json.Marshal(base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,7 +22,6 @@ func TestStateSchemaRejectsRetiredMeasurementFields(t *testing.T) {
 		{name: "base comparison", key: "comparison", value: map[string]any{"status": "not_requested", "reasons": []any{}}},
 		{name: "profile hash", parent: identityParent, key: "measurement_profile_hash", value: retiredValue},
 		{name: "finding origin", parent: "findings", key: "origin", value: "introduced"},
-		{name: "task origin", parent: "agent_tasks", key: "origin", value: "introduced"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var document map[string]any

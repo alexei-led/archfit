@@ -17,7 +17,6 @@ func TestRendererFormat(t *testing.T) {
 
 func TestRendererWritesArchitectureStateAtRoot(t *testing.T) {
 	d := report.NewDocument()
-	d.State.Verdict = report.StateNeedsAttention
 
 	var buf bytes.Buffer
 	if err := jsonout.New().Render(d, &buf); err != nil {
@@ -28,18 +27,15 @@ func TestRendererWritesArchitectureStateAtRoot(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &root); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	for _, key := range []string{"schema_version", "verdict", "decision", "measurement", "dimensions", "coverage", "findings", "agent_tasks", "seams"} {
+	for _, key := range []string{"schema_version", "measurement", "dimensions", "coverage", "findings", "seams"} {
 		if _, ok := root[key]; !ok {
 			t.Errorf("missing root key %q", key)
 		}
 	}
-	for _, key := range []string{"score", "comparison"} {
+	for _, key := range []string{"score", "comparison", "verdict", "decision", "agent_tasks", "advisory_tasks"} {
 		if _, ok := root[key]; ok {
 			t.Errorf("retired root field %q must not be present", key)
 		}
-	}
-	if string(root["verdict"]) != `"needs_attention"` {
-		t.Errorf("verdict = %s", root["verdict"])
 	}
 }
 

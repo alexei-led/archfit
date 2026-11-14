@@ -257,14 +257,18 @@ def python314_case(contract: ImageContract) -> None:
             f"{output.name}: src-layout Python 3.14 forbidden import",
             (output / "report.rc").is_file()
             and (output / "report.rc").read_text().strip() == "0"
-            and state.get("decision", {}).get("hard_gates") == "fail"
-            and not state.get("decision", {}).get("unevaluated_required_rules", [])
+            and state.get("repository", {}).get("state") == "drift"
+            and state.get("repository", {}).get("unread") == []
             and rows(state).get("pyimports", {}).get("status") == "ok"
             and "comparison" not in state
             and pin == version
             and any(
-                f.get("rule_id") == "no-core-to-adapter" and f.get("kind") == "gate"
-                for f in state.get("findings", [])
+                error.get("rule") == "no-core-to-adapter"
+                and error.get("from") == "core"
+                and error.get("to") == "adapter"
+                and error.get("path") == "src/modern314/core.py"
+                and error.get("line") == 2
+                for error in state.get("repository", {}).get("drift", [])
             ),
             version,
         )
