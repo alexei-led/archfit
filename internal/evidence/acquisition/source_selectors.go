@@ -108,7 +108,7 @@ func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[strin
 // Two files such as app.py and app/__init__.py cannot share that proof.
 func pythonScannedModules(f evidencecontract.Facts, outOfScope map[string]struct{}) map[string]struct{} {
 	if f.Graph == nil || !slices.ContainsFunc(f.Coverage, func(row modevidence.Coverage) bool {
-		return row.Tool == registry.ToolGrimp && row.Status == modevidence.StatusOK
+		return row.Tool == registry.ToolPythonImports && row.Status == modevidence.StatusOK
 	}) {
 		return nil
 	}

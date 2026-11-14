@@ -148,11 +148,11 @@ func goBuildConstraintWarning(cov []evidence.Coverage) string {
 // missing Python source/import evidence. Partial coverage must not be silent.
 func pyUnresolvedWarning(cov []evidence.Coverage) string {
 	for _, c := range cov {
-		if c.Tool == registry.ToolGrimp && c.Status == evidence.StatusPartial {
+		if c.Tool == registry.ToolPythonImports && c.Status == evidence.StatusPartial {
 			if c.Reason != "" {
-				return registry.ToolGrimp + ": " + c.Reason
+				return registry.ToolPythonImports + ": " + c.Reason
 			}
-			return registry.ToolGrimp + ": incomplete Python import evidence"
+			return registry.ToolPythonImports + ": incomplete Python import evidence"
 		}
 	}
 	return ""

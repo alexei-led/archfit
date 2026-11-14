@@ -32,7 +32,7 @@ const (
 	assessHash            = "cfg-hash"
 	assessOwner           = "codeowners"
 	assessCore            = "core"
-	assessGrimp           = "grimp"
+	assessGrimp           = "pyimports"
 	assessPathsA          = "a/**"
 	assessPathsB          = "b/**"
 	assessHistory         = "git_history"

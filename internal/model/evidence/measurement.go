@@ -20,8 +20,8 @@ func MeasurementContract(tool string) (semantics string, external bool) {
 		return tool + ".v2", true
 	case "cargo", "ast-grep", "jscpd", "dotnet-msbuild", "roslyn":
 		return tool + ".v1", true
-	case "grimp":
-		return "grimp.v3", true
+	case "pyimports":
+		return "pyimports.v1", true
 	case "git-history":
 		return "git-history.recent500-full-fallback.v2", true
 	case "deploy-unit":

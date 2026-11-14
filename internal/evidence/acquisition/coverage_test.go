@@ -23,7 +23,7 @@ const (
 	// reading the production symbol could not catch a rename.
 	toolGoPackages    = "go/packages"
 	toolDepCruiser    = "dependency-cruiser"
-	toolGrimp         = "grimp"
+	toolPythonImports = "pyimports"
 	toolCargo         = "cargo"
 	toolCargoModules  = "cargo-modules"
 	toolJscpd         = "jscpd"
@@ -116,12 +116,12 @@ func TestBuildCoverageGaps(t *testing.T) {
 		{
 			name: "multiple absent tools sorted by name",
 			cov: []evidence.Coverage{
-				{Tool: toolGrimp, Status: evidence.StatusAbsent},
+				{Tool: toolPythonImports, Status: evidence.StatusAbsent},
 				{Tool: toolGoPackages, Status: evidence.StatusAbsent},
 				{Tool: toolJscpd, Status: evidence.StatusAbsent},
 			},
 			cfg:       cfgWarn,
-			wantTools: []string{toolGoPackages, toolGrimp, toolJscpd},
+			wantTools: []string{toolGoPackages, toolJscpd, toolPythonImports},
 		},
 		{
 			// A tool disabled by config (StatusDisabled) must NOT produce a coverage
@@ -504,24 +504,21 @@ func testTSProjectMarkerGaps(t *testing.T) {
 	})
 }
 
-// testPyProjectMarkerGaps pins that the Python probe uses the extractor's own
-// applicability test (py.Applicable). The registry's marker list disagreed in
-// both directions: it accepted setup.cfg, which grimp's extractor does not, and
-// it never looked at languages.python.package, which the extractor accepts on
-// its own.
+// testPyProjectMarkerGaps pins that report coverage uses the parser's own
+// package discovery, not packaging metadata that may describe only loose scripts.
 func testPyProjectMarkerGaps(t *testing.T) {
 	t.Parallel()
 	pyAbsent := func() []evidence.Coverage {
-		return []evidence.Coverage{{Tool: toolGrimp, Status: evidence.StatusAbsent}}
+		return []evidence.Coverage{{Tool: toolPythonImports, Status: evidence.StatusAbsent}}
 	}
 	plain := config.Config{Exclude: scope.MergeExclusions(nil)}
 
-	t.Run("pyproject.toml keeps the gap", func(t *testing.T) {
+	t.Run("pyproject.toml without a package suppresses the gap", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		writeFileAt(t, root, "pyproject.toml", "[project]\nname = \"x\"\n")
-		if !hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), plain.CoverageOptions(), root), toolGrimp) {
-			t.Error("expected a grimp gap for a repo with pyproject.toml")
+		if hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), plain.CoverageOptions(), root), toolPythonImports) {
+			t.Error("packaging metadata alone does not select Python modules")
 		}
 	})
 
@@ -529,7 +526,7 @@ func testPyProjectMarkerGaps(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		writeFileAt(t, root, "setup.cfg", "[metadata]\nname = x\n")
-		if hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), plain.CoverageOptions(), root), toolGrimp) {
+		if hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), plain.CoverageOptions(), root), toolPythonImports) {
 			t.Error("setup.cfg is not a marker this extractor accepts")
 		}
 	})
@@ -544,20 +541,20 @@ func testPyProjectMarkerGaps(t *testing.T) {
 			Exclude:   scope.MergeExclusions(nil),
 			Languages: config.LanguagesConfig{Python: config.PythonLanguage{Package: "mypkg"}},
 		}
-		if !hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), cfg.CoverageOptions(), root), toolGrimp) {
+		if !hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), cfg.CoverageOptions(), root), toolPythonImports) {
 			t.Error("expected a grimp gap for a configured languages.python.package directory")
 		}
 	})
 
-	t.Run("a configured package dir that is not there suppresses the gap", func(t *testing.T) {
+	t.Run("a missing configured package keeps the gap", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		cfg := config.Config{
 			Exclude:   scope.MergeExclusions(nil),
 			Languages: config.LanguagesConfig{Python: config.PythonLanguage{Package: "mypkg"}},
 		}
-		if hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), cfg.CoverageOptions(), root), toolGrimp) {
-			t.Error("a configured package dir that does not exist is not a Python project")
+		if !hasCoverageGap(acquisition.BuildCoverageGaps(pyAbsent(), cfg.CoverageOptions(), root), toolPythonImports) {
+			t.Error("a missing configured package must not hide missing evidence")
 		}
 	})
 }
@@ -912,7 +909,7 @@ func TestConfigToolGate(t *testing.T) {
 	}{
 		{toolGoPackages, gateFail},               // tools.go.gate: fail
 		{toolDepCruiser, string(config.GateOff)}, // tools.typescript.gate: off
-		{toolGrimp, gateWarn},                    // tools.python unset → default
+		{toolPythonImports, gateWarn},            // tools.python unset → default
 		{toolLoc, gateWarn},                      // unmapped tool → default
 	}
 	for _, tc := range cases {
@@ -1130,10 +1127,10 @@ func TestPyUnresolvedWarning(t *testing.T) {
 		row  evidence.Coverage
 		want string
 	}{
-		{"located source gap", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusPartial, Unresolved: 1, Reason: "1 import/source gaps: src/app/a.py: SyntaxError under Python 3.13"}, "grimp: 1 import/source gaps: src/app/a.py: SyntaxError under Python 3.13"},
-		{"helper failure with no count", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusPartial, Reason: "cannot bind repository source"}, "grimp: cannot bind repository source"},
-		{"unexplained partial", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusPartial}, "grimp: incomplete Python import evidence"},
-		{"completed producer", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusOK}, ""},
+		{"located source gap", evidence.Coverage{Tool: toolPythonImports, Status: evidence.StatusPartial, Unresolved: 1, Reason: "1 import/source gaps: src/app/a.py: SyntaxError under Python 3.13"}, "pyimports: 1 import/source gaps: src/app/a.py: SyntaxError under Python 3.13"},
+		{"helper failure with no count", evidence.Coverage{Tool: toolPythonImports, Status: evidence.StatusPartial, Reason: "cannot bind repository source"}, "pyimports: cannot bind repository source"},
+		{"unexplained partial", evidence.Coverage{Tool: toolPythonImports, Status: evidence.StatusPartial}, "pyimports: incomplete Python import evidence"},
+		{"completed producer", evidence.Coverage{Tool: toolPythonImports, Status: evidence.StatusOK}, ""},
 		{"other producer", evidence.Coverage{Tool: toolGoPackages, Status: evidence.StatusPartial, Unresolved: 2}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

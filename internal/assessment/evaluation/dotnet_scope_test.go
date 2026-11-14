@@ -51,7 +51,7 @@ const (
 // gaps acquisition pinned to files (Observations.ScopedDependencyEvidence).
 func dotnetScopeFixture(msbuild string, gaps map[string]string) (*result.Result, evaluation.StateInput) {
 	diag, in := dimensionsFixture()
-	primaries := []string{toolGoPackages, toolDepCruiser, "grimp", toolCargo, toolMSBuild}
+	primaries := []string{toolGoPackages, toolDepCruiser, "pyimports", toolCargo, toolMSBuild}
 	diag.PrimaryExtractorTools = primaries
 	diag.ToolCoverage = []modevidence.Coverage{{Tool: toolDeployDiscovery, Status: modevidence.StatusOK}}
 	for _, tool := range primaries[:4] {

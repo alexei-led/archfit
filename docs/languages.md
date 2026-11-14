@@ -10,7 +10,7 @@ Language adapters run when project markers and required tools are present. Set `
 | --- | --- | --- | --- | --- |
 | Go | `go.mod` or a supported `go.work` workspace | None for imports; optional `go` for report strength hints | File-to-package imports | Without `go`, the report reads imports with the built-in parser and discloses missing type precision. Unknown inputs remain partial. |
 | TypeScript and JavaScript | Root `package.json` | `npx` or `bunx`, plus `dependency-cruiser` | File-to-file imports | Without the root marker, the adapter is absent. Tool errors produce partial evidence. |
-| Python | `pyproject.toml`, `setup.py`, or `languages.python.package` | `uv`, or Python 3.14+ with `grimp==3.17` installed | Dotted module imports | Without a package marker, the adapter is absent. Source or graph extraction gaps produce partial evidence. |
+| Python | A flat or `src/` package with `__init__.py`, or `languages.python.package` | `ast-grep` | Dotted module imports | Without a package, the adapter is absent. Unresolved first-party imports and parser failures produce incomplete evidence. |
 | Rust | Root `Cargo.toml`, or configured `languages.rust.manifest` | `cargo` | Crate dependencies | Cargo errors produce partial evidence. A one-crate graph has no internal crate edges. |
 | .NET (C#, SDK-style projects, net8.0 and later) | `languages.dotnet.projects`, else a `.slnx` or `.sln` at the root, else any `.csproj` outside `obj/`, `bin/`, and `exclude` | `dotnet` SDK; the Roslyn helper for the type graph | Project graph from MSBuild evaluation; file-to-file type references with compiler-resolved strength hints; `internal` use across assemblies as intrusive hints | Projects that do not evaluate or load are reported `failed` or `partial` with the cause. Unresolved symbols keep coupling from `measured`. See [.NET](#net). |
 
@@ -18,17 +18,17 @@ Optional tools add syntax evidence, clone evidence, or more precise coupling evi
 
 ## Before you run
 
-Each adapter drives the project's own tooling. Archfit reuses what is installed and reports what it could not read; it never installs dependencies into your repository.
+The Python check and report use `ast-grep` with a built-in resolver, not the project's runtime or installed dependencies. Other report adapters can use project tooling. Archfit reports what it could not read; it never installs dependencies into your repository.
 
 | Language | Do this first | Configure when auto-detection is wrong |
 | --- | --- | --- |
 | Go | a `go.mod` (or a supported `go.work`); install `go` and resolve dependencies only for typed report detail | `languages.go.modules` to select workspace members, `exclude` for generated trees |
 | TypeScript / JavaScript | `npm ci` (or `pnpm install` / `yarn`) in the project root, the workspace root for a monorepo, so `node_modules` and the `tsconfig` `paths`/`baseUrl` resolve | `analyzers.scip` for symbol-level strength, `exclude` for generated code |
-| Python | a package marker (`pyproject.toml` or `setup.py`) and Python 3.14+ with `grimp==3.17` | `languages.python.package` when the importable package name is not obvious |
+| Python | `git` and `ast-grep`; no Python interpreter or installed project dependencies | `languages.python.package` to select one package instead of discovering flat or `src/` packages |
 | Rust | a root `Cargo.toml` and `cargo` | `languages.rust.manifest`, `languages.rust.features`, `languages.rust.include_dev_deps` |
 | .NET | the `dotnet` SDK on `PATH`, and `ARCHFIT_DOTNET_ROSLYN` set to the absolute path of the built Roslyn helper, outside the target (`make dotnet-roslyn`). Restore NuGet packages (`dotnet restore`) in the environment that runs archfit; archfit never restores, and unrestored package symbols leave projects `partial`. Network is optional, but without it MSBuild SDKs resolved through NuGet cannot load | `languages.dotnet.projects` to select solutions or projects, `analyzers.roslyn.enabled: false` for the project-only graph (map and report only; .NET rule gates need the helper, which the image ships) |
 
-The shipped image contains Node with dependency-cruiser and TypeScript, Python with grimp, Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
+The shipped image contains Node with dependency-cruiser and TypeScript, Python for the optional SCIP reader (without grimp), Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
 
 ## When evidence is absent, disabled, or partial
 
@@ -78,30 +78,19 @@ The adapter skips Node.js core modules and `node_modules` directories at any dep
 
 ### Python
 
-The image sets `ARCHFIT_TOOL_PYTHON` to its installed isolated Python environment.
-An explicit setting must name a valid absolute interpreter outside the target; invalid settings
-fail visibly rather than falling back. Without that setting, local CLI execution detects `uv`
-and selects Python 3.14 with `grimp==3.17` in an isolated environment. Project uv configuration and interpreter requests do not override this selection. Without `uv`, put a Python 3.14+ virtual environment containing `grimp==3.17` on `PATH`. Keep that tool environment separate from the target repository.
+Both `archfit check` and `archfit report` read Python imports through `ast-grep` and the built-in `pyimports` resolver. They need `git` and `ast-grep`, not Python, `uv`, grimp, or installed project dependencies. The report's `pyimports` coverage row records the parser version. Target Python environments, initializers and Grimp caches are not used or executed.
 
-Leave `languages.python.package` unset for automatic discovery of flat or `src/` packages. Pin it only when that single package is the complete intended source. Selecting one of several discovered roots leaves the others unscanned. Module names and selectors use dotted names, such as `myapp.service`, rather than file paths.
+Leave `languages.python.package` unset to discover top-level packages containing `__init__.py`; a `src/` layout wins over a flat layout. Configure a package to select it explicitly, including a namespace root without `__init__.py`. A configured package that does not exist is missing evidence, not an absent language. Packaging metadata alone does not select source. Loose scripts outside selected packages remain unscanned.
 
-Project dependencies do not need to be installed. The analyzer runs outside the target directory with an isolated environment; target virtual environments, `PYTHONPATH`, and user-site packages are ignored. Repository Grimp caches are neither read nor written. The producer binds selected packages to repository source without executing package initializers. Namespace roots, separate service roots, source symlinks, and package names that collide with loaded Python modules leave evidence incomplete.
+**Namespace-package change in 4.0:** directories without `__init__.py` inside selected packages now count as namespace-package modules (PEP 420). The old grimp adapter skipped them. This adds their imports to both the check and report; the equivalence corpus added 142 dependencies on prefect (design appendix D.3).
 
-Third-party imports become low-confidence external literals. Explicit first-party targets absent from the tree remain low-confidence dotted dependencies. These record source statements, without verifying target files, symbols, or runtime availability. Dependency bans still match them, including imports inside `try/except`. Missing generated version modules need no special exception. `from package import name` can name an attribute, so an absent `name` is not invented as a submodule.
+Report module identities are dotted names, such as `myapp.service`, and every import keeps its source file and line. The check uses resolved file paths. Relative imports and `from package import name` use the same resolver: `package.name` is selected when it is a module, otherwise `package`. Imports inside functions and `try/except` count; imports guarded by `TYPE_CHECKING` do not.
 
-Unreadable, unparseable, or unscanned source leaves evidence incomplete and required rules unevaluated. A known first-party package omitted by package selection is unscanned input even when selected files do not import it. Automatic discovery can select all roots. Literal targets do not count as scanned files. Standard-library imports and existing `TYPE_CHECKING` guard handling remain outside the inventory.
+Standard-library and third-party imports are external. A first-party module without a file, or a relative import above its package, is unresolved: the report keeps a low-confidence dotted edge and partial coverage with the file, line and module; the check emits an unknown item. Neither path silently drops it. Excluded files are not read, but can still resolve as targets. Selecting one package does not prove that other packages were scanned. Rules whose scope includes unscanned source remain unevaluated.
 
-Loose Python files outside the scanned packages do not become verified source. Rules whose selectors include them remain unevaluated, including broad selectors that also match scanned files. Rules limited to scanned packages can still evaluate. A whole-project cycle rule therefore needs every in-scope Python file covered by the package scan.
+The report does not infer symbol/type strength from import spelling. Duplicate bodies for one dotted module, such as `app.py` and `app/__init__.py`, do not prove both source files were scanned.
 
-If multiple files map to the same dotted module, such as `app.py` and `app/__init__.py`, their bodies are ambiguous and do not count as verified source. Excluded files do not contribute to that ambiguity. A rule whose target vocabulary cannot contain Python nodes does not wait for omitted Python source.
-
-The v3.1.1 image supplies Python 3.14. CI checks the src-layout `testdata/python314` fixture; releases also check each immutable platform image before publishing image version tags. Images through v3.1.0 contain Python 3.11; caller-side Python setup cannot change the container interpreter. See [the Archfit 3 migration](archived/migration-v2-to-v3.md#python-producer-semantics) for baseline compatibility.
-
-Use `uv` to resolve the analyzer without a global install:
-
-```sh
-uv --version
-```
+The image still sets `ARCHFIT_TOOL_PYTHON` to its locked Python environment for the optional SCIP reader only, with `protobuf` and `grpcio-tools`. Python imports do not read that variable. CI's src-layout `testdata/python314` regression checks the parser producer, the real forbidden import and complete rule evaluation; native image jobs also verify that grimp is not installed.
 
 ### Rust
 

@@ -301,7 +301,7 @@ func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.Policy
 	p.Topology.ModuleMap = p.Topology.ModuleMap.WithCrateOwners(f.CrateOwners)
 	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
 	if diag != nil {
-		rows := coverageRows(diag.ToolCoverage, toolGrimp)
+		rows := coverageRows(diag.ToolCoverage, toolPythonImports)
 		inv.pythonComplete = len(rows) == 1 && rows[0].Status == modevidence.StatusOK
 	}
 	files := inv.analysedFiles()
@@ -705,10 +705,10 @@ func importPathDomain(pattern string) bool {
 // relationship to that source-file vocabulary" — from the target side to the
 // source side. The source scope is derived from file extensions found under the
 // `from:` glob, and a glob picks up whatever happens to sit there: archfit
-// itself ships three Python helper scripts it runs through uv
-// (internal/extract/scip/scip_reader.py, internal/extract/py/grimp_helper.py),
-// so `from: internal/**` put python in scope for rules whose `to:` is a Go
-// package path. grimp is legitimately absent on a repository with no Python
+// itself ships a Python helper script for the SCIP reader
+// (internal/extract/scip/scip_reader.py), so `from: internal/**` put python
+// in scope for rules whose `to:` is a Go package path. pyimports is absent
+// on a repository with no Python
 // project, so those rules were then reported unevaluated for want of evidence
 // that could not have changed their outcome: no Python edge can target a slash
 // path. On this repository that was 8 of 60 rules, holding `intent` at

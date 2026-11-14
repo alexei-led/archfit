@@ -20,7 +20,7 @@ REQUIRED = (
     "go.sum",
     "cmd/archfit/main.go",
     "internal/extract/astgrep/rules/go.yml",
-    "internal/extract/py/grimp_helper.py",
+    "internal/extract/pyimports/rules/python.yml",
     "internal/extract/runtime/async_libs.yaml",
     "internal/extract/scip/scip.proto",
     "internal/extract/scip/scip_reader.py",

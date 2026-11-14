@@ -334,14 +334,14 @@ const (
 	connascenceUnmeasuredDynamic   = "unmeasured_dynamic"
 	connascenceSourceGoTypes       = "go/types"
 	connascenceSourceDepCruise     = "dependency-cruiser"
-	connascenceSourceGrimp         = "grimp"
+	connascenceSourcePythonImports = "pyimports"
 	connascenceSourceSCIP          = "scip"
 )
 
 func connascenceRoadmap(by map[string]int) []evidence.ConnascenceRoadmapItem {
 	items := make([]evidence.ConnascenceRoadmapItem, 0, 9)
 	items = append(items,
-		evidence.ConnascenceRoadmapItem{Kind: "name", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceDepCruise, connascenceSourceGrimp, connascenceSourceSCIP}},
+		evidence.ConnascenceRoadmapItem{Kind: "name", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceDepCruise, connascenceSourcePythonImports, connascenceSourceSCIP}},
 		evidence.ConnascenceRoadmapItem{Kind: "type", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceDepCruise, connascenceSourceSCIP}},
 		evidence.ConnascenceRoadmapItem{Kind: "meaning", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
 		evidence.ConnascenceRoadmapItem{Kind: "algorithm", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
