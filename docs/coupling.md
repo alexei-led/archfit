@@ -30,7 +30,7 @@ A callable hint does not raise a `public:` target above `contract`. Data evidenc
 can raise it to `model` for a concrete non-DTO type, field, variable, constant,
 or method on a concrete receiver. A DTO remains `contract`. An `intrusive` hint
 raises it to `intrusive`: a C# `internal` member used through
-`InternalsVisibleTo` or a Python private name. Intrusive coupling integrates through details not meant for
+`InternalsVisibleTo`. Intrusive coupling integrates through details not meant for
 integration. A `public:` glob declares a file's intended surface, so it cannot
 make such a use a contract. An
 `internal:` match stays `intrusive` regardless of hints. Without sufficient evidence, strength is
@@ -180,8 +180,8 @@ measured in any language: message records duplicated in each service, a
 `.proto` that another project compiles directly, and HTTP or YARP runtime calls.
 Clone evidence can catch duplicated records; the rest stays outside the graph.
 
-TypeScript treats runtime imports as functional unless a target
-matches a `public:` glob. Runtime async evidence is report-only. It does not
+TypeScript and Python imports have unknown strength unless declared `public:`
+or `internal:` surfaces classify the target. Runtime async evidence is report-only. It does not
 change distance or gate results. Unknown facts can lower confidence or leave a
 dimension partial. See [evidence](evidence.md) for claim boundaries and
 [configuration](configuration.md) for policy and extractor settings.
