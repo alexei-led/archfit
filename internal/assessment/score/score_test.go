@@ -793,73 +793,6 @@ func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 	})
 }
 
-func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
-	diagWithTSCoverage := func(unresolved, specifiersSeen int, status string) result.Result {
-		d := result.New()
-		d.Metrics = []result.MetricResult{metric("blast_radius", 3, "info", "high")}
-		d.ClassifiedEdges = &result.ClassifiedEdgeSummary{
-			Total: 50, Scored: 50, Abstained: 0,
-			MeanBalance: 9.0,
-			BySeverity:  map[string]int{sevLow: 50},
-		}
-		d.ToolCoverage = []evidence.Coverage{
-			{Tool: toolDepCruiser, Status: status, FilesSeen: 10, SpecifiersSeen: specifiersSeen, Unresolved: unresolved},
-		}
-		return d
-	}
-
-	t.Run("unresolved ratio above ceiling caps confidence to medium", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, evidence.StatusPartial))) // 20%
-		if cb.Confidence != ConfidenceMedium {
-			t.Errorf("confidence = %q, want medium", cb.Confidence)
-		}
-		found := false
-		for _, ev := range cb.Evidence {
-			if strings.Contains(ev, "unresolved-specifier ratio") {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("expected unresolved-ratio mention in evidence, got: %v", cb.Evidence)
-		}
-	})
-
-	// Also the denominator regression guard: 5/100 specifiers is 5% (under the
-	// ceiling) while 5 over the 10 FilesSeen would be 50% — a FilesSeen
-	// denominator would cap here and contradict the disclosed specifier ratio.
-	t.Run("unresolved ratio within ceiling leaves confidence high", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(5, 100, evidence.StatusPartial))) // 5%
-		if cb.Confidence != ConfidenceHigh {
-			t.Errorf("confidence = %q, want high", cb.Confidence)
-		}
-	})
-
-	// Boundary: 10/100 = 0.10, exactly the ceiling. tsUnresolvedPartial's
-	// comparison (score.go) is strict >, so a ratio equal to the ceiling does
-	// not trip the cap — this pins that the boundary itself is inside the
-	// tolerated range, not just "below" it.
-	t.Run("unresolved ratio exactly at the ceiling leaves confidence high", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(10, 100, evidence.StatusPartial))) // 10%
-		if cb.Confidence != ConfidenceHigh {
-			t.Errorf("confidence = %q, want high (ratio == ceiling must not trip the strict > cap)", cb.Confidence)
-		}
-	})
-
-	t.Run("ok status never triggers the cap regardless of ratio", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, evidence.StatusOK)))
-		if cb.Confidence != ConfidenceHigh {
-			t.Errorf("confidence = %q, want high (status ok, not partial)", cb.Confidence)
-		}
-	})
-
-	t.Run("specifiers untracked (0) abstains rather than cap on a proxy ratio", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 0, evidence.StatusPartial)))
-		if cb.Confidence != ConfidenceHigh {
-			t.Errorf("confidence = %q, want high (SpecifiersSeen 0 = untracked, no cap)", cb.Confidence)
-		}
-	})
-}
-
 // TestSynthesize_RoslynIncomplete_LowersConfidence pins D5: a partial or
 // timed-out Roslyn run is never confident, whatever the scored edge count.
 func TestSynthesize_RoslynIncomplete_LowersConfidence(t *testing.T) {
@@ -898,8 +831,7 @@ func TestSynthesize_RoslynIncomplete_LowersConfidence(t *testing.T) {
 }
 
 // TestSynthesize_ConfidenceCapsNeverStack pins the minimum-band rule: two
-// simultaneous cap triggers (cargo-modules partial + TS unresolved ratio over
-// ceiling) land at medium — one step down — never stacked to low.
+// simultaneous cap triggers (cargo-modules and tsimports partial) land at medium — one step down — never stacked to low.
 func TestSynthesize_ConfidenceCapsNeverStack(t *testing.T) {
 	d := result.New()
 	d.Metrics = []result.MetricResult{metric("blast_radius", 3, "info", "high")}
@@ -910,7 +842,7 @@ func TestSynthesize_ConfidenceCapsNeverStack(t *testing.T) {
 	}
 	d.ToolCoverage = []evidence.Coverage{
 		{Tool: "cargo-modules", Status: evidence.StatusPartial},
-		{Tool: toolDepCruiser, Status: evidence.StatusPartial, FilesSeen: 10, SpecifiersSeen: 100, Unresolved: 20},
+		{Tool: toolTSImports, Status: evidence.StatusPartial, FilesSeen: 10, SpecifiersSeen: 100, Unresolved: 20, UnresolvedInputsMissing: 20},
 	}
 
 	cb := couplingBalanceDim(t, Synthesize(d))

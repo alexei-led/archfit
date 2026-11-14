@@ -9,7 +9,7 @@ Language adapters run when project markers and required tools are present. Set `
 | Language | Project marker | Required tool | Graph detail | Missing or incomplete input |
 | --- | --- | --- | --- | --- |
 | Go | `go.mod` or a supported `go.work` workspace | None for imports; optional `go` for report strength hints | File-to-package imports | Without `go`, the report reads imports with the built-in parser and discloses missing type precision. Unknown inputs remain partial. |
-| TypeScript and JavaScript | Root `package.json` | `npx` or `bunx`, plus `dependency-cruiser` | File-to-file imports | Without the root marker, the adapter is absent. Tool errors produce partial evidence. |
+| TypeScript and JavaScript | Source files | `ast-grep` | File-to-file imports | Unresolved first-party imports, unread configuration, and parser failures produce incomplete evidence. |
 | Python | A flat or `src/` package with `__init__.py`, or `languages.python.package` | `ast-grep` | Dotted module imports | Without a package, the adapter is absent. Unresolved first-party imports and parser failures produce incomplete evidence. |
 | Rust | Root `Cargo.toml`, or configured `languages.rust.manifest` | `cargo` | Crate dependencies | Cargo errors produce partial evidence. A one-crate graph has no internal crate edges. |
 | .NET (C#, SDK-style projects, net8.0 and later) | `languages.dotnet.projects`, else a `.slnx` or `.sln` at the root, else any `.csproj` outside `obj/`, `bin/`, and `exclude` | `dotnet` SDK; the Roslyn helper for the type graph | Project graph from MSBuild evaluation; file-to-file type references with compiler-resolved strength hints; `internal` use across assemblies as intrusive hints | Projects that do not evaluate or load are reported `failed` or `partial` with the cause. Unresolved symbols keep coupling from `measured`. See [.NET](#net). |
@@ -18,17 +18,17 @@ Optional tools add syntax evidence, clone evidence, or more precise coupling evi
 
 ## Before you run
 
-The Python check and report use `ast-grep` with a built-in resolver, not the project's runtime or installed dependencies. Other report adapters can use project tooling. Archfit reports what it could not read; it never installs dependencies into your repository.
+The TypeScript and Python check and report use `ast-grep` with a built-in resolver, not the project's runtime or installed dependencies. Other report adapters can use project tooling. Archfit reports what it could not read; it never installs dependencies into your repository.
 
 | Language | Do this first | Configure when auto-detection is wrong |
 | --- | --- | --- |
 | Go | a `go.mod` (or a supported `go.work`); install `go` and resolve dependencies only for typed report detail | `languages.go.modules` to select workspace members, `exclude` for generated trees |
-| TypeScript / JavaScript | `npm ci` (or `pnpm install` / `yarn`) in the project root, the workspace root for a monorepo, so `node_modules` and the `tsconfig` `paths`/`baseUrl` resolve | `analyzers.scip` for symbol-level strength, `exclude` for generated code |
+| TypeScript / JavaScript | `git` and `ast-grep`; project dependencies are not needed for imports | `analyzers.scip` for symbol-level strength, `exclude` for generated code |
 | Python | `git` and `ast-grep`; no Python interpreter or installed project dependencies | `languages.python.package` to select one package instead of discovering flat or `src/` packages |
 | Rust | a root `Cargo.toml` and `cargo` | `languages.rust.manifest`, `languages.rust.features`, `languages.rust.include_dev_deps` |
 | .NET | the `dotnet` SDK on `PATH`, and `ARCHFIT_DOTNET_ROSLYN` set to the absolute path of the built Roslyn helper, outside the target (`make dotnet-roslyn`). Restore NuGet packages (`dotnet restore`) in the environment that runs archfit; archfit never restores, and unrestored package symbols leave projects `partial`. Network is optional, but without it MSBuild SDKs resolved through NuGet cannot load | `languages.dotnet.projects` to select solutions or projects, `analyzers.roslyn.enabled: false` for the project-only graph (map and report only; .NET rule gates need the helper, which the image ships) |
 
-The shipped image contains Node with dependency-cruiser and TypeScript, Python for the optional SCIP reader (without grimp), Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
+The shipped image contains Node for optional SCIP tools, Python for the optional SCIP reader (without grimp), Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules, at the versions pinned in `tools/manifest.json`. Go is build-only: the final image has no Go executable or SDK. Its Go check and report read imports with the built-in parser; optional typed Go report detail needs a host installation of `go`.
 
 ## When evidence is absent, disabled, or partial
 
@@ -44,8 +44,7 @@ Every analyzer reports one status per tool in `coverage.tools[]`. The status tel
 
 The partial results people hit first:
 
-- **TypeScript / JavaScript.** `N of M import specifiers unresolved` means the target's dependencies are not installed: install them in the project root (`npm ci`, `pnpm install`, or `yarn`; the workspace root for a monorepo), then check `tsconfig` `paths`/`baseUrl`. `scip` stays `absent` until `node_modules` exists, because scip-typescript resolves packages through it.
-  `dependency-cruiser environment incomplete` means the analyzer environment has no compatible TypeScript compiler: run archfit from the shipped image, or install TypeScript 5-6 next to dependency-cruiser.
+- **TypeScript / JavaScript.** A `tsimports` partial row names unresolved imports or unread `tsconfig` inputs. Fix the import or make `extends` a relative path inside the repository. Package-based `extends` is not read, even if dependencies are installed; affected bare imports remain unknown. Optional `scip-typescript` needs `node_modules`.
 - **Rust.** `Rust target attribution partial` means rust-analyzer saw symbols it cannot pin to exactly one Cargo target (macros, generated code, several targets). Crate-level structure is still measured. Narrow `languages.rust.manifest` to the workspace you care about, or set `analyzers.scip.enabled: false` to rely on crate-level coupling only.
 - **.NET.** `N of M projects partial, K failed, U unresolved symbols` on the `roslyn` row means packages or reference packs are missing: restore the projects in the environment that runs archfit, or install the targeting pack the reason names. `MSB4236` on the `dotnet-msbuild` row means an MSBuild SDK resolved through NuGet could not be fetched, whether `global.json` `msbuild-sdks` lists it or the project pins it inline (`<Project Sdk="Aspire.AppHost.Sdk/13.6.0">`): run with NuGet access. `NETSDK1147: workload X not installed` means a MAUI, Android, or iOS project needs an SDK workload: run `dotnet workload install X` on the host, or exclude the project. `NETSDK1178` means the workload packs do not exist for this host's OS: analyze on a host that has them, or exclude the project.
 
@@ -63,18 +62,9 @@ Use `languages.go.modules` to select workspace members. Use `exclude` for files 
 
 ### TypeScript and JavaScript
 
-Archfit invokes an installed dependency-cruiser entry through an explicitly resolved Node interpreter.
-Both must be outside the target project and Git root. Project-local executables, package-manager
-launchers, Node preload hooks, and `.dependency-cruiser.*` configuration do not select or configure
-the judge. Supported data-only `tsconfig` resolution still applies. Type-only TypeScript imports
-count as dependencies.
+Both `archfit check` and `archfit report` use `ast-grep` and the built-in `tsimports` resolver. Neither needs Node, a TypeScript compiler, `node_modules`, or a root `package.json`. The report's `tsimports` coverage row records the parser version. Type-only imports count.
 
-The supported image pair is dependency-cruiser 18.7.0 with TypeScript 6.0.3. TypeScript 7 is not
-supported by that producer. Missing compilers, unreadable source inventories, omitted eligible
-files, and unusable graphs leave report measurements incomplete; an empty graph is not proof of no
-violations. A genuinely empty input tree remains distinct.
-
-The adapter skips Node.js core modules and `node_modules` directories at any depth. Without a root `package.json`, TypeScript files outside that project do not enter dependency rule scope. Point `--root` at the TypeScript project to analyze it.
+The resolver reads relative paths, supported `tsconfig` paths and baseUrl, package imports, and workspace exports. It uses the nearest `tsconfig.json`, or the root `tsconfig.base.json` when no `tsconfig.json` exists. It does not read package-based `extends`, configuration outside the root, or `node_modules`. An unread config or unresolved first-party import stays unknown, with a location; it cannot establish complete coverage. Unknown imports can hide edges and cap report confidence. Project dependency-cruiser configuration is not executed. See [evidence](evidence.md) for limits.
 
 ### Python
 
@@ -268,17 +258,16 @@ The complete release image is the simplest fixed tool environment. The tool vers
 | --- | --- |
 | Node / Python / uv | 24.22.1 / 3.14.9 / 0.13.5 |
 | Go (build-only; absent from the final image) | 1.27.4 |
-| dependency-cruiser / TypeScript compiler | 18.7.0 / 6.0.3 |
 | .NET SDK | 10.0.402 |
 | archfit-roslyn / Microsoft.CodeAnalysis | 1.1.0 / 5.6.0 |
 | ast-grep / jscpd | 0.51.0 / 5.4.2 |
 | scip-go / scip-typescript / scip-python | 0.2.9 / 0.5.2 / 0.6.8 |
 | Rust, Cargo, rust-src, bundled rust-analyzer | 1.99.1 |
-| cargo-modules / Grimp | 0.28.0 / 3.17 |
+| cargo-modules | 0.28.0 |
 
 Use the Rust component listed here, not the newer standalone rust-analyzer with a different SCIP
 namespace. SCIP Python has an older semantic core: a nonempty index does not guarantee complete
-Python 3.14 type/grammar support. Import-rule evidence comes from Grimp, not SCIP.
+Python 3.14 type/grammar support. Python import-rule evidence comes from `pyimports`, not SCIP.
 
 For a host CLI, use a separate owned tool directory outside every target checkout. From this
 release's source checkout, `make host-tools` installs the Node and Python locks without target
@@ -291,12 +280,9 @@ export PATH="$prefix/node/node_modules/.bin:$PATH"
 export ARCHFIT_TOOL_PYTHON="$prefix/python/bin/python"
 ```
 
-That `PATH` line also puts the locked `tsc`, `sg`, and `jscpd` ahead of your own. To keep another
-TypeScript compiler first, link only the tools you need, for example
-`ln -s "$prefix/node/node_modules/.bin/depcruise" ~/.local/bin/depcruise`.
+That `PATH` line puts the locked `sg` and `jscpd` ahead of your own. Link only the tools you need if you prefer not to change `PATH`.
 
-Provide a compatible owned Node interpreter on `PATH`; do not launch analysis through a target
-package-manager script. For host Rust/Go semantic tools, install the manifest versions using the
+Optional SCIP tooling needs a compatible owned Node interpreter on `PATH`; do not launch it through a target package-manager script. For host Rust/Go semantic tools, install the manifest versions using the
 official platform toolchains (`rust-src` is required). `scripts/ci-provision-tools.sh` is Linux
 build/CI provisioning, not a portable runtime installer. Never install target dependencies as part
 of the Python import producer. Runtime tool discovery does not certify the complete environment.

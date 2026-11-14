@@ -150,13 +150,12 @@ The input tree hash covers sorted relative paths and file content hashes. Hashin
 
 The fact cache is best effort. A missing, unreadable, or corrupt entry is a cache miss. A failed write does not fail analysis. A hit updates the entry time for eviction. The cache caps fact data at 1 GiB and evicts oldest entries until usage is at most 768 MiB.
 
-`--refresh` bypasses cache reads and writes successful fresh facts. Process errors and timeouts are not cached. Extractors can reject successful process output when it is partial. Go caches only clean module loads. TypeScript rejects dependency-cruiser output with unresolved imports. Other extractors decide whether a non-zero exit contains usable facts.
+`--refresh` bypasses cache reads and writes successful fresh facts. Process errors and timeouts are not cached. Extractors can reject successful process output when it is partial. Go caches only clean module loads. Other extractors decide whether a non-zero exit contains usable facts.
 
 The key has limits that vary by analyzer:
 
 - The check's facts are keyed by git tree id, not by an input tree hash: see [what the check reads](#what-the-check-reads).
-- Python extraction does not use the fact cache. It validates an explicit installed tool environment when configured; otherwise the isolated local uv environment is resolved outside the repository. No target cache or virtualenv establishes freshness.
-- TypeScript keys supported data-only `tsconfig` inputs, Node dependency metadata, owned runtime/compiler identity and fixed judge options. Project dependency-cruiser configuration is ignored. Incomplete source inventories and unusable graphs are not cached.
+- TypeScript and Python report import extraction do not use the fact cache or target runtimes. The check caches its facts by git tree id.
 - Go keys each workspace member with Go toolchain version, Go environment, build settings, module files, and the member's transitive workspace dependency inputs. The Go environment includes `GOOS`, `GOARCH`, `CGO_ENABLED`, build flags, and toolchain options. The Go toolchain version identifies standard-library facts.
 - Go bypasses cache for a member whose dependency closure uses a local `replace` or an unkeyed workspace module. A local replacement in `go.work` disables Go caching for the full run.
 

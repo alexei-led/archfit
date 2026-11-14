@@ -333,7 +333,7 @@ const (
 	connascenceUnmeasuredStatic    = "unmeasured_static"
 	connascenceUnmeasuredDynamic   = "unmeasured_dynamic"
 	connascenceSourceGoTypes       = "go/types"
-	connascenceSourceDepCruise     = "dependency-cruiser"
+	connascenceSourceTSImports     = "tsimports"
 	connascenceSourcePythonImports = "pyimports"
 	connascenceSourceSCIP          = "scip"
 )
@@ -341,8 +341,8 @@ const (
 func connascenceRoadmap(by map[string]int) []evidence.ConnascenceRoadmapItem {
 	items := make([]evidence.ConnascenceRoadmapItem, 0, 9)
 	items = append(items,
-		evidence.ConnascenceRoadmapItem{Kind: "name", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceDepCruise, connascenceSourcePythonImports, connascenceSourceSCIP}},
-		evidence.ConnascenceRoadmapItem{Kind: "type", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceDepCruise, connascenceSourceSCIP}},
+		evidence.ConnascenceRoadmapItem{Kind: "name", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceTSImports, connascenceSourcePythonImports, connascenceSourceSCIP}},
+		evidence.ConnascenceRoadmapItem{Kind: "type", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
 		evidence.ConnascenceRoadmapItem{Kind: "meaning", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
 		evidence.ConnascenceRoadmapItem{Kind: "algorithm", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
 		evidence.ConnascenceRoadmapItem{Kind: "position", CurrentStatus: positionStatus(by), Sources: positionSources(by), UpgradeTrigger: "deterministic argument-order or tuple-position facts from an extractor"},

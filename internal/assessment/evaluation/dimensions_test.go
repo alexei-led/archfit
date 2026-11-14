@@ -21,6 +21,7 @@ import (
 const (
 	// toolDepCruiser is the TypeScript primary analyzer's coverage name.
 	toolDepCruiser      = "dependency-cruiser"
+	toolTSImports       = "tsimports"
 	metricEncapsulation = "encapsulation"
 	bandNA              = "n/a"
 	assessUnitSvc       = "svc"
@@ -599,26 +600,25 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 	}{
 		{
 			name:           "a clean TypeScript extraction stays measured",
-			coverage:       modevidence.Coverage{Tool: toolDepCruiser, Status: modevidence.StatusOK},
+			coverage:       modevidence.Coverage{Tool: toolTSImports, Status: modevidence.StatusOK},
 			wantStatus:     state.Measured,
 			wantConfidence: state.ConfidenceHigh,
 		},
 		{
-			// Exactly at the ceiling: the cap is strictly greater-than, so this
-			// side of the boundary must not move the envelope.
-			name: "unresolved specifiers at the ceiling stay measured",
+			name: "one unresolved specifier makes it partial",
 			coverage: modevidence.Coverage{
-				Tool: toolDepCruiser, Status: modevidence.StatusPartial,
-				Unresolved: 10, SpecifiersSeen: 100,
+				Tool: toolTSImports, Status: modevidence.StatusPartial,
+				Unresolved: 1, UnresolvedInputsMissing: 1, SpecifiersSeen: 100,
 			},
-			wantStatus:     state.Measured,
-			wantConfidence: state.ConfidenceHigh,
+			wantStatus:     state.Partial,
+			wantConfidence: state.ConfidenceMedium,
+			wantUnknown:    true,
 		},
 		{
-			name: "unresolved specifiers above the ceiling make it partial",
+			name: "many unresolved specifiers make it partial",
 			coverage: modevidence.Coverage{
-				Tool: toolDepCruiser, Status: modevidence.StatusPartial,
-				Unresolved: 6288, SpecifiersSeen: 11337,
+				Tool: toolTSImports, Status: modevidence.StatusPartial,
+				Unresolved: 6288, UnresolvedInputsMissing: 6288, SpecifiersSeen: 11337,
 			},
 			wantStatus:     state.Partial,
 			wantConfidence: state.ConfidenceMedium,
@@ -699,7 +699,7 @@ func TestCouplingDimension_TypeScriptAndRoslynBothNamed(t *testing.T) {
 		Findings:        []finding.Finding{},
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{Total: 10, Scored: 10, ConnectedModules: 2},
 		ToolCoverage: []modevidence.Coverage{
-			{Tool: toolDepCruiser, Status: modevidence.StatusPartial, Unresolved: 5, SpecifiersSeen: 10},
+			{Tool: toolTSImports, Status: modevidence.StatusPartial, Unresolved: 1, UnresolvedInputsMissing: 1, SpecifiersSeen: 100},
 			{Tool: "roslyn", Status: modevidence.StatusPartial, Unresolved: 1, UnresolvedInputsMissing: 1},
 		},
 	}
@@ -710,9 +710,9 @@ func TestCouplingDimension_TypeScriptAndRoslynBothNamed(t *testing.T) {
 			reason = u.Reason
 		}
 	}
-	tsAt, roslynAt := strings.Index(reason, "dependency-cruiser"), strings.Index(reason, "roslyn")
+	tsAt, roslynAt := strings.Index(reason, "TypeScript"), strings.Index(reason, "roslyn")
 	if dim.Status != state.Partial || tsAt < 0 || roslynAt < tsAt || !strings.Contains(reason, "; roslyn") {
-		t.Errorf("status = %q, reason = %q, want partial naming dependency-cruiser then roslyn", dim.Status, reason)
+		t.Errorf("status = %q, reason = %q, want partial naming TypeScript then roslyn", dim.Status, reason)
 	}
 }
 

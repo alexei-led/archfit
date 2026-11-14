@@ -21,7 +21,7 @@ func TestToolsPerLanguage(t *testing.T) {
 	t.Parallel()
 	want := map[string]struct{ check, report []string }{
 		"go":         {check: []string{}, report: []string{"go", SCIPGo}},
-		"typescript": {check: []string{ToolAstGrep}, report: []string{"node", ToolDepCruiser, SCIPTypeScript}},
+		"typescript": {check: []string{ToolAstGrep}, report: []string{SCIPTypeScript}},
 		"python":     {check: []string{ToolAstGrep}, report: []string{SCIPPython}},
 		"rust":       {check: []string{ToolCargo, ToolAstGrep}, report: []string{SCIPRust, ToolCargoModules}},
 		"dotnet":     {check: []string{cmdDotNet, ToolAstGrep}, report: []string{"archfit-roslyn"}},

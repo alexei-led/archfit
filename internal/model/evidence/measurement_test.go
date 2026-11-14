@@ -13,6 +13,7 @@ func TestChangedProducerContractsHaveDistinctSemantics(t *testing.T) {
 		{"scip-symbols", "scip-symbols.v2"},
 		{"go/packages", "go/packages.v2"},
 		{"pyimports", "pyimports.v1"},
+		{"tsimports", "tsimports.v1"},
 		{"cargo", "cargo.v1"},
 		{"cargo-modules", "cargo-modules.v2"},
 		{"dotnet-msbuild", "dotnet-msbuild.v1"},

@@ -162,7 +162,6 @@ modules:
       - internal/extract/acquire
       - internal/extract/registry
       - internal/extract/golang
-      - internal/extract/ts
       - internal/extract/rust
       - internal/extract/dotnet
       - internal/extract/scip
@@ -598,10 +597,6 @@ exceptions:
     from: analysis-application
     to: cli-composition
     why: Existing duplicate at internal/application/compare.go:139; this literal already lives in cmd/archfit/config_compare.go:47; retain until consolidated.
-  - rule: duplication
-    from: analysis-scope
-    to: evidence-adapters
-    why: Existing duplicate at internal/scope/scope.go:66; this literal already lives in internal/extract/ts/producer.go:133; retain until consolidated.
   - rule: duplication
     from: architecture-policy
     to: config-lifecycle

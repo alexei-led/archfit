@@ -13,7 +13,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/extract/golang"
 	"github.com/alexei-led/archfit/v3/internal/extract/pyimports"
 	"github.com/alexei-led/archfit/v3/internal/extract/rust"
-	"github.com/alexei-led/archfit/v3/internal/extract/ts"
+	"github.com/alexei-led/archfit/v3/internal/extract/tsimports"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
@@ -57,7 +57,7 @@ type Descriptor struct {
 	// not in this tree" rather than a coverage gap or a declared opt-out.
 	//
 	// Every row MUST answer by calling the extractor's own applicability code
-	// (golang.AnalysableMembers, ts.Applicable, pyimports.Applicable, rust.Applicable) —
+	// (golang.AnalysableMembers, tsimports.Applicable, pyimports.Applicable, rust.Applicable) —
 	// never a hand-rolled marker list. A parallel reimplementation is how "we did
 	// not look" repeatedly rendered as "there is nothing here": a marker the
 	// extractor ignores (tsconfig.json without package.json, setup.cfg, a go.mod
@@ -108,7 +108,7 @@ const (
 	cmdDotNet        = "dotnet"
 
 	ToolGoPackages    = "go/packages"
-	ToolDepCruiser    = "dependency-cruiser"
+	ToolTSImports     = tsimports.ToolName
 	ToolPythonImports = pyimports.ToolName
 	ToolCargo         = "cargo"
 	ToolCargoModules  = "cargo-modules"
@@ -144,19 +144,15 @@ var languages = []Descriptor{
 		ID:             "typescript",
 		Aliases:        []string{"ts"},
 		ProjectPresent: tsProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
-			ex := ts.New(r, cfg)
-			ex.Cache = fc
-			return ex
+		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, _ *factcache.Store) evidenceports.Extractor {
+			return tsimports.New(r, cfg)
 		},
-		QueryEdge:   ts.QueryEdge,
+		QueryEdge:   tsimports.QueryEdge,
 		CheckFacts:  tsCheckFacts,
-		PrimaryTool: ToolDepCruiser,
+		PrimaryTool: ToolTSImports,
 		InstallHint: analyzerSetupURL,
 		CheckTools:  []Tool{astGrep},
 		ReportTools: []Tool{
-			{"node", "node", "https://nodejs.org", nil, nil},
-			{ToolDepCruiser, "depcruise", analyzerSetupURL, nil, nil},
 			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL, nil, nil},
 		},
 	},
@@ -269,8 +265,8 @@ func goProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
 	return err != nil || len(members.Dirs) > 0
 }
 
-func tsProjectPresent(root string, _ evidenceports.ExtractConfig) bool {
-	return ts.Applicable(root)
+func tsProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
+	return tsimports.Applicable(root, cfg.Exclusions)
 }
 
 func pyProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {

@@ -110,7 +110,7 @@ func ownerDegradationWarning(src ownership.Source) string {
 }
 
 // tsUnresolvedWarning returns a disclosure message when the TypeScript
-// extractor (dependency-cruiser) reported partial coverage with a non-empty
+// extractor (tsimports) reported partial coverage with a non-empty
 // Reason — e.g. a high unresolved-import-specifier count from a missing
 // tsconfig path alias or an uninstalled dependency. Those edges silently land
 // in the external bucket, excluded from coupling_balance's denominator, so the
@@ -118,8 +118,8 @@ func ownerDegradationWarning(src ownership.Source) string {
 // when no such coverage record is present.
 func tsUnresolvedWarning(cov []evidence.Coverage) string {
 	for _, c := range cov {
-		if c.Tool == registry.ToolDepCruiser && c.Status == evidence.StatusPartial && c.Reason != "" {
-			return registry.ToolDepCruiser + ": " + c.Reason
+		if c.Tool == registry.ToolTSImports && c.Status == evidence.StatusPartial && c.Reason != "" {
+			return registry.ToolTSImports + ": " + c.Reason
 		}
 	}
 	return ""

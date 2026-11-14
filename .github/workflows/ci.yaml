@@ -172,7 +172,7 @@ jobs:
           go test -race -coverprofile="coverage-$SHARD.out" "${packages[@]}"
       # One shard runs the non-Go contract tests: they are separate programs, not
       # package tests, and would otherwise run three times over.
-      # Python imports use ast-grep; this runtime remains for the SCIP reader only.
+      # TypeScript and Python imports use ast-grep; these runtimes remain for SCIP.
       - name: SCIP reader tests (locked Python runtime)
         if: matrix.shard == 1
         run: '"$ARCHFIT_TOOL_PYTHON" -I internal/extract/scip/scip_reader_test.py'

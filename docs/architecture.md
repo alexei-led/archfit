@@ -108,7 +108,7 @@ Keep decisions with their domain owner. Add a port when an inner layer needs an 
 
 ## Accepted boundaries
 
-`internal/extract/ts` and `internal/extract/dotnet` use strength constants from `internal/relationship/coupling`. They emit vocabulary only. They do not classify or score relationships. If an extractor needs classification behavior, move the shared value to a neutral model package first.
+`internal/extract/dotnet` uses strength constants from `internal/relationship/coupling`. It emits vocabulary only. It does not classify or score relationships. If an extractor needs classification behavior, move the shared value to a neutral model package first.
 
 The report projection sits in the application layer because it maps domain results to the report contract. It has a restricted import rule so it cannot reach into relationship or evidence internals.
 
