@@ -83,7 +83,7 @@ class CIProvisionTest(unittest.TestCase):
                 ],
             )
 
-    def test_cache_hit_skips_install_and_only_exports_the_restored_tree(self):
+    def test_cache_hit_exports_the_restored_tree_and_reinstates_the_interpreter(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             prefix = self.fake_toolchain(base)
@@ -91,9 +91,29 @@ class CIProvisionTest(unittest.TestCase):
                 base, "auto", prefix, cache_hit="true"
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(calls, [])
+            version = self.manifest_python()
+            self.assertEqual(
+                [call[1:] for call in calls],
+                [["python", "install", version], ["python", "find", version]],
+            )
             self.assertNotIn("ARCHFIT_TOOL_PYTHON=", env.read_text())
+            self.assertEqual(len(env.read_text().splitlines()), 5)
             self.assertEqual(len(path.read_text().splitlines()), 6)
+
+    def test_cache_hit_without_a_usable_interpreter_fails_before_export(self):
+        for command in ("install", "find"):
+            with (
+                self.subTest(command=command),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                base = Path(directory)
+                prefix = self.fake_toolchain(base)
+                result, calls, env, _ = self.run_bootstrap(
+                    base, "auto", prefix, cache_hit="true", fail=command
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("bash", [call[0] for call in calls])
+                self.assertFalse(env.exists())
 
     def test_unusable_cache_is_rebuilt_instead_of_trusted(self):
         for broken in ("cargo-modules", "dotnet", "rustc", "sg"):
