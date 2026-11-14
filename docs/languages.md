@@ -14,7 +14,7 @@ Language adapters run when project markers and required tools are present. Set `
 | Rust | Root `Cargo.toml`, or configured `languages.rust.manifest` | `cargo` | Crate dependencies | Cargo errors produce partial evidence. A one-crate graph has no internal crate edges. |
 | .NET (C#, SDK-style projects, net8.0 and later) | `languages.dotnet.projects`, else a `.slnx` or `.sln` at the root, else any `.csproj` outside `obj/`, `bin/`, and `exclude` | `dotnet` SDK; the Roslyn helper for the type graph | Project graph from MSBuild evaluation; file-to-file type references with compiler-resolved strength hints; `internal` use across assemblies as intrusive hints | Projects that do not evaluate or load are reported `failed` or `partial` with the cause. Unresolved symbols keep coupling from `measured`. See [.NET](#net). |
 
-Optional tools add syntax evidence, clone evidence, or more precise coupling evidence. Their absence does not stop the analysis. See [metrics](metrics.md) for metric meaning and limits.
+Optional tools add syntax or more precise coupling evidence. Their absence does not stop the analysis. The independent [`duplication` rule](rules.md) checks identical literals added across modules. See [metrics](metrics.md) for metric meaning and limits.
 
 ## Before you run
 

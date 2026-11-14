@@ -117,7 +117,7 @@ docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.2.0 \
   check --config /repo/.archfit.yaml
 ```
 
-The complete image includes Node, Python, Rust, the .NET SDK, syntax and clone tools, cargo-modules, and the Roslyn helper (`archfit-roslyn`).
+The complete image includes Node, Python, Rust, the .NET SDK, ast-grep, cargo-modules, and the Roslyn helper (`archfit-roslyn`).
 Go is build-only and is not present in the final image.
 No analyzer package installation is needed at run time.
 See [Languages and tools](languages.md) for exact versions, optional execution, and limits.
