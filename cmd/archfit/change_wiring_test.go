@@ -21,7 +21,7 @@ func TestIsVersion3(t *testing.T) {
 		{"version: 3.0\n", true},
 		{"version: 3\nnot: [valid\n", false},
 		{"version: 3\nmodules: {}\n", true},
-		{minimalValidYAML, false},
+		{"version: 2\n", false},
 		{version1, false},
 		{"version: 4\n", false},
 		{"version: \"3\"\n", false},

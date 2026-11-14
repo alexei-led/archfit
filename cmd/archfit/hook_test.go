@@ -17,20 +17,15 @@ const (
 	hookViolatingA = "package a\n\nimport \"example.com/test/pkg/b/impl\"\n\n" +
 		"func UseSecret() string { return impl.Secret() }\n"
 	hookImplFile = "pkg/b/impl/impl.go"
-	hookModules  = `version: 2
+	hookModules  = `version: 3
+owners: [owner]
 modules:
   a:
     paths: ["pkg/a/**"]
   b:
     paths: ["pkg/b/**"]
 `
-	hookRuleCfg = hookModules + `rules:
-  - id: no_b_impl
-    type: forbidden_dependency
-    gate: fail
-    from: pkg/a/**
-    to: pkg/b/impl
-`
+	hookRuleCfg = hookModules + hookRuleSection
 )
 
 // hookRepo writes the coupled fixture with headA committed as pkg/a/a.go

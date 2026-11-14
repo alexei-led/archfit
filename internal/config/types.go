@@ -1,13 +1,8 @@
 package config
 
 import (
-	"fmt"
-	"strconv"
-
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/policy"
-
-	"github.com/goccy/go-yaml"
 )
 
 // ToolMode is the public config lifecycle view of a tool enable state.
@@ -41,71 +36,10 @@ func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
 	return policy.ModuleRootDirs(modules)
 }
 
-// MetricsConfig holds gate settings for computed metrics plus diagnostic-only
-// complexity settings. Entries stays inline so existing object-shaped metric
-// YAML keeps its public form, while function_loc_threshold is the one reserved
-// scalar in the same block.
+// MetricsConfig holds internal metric settings and a diagnostic function-size threshold.
 type MetricsConfig struct {
 	FunctionLOCThreshold *int                          `yaml:"function_loc_threshold,omitempty" jsonschema:"minimum=1,default=60"`
 	Entries              map[string]policy.MetricEntry `yaml:"-"`
-}
-
-// UnmarshalYAML decodes the one reserved scalar separately from ordinary
-// object-shaped metric entries. Re-decoding each object with strict mode keeps
-// unknown fields loud even though the outer key set is intentionally dynamic.
-func (m *MetricsConfig) UnmarshalYAML(unmarshal func(any) error) error {
-	var raw map[string]any
-	if err := unmarshal(&raw); err != nil {
-		return err
-	}
-	m.FunctionLOCThreshold = nil
-	m.Entries = make(map[string]policy.MetricEntry, len(raw))
-	for name, value := range raw {
-		if name == "function_loc_threshold" {
-			var threshold int
-			switch number := value.(type) {
-			case uint64:
-				if strconv.IntSize == 32 && number > uint64(^uint32(0)>>1) {
-					return fmt.Errorf("metrics.function_loc_threshold must be an integer in range (got %d)", number)
-				}
-				if strconv.IntSize == 64 && number > ^uint64(0)>>1 {
-					return fmt.Errorf("metrics.function_loc_threshold must be an integer in range (got %d)", number)
-				}
-				threshold = int(number) //nolint:gosec // range checked for the platform int size above
-			case int64:
-				if strconv.IntSize == 32 && (number < int64(-1<<31) || number > int64(1<<31-1)) {
-					return fmt.Errorf("metrics.function_loc_threshold must be an integer in range (got %d)", number)
-				}
-				threshold = int(number)
-			default:
-				return fmt.Errorf("metrics.function_loc_threshold must be an integer (got %T)", value)
-			}
-			m.FunctionLOCThreshold = &threshold
-			continue
-		}
-		encoded, err := yaml.Marshal(value)
-		if err != nil {
-			return fmt.Errorf("metrics.%s: encode value: %w", name, err)
-		}
-		var entry policy.MetricEntry
-		if err := yaml.UnmarshalWithOptions(encoded, &entry, yaml.DisallowUnknownField()); err != nil {
-			return fmt.Errorf("metrics.%s: %w", name, err)
-		}
-		m.Entries[name] = entry
-	}
-	return nil
-}
-
-// MarshalYAML preserves the public mixed map shape for config rewrite paths.
-func (m MetricsConfig) MarshalYAML() (any, error) {
-	out := make(map[string]any, len(m.Entries)+1)
-	for name, entry := range m.Entries {
-		out[name] = entry
-	}
-	if m.FunctionLOCThreshold != nil {
-		out["function_loc_threshold"] = *m.FunctionLOCThreshold
-	}
-	return out, nil
 }
 
 // MetricEntries returns only computed-metric gate configuration. The reserved
@@ -161,49 +95,10 @@ type CouplingConfig struct {
 	// well-designed codebases; high/critical surface only intrusive/functional
 	// coupling across large boundaries.
 	MinSeverity string `yaml:"min_severity,omitempty"`
-	// DuplicatedKnowledge retains a retired Archfit 3 setting for conversion.
-	DuplicatedKnowledge policy.DuplicatedKnowledgePolicy `yaml:"duplicated_knowledge,omitempty"`
 	// VolatilityCascade enables the book Ch9 propagation pass: a module strongly
 	// coupled to a high-effective-volatility module inherits raised effective
 	// volatility. The pass runs to a deterministic fixpoint and never lowers values.
 	VolatilityCascade bool `yaml:"volatility_cascade,omitempty"`
-	// Gate configures the coupling verdict gate (`coupling.gate:`). An absent
-	// block is not an absent policy: the distributed-monolith rule always runs
-	// and defaults to mode warn with max_new_seams 0.
-	Gate *CouplingGateDef `yaml:"gate,omitempty"`
-}
-
-// CouplingGateDef configures the coupling verdict gate (`coupling.gate:`).
-type CouplingGateDef struct {
-	// DistributedMonolith is the v2 coupling gate: it counts logical seams, not
-	// import edges, and blocks only on newly introduced qualifying seams
-	// against a comparable reference.
-	DistributedMonolith *DistributedMonolithDef `yaml:"distributed_monolith,omitempty"`
-}
-
-// DistributedMonolithDef configures the distributed-monolith seam rule
-// (`coupling.gate.distributed_monolith:`).
-//
-// A qualifying seam is one ordered module pair with at least one active edge in
-// the critical band at high distance (different owner or different deploy
-// unit). The rule counts seams, not edges: forty imports expressing one seam
-// are one seam.
-type DistributedMonolithDef struct {
-	// Mode is warn (diagnostic, the default) or fail (blocking). Fail is opt-in
-	// and is never inferred automatically: it stays an owner decision taken after
-	// a report-only run against a comparable reference.
-	Mode string `yaml:"mode,omitempty"`
-	// MaxNewSeams is the tolerated number of newly introduced qualifying seams.
-	// Unset means 0. It applies only in fail mode and only when the comparison
-	// reference is comparable.
-	MaxNewSeams *int `yaml:"max_new_seams,omitempty"`
-}
-
-// OutputsConfig controls which output formats are produced.
-type OutputsConfig struct {
-	JSON     bool `yaml:"json"`
-	Markdown bool `yaml:"markdown"`
-	SARIF    bool `yaml:"sarif"`
 }
 
 // ---------------------------------------------------------------------------

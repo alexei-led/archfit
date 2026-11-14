@@ -14,7 +14,7 @@ const globModuleA = "a/**"
 
 func TestPolicySnapshotProjectsOwnershipAndDeployUnits(t *testing.T) {
 	t.Parallel()
-	cfg := Config{Version: 1, Modules: map[string]policy.ModuleDef{
+	cfg := Config{Modules: map[string]policy.ModuleDef{
 		"cli": {Owner: "team-cli", DeployUnit: "archfit-cli", Paths: []string{"cmd/**"}},
 	}}
 	got := cfg.PolicySnapshot()
@@ -43,7 +43,7 @@ func TestRunOptionsThreadsOneMergedExclusionSetThroughEveryStage(t *testing.T) {
 // naming the side that produced it.
 func TestPreparerDisclosesLintOnlyWhenAsked(t *testing.T) {
 	t.Parallel()
-	cfg := Config{Version: 1, Modules: map[string]policy.ModuleDef{
+	cfg := Config{Modules: map[string]policy.ModuleDef{
 		"bare": {Paths: []string{globModuleA}}, // no owner, no volatility -> lint warns
 	}}
 	if len(cfg.Lint()) == 0 {

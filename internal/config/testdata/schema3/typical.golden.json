@@ -1,6 +1,4 @@
 {
-  "Version": 3,
-  "TargetBranch": "",
   "Exclude": null,
   "Languages": {
     "Go": {
@@ -38,16 +36,6 @@
       "Enabled": "auto",
       "Gate": ""
     },
-    "Scip": {
-      "Enabled": "off",
-      "Gate": "",
-      "Timeout": ""
-    },
-    "Clones": {
-      "Enabled": "off",
-      "Gate": "",
-      "Timeout": ""
-    },
     "CargoModules": {
       "Enabled": "auto",
       "Gate": ""
@@ -63,20 +51,9 @@
     "Gate": "",
     "Sources": null
   },
-  "AI": {
-    "Provider": "",
-    "Model": "",
-    "BaseURL": "",
-    "APIKeyEnv": "",
-    "Effort": "",
-    "MaxTokens": 0,
-    "Timeout": ""
-  },
   "Coupling": {
     "MinSeverity": "medium",
-    "DuplicatedKnowledge": "score",
-    "VolatilityCascade": false,
-    "Gate": null
+    "VolatilityCascade": false
   },
   "Layers": [
     "core",
@@ -184,8 +161,6 @@
     }
   },
   "ExternalSystems": null,
-  "Rules": null,
-  "Waivers": null,
   "Metrics": {
     "FunctionLOCThreshold": null,
     "Entries": null
@@ -199,10 +174,5 @@
     "GeneratedGlobs": null,
     "TestGlobs": null,
     "MockFrameworks": null
-  },
-  "Outputs": {
-    "JSON": false,
-    "Markdown": false,
-    "SARIF": false
   }
 }

@@ -17,20 +17,23 @@ import (
 // via the hardcoded defaultConfigPath) and returns stdout.
 func runDoctorCmd(t *testing.T, dir string) string {
 	t.Helper()
+	out, err := runDoctorResult(t, dir, "")
+	if err != nil {
+		t.Fatalf("DoctorCmd.Run: %v", err)
+	}
+	return out
+}
+
+func runDoctorResult(t *testing.T, dir, format string) (string, error) {
+	t.Helper()
 	chdirIsolated(t, dir)
 	var buf bytes.Buffer
 	runner := &toolrun.RunnerMock{
-		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
-			return toolrun.ToolInfo{}, false
-		},
-		// The agent loop section asks git about the repository.
-		RunFunc: toolrun.New().Run,
+		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false },
+		RunFunc:    toolrun.New().Run,
 	}
-	deps := &appDeps{Runner: runner, Stdout: &buf}
-	if err := (&DoctorCmd{}).Run(deps); err != nil {
-		t.Fatalf("DoctorCmd.Run: %v", err)
-	}
-	return buf.String()
+	err := (&DoctorCmd{Format: format}).Run(&appDeps{Runner: runner, Stdout: &buf})
+	return buf.String(), err
 }
 
 // chdirIsolated runs the test in dir with HOME and CODEX_HOME in temporary
@@ -46,23 +49,29 @@ func chdirIsolated(t *testing.T, dir string) string {
 	return codex
 }
 
-func TestDoctorCmd_LiveForbiddenDependencyRuleLoadsClean(t *testing.T) {
+func TestDoctorCmdRejectsVersion2(t *testing.T) {
+	for _, format := range []string{"", formatJSON} {
+		t.Run("format="+format, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, defaultConfigPath), []byte("version: 2\nrules: []\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out, err := runDoctorResult(t, dir, format)
+			if err == nil || !strings.Contains(err.Error(), "archfit init") {
+				t.Fatalf("doctor accepted version 2 or omitted migration guidance: error %v, output %s", err, out)
+			}
+		})
+	}
+}
+
+func TestDoctorCmdLoadsVersion3(t *testing.T) {
 	dir := t.TempDir()
-	const yaml = `version: 2
-rules:
-  - id: no-cmd-to-internal
-    type: forbidden_dependency
-    gate: warn
-    from: "cmd/**"
-    to: "internal/**"
-`
-	if err := os.WriteFile(filepath.Join(dir, ".archfit.yaml"), []byte(yaml), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, defaultConfigPath), []byte("version: 3\nowners: [owner]\nmodules:\n  app: {paths: ['**']}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-
 	out := runDoctorCmd(t, dir)
 	if strings.Contains(out, "failed to load") {
-		t.Errorf("expected a rule with from:/to: set to load clean, got:\n%s", out)
+		t.Fatalf("doctor rejected version 3:\n%s", out)
 	}
 }
 
@@ -85,7 +94,10 @@ func TestDoctorCmd_BrokenConfigSurfacesError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runDoctorCmd(t, dir)
+	out, err := runDoctorResult(t, dir, "")
+	if err == nil {
+		t.Fatal("doctor accepted invalid configuration")
+	}
 	if !strings.Contains(out, ".archfit.yaml failed to load") {
 		t.Errorf("expected doctor to surface the config load error, got:\n%s", out)
 	}

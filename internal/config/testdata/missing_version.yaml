@@ -1,4 +1,0 @@
-modules:
-  mymod:
-    paths:
-      - pkg/**

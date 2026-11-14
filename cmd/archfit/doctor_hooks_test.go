@@ -72,7 +72,7 @@ const userClaudeSettings = `{"model": "opus", "hooks": {"Stop": [{"hooks": [{"ty
 // detected by .claude/, Codex by CODEX_HOME, git by the repository. A second
 // run writes the same bytes, and the user's own settings and hooks stay.
 func TestDoctorFixInstallsTheHooksOfTheDetectedHarnesses(t *testing.T) {
-	dir := fixRepo(t, map[string]string{harnessConfigFile(harnessClaude): userClaudeSettings, defaultConfigPath: "version: 3\n"})
+	dir := fixRepo(t, map[string]string{harnessConfigFile(harnessClaude): userClaudeSettings, defaultConfigPath: minimalValidYAML})
 	out := fixSection(runDoctorFix(t, dir, DoctorCmd{}, true))
 
 	repo, err := filepath.EvalSymlinks(dir)

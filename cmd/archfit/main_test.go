@@ -17,7 +17,7 @@ const (
 	flagJSON         = "--json"
 	filePkgAA        = "pkg/a/a.go"
 	goModStub        = "module example.com/test\n\ngo 1.21\n"
-	minimalValidYAML = "version: 2\n"
+	minimalValidYAML = "version: 3\nowners: [owner]\nmodules: {all: {paths: ['**']}}\n"
 )
 
 func gitInitFixtureRepo(t *testing.T, dir string) {
@@ -105,22 +105,20 @@ func implSource() string { return "package impl\n\nfunc " + "Secret() string { r
 
 const hookRuleSection = `rules:
   - id: no_b_impl
-    type: forbidden_dependency
-    gate: fail
-    from: pkg/a/**
-    to: pkg/b/impl
+    deny: {from: pkg/a/**, to: pkg/b/impl/**}
+    why: Keep implementation private.
+    instead: Use the public API.
 `
 
-const lintCleanModules = `version: 2
+const lintCleanModules = `version: 3
+owners: [owner]
 modules:
   a:
     paths: ["pkg/a/**"]
-    owner: team-a
     subdomain: core
     volatility: low
   b:
     paths: ["pkg/b/**"]
-    owner: team-b
     subdomain: core
     volatility: low
 `

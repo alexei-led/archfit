@@ -4,12 +4,12 @@
 //
 // Usage:
 //
-//	gofacts reference -lang go|typescript|python -root DIR [-config FILE]
+//	gofacts reference -lang go -root DIR [-config FILE]
 //	gofacts goparse -root DIR [-config FILE]
 //	gofacts modules -lang LANG [-config FILE] < node-paths.json
 //	gofacts config -lang LANG [-config FILE]
 //
-// reference runs today's extractor for one language. goparse is the new Go
+// reference runs the typed Go extractor. goparse is the new Go
 // extractor: go/parser imports, go/build constraints, go.mod module paths, no
 // Go toolchain. modules maps node paths, a JSON array on stdin, to declared
 // modules with the engine's own module map. config prints the extractor configuration
@@ -28,8 +28,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-
-	"github.com/goccy/go-yaml"
 
 	"github.com/alexei-led/archfit/v3/internal/config"
 	"github.com/alexei-led/archfit/v3/internal/policy"
@@ -128,30 +126,17 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) 
 	return enc.Encode(out)
 }
 
-// loadConfig reads the repository's config as the engine does. A config in an
-// older schema, which today's engine refuses, is read for its exclusions and
-// module paths only, and the note says so. No path means no config.
-func loadConfig(ctx context.Context, path string) (config.Config, string, error) {
+// loadConfig reads schema 3 only, just as the engine does. No path means no config.
+func loadConfig(_ context.Context, path string) (config.Config, string, error) {
 	if path == "" {
 		return config.Config{}, "no config: no module map", nil
 	}
-	cfg, err := config.Load(ctx, path)
-	if err == nil {
-		return cfg, "", nil
+	data, err := os.ReadFile(path) //nolint:gosec // the operator names the policy
+	if err != nil {
+		return config.Config{}, "", err
 	}
-	data, readErr := os.ReadFile(path) // #nosec G304 G703 -- the operator names the config
-	if readErr != nil {
-		return config.Config{}, "", readErr
-	}
-	var subset struct {
-		Exclude []string                    `yaml:"exclude"`
-		Modules map[string]policy.ModuleDef `yaml:"modules"`
-	}
-	if yamlErr := yaml.Unmarshal(data, &subset); yamlErr != nil {
-		return config.Config{}, "", fmt.Errorf("%w; reading exclude and modules only: %w", err, yamlErr)
-	}
-	return config.Config{Exclude: subset.Exclude, Modules: subset.Modules},
-		"engine refuses the config (" + err.Error() + "); read exclude and modules only", nil
+	cfg, err := config.ReportConfig(data)
+	return cfg, "", err
 }
 
 // mergedExclusions is the exclusion set every extractor of a run sees.

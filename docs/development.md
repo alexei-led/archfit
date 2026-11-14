@@ -140,14 +140,15 @@ Missing checkouts and toolchains must remain visible.
 
 ## Extractor equivalence
 
-`scripts/eval/extractors` compares today's import extractors with the parser-based ones planned for Archfit 4.
+`scripts/eval/extractors` compares the typed Go extractor with the parser-based Go extractor.
+The retired TypeScript and Python reference extractors are unavailable. The tool requires a schema 3 policy.
 It reports file edges, module pairs, and `unknown` imports for one language and repository.
 Run it on a disposable clone, because today's extractors can write caches in the target.
 
 ```sh
 go build -o /tmp/gofacts ./scripts/eval/extractors/gofacts
 PYTHONPATH=scripts/eval uv run python -m extractors.equivalence \
-  --lang typescript --root /tmp/clone --config /tmp/clone/.archfit.yaml \
+  --lang go --root /tmp/clone --config /tmp/clone/.archfit.yaml \
   --gofacts /tmp/gofacts --out /tmp/equivalence
 ```
 

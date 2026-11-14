@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -62,19 +61,6 @@ func (refusedWriter) Write([]byte) (int, error) {
 	return 0, errors.New("write refused")
 }
 
-func TestMissingPolicyLoaderUsesVersion4WordsAndExit2(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), defaultConfigPath)
-	_, err := loadAnalysisConfig(t.Context(), path)
-	var exit *exitError
-	if !errors.As(err, &exit) || exit.ExitCode() != exitUnknown {
-		t.Fatalf("error = %v; want exit 2", err)
-	}
-	if want := "archfit: policy not found: " + path + "\nnext: run archfit init"; err.Error() != want {
-		t.Errorf("error = %q; want %q", err.Error(), want)
-	}
-}
-
 func TestCheckRejectsRetiredFlagsAndVersion2Policies(t *testing.T) {
 	t.Parallel()
 	for _, flag := range []string{"--config", "-c", "--root", "--target", "--no-advisories", "--min-severity", "--refresh", "--require-tools", "--lang", "--json", "--markdown", "--sarif", "--progress", "-q"} {
@@ -86,7 +72,7 @@ func TestCheckRejectsRetiredFlagsAndVersion2Policies(t *testing.T) {
 		})
 	}
 	files := fixtureFiles()
-	files[defaultConfigPath] = minimalValidYAML
+	files[defaultConfigPath] = "version: 2\n"
 	dir := fixtureRepo(t, files, nil)
 	got := runCLI(t, fixtureDate, cmdCheck, "-C", dir)
 	if got.code != exitUnknown || !strings.Contains(got.stdout+got.stderr, "archfit init") {

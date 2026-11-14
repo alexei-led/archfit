@@ -942,7 +942,6 @@ func TestRun_ContractRecommended(t *testing.T) {
 // into classification at all.
 func TestRun_VolatilityUndeclaredWithoutConfig(t *testing.T) {
 	cfg := config.Config{
-		Version: 1,
 		Modules: map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}, Owner: ownerTeamX},
 			"b": {Paths: []string{globPkgB}, Owner: ownerTeamY}, // no volatility, no subdomain
@@ -1014,7 +1013,7 @@ func TestRun_MultiOwnerSiblingsLifted(t *testing.T) {
 		modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
 	}
 	// Both modules carry explicit hand-authored owners (distinct) → Step 2 fires.
-	cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
+	cfg := config.Config{Modules: modules}.ForClassify()
 
 	e := graph.Edge{
 		From: "file:pkg/a/x.go", To: "file:pkg/b/y.go",
@@ -1045,7 +1044,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX},
 		}
 		// No explicit owners — degenerate, structure fallback fires.
-		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
+		cfg := config.Config{Modules: modules}.ForClassify()
 		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisModule {
@@ -1059,7 +1058,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
 		}
 		// Mark both as explicit via production path so Step 2 fires (non-degenerate).
-		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
+		cfg := config.Config{Modules: modules}.ForClassify()
 		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisOwnership {
@@ -1073,7 +1072,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX, DeployUnit: deployUnitB},
 		}
 		// Deploy unit is Step 1 (absolute); ExplicitOwners irrelevant here.
-		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
+		cfg := config.Config{Modules: modules}.ForClassify()
 		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisDeployUnit {
@@ -1089,7 +1088,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 		}
 		// Same-module edge; basis is unknown regardless of ownership config.
-		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
+		cfg := config.Config{Modules: modules}.ForClassify()
 		e := importEdge(fileAX, "pkg/a/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
@@ -1165,7 +1164,6 @@ func TestRun_SmallOSSDeployUnitBoundaryStaysFar(t *testing.T) {
 // indeterminate, distinct from the undeclared config-gap case above.
 func TestRun_VolatilityUnknownWhenModuleUnresolved(t *testing.T) {
 	cfg := config.Config{
-		Version: 1,
 		Modules: map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}, Owner: ownerTeamX},
 		},

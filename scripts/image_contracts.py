@@ -348,7 +348,8 @@ def helper_status_failures(document: dict[str, Any]) -> list[str]:
     return failures
 
 
-DOTNET_CONFIG = """version: 2
+DOTNET_CONFIG = """version: 3
+owners: [owner]
 languages:
   dotnet:
     enabled: true
@@ -361,19 +362,16 @@ modules:
   contracts:
     paths: ['Application/Contracts.cs']
     layer: core
-    owner: team-core
   domain:
     paths: ['Domain/Domain.cs']
     layer: core
-    owner: team-core
   repository:
     paths: ['Infrastructure/Repository.cs']
     layer: adapter
-    owner: team-adapter
   tests:
     paths: ['Tests/**']
     layer: adapter
-    owner: team-adapter
+    depends_on: []
 """
 # The warning on stderr is the only full per-project text: the roslyn coverage row
 # keeps one shortened line.
@@ -444,9 +442,9 @@ def dotnet_extraction_failures(state: dict[str, Any], stderr: str) -> list[str]:
         (s.get("from_module"), s.get("to_module")): s.get("strength")
         for s in state.get("seams", [])
     }
-    # The dto hint folds into model at the seam: relationship classification owns that.
+    # A DTO used across schema 3 public is a contract; an internal-member hint stays intrusive.
     for edge, strength in {
-        ("repository", "contracts"): "model",
+        ("repository", "contracts"): "contract",
         ("repository", "domain"): "intrusive",
     }.items():
         if seams.get(edge) != strength:
@@ -546,6 +544,28 @@ def dotnet_cases(contract: ImageContract) -> None:
     dotnet_extraction_cases(contract)
 
 
+def version2_cases(contract: ImageContract) -> None:
+    spec = next(s for s in lc.FIXTURES if s.name == "typescript")
+    fixture = contract.output / "fixture-version2"
+    prepare_fixture(spec, fixture)
+    (fixture / ".archfit.yaml").write_text("version: 2\nmodules: {}\n")
+    output = contract.run(
+        "version2-rejected",
+        "27182:27182",
+        saved_command("report", "archfit report -C /tmp/repo --format json")
+        + saved_command("doctor", "cd /tmp/repo && archfit doctor --format json"),
+        fixture,
+    )
+    for command in ("report", "doctor"):
+        stderr = output / f"{command}.stderr"
+        contract.expect(
+            f"version 2: {command} rejects the retired format with conversion guidance",
+            exit_code(output, command) == "2"
+            and stderr.is_file()
+            and "archfit init" in stderr.read_text(),
+        )
+
+
 def negative_cases(contract: ImageContract) -> None:
     spec = next(s for s in lc.FIXTURES if s.name == "typescript")
     fixture = contract.output / "fixture-negative"
@@ -629,6 +649,7 @@ def main() -> int:
         language_cases(contract)
         python314_case(contract)
         dotnet_cases(contract)
+        version2_cases(contract)
         negative_cases(contract)
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         contract.expect("contract completed", False, str(exc))

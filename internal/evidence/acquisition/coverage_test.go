@@ -846,7 +846,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 	t.Parallel()
 	t.Run("empty config and no tool errors returns nil", func(t *testing.T) {
 		t.Parallel()
-		cfg := config.Config{Version: 1}
+		cfg := config.Config{}
 		if got := acquisition.BuildConfigWarnings(cfg.RunOptions().Lint(cfg.Modules), nil); got != nil {
 			t.Errorf("got %v, want nil", got)
 		}
@@ -856,7 +856,6 @@ func TestBuildConfigWarnings(t *testing.T) {
 		t.Parallel()
 		// A module with paths but no rules referencing it produces a lint warning.
 		cfg := config.Config{
-			Version: 1,
 			Modules: map[string]policy.ModuleDef{
 				"orphan": {Paths: []string{"pkg/orphan/**"}},
 			},
@@ -880,7 +879,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 
 	t.Run("tool errors only, no lint", func(t *testing.T) {
 		t.Parallel()
-		cfg := config.Config{Version: 1}
+		cfg := config.Config{}
 		toolErrs := []string{"jscpd: not found"}
 		got := acquisition.BuildConfigWarnings(cfg.RunOptions().Lint(cfg.Modules), toolErrs)
 		if len(got) != 1 || got[0] != "jscpd: not found" {

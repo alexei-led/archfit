@@ -1,36 +1,20 @@
 package main
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/alexei-led/archfit/v3/internal/config"
 )
 
-// loadConfig loads command configuration and validates rule definitions. The
-// default config is optional for commands that historically use config.Default.
-func loadConfig(ctx context.Context, path string) (config.Config, error) {
-	cfg, err := config.Load(ctx, path)
+// loadConfig reads doctor configuration. An absent default policy is optional.
+func loadConfig(path string) (config.Config, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // the operator names the policy
 	if err != nil {
 		if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
 			return config.Default(), nil
 		}
 		return config.Config{}, err
 	}
-	return cfg, nil
-}
-
-// loadAnalysisConfig loads a required config for analysis commands and maps
-// missing files to the command's input-error contract.
-func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error) {
-	cfg, err := config.Load(ctx, path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return config.Config{}, &exitError{code: exitUnknown, msg: fmt.Sprintf("archfit: policy not found: %s\nnext: run archfit init", path)}
-		}
-		return config.Config{}, err
-	}
-	return cfg, nil
+	return config.ReportConfig(data)
 }

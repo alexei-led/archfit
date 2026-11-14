@@ -23,7 +23,6 @@ func buildModuleMap(t *testing.T, mods map[string][]string) policy.ModuleMap {
 		modules[name] = policy.ModuleDef{Paths: paths}
 	}
 	cfg := config.Config{
-		Version: 1,
 		Modules: modules,
 	}
 	return cfg.ForClassify().ModuleMap

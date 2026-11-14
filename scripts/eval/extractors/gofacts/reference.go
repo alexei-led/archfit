@@ -16,6 +16,9 @@ import (
 // reference runs today's extractor for lang over root, with the config's
 // exclusions and no fact cache, and keeps its first-party edges.
 func reference(ctx context.Context, lang, root string, cfg config.Config) (facts, error) {
+	if lang != config.LangGo {
+		return facts{}, fmt.Errorf("reference extractor for %q was removed; only go is supported", lang)
+	}
 	cfg = mergedExclusions(cfg)
 	var std map[string]bool
 	if lang == config.LangGo {
@@ -36,9 +39,6 @@ func reference(ctx context.Context, lang, root string, cfg config.Config) (facts
 		Tool: cov.Tool, Version: cov.Version, Status: cov.Status, Reason: cov.Reason, Unresolved: cov.Unresolved,
 	}}
 	sourceKind := graph.NodeKindFile
-	if lang == config.LangPython {
-		sourceKind = graph.NodeKindModule
-	}
 	firstParty := make(map[string]bool)
 	for _, n := range got.Nodes {
 		if n.Kind == sourceKind {
@@ -51,23 +51,12 @@ func reference(ctx context.Context, lang, root string, cfg config.Config) (facts
 	for _, e := range got.Edges {
 		from, to := nodePath(e.From), nodePath(e.To)
 		switch {
-		case lang == config.LangPython && strings.HasPrefix(e.To, "module:"):
-			// grimp's own edges are first-party. A low-confidence edge names a
-			// first-party module that does not exist: today's unknown.
-			if e.Confidence == "low" {
-				out.Unknown = append(out.Unknown, unresolved{From: from, Specifier: to})
-			} else {
-				out.Edges = append(out.Edges, edge{From: from, To: to})
-			}
 		case firstParty[e.To], lang == config.LangGo && e.To == "package:":
 			// The Go load emits no node for the root package; its import is
 			// still first-party.
 			out.Edges = append(out.Edges, edge{From: from, To: to})
 		case lang == config.LangGo && firstPartyGoPath(to, std):
 			// A stripped first-party import the load produced no package for.
-			out.Unknown = append(out.Unknown, unresolved{From: from, Specifier: to})
-		case lang == config.LangTypeScript && e.Confidence == "low":
-			// dependency-cruiser could not resolve the specifier.
 			out.Unknown = append(out.Unknown, unresolved{From: from, Specifier: to})
 		default:
 			out.External++

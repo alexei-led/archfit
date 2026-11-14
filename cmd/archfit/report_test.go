@@ -92,18 +92,14 @@ func TestReportJSON(t *testing.T) {
 	}
 }
 
-// TestReportOnAVersion2Policy: the measurements only, and the way to a state.
 func TestReportOnAVersion2Policy(t *testing.T) {
 	t.Parallel()
 	files := fixtureFiles()
 	files[defaultConfigPath] = "version: 2\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n    depends_on: []\n"
 	dir := fixtureRepo(t, files, nil)
 	got := runCLI(t, fixtureDate, cmdReport, "-C", dir)
-	if got.code != 0 {
-		t.Fatalf("exit = %d, want 0; stderr: %s", got.code, got.stderr)
-	}
-	if want := "repository: no state: the policy is version 2: run archfit init\n"; statePart(t, got.stdout) != want {
-		t.Errorf("report:\n%s\nwant it to start with %q", got.stdout, want)
+	if got.code != exitUnknown || got.stdout != "" || !strings.Contains(got.stderr, "archfit init") {
+		t.Fatalf("report accepted version 2 or omitted migration guidance: exit %d, stdout %q, stderr %q", got.code, got.stdout, got.stderr)
 	}
 }
 

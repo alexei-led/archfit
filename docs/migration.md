@@ -2,6 +2,8 @@
 
 Archfit 4 reads one file: the policy `.archfit.yaml`, schema version 3. Archfit 3 kept the architecture in four files. `archfit init` converts them in place.
 
+Only `archfit init` reads version 2, for conversion. `check`, `report`, `doctor`, and the evaluation tools require version 3.
+
 ## Convert
 
 Run `archfit init` at the root of a repository whose `.archfit.yaml` has `version: 2`:

@@ -16,6 +16,31 @@ import image_contracts as image
 
 
 class ImageContractsTest(unittest.TestCase):
+    def test_version2_image_requires_rejection_and_conversion_guidance(self):
+        def exercise(rc, message):
+            with tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+                contract = image.ImageContract("local:contract", "colima", output)
+
+                def run(name, uid, script, fixture):
+                    self.assertIn("archfit report -C /tmp/repo --format json", script)
+                    self.assertIn("archfit doctor --format json", script)
+                    self.assertEqual((fixture / ".archfit.yaml").read_text(), "version: 2\nmodules: {}\n")
+                    result = output / name
+                    result.mkdir()
+                    for command in ("report", "doctor"):
+                        (result / f"{command}.rc").write_text(rc)
+                        (result / f"{command}.stderr").write_text(message)
+                    return result
+
+                with patch.object(contract, "run", side_effect=run):
+                    image.version2_cases(contract)
+                return all(row["passed"] for row in contract.assertions)
+
+        self.assertTrue(exercise("2", "run archfit init"))
+        self.assertFalse(exercise("0", "run archfit init"))
+        self.assertFalse(exercise("2", "unsupported format"))
+
     def test_image_inventory_rejects_removed_tools(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -164,7 +189,7 @@ class ImageContractsTest(unittest.TestCase):
                 {
                     "from_module": "repository",
                     "to_module": "contracts",
-                    "strength": "model",
+                    "strength": "contract",
                 },
                 {
                     "from_module": "repository",
@@ -208,6 +233,10 @@ class ImageContractsTest(unittest.TestCase):
                         "tools": [{"tool": "dotnet-msbuild", "status": "ok"}, tools[1]]
                     },
                 },
+                stderr,
+            ),
+            "retired unbounded DTO strength": (
+                {**state, "seams": [seam("model", target="contracts"), state["seams"][1]]},
                 stderr,
             ),
             "weak intrusive": (
@@ -511,7 +540,7 @@ class ImageContractsTest(unittest.TestCase):
                     {
                         "from_module": "repository",
                         "to_module": "contracts",
-                        "strength": "model",
+                        "strength": "contract",
                     },
                     {
                         "from_module": "repository",

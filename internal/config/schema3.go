@@ -18,33 +18,17 @@ import (
 // decoded file, because the resolved policy holds them only as flat strings.
 // Every Archfit 3 knob that has no schema 3 key keeps a value that gates
 // nothing:
-//   - no rules and no waivers;
-//   - no coupling.gate: the distributed-monolith rule warns, and only fail
-//     blocks;
 //   - no metrics entries: the default metrics, whose gates need a baseline;
 //   - no module_review and no tool gate: warn, so a missing tool is still
 //     disclosed and blocks nothing (off would hide it);
-//   - SCIP and clones off;
 //   - coupling advisory tuning as in Default.
 //
 // Module owners and deploy units stay empty, so the run resolves them from
 // CODEOWNERS and git as before. The owners of schema 3 approve requests. They
 // do not own modules.
 //
-// Known limits of this projection:
-//   - Schema 3 paths are file globs. Go package nodes match a directory glob
-//     (pkg/**). TypeScript and .NET file nodes match, and so do Rust crates,
-//     which bind through a file in the crate directory. A Go glob that names
-//     files (cmd/main.go) does not match a package node. Python nodes are
-//     dotted ids (myapp.chaos), which a directory glob (src/myapp/chaos/**)
-//     does not match. Only a catch-all ** claims them. The report on a Python
-//     repository therefore owns no Python node in a directory module, and its
-//     coupling metrics are n/a, not zero. Task 41 moves the report's Python
-//     evidence to file nodes.
-//   - Internal stays empty. The check scores a use past public as functional,
-//     and an Archfit 3 internal glob would force it to intrusive. With no
-//     internal glob the analyzer's own evidence decides (Go types read a call
-//     as functional). Without such evidence the scorer abstains.
+// The report retains its measurement views, not a second policy decoder.
+// Internal module globs stay empty: without a strength hint, scoring abstains.
 func ReportConfig(data []byte) (Config, error) {
 	p, err := policyfile.Resolve(data)
 	if err != nil {
@@ -60,7 +44,6 @@ func ReportConfig(data []byte) (Config, error) {
 // reportConfig projects a resolved policy and the tool keys of its file.
 func reportConfig(f policyfile.File, p resolved.Policy) Config {
 	cfg := Default()
-	cfg.Version = policyfile.Version
 	cfg.Exclude = p.Exclude
 	cfg.Layers = p.Layers
 	cfg.Modules = make(map[string]policy.ModuleDef, len(p.Modules))
@@ -92,8 +75,6 @@ func reportConfig(f policyfile.File, p resolved.Policy) Config {
 	a := f.Analyzers
 	cfg.Analyzers = AnalyzersConfig{
 		Syntax:       Analyzer{Enabled: toolMode(a.Syntax.Enabled)},
-		Scip:         TimedAnalyzer{Enabled: ModeOff},
-		Clones:       TimedAnalyzer{Enabled: ModeOff},
 		CargoModules: Analyzer{Enabled: toolMode(a.CargoModules.Enabled)},
 		Roslyn:       TimedAnalyzer{Enabled: toolMode(a.Roslyn.Enabled), Timeout: a.Roslyn.Timeout},
 	}
