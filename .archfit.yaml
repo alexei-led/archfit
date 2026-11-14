@@ -68,7 +68,6 @@ modules:
       - internal/assessment/**
     public:
       - internal/assessment/finding
-      - internal/assessment/rules
     volatility: high
     subdomain: core
     layer: core
