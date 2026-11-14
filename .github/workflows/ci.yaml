@@ -172,10 +172,6 @@ jobs:
           go test -race -coverprofile="coverage-$SHARD.out" "${packages[@]}"
       # One shard runs the non-Go contract tests: they are separate programs, not
       # package tests, and would otherwise run three times over.
-      # TypeScript and Python imports use ast-grep; these runtimes remain for SCIP.
-      - name: SCIP reader tests (locked Python runtime)
-        if: matrix.shard == 1
-        run: '"$ARCHFIT_TOOL_PYTHON" -I internal/extract/scip/scip_reader_test.py'
       - name: Corpus sweep harness tests (python)
         if: matrix.shard == 1
         run: uv run --with jsonschema==4.26.0 python -m unittest discover -s scripts/eval -p '*_test.py'
@@ -188,8 +184,7 @@ jobs:
           name: coverage-${{ matrix.shard }}
           path: coverage-${{ matrix.shard }}.out
           retention-days: 7
-  # Two packages are too slow to shard by package: cmd/archfit (56s) and
-  # internal/extract/scip (20-78s, its Rust tests compile a workspace). Go has no
+  # cmd/archfit is too slow to shard by package. Go has no
   # test-level sharding, so each is split by name across two runners. The names
   # come from the sources: no listing step, no build, and a test added later still
   # lands in exactly one half.
@@ -206,12 +201,6 @@ jobs:
             half: 1
           - package: ./cmd/archfit
             label: CLI
-            half: 2
-          - package: ./internal/extract/scip
-            label: SCIP
-            half: 1
-          - package: ./internal/extract/scip
-            label: SCIP
             half: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

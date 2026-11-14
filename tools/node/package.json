@@ -4,8 +4,6 @@
   "version": "1.0.0",
   "dependencies": {
     "@ast-grep/cli": "0.51.0",
-    "jscpd": "5.4.2",
-    "@sourcegraph/scip-typescript": "0.5.2",
-    "@sourcegraph/scip-python": "0.6.8"
+    "jscpd": "5.4.2"
   }
 }

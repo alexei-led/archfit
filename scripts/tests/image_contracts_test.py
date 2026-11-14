@@ -16,27 +16,28 @@ import image_contracts as image
 
 
 class ImageContractsTest(unittest.TestCase):
-    def test_image_inventory_rejects_the_removed_dependency_cruiser(self):
+    def test_image_inventory_rejects_removed_tools(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             contract = image.ImageContract("local:contract", "colima", root)
             with patch.object(contract, "run") as run:
                 image.inventory(contract)
             script = run.call_args.args[2]
-            probe = next(
-                part for part in script.split(";") if "command -v depcruise" in part
-            )
-            tool = root / "depcruise"
-            tool.write_text("#!/bin/sh\nexit 0\n")
-            tool.chmod(0o755)
-            result = subprocess.run(
-                ["/bin/sh", "-ec", probe + "; printf bypass"],
-                env={**os.environ, "PATH": str(root)},
-                capture_output=True,
-                text=True,
-            )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertNotIn("bypass", result.stdout)
+            for name in ("depcruise", "scip-go", "scip-typescript", "scip-python", "rust-analyzer"):
+                with self.subTest(tool=name):
+                    probe = next(part for part in script.split(";") if f"command -v {name}" in part)
+                    tool = root / name
+                    tool.write_text("#!/bin/sh\nexit 0\n")
+                    tool.chmod(0o755)
+                    result = subprocess.run(
+                        ["/bin/sh", "-ec", probe + "; printf bypass"],
+                        env={**os.environ, "PATH": str(root)},
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("bypass", result.stdout)
+                    tool.unlink()
 
     def test_only_the_changes_deny_error_is_a_forbidden_dependency(self):
         def error(rule, from_change):

@@ -160,7 +160,7 @@ def prepare_fixture(
 def inventory(contract: ImageContract) -> None:
     pins = lc.TOOL_MANIFEST
     node_script = "const p='/opt/archfit/analyzers/node/node_modules/'; const m=require('/opt/archfit/manifest.json'); for(const [n,v] of Object.entries(m.node)){if(require(p+n+'/package.json').version!==v) throw Error(n)}; console.log(JSON.stringify(m.node));"
-    py_script = "import importlib.metadata as m, importlib.util as u, json, platform; p=json.load(open('/opt/archfit/manifest.json')); assert platform.python_version()==p['versions']['python']; [(_ for _ in ()).throw(AssertionError(k)) for k,v in p['python'].items() if m.version(k)!=v]; assert u.find_spec('grimp') is None; import google.protobuf, grpc_tools; print(p['python'])"
+    py_script = "import importlib.util as u, json, platform; p=json.load(open('/opt/archfit/manifest.json')); assert platform.python_version()==p['versions']['python']; assert u.find_spec('grimp') is None"
     script = (
         'test "$HOME" = /tmp; ! getent passwd 27182; '
         "test ! -w /opt/archfit/manifest.json; "
@@ -168,11 +168,11 @@ def inventory(contract: ImageContract) -> None:
         f'test "$(node --version)" = v{pins["versions"]["node"]}; '
         f"{NO_GO}"
         f"rustc --version | grep -F {pins['versions']['rust']}; "
-        f"cargo --version | grep -F {pins['versions']['rust']}; rust-analyzer --version; "
+        f"cargo --version | grep -F {pins['versions']['rust']}; "
         f"cargo modules --version | grep -F {pins['versions']['cargo-modules']}; "
-        f"uv --version | grep -F {pins['versions']['uv']}; scip-go --version | grep -F {pins['versions']['scip-go']}; "
-        f'node -e {shlex.quote(node_script)}; "$ARCHFIT_TOOL_PYTHON" -I -c {shlex.quote(py_script)}; '
-        'test -z "$(command -v depcruise)"; ast-grep --version; jscpd --version; scip-typescript --version; scip-python --version; '
+        f"uv --version | grep -F {pins['versions']['uv']}; "
+        f'node -e {shlex.quote(node_script)}; python -I -c {shlex.quote(py_script)}; '
+        'test -z "$(command -v depcruise)"; test -z "$(command -v scip-go)"; test -z "$(command -v scip-typescript)"; test -z "$(command -v scip-python)"; test -z "$(command -v rust-analyzer)"; ast-grep --version; jscpd --version; '
         'mkdir -p "$CARGO_HOME" "$XDG_CACHE_HOME" "$UV_CACHE_DIR" "$npm_config_cache"; '
         "archfit --version"
     )
@@ -356,8 +356,6 @@ languages:
 analyzers:
   syntax:
     enabled: true
-  scip:
-    enabled: false
   clones:
     enabled: false
 layers: [core, adapter]

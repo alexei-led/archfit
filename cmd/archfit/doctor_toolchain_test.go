@@ -23,12 +23,12 @@ func TestDoctorDiscoversOwnedAnalyzerPrograms(t *testing.T) {
 	if err := (&DoctorCmd{}).Run(&appDeps{Runner: runner, Stdout: &output}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"ast-grep", "scip-typescript"} {
+	for _, name := range []string{"ast-grep"} {
 		if !seen[name] {
 			t.Errorf("doctor did not inspect %s", name)
 		}
 	}
-	for _, name := range []string{"sg", "bunx", "npx", "depcruise", "node"} {
+	for _, name := range []string{"sg", "bunx", "npx", "depcruise", "node", "scip-go", "scip-typescript", "scip-python", "rust-analyzer"} {
 		if seen[name] {
 			t.Errorf("doctor inspected obsolete launcher %s", name)
 		}

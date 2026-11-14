@@ -230,13 +230,7 @@ The image contract runs `archfit check` on the language-contract fixtures under 
 and arbitrary numeric UID with readonly trusted inputs: each forbidden dependency must give its error and exit 1. The .NET case also analyzes the fixture directly from the readonly mount and checks its tree hash is unchanged. Poisoned target config, `sitecustomize.py` and virtual environments must not run, and the real error must stay. Native amd64 and arm64 release jobs validate their own immutable
 platform images before the manifest/version tags are assembled. Emulation is not native proof.
 
-Python import extraction in both check and report uses `ast-grep` and the built-in resolver, without Python or grimp. The locked Python environment retains `protobuf` and `grpcio-tools` for the optional SCIP reader only. The image inventory rejects an installed grimp package.
-
-Run the SCIP reader tests with the provisioned interpreter; they do not bootstrap dependencies:
-
-```sh
-"$ARCHFIT_TOOL_PYTHON" -I internal/extract/scip/scip_reader_test.py
-```
+Python import extraction in both check and report uses `ast-grep` and the built-in resolver, without Python or grimp. The image inventory rejects grimp and the removed SCIP tools.
 
 CI runs the architecture check (`make arch-lint`) inside the image built from the change, in the `Complete image (linux/amd64)` job. The check compares the merge base and head under one policy. It reads no stored architecture-state reference and has no re-anchor workflow. Only exit `0` is a pass. The local Make target accepts exit `2` only for the named `policy: differs from origin/main` record, because a policy edit needs owner approval. Other unknown results and tool errors fail the target.
 

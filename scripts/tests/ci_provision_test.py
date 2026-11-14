@@ -24,11 +24,7 @@ if name == "uv" and sys.argv[1:3] == ["python", os.environ["FAIL_UV"]]:
     sys.exit(9)
 if name == "uv" and sys.argv[1:3] == ["python", "find"]:
     print(os.environ["OWNED_PYTHON"])
-if name == "bash":
-    venv = Path(sys.argv[2]) / "python/bin"
-    venv.mkdir(parents=True, exist_ok=True)
-    (venv / "python").unlink(missing_ok=True)
-    (venv / "python").symlink_to(sys.argv[3])
+
 """
 
 
@@ -75,15 +71,9 @@ class CIProvisionTest(unittest.TestCase):
                     str(prefix / "rust/bin"),
                 ],
             )
-            # The base interpreter is published by its resolved directory: the
-            # venv entry is a symlink into uv's tree, as in the shipped image.
-            self.assertEqual(
-                Path(entries[6]).resolve(), (base / "owned python/bin").resolve()
-            )
             self.assertEqual(
                 env.read_text().splitlines(),
                 [
-                    "ARCHFIT_TOOL_PYTHON=" + str(prefix / "python/bin/python"),
                     "GOTOOLCHAIN=local",
                     "CARGO_HOME=/tmp/archfit-cargo",
                     "RUST_SRC_PATH="
@@ -101,27 +91,12 @@ class CIProvisionTest(unittest.TestCase):
                 base, "auto", prefix, cache_hit="true"
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            # The venv interpreter is a symlink into uv's tree, so the pinned
-            # interpreter is ensured on every run; nothing else is rebuilt.
-            version = self.manifest_python()
-            self.assertEqual(
-                [call[0] for call in calls], ["uv", "uv"], calls
-            )
-            self.assertEqual(
-                [call[1:] for call in calls],
-                [["python", "install", version], ["python", "find", version]],
-            )
-            self.assertIn(
-                "ARCHFIT_TOOL_PYTHON=" + str(prefix / "python/bin/python"),
-                env.read_text().splitlines(),
-            )
-            self.assertEqual(
-                Path(path.read_text().splitlines()[-1]).resolve(),
-                (base / "owned python/bin").resolve(),
-            )
+            self.assertEqual(calls, [])
+            self.assertNotIn("ARCHFIT_TOOL_PYTHON=", env.read_text())
+            self.assertEqual(len(path.read_text().splitlines()), 6)
 
     def test_unusable_cache_is_rebuilt_instead_of_trusted(self):
-        for broken in ("cargo-modules", "dotnet", "python"):
+        for broken in ("cargo-modules", "dotnet", "rustc", "sg"):
             with (
                 self.subTest(broken=broken),
                 tempfile.TemporaryDirectory() as directory,
@@ -175,7 +150,6 @@ class CIProvisionTest(unittest.TestCase):
         prefix = base / "toolchain"
         for name in (
             "bin/cargo-modules",
-            "bin/scip-go",
             "dotnet/dotnet",
             "rust/bin/rustc",
             "analyzers/node/node_modules/.bin/sg",
@@ -185,16 +159,6 @@ class CIProvisionTest(unittest.TestCase):
             target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             if name.rsplit("/", 1)[-1] != broken:
                 target.chmod(0o755)
-        interpreter = base / "owned python/bin/python3.14"
-        interpreter.parent.mkdir(parents=True, exist_ok=True)
-        interpreter.write_text(
-            f"#!{sys.executable}\nimport sys\nsys.exit({1 if broken == 'python' else 0})\n",
-            encoding="utf-8",
-        )
-        interpreter.chmod(0o755)
-        venv = prefix / "python/bin"
-        venv.mkdir(parents=True, exist_ok=True)
-        (venv / "python").symlink_to(interpreter)
         return prefix
 
     def run_bootstrap(self, base, mode, prefix, cache_hit="", fail=""):

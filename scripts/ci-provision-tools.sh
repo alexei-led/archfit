@@ -23,29 +23,21 @@ fi
 toolchain_ready() {
     test -x "$prefix/bin/cargo-modules" &&
         test -x "$prefix/dotnet/dotnet" &&
-        test -x "$prefix/bin/scip-go" &&
         test -x "$prefix/rust/bin/rustc" &&
-        test -x "$prefix/analyzers/node/node_modules/.bin/sg" &&
-        "$prefix/python/bin/python" -I -c 'import google.protobuf, grpc_tools' >/dev/null 2>&1
+        test -x "$prefix/analyzers/node/node_modules/.bin/sg"
 }
 
 export_toolchain() {
-    local python=$prefix/python/bin/python base_bin
-    # The venv interpreter symlinks into uv's own tree. The image keeps a base
-    # interpreter on PATH and the venv behind ARCHFIT_TOOL_PYTHON, so CI does too.
-    base_bin=$(dirname -- "$(readlink -f -- "$python" 2>/dev/null || printf '%s' "$python")")
     printf '%s\n' \
         "$prefix/analyzers/node/node_modules/.bin" \
         "$prefix/bin" \
         "$prefix/dotnet" \
         "$prefix/go/bin" \
         "$prefix/node/bin" \
-        "$prefix/rust/bin" \
-        "$base_bin" >>"$GITHUB_PATH"
+        "$prefix/rust/bin" >>"$GITHUB_PATH"
     # No GOCACHE/GOPATH here: the workflow caches the Go defaults that setup-go
     # already restores, and pointing them at /tmp rebuilt every package per run.
     printf '%s\n' \
-        "ARCHFIT_TOOL_PYTHON=$python" \
         GOTOOLCHAIN=local \
         CARGO_HOME=/tmp/archfit-cargo \
         "RUST_SRC_PATH=$prefix/rust/lib/rustlib/src/rust/library" \
@@ -64,9 +56,7 @@ ci_arch() {
     esac
 }
 
-# The venv interpreter is a symlink into uv's own tree, which the toolchain cache
-# does not cover, so the pinned interpreter is ensured on every run. Skipping that
-# made every cache hit look unusable and rebuild the whole tree.
+# The pinned interpreter runs the build-time provisioning scripts.
 ensure_python() {
     local version python
     version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["versions"]["python"])' "$root/tools/manifest.json")
@@ -88,7 +78,6 @@ case $mode in
 auto)
     # A restored toolchain is verified before it is trusted and rebuilt when it
     # does not verify.
-    ensure_python >/dev/null || exit 1
     if [ "${ARCHFIT_TOOLCHAIN_CACHE_HIT:-}" = true ] && toolchain_ready; then
         export_toolchain
     else

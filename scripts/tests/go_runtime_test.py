@@ -28,7 +28,7 @@ class GoRuntimeTest(unittest.TestCase):
                 "go/bin/go",
                 "go/src/runtime/runtime.go",
                 "node/bin/node",
-                "bin/scip-go",
+                "bin/cargo-modules",
             ):
                 path = prefix / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,7 +36,7 @@ class GoRuntimeTest(unittest.TestCase):
             provision.prepare_runtime(provision.ROOT, prefix)
             self.assertFalse((prefix / "go").exists())
             self.assertEqual((prefix / "node/bin/node").read_text(), "node/bin/node")
-            self.assertEqual((prefix / "bin/scip-go").read_text(), "bin/scip-go")
+            self.assertEqual((prefix / "bin/cargo-modules").read_text(), "bin/cargo-modules")
 
     def test_image_guard_rejects_either_go_executable_or_sdk(self):
         for executable, sdk in (

@@ -1,5 +1,7 @@
 {
-  "build_only": ["go"],
+  "build_only": [
+    "go"
+  ],
   "versions": {
     "go": "1.27.4",
     "node": "24.22.1",
@@ -7,18 +9,11 @@
     "uv": "0.13.5",
     "rust": "1.99.1",
     "cargo-modules": "0.28.0",
-    "scip-go": "0.2.9",
     "dotnet": "10.0.402"
   },
   "node": {
     "@ast-grep/cli": "0.51.0",
-    "jscpd": "5.4.2",
-    "@sourcegraph/scip-typescript": "0.5.2",
-    "@sourcegraph/scip-python": "0.6.8"
-  },
-  "python": {
-    "protobuf": "7.36.2",
-    "grpcio-tools": "1.84.1"
+    "jscpd": "5.4.2"
   },
   "artifacts": {
     "amd64": {
@@ -49,10 +44,6 @@
       "rust-src": {
         "url": "https://static.rust-lang.org/dist/2026-10-15/rust-src-1.99.1.tar.xz",
         "sha256": "e485a88c45db546b73571df7bebfcb4454ba4fb552c492e25fc5b00eeb5bf22d"
-      },
-      "rust-analyzer": {
-        "url": "https://static.rust-lang.org/dist/2026-10-15/rust-analyzer-1.99.1-x86_64-unknown-linux-gnu.tar.xz",
-        "sha256": "5f2613d62003fc8cbe788d4ae409359c91c241ba248adbefe032df8bb77357bf"
       },
       "dotnet": {
         "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.402/dotnet-sdk-10.0.402-linux-x64.tar.gz",
@@ -87,10 +78,6 @@
       "rust-src": {
         "url": "https://static.rust-lang.org/dist/2026-10-15/rust-src-1.99.1.tar.xz",
         "sha256": "e485a88c45db546b73571df7bebfcb4454ba4fb552c492e25fc5b00eeb5bf22d"
-      },
-      "rust-analyzer": {
-        "url": "https://static.rust-lang.org/dist/2026-10-15/rust-analyzer-1.99.1-aarch64-unknown-linux-gnu.tar.xz",
-        "sha256": "b626351402eb9ea16af2ebc2b2cd02ec6f6ca6f0c18fa74b41243eb42996e2b1"
       },
       "dotnet": {
         "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.402/dotnet-sdk-10.0.402-linux-arm64.tar.gz",

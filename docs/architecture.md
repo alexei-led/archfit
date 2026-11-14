@@ -134,7 +134,7 @@ Update the matching tests when a contract changes.
 
 The .NET Roslyn helper is an adapter artifact built from `tools/dotnet/archfit-roslyn`. The Go side starts it through `toolrun.Runner` and reads its JSON. It is not a core dependency. `internal/extract/dotnet` emits strength hints only; `internal/relationship` classifies.
 
-Rust extraction first reports crate-level facts. Optional module and SCIP analyzers add intra-crate evidence. See [evidence](evidence.md) for evidence limits. See [languages](languages.md) for analyzer setup.
+Rust extraction first reports crate-level facts. The optional cargo-modules analyzer adds intra-crate evidence. See [evidence](evidence.md) for evidence limits. See [languages](languages.md) for analyzer setup.
 
 ## Coupling boundary
 

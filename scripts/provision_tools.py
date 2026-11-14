@@ -40,20 +40,6 @@ def check_locks(root: Path) -> None:
             or not item.get("resolved", "").startswith("https://registry.npmjs.org/")
         ):
             raise ValueError(f"npm package lacks registry integrity: {name}")
-    inputs = (root / "tools/python/requirements.in").read_text().splitlines()
-    if inputs != [f"{name}=={version}" for name, version in manifest["python"].items()]:
-        raise ValueError("Python inputs differ from tools/manifest.json")
-    lock = (root / "tools/python/requirements.lock").read_text()
-    entries = lock.replace("\\\n", "").splitlines()
-    for entry in entries:
-        if entry and not entry.startswith(("#", " ")) and "--hash=sha256:" not in entry:
-            raise ValueError(f"Python package lacks hashes: {entry}")
-    for name, version in manifest["python"].items():
-        if f"{name}=={version} " not in lock:
-            raise ValueError(f"Python lock differs from manifest: {name}")
-    go = (root / "tools/scip-go/go.mod").read_text()
-    if f"github.com/scip-code/scip-go v{manifest['versions']['scip-go']}" not in go:
-        raise ValueError("SCIP Go lock differs from manifest")
     # The Dockerfile pin is checked wherever the file is part of the tree (host,
     # CI). It is deliberately not copied into the image build context: an edit to
     # it must not invalidate the toolchain layer.
@@ -114,7 +100,6 @@ def install_sdks(root: Path, prefix: Path, arch: str) -> None:
             "cargo",
             "rust-std",
             "rust-src",
-            "rust-analyzer",
         ):
             artifact = artifacts[name]
             archive = temp / artifact["url"].rsplit("/", 1)[1]

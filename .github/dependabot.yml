@@ -1,6 +1,6 @@
 ---
 # Dependency updates for the development toolchain. Analyzer versions that
-# archfit measures with (ast-grep, jscpd, dependency-cruiser, rust, scip-go)
+# archfit measures with (ast-grep, jscpd, Rust)
 # are pinned in ci.yaml and the Dockerfile on purpose: they change measured
 # facts and need a baseline reanchor, so they are not automated here.
 version: 2

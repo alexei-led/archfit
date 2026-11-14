@@ -114,11 +114,6 @@ const (
 	ToolCargoModules  = "cargo-modules"
 	ToolDotNetMSBuild = "dotnet-msbuild"
 	ToolRoslyn        = "roslyn"
-
-	SCIPGo         = "scip-go"
-	SCIPTypeScript = "scip-typescript"
-	SCIPPython     = "scip-python"
-	SCIPRust       = "rust-analyzer"
 )
 
 var languages = []Descriptor{
@@ -137,7 +132,6 @@ var languages = []Descriptor{
 		InstallHint: "https://go.dev/dl (runtime SDK; go/packages is linked into archfit)",
 		ReportTools: []Tool{
 			{"go", "go", "https://go.dev/dl", nil, nil},
-			{SCIPGo, SCIPGo, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -152,9 +146,6 @@ var languages = []Descriptor{
 		PrimaryTool: ToolTSImports,
 		InstallHint: analyzerSetupURL,
 		CheckTools:  []Tool{astGrep},
-		ReportTools: []Tool{
-			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL, nil, nil},
-		},
 	},
 	{
 		ID:             "python",
@@ -168,9 +159,6 @@ var languages = []Descriptor{
 		PrimaryTool: ToolPythonImports,
 		InstallHint: analyzerSetupURL,
 		CheckTools:  []Tool{astGrep},
-		ReportTools: []Tool{
-			{SCIPPython, SCIPPython, analyzerSetupURL, nil, nil},
-		},
 	},
 	{
 		ID:             "rust",
@@ -186,7 +174,6 @@ var languages = []Descriptor{
 		InstallHint: "https://rustup.rs (rustup installs cargo)",
 		CheckTools:  []Tool{{ToolCargo, ToolCargo, "https://rustup.rs", nil, nil}, astGrep},
 		ReportTools: []Tool{
-			{SCIPRust, SCIPRust, "rustup component add rust-analyzer", nil, nil},
 			{ToolCargoModules, ToolCargoModules, analyzerSetupURL, nil, nil},
 		},
 	},
