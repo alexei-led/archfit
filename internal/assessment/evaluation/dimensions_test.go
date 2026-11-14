@@ -59,9 +59,6 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 			DependencyModules: 2, FirstPartyNodes: 2, AttributedFirstPartyNodes: 2,
 			TailRisk: &result.CouplingTailRiskSummary{CriticalEdges: 1, HighOrWorseEdges: 3, DistributedMonolithEdges: 0},
 		},
-		VolatilityCorroboration: &modevidence.VolatilityCorroboration{
-			Source: assessHistory, Status: modevidence.StatusOK, CommitsScanned: 120, ModulesTouched: 4,
-		},
 		ToolCoverage: []modevidence.Coverage{
 			{Tool: primaryTool, Status: modevidence.StatusOK},
 			{Tool: "scip", Status: modevidence.StatusAbsent},
@@ -117,7 +114,7 @@ func TestDimensionStatuses(t *testing.T) {
 				state.DimensionStructure:      state.Measured,
 				state.DimensionModularity:     state.Measured,
 				state.DimensionCoupling:       state.Partial,
-				state.DimensionChangeLocality: state.Measured,
+				state.DimensionChangeLocality: state.Unmeasured,
 				state.DimensionComplexity:     state.Measured,
 				state.DimensionTestability:    state.Partial,
 				state.DimensionOperations:     state.Measured,
@@ -258,32 +255,6 @@ func TestDimensionConfidenceFollowsTheWeakestEvidence(t *testing.T) {
 	}
 }
 
-// TestChangeLocalityRefusesAnEmptyHistory is R7: zero observed commits is
-// unmeasured, never a quiet zero that reads as a stable architecture.
-func TestChangeLocalityRefusesAnEmptyHistory(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		history *modevidence.VolatilityCorroboration
-		want    state.MeasurementStatus
-	}{
-		{"no history at all", nil, state.Unmeasured},
-		{"scan returned no commit", &modevidence.VolatilityCorroboration{Status: modevidence.StatusOK}, state.Unmeasured},
-		{"timed-out scan is partial", &modevidence.VolatilityCorroboration{Status: "timeout", CommitsScanned: 10, ModulesTouched: 2}, state.Partial},
-		{"complete scan is measured", &modevidence.VolatilityCorroboration{Status: modevidence.StatusOK, CommitsScanned: 10, ModulesTouched: 2}, state.Measured},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			diag := &result.Result{VolatilityCorroboration: tc.history}
-			got := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).ChangeLocality
-			if got.Status != tc.want {
-				t.Errorf("change locality status = %q, want %q", got.Status, tc.want)
-			}
-		})
-	}
-}
-
 // TestFindingsRouteToTheOwningDimension pins the routing table, including the
 // documented fallback: a rule nobody can classify lands in intent rather than
 // disappearing from every dimension.
@@ -312,7 +283,6 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 		{"pattern", state.DimensionModularity},
 		{finding.RuleIDBCImbalanced, state.DimensionCoupling},
 		{finding.RuleIDDuplicatedKnowledge, state.DimensionCoupling},
-		{"labels/stale", state.DimensionCoupling},
 		{"waiver", state.DimensionIntent},
 		{"nobody_declared_this", state.DimensionIntent},
 	}

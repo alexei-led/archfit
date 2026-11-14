@@ -5,16 +5,16 @@ package acquisition
 // address them directly so a coverage-gap or disclosure rule can be pinned
 // without driving a whole run.
 var (
-	BuildCoverageGaps            = buildCoverageGaps
-	MarkDisabledPrimaries        = markDisabledPrimaries
-	ConfigToolGate               = configToolGate
-	BuildConfigWarnings          = buildConfigWarnings
-	BuildJudgmentDecisionTasks   = buildJudgmentDecisionTasks
-	OutputInsideRootWarning      = outputInsideRootWarning
-	OwnerDegradationWarning      = ownerDegradationWarning
-	TSUnresolvedWarning          = tsUnresolvedWarning
-	PyUnresolvedWarning          = pyUnresolvedWarning
-	GoBuildConstraintWarning     = goBuildConstraintWarning
-	BuildVolatilityCorroboration = buildVolatilityCorroboration
-	ConfigHash                   = configHash
+	BuildCoverageGaps          = buildCoverageGaps
+	MarkDisabledPrimaries      = markDisabledPrimaries
+	ConfigToolGate             = configToolGate
+	BuildConfigWarnings        = buildConfigWarnings
+	BuildJudgmentDecisionTasks = buildJudgmentDecisionTasks
+	OutputInsideRootWarning    = outputInsideRootWarning
+	OwnerDegradationWarning    = ownerDegradationWarning
+	TSUnresolvedWarning        = tsUnresolvedWarning
+	PyUnresolvedWarning        = pyUnresolvedWarning
+	GoBuildConstraintWarning   = goBuildConstraintWarning
+
+	ConfigHash = configHash
 )

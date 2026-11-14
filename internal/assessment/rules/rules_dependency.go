@@ -230,15 +230,12 @@ func internalTarget(mm policy.ModuleMap, e relationship.Edge) (internal bool, gl
 }
 
 // internalSignal names the extractor fact that made an edge target internal
-// when no declared surface did, or "" when no such fact applies. A strength an
-// approved label pinned is the owner's verdict on how deeply two modules are
-// coupled, not a report that a member was reached without access, so it is not
-// evidence here.
+// when no declared surface did, or "" when no such fact applies.
 func internalSignal(e relationship.Edge) string {
 	switch {
 	case e.Kind == relEdgeKindUsesInt:
 		return relEdgeKindUsesInt
-	case e.Strength == relationship.StrengthIntrusive && !e.Provenance.StrengthPinned:
+	case e.Strength == relationship.StrengthIntrusive:
 		return string(relationship.StrengthIntrusive)
 	}
 	return ""

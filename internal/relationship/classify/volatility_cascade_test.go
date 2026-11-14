@@ -238,24 +238,6 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 			},
 			to: "payment/internal/svc.go",
 		},
-		{
-			name: "approved human label",
-			cfg: classify.Config{
-				Modules:                  cascadeModules,
-				VolatilityCascadeEnabled: true,
-				ApprovedLabels:           map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
-			},
-			to: cascadeFilePayment,
-		},
-		{
-			name: "approved llm label",
-			cfg: classify.Config{
-				Modules:                  cascadeModules,
-				VolatilityCascadeEnabled: true,
-				LLMLabels:                map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
-			},
-			to: cascadeFilePayment,
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -21,13 +21,9 @@ weaker coupling.
 | `symmetric`  |       9 | Both modules contain duplicated knowledge.                       |
 | `intrusive`  |      10 | The dependency reaches a target declared `internal:`.            |
 
-Strength follows declared surfaces, approved labels, and extractor evidence.
+Strength follows declared surfaces and extractor evidence.
 An `internal:` match is authoritative and means `intrusive`. A `public:` match
 means at least `contract`.
-An approved human or tool label can pin strength unless an `internal:` match applies.
-Unset label provenance means human.
-An LLM label only fills strength that declared surfaces and extractor evidence leave unknown.
-See [label precedence](configuration.md#labels-and-draft-files) for the complete contract.
 Connascence does not set strength.
 
 A callable hint does not raise a `public:` target above `contract`. Data evidence
@@ -37,7 +33,7 @@ raises it to `intrusive`: a C# `internal` member used through
 `InternalsVisibleTo`, a Python private name, or a private symbol that SCIP
 resolves. Intrusive coupling integrates through details not meant for
 integration. A `public:` glob declares a file's intended surface, so it cannot
-make such a use a contract. An approved label still pins strength. An
+make such a use a contract. An
 `internal:` match stays `intrusive` regardless of hints. Without sufficient evidence, strength is
 unknown and the scorer abstains.
 
@@ -149,7 +145,7 @@ The report groups dependencies into ordered module pairs, called seams. One
 seam can contain many dependency edges. A seam qualifies as a distributed-monolith
 measurement when at least one import edge meets all of these conditions:
 
-- Its strength is `functional`, `intrusive`, or pinned `symmetric`.
+- Its strength is `functional`, `intrusive`, or `symmetric`.
 - It crosses a module boundary.
 - Its effective volatility is `high` and comes from a declaration, inheritance,
   or the enabled cascade.
@@ -165,7 +161,7 @@ They have no stored-reference gate or metric ratchet. The Archfit 4 check applie
 the `coupling` rule to errors added by the change, independently of these report
 measurements. See [metrics](metrics.md#deltas-and-gates) and [rules](rules.md).
 
-## Clones, labels, and limits
+## Clones and limits
 
 A cross-module clone pair is symmetric coupling evidence. It does not upgrade an
 import edge. With `coupling.duplicated_knowledge: score` (the default), each
@@ -191,4 +187,4 @@ TypeScript without SCIP treats runtime imports as functional unless a target
 matches a `public:` glob. Runtime async evidence is report-only. It does not
 change distance or gate results. Unknown facts can lower confidence or leave a
 dimension partial. See [evidence](evidence.md) for claim boundaries and
-[configuration](configuration.md) for labels and extractor settings.
+[configuration](configuration.md) for policy and extractor settings.

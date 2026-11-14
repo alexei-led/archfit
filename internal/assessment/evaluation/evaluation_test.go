@@ -27,17 +27,17 @@ const (
 	ruleTypePattern = "forbidden_pattern"
 	selCatalog      = "internal/catalog/**"
 	ruleBC          = "bc/imbalanced_coupling"
-	ruleStaleLabel  = "labels/stale"
-	metricName      = "cycle_count"
-	pathA           = "a/a.go"
-	pathB           = "b/b.go"
-	kindImports     = "imports"
-	keyStrength     = "strength"
-	keyDistance     = "distance"
-	keyVolatility   = "volatility"
-	strFunctional   = "functional"
-	distSameOwner   = "cross_module"
-	volLow          = "low"
+
+	metricName    = "cycle_count"
+	pathA         = "a/a.go"
+	pathB         = "b/b.go"
+	kindImports   = "imports"
+	keyStrength   = "strength"
+	keyDistance   = "distance"
+	keyVolatility = "volatility"
+	strFunctional = "functional"
+	distSameOwner = "cross_module"
+	volLow        = "low"
 )
 
 var evaluatedAt = time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
@@ -384,28 +384,6 @@ func TestEvaluateRollupKeepsEveryMemberPastTheDisplayCap(t *testing.T) {
 	}
 	if shown := strings.Split(rep.MatchedBy["group_members"], ","); len(shown) != 8 {
 		t.Errorf("group_members lists %d IDs, want the display cap of 8", len(shown))
-	}
-}
-
-func TestEvaluateEmitsStaleLabelAdvisories(t *testing.T) {
-	got := evaluation.Evaluate(evaluation.Input{
-		StaleLabelKeys:    []string{"a\x00b", "malformed-no-separator"},
-		IncludeAdvisories: true,
-		Now:               evaluatedAt,
-	})
-	ids := findingIDs(got.Findings, ruleStaleLabel)
-	if len(ids) != 1 {
-		t.Fatalf("stale-label advisories = %v, want 1 (the malformed key is dropped)", ids)
-	}
-	stale := findByID(t, got.Findings, ids[0])
-	if stale.Severity != finding.SeverityLow {
-		t.Errorf("stale-label severity = %q, want low", stale.Severity)
-	}
-	if stale.Edge.From.Module != "a" || stale.Edge.To.Module != "b" {
-		t.Errorf("stale-label edge = %+v, want module pair a -> b", stale.Edge)
-	}
-	if !strings.Contains(stale.Why, "stale") {
-		t.Errorf("stale-label why = %q, want it to name the staleness", stale.Why)
 	}
 }
 

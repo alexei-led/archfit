@@ -95,13 +95,8 @@ type Location struct {
 // relationship fact was derived. It carries facts, not assessment findings or
 // metric state.
 type Provenance struct {
-	ClassificationKey      string
-	DistanceBasis          string
-	StrengthFromLLM        bool
-	StrengthFromNonHighLLM bool
-	// StrengthPinned records that an approved label supplied the strength
-	// verbatim: the value is the owner's verdict, not extractor evidence.
-	StrengthPinned     bool
+	ClassificationKey  string
+	DistanceBasis      string
 	ConnascenceKinds   []string
 	CloneLocationCount int
 }

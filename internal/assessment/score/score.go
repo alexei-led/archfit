@@ -261,18 +261,6 @@ func degenerateGraph(mi metricIndex) bool {
 	return ok && m.Band == "n/a"
 }
 
-// lowerConf drops a confidence level by one band (high→medium, medium→low, low→low).
-func lowerConf(c Confidence) Confidence {
-	switch c {
-	case ConfidenceHigh:
-		return ConfidenceMedium
-	case ConfidenceMedium:
-		return ConfidenceLow
-	default:
-		return ConfidenceLow
-	}
-}
-
 // bandFor maps a 0-100 value to its band (scorecard.yaml; edges inclusive).
 func bandFor(v int) Band {
 	switch {

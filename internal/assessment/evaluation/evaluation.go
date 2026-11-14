@@ -37,7 +37,6 @@ type Input struct {
 	UncoveredChange    policy.GateMode
 	Now                time.Time
 	AdvisoryCandidates []relationship.AdvisoryCandidate
-	StaleLabelKeys     []string
 	IncludeAdvisories  bool
 }
 
@@ -73,7 +72,6 @@ func evaluate(in Input) Result {
 		adv = append(adv, uncoveredChange(in.Evidence, in.Policy)...)
 	}
 	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
-	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
 	tagged := status.Assign(raw, in.Policy.Waivers, in.Now)
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},

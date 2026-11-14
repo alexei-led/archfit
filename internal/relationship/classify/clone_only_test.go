@@ -42,8 +42,7 @@ func setModule(c *classify.Config, name string, mutate func(*policy.ModuleDef)) 
 }
 
 // TestClonePairs covers when a duplicated-knowledge pair is (not) detected:
-// only a cross-module clone pair with NO import edge between the modules and no
-// human-approved label for the pair qualifies.
+// a cross-module clone pair qualifies independently of import edges.
 func TestClonePairs(t *testing.T) {
 	t.Parallel()
 
@@ -70,30 +69,6 @@ func TestClonePairs(t *testing.T) {
 			g:    edgeGraph,
 			cfg:  cloneOnlyCfg(nil),
 			want: 1,
-		},
-		{
-			name: "approved label (canonical order) accepts the pair",
-			g:    emptyGraph,
-			cfg: cloneOnlyCfg(func(c *classify.Config) {
-				c.ApprovedLabels = map[string]string{modABKey: hintFunctional}
-			}),
-			want: 0,
-		},
-		{
-			name: "approved label (reverse order) accepts the pair",
-			g:    emptyGraph,
-			cfg: cloneOnlyCfg(func(c *classify.Config) {
-				c.ApprovedLabels = map[string]string{modNameB + "\x00" + modNameA: hintFunctional}
-			}),
-			want: 0,
-		},
-		{
-			name: "llm label accepts the pair",
-			g:    emptyGraph,
-			cfg: cloneOnlyCfg(func(c *classify.Config) {
-				c.LLMLabels = map[string]string{modABKey: hintFunctional}
-			}),
-			want: 0,
 		},
 		{
 			name: "frozen pair still detected for score-policy rollup",

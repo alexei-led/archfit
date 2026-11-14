@@ -29,7 +29,7 @@ Do not update the golden to hide an accidental API change.
 
 `internal/model/result/testdata/` holds the check and can JSON examples; `internal/output/record/testdata/` holds their text records. The reportschema tests validate the result examples against `archfit.result.schema.json`.
 
-`internal/reportschema/testdata/` retains four report JSON cases: a new violation, an existing violation, a dead selector, and missing evidence. They validate against `archfit.report.schema.json`; `new_violation` carries analyzer coverage rows with per-unit `details`, and `missing_evidence` carries a row without them. These exercise the retained report contract, not the check result. Retired comparison, reference deltas, seam-gate reasons, profile identity and finding/task origin fields are rejected.
+`internal/reportschema/testdata/` retains four report JSON cases: a new violation, an existing violation, a dead selector, and missing evidence. They validate against `archfit.report.schema.json`; `new_violation` carries analyzer coverage rows with per-unit `details`, and `missing_evidence` carries a row without them. These exercise the retained report contract, not the check result. Retired comparison, reference deltas, seam-gate reasons, profile identity, finding/task origins, label identity and seam-label fields, and module-touch history fields are rejected.
 
 Agents finish with `archfit check` and read the default text record. Exit `0` is `pass`, `1` is `fail`, and `2` is `unknown`, wrong usage, or a tool error. Follow `next:`; exit `2` is not a pass.
 
@@ -137,10 +137,6 @@ Do not remove fields to make repeated output equal.
 Strict mode fails on unverified cases unless an explicit `--allow-unverified label=reason` accepts that gap.
 An accepted gap remains `accepted_unverified`. It is not a pass.
 Missing checkouts and toolchains must remain visible.
-
-Keep AI runs optional and separate from deterministic checks.
-Use overlay copies for provider-backed configuration review.
-Do not let AI output change the candidate policy used for comparison.
 
 ## Extractor equivalence
 

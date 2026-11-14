@@ -7,7 +7,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // seamInput is everything the seam ledger needs. Every field is a value this
@@ -18,14 +17,6 @@ type seamInput struct {
 	Config          classify.Config
 	DeclaredModules map[string]policy.ModuleDef
 	Graph           *graph.Graph
-	// EvidenceHashes maps a label key to the dependency-surface hash the label
-	// was approved against, as computed for this run.
-	EvidenceHashes map[string]string
-	// LabelEvidenceHashes maps a label key to the hash the LABEL stored, which
-	// is what the seam publishes. It is a different fact from EvidenceHashes
-	// above: that one is this run's evidence, and a hand-authored label with no
-	// stored hash must publish nothing rather than borrow it.
-	LabelEvidenceHashes map[string]string
 	// Tree is the containment tree of the classified module map.
 	Tree classify.Containment
 	// ClonePairs are the clone facts. A pair whose modules share an import edge
@@ -99,7 +90,6 @@ type seamAccumulator struct {
 	severity                   relationship.Severity
 	distributed                bool
 	qualifying                 []*relationship.Edge
-	nonHighLLM                 bool
 	worst                      *relationship.Edge
 	worstStrength, worstDistOr int
 	// qualWorst is the lowest-balance qualifying edge: when the seam qualifies it
@@ -119,9 +109,6 @@ const qualifyingEdgeCap = 20
 
 func (a *seamAccumulator) add(e *relationship.Edge, cohesive bool) {
 	a.edges++
-	if e.Provenance.StrengthFromNonHighLLM {
-		a.nonHighLLM = true
-	}
 	if strengthRank(e.Strength) > strengthRank(a.strength) {
 		a.strength = e.Strength
 	}
@@ -219,8 +206,7 @@ func (a *seamAccumulator) seam(in seamInput, volatility map[string]classify.Modu
 		QualifyingEdges:     a.qualifyingEdges(),
 	}
 	s.VolatilityProvenance = a.volatilityProvenance(volatility)
-	s.Labels, s.LabelEvidenceHash = seamLabels(in, a.from, a.to)
-	s.Confidence = seamConfidence(a.scored, a.abstained, a.nonHighLLM)
+	s.Confidence = seamConfidence(a.scored, a.abstained)
 	a.applyDrivingFact(&s, toDef, classify.CohesiveRole(fromDef.Role))
 	return s
 }
@@ -380,34 +366,16 @@ func (a *seamAccumulator) worstBasis(tree classify.Containment, from, to string)
 	return a.worst.Classified.DistanceBasis + "@" + container
 }
 
-// seamLabels reports the approved label keys in effect for this seam and the
-// evidence hash they were approved against. An empty result means no override
-// is in effect — it never means every edge is a contract.
-func seamLabels(in seamInput, from, to string) ([]string, string) {
-	key := labels.Key(from, to)
-	var used []string
-	if _, ok := in.Config.ApprovedLabels[key]; ok {
-		used = append(used, key)
-	}
-	if _, ok := in.Config.LLMLabels[key]; ok && len(used) == 0 {
-		used = append(used, key)
-	}
-	if len(used) == 0 {
-		return nil, ""
-	}
-	return used, in.LabelEvidenceHashes[key]
-}
-
 // seamConfidence reports how much of the seam was measured. An abstained edge
 // is an unknown rung, not an absent one, so a seam that is mostly abstained
 // cannot claim the same confidence as one that is fully scored.
-func seamConfidence(scored, abstained int, nonHighLLM bool) relationship.SeamConfidence {
+func seamConfidence(scored, abstained int) relationship.SeamConfidence {
 	switch {
 	case scored == 0:
 		return relationship.SeamConfidenceUnrated
 	case abstained > scored:
 		return relationship.SeamConfidenceLow
-	case abstained > 0 || nonHighLLM:
+	case abstained > 0:
 		return relationship.SeamConfidenceMedium
 	default:
 		return relationship.SeamConfidenceHigh

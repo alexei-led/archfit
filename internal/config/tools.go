@@ -29,10 +29,6 @@ const (
 	ToolClones       = "clones"
 	ToolCargoModules = "cargo-modules"
 	ToolRoslyn       = "roslyn"
-	// ToolLLM is the id for the off-gate AI provider used by enrich and explain.
-	// NEVER consumed by analyze's gate path — the arch ring test forbids internal
-	// packages from importing the LLM layer, so the LLM commands live in cmd.
-	ToolLLM = "llm"
 )
 
 // ---------------------------------------------------------------------------
@@ -130,12 +126,10 @@ type AnalyzersConfig struct {
 }
 
 // ---------------------------------------------------------------------------
-// AI — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows (`ai:`).
-// Presence of provider and model is what makes it usable; there is no enable flag.
+// Legacy version 2 AI settings.
 // ---------------------------------------------------------------------------
 
-// AIConfig configures the off-gate LLM provider (`ai:`). Consumed only by
-// explicit LLM flows — never by analyze's deterministic gate path.
+// AIConfig decodes legacy version 2 settings. No analysis or provider reads it.
 type AIConfig struct {
 	Provider  string `yaml:"provider,omitempty" jsonschema:"enum=anthropic,enum=openai,enum=ollama,enum=deepseek,enum=openai-compatible"`
 	Model     string `yaml:"model,omitempty"`
@@ -148,25 +142,6 @@ type AIConfig struct {
 
 // LLMProviders are the accepted ai.provider values.
 var LLMProviders = map[string]struct{}{"anthropic": {}, "openai": {}, "ollama": {}, "deepseek": {}, providerCompatible: {}}
-
-// LLMConfig is the resolved off-gate LLM settings.
-type LLMConfig struct {
-	Provider  string
-	Model     string
-	BaseURL   string
-	APIKeyEnv string
-	Effort    string
-	MaxTokens int
-	Timeout   time.Duration
-}
-
-// LLM returns the ai: settings and whether they are usable (provider and model
-// both set).
-func (c Config) LLM() (LLMConfig, bool) {
-	timeout, _ := time.ParseDuration(c.AI.Timeout) // validated during config loading
-	cfg := LLMConfig{Provider: c.AI.Provider, Model: c.AI.Model, BaseURL: c.AI.BaseURL, APIKeyEnv: c.AI.APIKeyEnv, Effort: c.AI.Effort, MaxTokens: c.AI.MaxTokens, Timeout: timeout}
-	return cfg, c.AI.Provider != "" && c.AI.Model != ""
-}
 
 // ---------------------------------------------------------------------------
 // Enable-state accessors. Signatures are stable across the schema rewrite so

@@ -124,7 +124,7 @@ func TestReportConfigRemovesGating(t *testing.T) {
 			if cfg.ScipEnabled() || cfg.ClonesEnabled() {
 				t.Errorf("scip %v, clones %v: want both off", cfg.ScipEnabled(), cfg.ClonesEnabled())
 			}
-			if _, ok := cfg.LLM(); ok || len(cfg.ExternalSystems) != 0 || cfg.TargetBranch != "" {
+			if cfg.AI != (config.AIConfig{}) || len(cfg.ExternalSystems) != 0 || cfg.TargetBranch != "" {
 				t.Errorf("ai, external systems or target branch set: %+v", cfg)
 			}
 			if err := config.ValidateRules(cfg); err != nil {

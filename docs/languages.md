@@ -143,7 +143,7 @@ Coupling strength comes from compiler symbols. The extractor emits hints and doe
 
 The strongest use wins per file pair. Data uses (`model`, `dto`) also travel in a separate data channel, which lifts a `public:` target from `contract` to `model` for a concrete type. An `intrusive` hint lifts a `public:` target to `intrusive`: an `internal` constructor in a file under a `public:` glob is still not part of the published surface. A `dto` stays `contract` across a `public:` glob and reads `model` elsewhere. Known gap: invoking a delegate stored in a field counts as a data use.
 
-Only compiler-resolved type references become edges. Published-language coupling between services is not measured: integration-event records duplicated per service, a `.proto` file that another project compiles directly (eShop `WebApp` compiles `Basket.API`'s), and HTTP, gRPC, or YARP calls resolved at runtime produce no type edge. See [coupling](coupling.md#clones-labels-and-limits).
+Only compiler-resolved type references become edges. Published-language coupling between services is not measured: integration-event records duplicated per service, a `.proto` file that another project compiles directly (eShop `WebApp` compiles `Basket.API`'s), and HTTP, gRPC, or YARP calls resolved at runtime produce no type edge. See [coupling](coupling.md#clones-and-limits).
 
 The `intrusive` hint feeds the `encapsulation` metric. `InternalsVisibleTo` declarations are reported as coverage detail only; a declaration is not a usage edge.
 
@@ -173,7 +173,7 @@ One source project contributes one scored edge set. When the helper loaded a pro
 
 Fallback limits:
 
-- Project edges have unknown strength. The scorer abstains unless a policy glob or an approved label supplies strength.
+- Project edges have unknown strength. The scorer abstains unless a policy glob supplies strength.
 - Selectors match a project edge by the `.csproj` path: a directory glob such as `src/Core/**` matches it, a glob for files below it (`src/Core/Api/**`) does not.
 - Edge counts become project pairs for fallback projects.
 - A required rule that reads a file of a fallback or `partial` project is unevaluated, and the reason names each such project with its own cause (its unresolved symbols, its missing reference pack, or its compile errors), not a generic restore. Rules scoped to `complete` projects stay evaluated. A rule whose scope is established and that produced a finding is never also listed unevaluated: it was evaluated, and its finding is the result. See [evidence](evidence.md#net-trust-limits).

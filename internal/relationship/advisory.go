@@ -50,9 +50,6 @@ type ClassifiedEdgeSummary struct {
 	ConnectedModules               int
 	CloneOnlyScored                int
 	CloneOnlyAdvisory              int
-	LLMApproved                    int
-	LabeledLLM                     int
-	LLMLowConfidenceEdges          int
 	VolatilityProvenance           *VolatilityProvenance
 	DistanceCompression            *DistanceCompressionSummary
 	// UnratedVolatilityEdges counts scored cross-boundary edges and clone facts
@@ -107,7 +104,6 @@ type DistanceOmittedRungReason struct {
 type AssessmentSignals struct {
 	AdvisoryCandidates []AdvisoryCandidate
 	ClassifiedEdges    *ClassifiedEdgeSummary
-	StaleLabelKeys     []string
 	// Seams is the logical seam ledger: one record per ordered module pair,
 	// built from the full classified edge set before any severity, baseline, or
 	// waiver filter. The distributed-monolith policy counts these seams, so a
@@ -118,7 +114,6 @@ type AssessmentSignals struct {
 // AnalysisEvidence is report-only relationship provenance. Assessment never
 // reads it; the application projects it into the external report contract.
 type AnalysisEvidence struct {
-	LLMApprovedCount int
 	// RuntimeModules and RuntimeEdges are the async-bridge rollups keyed by the
 	// module map classification actually used. Report-only: they never annotate
 	// an edge, never move distance, and never gate.

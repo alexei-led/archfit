@@ -28,17 +28,10 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/ownership"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship/facts"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/syntax"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
-
-// LabelLoader is the approved-label file port. Acquisition reads labels; it
-// never decides which of them are fresh — that is relationship analysis.
-type LabelLoader interface {
-	Load(path string) ([]labels.Label, error)
-}
 
 // Service is the concrete evidence-acquisition stage. It resolves the analysis
 // boundary, runs every extractor and fact collector, resolves repository
@@ -57,7 +50,6 @@ type Service struct {
 	Policy  policy.PolicySnapshot
 
 	Runner   toolrun.Runner
-	Labels   LabelLoader
 	Stderr   io.Writer
 	Progress func(stage string)
 	// WarnLabel prefixes every stderr warning.
@@ -90,10 +82,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	runPolicy := s.Policy.Clone()
-	pinned, err := s.loadLabels(bundleDir, runPolicy.Topology.Modules)
-	if err != nil {
-		return application.Acquired{}, err
-	}
 
 	sc := s.Options.Scope
 	sc.WorkDir, sc.Root, sc.Base, sc.AddedBase = scanDir(root, bundleDir), root, req.BaseRef, req.AddedBase
@@ -217,7 +205,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		RustTargetCrates:      rustTargetCrates,
 	}
 
-	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner, graphResult.Graph.CrateRoots()...)
 	observations := assessmentObservationsOf(
 		snapshot, ruleScopeObservations(ctx, s.Runner, store, resolved.Root, snapshot, s.Options),
 		declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
@@ -253,15 +240,13 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			Now:   now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
 			ModelHash:          policy.ModelHash(runPolicy.Topology.Modules),
 			ClassificationHash: ClassificationHash(runPolicy),
-			LabelsHash:         labels.FileHash(pinned),
 			ConfigSource:       configPath, BundleDir: bundleDir, ScanRoot: root,
-			PinnedLabels: pinned, Policy: runPolicy,
+			Policy:      runPolicy,
 			OwnerSource: ownerSource, OwnerWarnings: ownerWarnings,
-			ConfigWarnings:            configWarnings(s.lint(runPolicy.Topology.Modules), warnings, runPolicy.Topology.Modules, pinned, configPath),
+			ConfigWarnings:            configWarnings(s.lint(runPolicy.Topology.Modules), warnings, runPolicy.Topology.Modules, configPath),
 			MarkedCoverage:            marked,
 			CoverageGaps:              coverageGaps,
 			CrateRootDirs:             crateRootDirs,
-			VolatilityCorroboration:   history,
 			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),
 		},
 	}, nil
@@ -357,9 +342,9 @@ func declaredOperationsFacts(p policy.PolicySnapshot) (map[string]string, map[st
 // configWarnings assembles the advisory config-warning block: config lint,
 // then every degradation this run disclosed on stderr, then the judgment
 // decisions the scorer needs a human to make.
-func configWarnings(lint, runWarnings []string, modules map[string]policy.ModuleDef, pinned []labels.Label, configPath string) []string {
+func configWarnings(lint, runWarnings []string, modules map[string]policy.ModuleDef, configPath string) []string {
 	out := buildConfigWarnings(lint, runWarnings)
-	return append(out, buildJudgmentDecisionTasks(modules, pinned, configPath)...)
+	return append(out, buildJudgmentDecisionTasks(modules, configPath)...)
 }
 
 // ownerSourceConfig is the owner_source reported when policy already declares
@@ -414,35 +399,6 @@ func keepsSyntaxFact(fact evidence.SyntaxFact, index map[string]fileclass.FileCl
 	}
 	return fileclass.IsProduction(syntax.LookupFileClass(fact.File, index, fact.Language, cfg))
 }
-
-// loadLabels reads the pinned labels from the RUN's bundle directory, not from
-// the service's own config path. `config compare` measures two configs against
-// one bundle: both sides must classify with the same approved labels, or the
-// comparison would attribute a label difference to the candidate config.
-func (s *Service) loadLabels(bundleDir string, modules map[string]policy.ModuleDef) ([]labels.Label, error) {
-	if s == nil || s.Labels == nil {
-		return nil, nil
-	}
-	pinned, err := s.Labels.Load(filepath.Join(bundleDir, labelsFileName))
-	if err != nil {
-		return nil, err
-	}
-	// Module existence is checked HERE, not in the loader: this is the first
-	// point where the labels and the module map are both in hand. A label
-	// naming a module the config does not declare is an override that applies
-	// to nothing, which is a config error, not a silent no-op.
-	declared := make(map[string]struct{}, len(modules))
-	for name := range modules {
-		declared[name] = struct{}{}
-	}
-	if err := labels.Validate(pinned, declared); err != nil {
-		return nil, err
-	}
-	return pinned, nil
-}
-
-// labelsFileName is the pinned-label file every bundle carries.
-const labelsFileName = ".archfit-labels.yaml"
 
 // discloseCacheSkips prints the fact-cache decisions that cost this run its
 // cache — an input tree too large to key, for instance, leaves every extractor

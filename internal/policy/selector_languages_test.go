@@ -25,7 +25,7 @@ func TestSelectorLanguages(t *testing.T) {
 		pattern string
 		want    []string
 	}{
-		{"slash path excludes dotted and :: vocabularies", "internal/llm/**", []string{graph.LangDotNet, graph.LangGo, graph.LangTypeScript}},
+		{"slash path excludes dotted and :: vocabularies", "internal/ownership/**", []string{graph.LangDotNet, graph.LangGo, graph.LangTypeScript}},
 		{"slash path without a wildcard", "internal/config", []string{graph.LangDotNet, graph.LangGo, graph.LangTypeScript}},
 		{"dotted name addresses python modules and .NET assemblies", "prefect.**", []string{graph.LangDotNet, graph.LangPython}},
 		{".NET assembly glob", "Microsoft.EntityFrameworkCore*", []string{graph.LangDotNet, graph.LangPython}},

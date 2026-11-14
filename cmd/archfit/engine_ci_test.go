@@ -110,7 +110,7 @@ func TestResultEngineIdentity(t *testing.T) {
 					t.Errorf("%s engine = %q, want %q", args[0], stamp.Engine, tc.want)
 				}
 			}
-			in := identityInputs(context.Background(), toolrun.New(), filepath.Join(dir, defaultConfigPath), dir, dir, "")
+			in := identityInputs(context.Background(), toolrun.New(), filepath.Join(dir, defaultConfigPath), dir, "")
 			if in.EngineVersion != tc.want {
 				t.Errorf("report engine = %q, want %q", in.EngineVersion, tc.want)
 			}

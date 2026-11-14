@@ -178,15 +178,15 @@ The policy version is separate from the Archfit release version.
 
 ## Version 2 (Archfit 3)
 
-A version 2 file is the Archfit 3 format. `archfit check` and the other Archfit 3 commands (`analyze`, `baseline`, `config`, `policy`, `map`) still read it until the repository is converted. `archfit init` converts it to version 3; see [Migration](migration.md). The full reference is the [Configuration page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md). The starter configurations in [`examples/`](../examples) are version 2 files.
+A version 2 file is the Archfit 3 format. `archfit report` can still measure it, but it has no repository state until conversion. `archfit init` converts it to version 3; see [Migration](migration.md). The full reference is the [Configuration page of v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md). The starter configurations in [`examples/`](../examples) are version 2 files.
 
 ### AI provider
 
-The version 2 key `ai` configures the off-gate AI commands. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#ai-provider).
+The version 2 key `ai` is still decoded for legacy files, but no command uses a model. `archfit init` drops these settings during conversion. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#ai-provider).
 
 ### Labels and draft files
 
-Version 2 reads coupling labels from `.archfit-labels.yaml`. Version 3 has no labels file. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#labels-and-draft-files).
+Analysis ignores `.archfit-labels.yaml` and the value draft files at every policy version. Volatility and subdomain come from the policy. `archfit init` reads and removes the old labels file during conversion; it leaves unapproved value drafts untouched. See [v3.4.0](https://github.com/alexei-led/archfit/blob/v3.4.0/docs/configuration.md#labels-and-draft-files).
 
 ### Module review
 

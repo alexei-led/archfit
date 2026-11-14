@@ -64,9 +64,9 @@ func (g scopeGit) FileAt(ctx context.Context, rev, path string) ([]byte, bool, e
 }
 
 // policyFileNames are the protected policy files of a config bundle, in the
-// order a result names them: the config and the approved labels.
+// order a result names them: the policy file.
 func policyFileNames(configPath string) []string {
-	return []string{filepath.Base(configPath), defaultLabelsPath}
+	return []string{filepath.Base(configPath)}
 }
 
 // sameRepository reports whether two directories are in one git repository.

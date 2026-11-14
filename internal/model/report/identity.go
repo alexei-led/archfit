@@ -22,8 +22,6 @@ type ResultIdentity struct {
 	// PolicyDigest is the sha256 of the policy file's bytes (.archfit.yaml).
 	PolicyDigest string `json:"policy_digest,omitempty"`
 
-	// LabelsDigest is the sha256 of the approved-labels file's bytes.
-	LabelsDigest string `json:"labels_digest,omitempty"`
 	// PolicyRef is the ref and commit whose policy files were used, when the
 	// run read them from a target branch instead of the working tree.
 	PolicyRef *PolicyRef `json:"policy_ref,omitempty"`
@@ -46,7 +44,7 @@ type PolicyRef struct {
 func (i ResultIdentity) Line() string {
 	parts := []string{"engine " + i.EngineVersion}
 	for _, d := range []struct{ name, digest string }{
-		{"policy", i.PolicyDigest}, {"labels", i.LabelsDigest},
+		{"policy", i.PolicyDigest},
 		{"tree", i.HeadTreeDigest},
 	} {
 		parts = append(parts, d.name+" "+shortDigest(d.digest))

@@ -575,9 +575,6 @@
         "policy_digest": {
           "type": "string"
         },
-        "labels_digest": {
-          "type": "string"
-        },
         "policy_ref": {
           "$ref": "#/$defs/PolicyRef"
         },
@@ -653,15 +650,6 @@
         },
         "high_or_worse_share_pct": {
           "type": "integer"
-        },
-        "labels": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "label_evidence_hash": {
-          "type": "string"
         },
         "confidence": {
           "type": "string"
@@ -885,12 +873,6 @@
         "source_ref": {
           "type": "string"
         },
-        "history_depth": {
-          "type": "integer"
-        },
-        "history_window": {
-          "type": "string"
-        },
         "tool_versions": {
           "additionalProperties": {
             "type": "string"
@@ -902,8 +884,6 @@
       "type": "object",
       "required": [
         "source_ref",
-        "history_depth",
-        "history_window",
         "tool_versions"
       ]
     },

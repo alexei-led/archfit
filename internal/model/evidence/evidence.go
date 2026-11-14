@@ -136,9 +136,8 @@ func SortSyntaxFacts(facts []SyntaxFact) {
 // FileFact holds neutral per-module structural facts assembled from the symbol
 // graph and file LOC.
 //
-// The facts block is report-only evidence for the Tranche-2 LLM: it carries no
-// band, no score, no risk label, never sets delta, and never enters the verdict
-// or gate logic. Ranking and judgment are the LLM's job.
+// The facts block is report-only evidence: it carries no band, score, or risk
+// label, and never enters the verdict or gate logic.
 type FileFact struct {
 	// Module is the symbol-graph module key (dotted for Python, package dir for Go).
 	Module string `json:"module"`
@@ -147,7 +146,7 @@ type FileFact struct {
 	Files []string `json:"files"`
 	// InboundModuleFanIn counts distinct OTHER modules whose symbols reference
 	// this module's symbols. Read-only config scores high here too — separating
-	// benign config from mutable shared state is the LLM's job.
+	// benign config from mutable shared state requires review.
 	InboundModuleFanIn int `json:"inbound_module_fanin"`
 	// OutboundDestinations counts distinct destination modules this module's
 	// symbols reference, at raw module granularity (no parent-package collapse).
@@ -264,27 +263,6 @@ type DistanceConfigEvidenceSite struct {
 	Kind     string `json:"kind"`
 	Language string `json:"language"`
 	Target   string `json:"target,omitempty"`
-}
-
-// VolatilityCorroboration reports source-control touch frequency for declared
-// modules. It is supporting evidence only: git history may reflect both domain
-// volatility and accidental design churn, so this block never affects scoring.
-type VolatilityCorroboration struct {
-	Source         string            `json:"source"`
-	Status         string            `json:"status"`
-	CommitWindow   int               `json:"commit_window,omitempty"`
-	FullHistory    bool              `json:"full_history,omitempty"`
-	CommitsScanned int               `json:"commits_scanned,omitempty"`
-	ModulesTouched int               `json:"modules_touched,omitempty"`
-	TopTouched     []VolatilityTouch `json:"top_touched,omitempty"`
-	Caveat         string            `json:"caveat,omitempty"`
-}
-
-// VolatilityTouch is one module's touch frequency sample from git history.
-type VolatilityTouch struct {
-	Module             string `json:"module"`
-	TouchCommits       int    `json:"touch_commits"`
-	DeclaredVolatility string `json:"declared_volatility,omitempty"`
 }
 
 // ConnascenceRoadmapItem explains one Ch6 connascence category's measurement

@@ -36,9 +36,6 @@ func stateFixture() result.Result {
 		{Tool: "go/packages", Version: "go1.24", Status: evidence.StatusOK},
 		{Tool: stateToolSCIP, Status: evidence.StatusPartial, Reason: "empty index"},
 	}
-	diagnostic.VolatilityCorroboration = &evidence.VolatilityCorroboration{
-		Source: gitSource, Status: "measured", CommitWindow: 500, CommitsScanned: 500,
-	}
 	return diagnostic
 }
 
@@ -54,9 +51,6 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 	}
 	if state.Measurement.SourceRef != "worktree" {
 		t.Errorf("Measurement.SourceRef = %q, want worktree", state.Measurement.SourceRef)
-	}
-	if state.Measurement.HistoryDepth != 500 || state.Measurement.HistoryWindow != "500 commits" {
-		t.Errorf("history = (%d, %q), want (500, \"500 commits\")", state.Measurement.HistoryDepth, state.Measurement.HistoryWindow)
 	}
 	if got := state.Measurement.ToolVersions["go/packages"]; got != "go1.24" {
 		t.Errorf("ToolVersions[go/packages] = %q, want go1.24", got)

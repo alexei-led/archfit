@@ -182,22 +182,6 @@ type ClassifiedEdgeSummary struct {
 	// coupling_balance by coupling.duplicated_knowledge: advisory. They may still
 	// emit bc/duplicated_knowledge advisories after severity/status filtering.
 	CloneOnlyAdvisory int `json:"clone_only_advisory,omitempty"`
-	// LLMApproved is the count of approved cross-boundary labels whose provenance
-	// is "llm" and confidence is not "high". These lower the coupling_balance
-	// dimension confidence by one band — they are human-approved but not human-judged.
-	// Zero means no LLM-provenance labels are in effect.
-	LLMApproved int `json:"llm_approved,omitempty"`
-	// LabeledLLM is the count of cross-boundary EDGES whose strength came from
-	// an approved llm-provenance label filling a cell every static source left
-	// unknown (one label covers all edges of its module pair). It attributes
-	// the scored-fraction increase to the semantic layer — disclosure only,
-	// never fed into the balance value.
-	LabeledLLM int `json:"labeled_llm,omitempty"`
-	// LLMLowConfidenceEdges counts cross-boundary edges whose strength was filled
-	// by an applied non-high-confidence LLM label. It is intentionally not emitted:
-	// score confidence consumes it while labeled_llm remains the user-facing
-	// attribution bucket.
-	LLMLowConfidenceEdges int `json:"-"`
 	// VolatilityProvenance counts MODULES (not edges) by the source of their
 	// volatility. Nil when no modules were resolved.
 	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`

@@ -124,7 +124,7 @@ func TestDoctorAgentLoopPolicyGuard(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doctor: exit %d\n%s", code, stderr)
 	}
-	order := []string{"TOOL", "\nLLM (off-gate", "\nHooks (install them: archfit doctor --fix)", "policy guard: changed on this branch: " + defaultConfigPath}
+	order := []string{"TOOL", "\nHooks (install them: archfit doctor --fix)", "policy guard: changed on this branch: " + defaultConfigPath}
 	last := -1
 	for _, want := range order {
 		at := strings.Index(stdout, want)

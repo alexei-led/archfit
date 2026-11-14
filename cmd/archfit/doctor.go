@@ -98,40 +98,8 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	}
 
 	writeToolGroups(deps.Stdout, rows)
-
-	// Off-gate LLM setup (config init/update/enrich, analyze/explain --ai-summary): provider config + key + cache.
-	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; config init/update/enrich, analyze/explain --ai-summary — never used by the gate):\n")
-	// cfgErr is non-nil only when the file exists but fails to load (an absent
-	// default config falls back to config.Default()) — surface it, or doctor
-	// misreports a broken config as "not configured" and skips config checks.
 	if cfgErr != nil {
-		_, _ = fmt.Fprintf(deps.Stdout, "  %s failed to load: %v (LLM status and config checks skipped)\n", defaultConfigPath, cfgErr)
-	} else if llmCfg, ok := cfg.LLM(); ok {
-		_, _ = fmt.Fprintf(deps.Stdout, "  provider: %s  model: %s\n", llmCfg.Provider, llmCfg.Model)
-		switch llmCfg.Provider {
-		case providerAnthropic:
-			_, _ = fmt.Fprintf(deps.Stdout, "  ANTHROPIC_API_KEY: %s\n", keyStatus(os.Getenv("ANTHROPIC_API_KEY")))
-		case "openai":
-			_, _ = fmt.Fprintf(deps.Stdout, "  OPENAI_API_KEY: %s\n", keyStatus(os.Getenv("OPENAI_API_KEY")))
-		case providerDeepSeek:
-			_, _ = fmt.Fprintf(deps.Stdout, "  DEEPSEEK_API_KEY: %s\n", keyStatus(os.Getenv("DEEPSEEK_API_KEY")))
-		case providerCompatible:
-			if llmCfg.APIKeyEnv != "" {
-				_, _ = fmt.Fprintf(deps.Stdout, "  %s: %s\n", llmCfg.APIKeyEnv, keyStatus(os.Getenv(llmCfg.APIKeyEnv)))
-			} else {
-				_, _ = fmt.Fprintln(deps.Stdout, "  authentication: none")
-			}
-		case providerOllama:
-			_, _ = fmt.Fprintln(deps.Stdout, "  authentication: none")
-		}
-		if llmCfg.BaseURL != "" {
-			_, _ = fmt.Fprintf(deps.Stdout, "  base_url: %s\n", llmCfg.BaseURL)
-		}
-		if entries, err := filepath.Glob(filepath.Join(llmCacheDir(""), "*.json")); err == nil {
-			_, _ = fmt.Fprintf(deps.Stdout, "  cache: %d entries in .archfit-cache/llm\n", len(entries))
-		}
-	} else {
-		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set ai provider + model to enable LLM commands)")
+		_, _ = fmt.Fprintf(deps.Stdout, "\n%s failed to load: %v (config checks skipped)\n", defaultConfigPath, cfgErr)
 	}
 
 	writeAgentLoop(deps.Stdout, loop)
@@ -231,14 +199,6 @@ func writeDoctorJSON(deps *appDeps, doc any) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: write the doctor report: %v", err)}
 	}
 	return nil
-}
-
-// keyStatus renders the presence of an API key without leaking it.
-func keyStatus(v string) string {
-	if v == "" {
-		return "missing"
-	}
-	return "set"
 }
 
 // runFix installs the analyzer toolchains archfit can install automatically. With

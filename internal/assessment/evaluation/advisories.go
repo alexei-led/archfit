@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	modelrule "github.com/alexei-led/archfit/v3/internal/model/rule"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
@@ -18,28 +17,12 @@ import (
 const advisoryKind = finding.KindAdvisory
 const bcRollupCap = 8
 
-// ruleIDStaleLabel is the stale pinned-label advisory. Assessment emits it
-// itself, so it has no declared rule type and is routed by ID.
-const ruleIDStaleLabel = modelrule.RuleIDLabelsStale
-
 func candidateFindings(candidates []relationship.AdvisoryCandidate) []finding.Finding {
 	out := make([]finding.Finding, 0, len(candidates))
 	for _, c := range candidates {
 		matched := make(map[string]string, len(c.MatchedBy))
 		maps.Copy(matched, c.MatchedBy)
 		out = append(out, finding.Finding{ID: c.ID, Kind: advisoryKind, RuleID: c.RuleID, Status: finding.StatusNew, Severity: finding.Severity(c.Severity), Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: c.FromModule, Path: c.From}, To: finding.Endpoint{Module: c.ToModule, Path: c.To}, Kind: c.EdgeKind}, Locations: c.Locations, Why: c.Why, MatchedBy: matched})
-	}
-	return out
-}
-
-func staleLabelFindings(keys []string) []finding.Finding {
-	out := make([]finding.Finding, 0, len(keys))
-	for _, key := range keys {
-		from, to, ok := strings.Cut(key, "\x00")
-		if !ok {
-			continue
-		}
-		out = append(out, finding.Finding{ID: staleLabelID(from, to), Kind: advisoryKind, RuleID: ruleIDStaleLabel, Status: finding.StatusNew, Severity: finding.SeverityLow, Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: from}, To: finding.Endpoint{Module: to}}, Why: "pinned label evidence is stale: the " + from + " -> " + to + " dependency surface changed since approval; label ignored — re-run `archfit enrich` and re-review"})
 	}
 	return out
 }
@@ -214,9 +197,6 @@ func groupEdgePaths(members []finding.Finding, locs []relationship.Location) (fr
 	return members[0].Edge.From.Path, members[0].Edge.To.Path
 }
 
-func staleLabelID(from, to string) string {
-	return fingerprint(modelrule.RuleIDLabelsStale, from+"\x00"+to)
-}
 func fingerprint(rule, subject string) string {
 	h := sha256.Sum256([]byte(rule + "\x00" + subject))
 	return hex.EncodeToString(h[:16])

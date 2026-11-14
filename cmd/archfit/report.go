@@ -116,7 +116,7 @@ func (co checkout) measure(ctx context.Context, deps *appDeps, cfg config.Config
 	file := co.policyPath("")
 	resp, err := application.Service{Stages: newAnalysisStages(file, co.root, cfg, deps)}.Execute(ctx, application.Request{
 		ConfigSource: file, BundleDir: co.root, Formats: []string{formatJSON},
-		Identity: identityInputs(ctx, deps.Runner, file, co.root, co.root, ""),
+		Identity: identityInputs(ctx, deps.Runner, file, co.root, ""),
 	})
 	if err != nil {
 		return report.Document{}, fmt.Errorf("the measurements: %w", err)

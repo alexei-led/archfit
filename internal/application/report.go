@@ -1,8 +1,6 @@
 package application
 
 import (
-	"strconv"
-
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/score"
@@ -25,8 +23,8 @@ func projectReport(r result.Result, sc score.Scorecard) report.Document {
 		ToolCoverage: projectCoverage(r.ToolCoverage), CoverageGaps: projectCoverageGaps(r.CoverageGaps), OwnerSource: r.OwnerSource,
 		PrimaryExtractorTools: r.PrimaryExtractorTools, ConfigWarnings: r.ConfigWarnings,
 		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: projectDistanceContext(r.DistanceContext),
-		DistanceConfigCandidates: projectDistanceConfigCandidates(r.DistanceConfigCandidates), VolatilityCorroboration: projectVolatilityCorroboration(r.VolatilityCorroboration),
-		LocalCoupling: projectLocalCoupling(r.LocalCoupling), Summary: report.Summary(r.Summary),
+		DistanceConfigCandidates: projectDistanceConfigCandidates(r.DistanceConfigCandidates),
+		LocalCoupling:            projectLocalCoupling(r.LocalCoupling), Summary: report.Summary(r.Summary),
 	}
 	doc.Score = projectScorecard(sc)
 	doc.State = projectArchitectureState(r, doc)
@@ -38,7 +36,6 @@ func projectReport(r result.Result, sc score.Scorecard) report.Document {
 // empty value means the run could not know it; the report omits it.
 type IdentityInputs struct {
 	PolicyDigest   string
-	LabelsDigest   string
 	PolicyRef      *report.PolicyRef
 	BaseSHA        string
 	HeadTreeDigest string
@@ -49,8 +46,8 @@ type IdentityInputs struct {
 func withRunFacts(doc report.Document, in IdentityInputs) report.Document {
 	doc.State.Identity = report.ResultIdentity{
 		SchemaVersion: report.IdentitySchemaVersion,
-		PolicyDigest:  in.PolicyDigest, LabelsDigest: in.LabelsDigest,
-		PolicyRef: in.PolicyRef, BaseSHA: in.BaseSHA, HeadTreeDigest: in.HeadTreeDigest,
+		PolicyDigest:  in.PolicyDigest,
+		PolicyRef:     in.PolicyRef, BaseSHA: in.BaseSHA, HeadTreeDigest: in.HeadTreeDigest,
 		EngineVersion: in.EngineVersion,
 	}
 	return doc
@@ -82,11 +79,6 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 	out.AgentTasks = doc.AgentTasks
 	out.Measurement.SourceRef = sourceWorktree
 	out.Measurement.ToolVersions, out.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
-	out.Measurement.HistoryWindow = historyUnavailable
-	if h := r.VolatilityCorroboration; h != nil {
-		out.Measurement.HistoryDepth = h.CommitsScanned
-		out.Measurement.HistoryWindow = historyWindow(h.FullHistory, h.CommitWindow)
-	}
 
 	out.Seams = projectStateSeams(r.Seams)
 
@@ -119,7 +111,7 @@ func projectStateSeams(in []result.Seam) []report.Seam {
 			},
 			CriticalEdges: s.CriticalEdges, HighOrWorseEdges: s.HighOrWorseEdges,
 			CriticalSharePct: s.CriticalSharePct, HighOrWorseSharePct: s.HighOrWorseSharePct,
-			Labels: s.Labels, LabelEvidenceHash: s.LabelEvidenceHash, Confidence: s.Confidence,
+			Confidence:      s.Confidence,
 			RoleExpectation: s.RoleExpectation, Hypothesis: s.Hypothesis,
 			DistributedMonolith: s.DistributedMonolith, Policy: s.Policy,
 		})
@@ -175,31 +167,6 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 // assert that the measured bytes equal that commit — false the moment the tree
 // is dirty.
 const sourceWorktree = "worktree"
-
-// historyUnavailable is the history window of a run that scanned no history at
-// all: not a repository, no module to attribute commits to, or the scan failed.
-// It is recorded rather than left empty so an unmeasured change-locality
-// envelope still says what window it did not cover.
-const historyUnavailable = "unavailable"
-
-// sourceRef names the tree this run measured. It is deterministic by
-// construction: two runs over the same tree publish the same value, so it can
-// ride the byte-identity contract.
-
-// historyWindow renders the bounded git-history window as the deterministic
-// string the measurement block publishes. An unbounded scan says so; a zero
-// window reports the unavailable marker rather than "0 commits", which would
-// read as a measured-and-empty history.
-func historyWindow(fullHistory bool, commitWindow int) string {
-	switch {
-	case fullHistory:
-		return "full history"
-	case commitWindow > 0:
-		return strconv.Itoa(commitWindow) + " commits"
-	default:
-		return historyUnavailable
-	}
-}
 
 // projectStateToolCoverage splits the existing coverage rows into the two views
 // the state contract keeps separate: deterministic tool versions (a measurement
@@ -343,17 +310,6 @@ func projectDistanceConfigCandidates(in []evidence.DistanceConfigCandidate) []re
 	return out
 }
 
-func projectVolatilityCorroboration(in *evidence.VolatilityCorroboration) *report.VolatilityCorroboration {
-	if in == nil {
-		return nil
-	}
-	out := &report.VolatilityCorroboration{Source: in.Source, Status: in.Status, CommitWindow: in.CommitWindow, FullHistory: in.FullHistory, CommitsScanned: in.CommitsScanned, ModulesTouched: in.ModulesTouched, Caveat: in.Caveat, TopTouched: make([]report.VolatilityTouch, len(in.TopTouched))}
-	for i, v := range in.TopTouched {
-		out.TopTouched[i] = report.VolatilityTouch{Module: v.Module, TouchCommits: v.TouchCommits, DeclaredVolatility: v.DeclaredVolatility}
-	}
-	return out
-}
-
 func projectLocalCoupling(in []evidence.LocalCouplingModule) []report.LocalCouplingModule {
 	out := make([]report.LocalCouplingModule, len(in))
 	for i, v := range in {
@@ -384,7 +340,6 @@ func projectClassifiedEdges(in *result.ClassifiedEdgeSummary) *report.Classified
 		BySeverity: in.BySeverity, ByBalanceDriver: in.ByBalanceDriver, ByCriticalDriver: in.ByCriticalDriver, ByModulePair: in.ByModulePair,
 		DistributedMonolith: in.DistributedMonolith, External: in.External, DeclaredExternal: in.DeclaredExternal,
 		ConnectedModules: in.ConnectedModules, CloneOnlyScored: in.CloneOnlyScored, CloneOnlyAdvisory: in.CloneOnlyAdvisory,
-		LLMApproved: in.LLMApproved, LabeledLLM: in.LabeledLLM, LLMLowConfidenceEdges: in.LLMLowConfidenceEdges,
 		VolatilityProvenance: projectVolatilityProvenance(in.VolatilityProvenance), DistanceCompression: projectDistanceCompression(in.DistanceCompression),
 	}
 	if in.TailRisk != nil {

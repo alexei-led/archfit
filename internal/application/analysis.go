@@ -20,7 +20,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
@@ -78,26 +77,21 @@ type AnalysisRequest struct {
 	// AddedBase: see Request.
 	AddedBase string
 	// ApplyToolGate lets a missing required analyzer stamp the report verdict fail.
-	// Enrichment leaves it off so a coverage gap cannot rewrite its result.
 	ApplyToolGate bool
 	// DiscloseHealthWarnings prints assessment health hints on the report path.
-	// Enrichment consumes the assessment without disclosing those hints.
 	DiscloseHealthWarnings bool
 	// Use-case stages may override the technical context while
 	// keeping the analyzer implementation shared.
-	ConfigSource         string
-	BundleDir            string
-	Root                 string
-	EvaluatedAt          time.Time
-	CaptureRelationships bool
+	ConfigSource string
+	BundleDir    string
+	Root         string
+	EvaluatedAt  time.Time
 }
 
 // AnalysisResult is the stage output consumed by the application projection.
 type AnalysisResult struct {
-	Diagnostic         result.Result
-	Score              score.Scorecard
-	EnrichmentEvidence *EnrichmentEvidence
-	relationships      relationship.Set
+	Diagnostic result.Result
+	Score      score.Scorecard
 }
 
 // PolicyPreparer validates decoded policy and emits config-quality diagnostics
@@ -117,9 +111,8 @@ type AnalysisContext struct {
 	Scope      scope.Scope
 	Now        time.Time
 	ConfigHash string
-	// ModelHash and LabelsHash identify the module map and approved labels.
-	ModelHash  string
-	LabelsHash string
+	// ModelHash identifies the module map.
+	ModelHash string
 	// ClassificationHash identifies policy leaves that change extracted facts.
 	// ConfigHash separately identifies the raw policy bytes.
 	ClassificationHash string
@@ -131,7 +124,6 @@ type AnalysisContext struct {
 	// one, or a copy-pasted command would not reproduce the run.
 	ScanRoot              string
 	PrimaryExtractorTools []string
-	PinnedLabels          []labels.Label
 	Policy                policy.PolicySnapshot
 	// OwnerSource records how module ownership was resolved for this run, and
 	// OwnerWarnings the degradation disclosed while resolving it. Both are
@@ -158,9 +150,6 @@ type AnalysisContext struct {
 	// CrateRootDirs maps a Rust crate name to its repo-relative source dir, for
 	// resolving crate-scoped repair-task paths.
 	CrateRootDirs map[string]string
-	// VolatilityCorroboration is report-only git-history evidence. It never
-	// changes a score, a finding, or a verdict.
-	VolatilityCorroboration *modevidence.VolatilityCorroboration
 	// DeployUnitDetectedModules counts the modules deploy-unit detection mapped.
 	// It is report-only distance context and is NOT the declared-unit count.
 	DeployUnitDetectedModules int
@@ -218,7 +207,6 @@ func relate(acquired Acquired) relationship.AnalysisResult {
 	facts, runCtx := acquired.Facts, acquired.Context
 	return analysis.Analyze(analysis.Input{
 		Graph: facts.Graph, Policy: runCtx.Policy.Relationship,
-		Labels:        runCtx.PinnedLabels,
 		CloneClusters: facts.Clones, FileClassIndex: facts.FileClassIndex,
 		RuntimeSites: facts.RuntimeAsyncSites, RuntimeConfidence: facts.RuntimeConfidence,
 		DynamicImportSites: facts.DynamicImports,
@@ -236,10 +224,10 @@ func (s StageExecutor) assess(_ context.Context, req AnalysisRequest, acquired A
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory:     !req.NoAdvisories,
 		ConfigSource: runCtx.ConfigSource, ScanRoot: runCtx.ScanRoot, ConfigHash: runCtx.ConfigHash,
-		ModelHash: runCtx.ModelHash, LabelsHash: runCtx.LabelsHash, ClassificationHash: runCtx.ClassificationHash,
+		ModelHash: runCtx.ModelHash, ClassificationHash: runCtx.ClassificationHash,
 		PrimaryExtractorTools: runCtx.PrimaryExtractorTools, OwnerSource: runCtx.OwnerSource,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
-		CoverageGaps: runCtx.CoverageGaps, VolatilityCorroboration: runCtx.VolatilityCorroboration,
+		CoverageGaps:              runCtx.CoverageGaps,
 		DeployUnitDetectedModules: runCtx.DeployUnitDetectedModules,
 	})
 	if err != nil {
@@ -266,10 +254,6 @@ func (s StageExecutor) assess(_ context.Context, req AnalysisRequest, acquired A
 	})
 	out := AnalysisResult{Score: scored.Score}
 	out.Diagnostic = diag
-	if req.CaptureRelationships {
-		out.EnrichmentEvidence = projectEnrichmentEvidence(relationships.Relationships)
-		out.relationships = relationships.Relationships
-	}
 	return out, nil
 }
 

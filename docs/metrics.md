@@ -16,7 +16,7 @@ The state report has nine dimensions. Each reports `measured`, `partial`, or
 | `structure`       | Dependencies, direction, module placement, and cycles.                    |
 | `modularity`      | Boundary shape, cohesion, hubs, and encapsulation.                        |
 | `coupling`        | Strength, distance, volatility, and balanced coupling evidence.           |
-| `change_locality` | How change impact relates to module boundaries.                           |
+| `change_locality` | Unmeasured: the report collects no co-change history.                           |
 | `complexity`      | Declared-module dependency depth and degree.                              |
 | `testability`     | Supplied execution coverage attributed to declared modules.               |
 | `operations`      | Declared owners and deploy units, with independent evidence.              |
@@ -88,8 +88,7 @@ For standalone metric bands, high, medium, and low confidence cap the band at
 `strong`, `serviceable`, and `mixed`, respectively. These caps never raise a
 band. `coupling_balance` also reports confidence limits for small samples,
 unresolved TypeScript specifiers, and partial Rust module graphs.
-Applied non-high-confidence LLM labels can lower coupling confidence by one
-level. Undeclared external edges do not enter the scored share.
+Undeclared external edges do not enter the scored share.
 
 ## Deltas and gates
 
@@ -98,6 +97,7 @@ metric ratchets nor a stored-reference seam gate run. The report does not compar
 measurements with a stored value, emit reference deltas or gate reasons, or accept
 findings through a capture.
 The `drift` dimension stays explicitly `unmeasured` without historical evidence.
+`change_locality` is also `unmeasured`: the report collects no co-change history.
 
 The Archfit 4 check counts rule errors on the merge base and head in one run,
 then applies policy exceptions. A new error or a higher count belongs to the
@@ -114,7 +114,6 @@ The following report blocks explain inputs or expose limits. None gates by itsel
 | `dynamic_imports`, `classified_external_edges` | Dynamic import sites and excluded external edges. They inform review but do not enter internal coupling scoring.                                                                    |
 | `dynamic_connascence_signals`                  | Review hints from dynamic imports and runtime async relations. Each signal is unmeasured and report-only.                                                                           |
 | `distance_config_candidates`                   | Static external, dynamic, and async evidence that can prompt config review. It does not change distance or config.                                                                  |
-| `volatility_corroboration`                     | Git commit counts by declared module. It supports review but does not set volatility.                                                                                               |
 | `runtime_async`, `runtime_async_edges`         | Detected async integration sites. Missing evidence does not prove synchronous coupling. These sites do not affect score or distance.                                                |
 | `local_coupling`                               | Same-module coupling and cohesion signals. Unknown strength abstains. These edges do not enter `coupling_balance`.                                                                  |
 | `distance_context`, `classified_edges`         | Distance basis and scoring inputs, abstentions, volatility provenance, drivers, module-pair concentration, and tail risk. These explain the score; they do not create another gate. |

@@ -63,7 +63,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePai
 			}
 		}
 		qualifies := relationship.QualifiesDistributedMonolith(e.Classified.Score.Scored && e.Classified.Score.Balance > 0, e.Strength, e.Distance, e.Volatility, classify.CohesiveRole(modules[e.FromModule].Role))
-		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance, qualifies)
+		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, qualifies)
 		unrated.addEdge(e.Classified, e.Distance, e.Volatility, e.Strength, e.FromModule, e.ToModule, modules)
 		addDriver(s, e.Classified, e.Distance, e.FromModule, e.ToModule)
 		tail.add(e.Classified, e.Distance, false, qualifies)
@@ -78,7 +78,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePai
 			if !p.Connected {
 				s.CloneOnlyScored++
 			}
-			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, relationship.Provenance{}, false)
+			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, false)
 			unrated.addEdge(p.Classified, p.Distance, p.Volatility, relationship.StrengthSymmetric, p.FromModule, p.ToModule, modules)
 			addDriver(s, p.Classified, p.Distance, p.FromModule, p.ToModule)
 			tail.add(p.Classified, p.Distance, !p.Connected, false)
@@ -107,7 +107,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePai
 	s.UnratedVolatilityEdges, s.UnratedVolatilityModules = unrated.edges, unrated.names()
 	return s
 }
-func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility, prov relationship.Provenance, qualifies bool) int {
+func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility, qualifies bool) int {
 	s.Total++
 	if distance == relationship.DistanceSameModule {
 		s.SameModule++
@@ -126,16 +126,6 @@ func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classifica
 	s.ByStrength[string(strength)]++
 	s.ByDistance[string(distance)]++
 	s.ByVolatility[string(volatility)]++
-	// Label provenance is per-edge, so it is counted here — on cross-boundary
-	// edges only, after the same-module/unknown early-outs. LabeledLLM feeds the
-	// coupling_balance evidence line and LLMLowConfidenceEdges lowers its
-	// confidence band by one.
-	if prov.StrengthFromLLM {
-		s.LabeledLLM++
-	}
-	if prov.StrengthFromNonHighLLM {
-		s.LLMLowConfidenceEdges++
-	}
 	if c.Score.Scored {
 		s.Scored++
 		s.BySeverity[string(c.Score.Band)]++

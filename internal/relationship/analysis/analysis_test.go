@@ -1,5 +1,5 @@
 // Behavior tests for the relationship analysis seam. They pin what Analyze
-// classifies — module resolution, label precedence and staleness, abstention,
+// classifies — module resolution, static strength precedence, abstention,
 // clone-only pairs, runtime rollups, and advisory candidacy — so the capability
 // migration can move ownership without moving semantics.
 package analysis_test
@@ -15,7 +15,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 const (
@@ -161,113 +160,6 @@ func TestAnalyzeAbstainsWhenStrengthIsUnknown(t *testing.T) {
 	}))
 	if !known.Classified.Score.Scored {
 		t.Fatal("Score.Scored = false for a classified edge, want a score")
-	}
-}
-
-// An approved human label is the reviewer's verdict and outranks the
-// extractor's hint; a draft label and a stale label do not.
-func TestAnalyzeLabelPrecedence(t *testing.T) {
-	hash := labels.HashItems([]string{fileA + "\x00" + fileB + "\x00" + kindImports})
-	label := func(status, provenance, hashValue string) labels.Label {
-		return labels.Label{
-			From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
-			Status: status, Provenance: provenance, EvidenceHash: hashValue, Confidence: labels.ConfidenceHigh,
-		}
-	}
-	tests := []struct {
-		name         string
-		label        labels.Label
-		wantStrength relationship.Strength
-		wantStale    bool
-	}{
-		{
-			name:         "approved human label with matching evidence wins",
-			label:        label(labels.StatusApproved, labels.ProvenanceHuman, hash),
-			wantStrength: relationship.StrengthContract,
-		},
-		{
-			name:         "approved label with empty evidence hash applies",
-			label:        label(labels.StatusApproved, labels.ProvenanceHuman, ""),
-			wantStrength: relationship.StrengthContract,
-		},
-		{
-			name:         "approved label with stale evidence hash is ignored and reported",
-			label:        label(labels.StatusApproved, labels.ProvenanceHuman, "0000stale0000"),
-			wantStrength: relationship.StrengthFunctional,
-			wantStale:    true,
-		},
-		{
-			name:         "draft label never applies and is not stale",
-			label:        label("draft", labels.ProvenanceHuman, hash),
-			wantStrength: relationship.StrengthFunctional,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := analysis.Analyze(analysis.Input{
-				Graph:  graphWith(string(relationship.StrengthFunctional)),
-				Policy: relationshipPolicy(twoModules()),
-				Labels: []labels.Label{test.label},
-			})
-			if s := onlyEdge(t, got).Strength; s != test.wantStrength {
-				t.Errorf("strength = %q, want %q", s, test.wantStrength)
-			}
-			wantKeys := []string(nil)
-			if test.wantStale {
-				wantKeys = []string{labels.Key(moduleA, moduleB)}
-			}
-			if !slices.Equal(got.Assessment.StaleLabelKeys, wantKeys) {
-				t.Errorf("StaleLabelKeys = %v, want %v", got.Assessment.StaleLabelKeys, wantKeys)
-			}
-		})
-	}
-}
-
-// Every run sees the whole graph, so a stale label is always checked: it is
-// ignored and its pair reported, never applied on unchecked evidence.
-func TestAnalyzeChecksLabelFreshness(t *testing.T) {
-	stale := labels.Label{
-		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
-		Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman, EvidenceHash: "0000stale0000",
-	}
-	got := analysis.Analyze(analysis.Input{
-		Graph:  graphWith(string(relationship.StrengthFunctional)),
-		Policy: relationshipPolicy(twoModules()), Labels: []labels.Label{stale},
-	})
-	if s := onlyEdge(t, got).Strength; s != relationship.StrengthFunctional {
-		t.Errorf("strength = %q, want the stale label ignored", s)
-	}
-	if len(got.Assessment.StaleLabelKeys) != 1 {
-		t.Errorf("StaleLabelKeys = %v, want the stale pair", got.Assessment.StaleLabelKeys)
-	}
-}
-
-// An LLM label below high confidence is counted so downstream scoring can lower
-// the coupling_balance confidence band.
-func TestAnalyzeCountsNonHighConfidenceLLMLabels(t *testing.T) {
-	tests := []struct {
-		name       string
-		provenance string
-		confidence string
-		want       int
-	}{
-		{name: "low-confidence llm label counts", provenance: labels.ProvenanceLLM, confidence: labels.ConfidenceLow, want: 1},
-		{name: "high-confidence llm label does not count", provenance: labels.ProvenanceLLM, confidence: labels.ConfidenceHigh, want: 0},
-		{name: "human label never counts", provenance: labels.ProvenanceHuman, confidence: labels.ConfidenceLow, want: 0},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := analysis.Analyze(analysis.Input{
-				Graph: graphWith(""), Policy: relationshipPolicy(twoModules()),
-				Labels: []labels.Label{{
-					From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
-					Status: labels.StatusApproved, Provenance: test.provenance, Confidence: test.confidence,
-				}},
-			})
-			if got.Evidence.LLMApprovedCount != test.want {
-				t.Fatalf("LLMApprovedCount = %d, want %d", got.Evidence.LLMApprovedCount, test.want)
-			}
-		})
 	}
 }
 
@@ -574,7 +466,7 @@ func TestAnalyzeEmptyGraph(t *testing.T) {
 	if !got.Relationships.Empty() {
 		t.Fatalf("relationships = %+v, want an empty set", got.Relationships)
 	}
-	if len(got.Assessment.AdvisoryCandidates) != 0 || len(got.Evidence.CloneOnly) != 0 || len(got.Assessment.StaleLabelKeys) != 0 {
+	if len(got.Assessment.AdvisoryCandidates) != 0 || len(got.Evidence.CloneOnly) != 0 {
 		t.Fatalf("result = %+v, want no derived facts from an empty graph", got)
 	}
 }
