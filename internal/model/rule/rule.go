@@ -7,8 +7,6 @@ import "strings"
 const (
 	// RuleIDBCImbalancedCoupling identifies the balanced-coupling advisory.
 	RuleIDBCImbalancedCoupling = "bc/imbalanced_coupling"
-	// RuleIDDuplicatedKnowledge identifies the clone-only coupling advisory.
-	RuleIDDuplicatedKnowledge = "bc/duplicated_knowledge"
 	// RuleIDCouplingGate identifies a generated distributed-monolith gate finding.
 	RuleIDCouplingGate = "bc/coupling_gate"
 	// RuleIDMapUncoveredPath identifies an uncovered-path map advisory.
@@ -52,7 +50,7 @@ func SyntheticWaiverScope(ruleID string) WaiverScope {
 		return WaiverScopeEdgeless
 	case RuleIDCouplingGate, RuleIDMapUncoveredChange:
 		return WaiverScopeForbidden
-	case RuleIDBCImbalancedCoupling, RuleIDDuplicatedKnowledge:
+	case RuleIDBCImbalancedCoupling:
 		return WaiverScopeEdge
 	default:
 		return ""

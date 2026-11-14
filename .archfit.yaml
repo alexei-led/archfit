@@ -168,7 +168,6 @@ modules:
       - internal/extract/deployunit
       - internal/extract/runtime
       - internal/extract/dynimports
-      - internal/extract/clones
       - internal/extract/loc
       - internal/extract/manifest
       - internal/toolrun
@@ -199,7 +198,6 @@ modules:
       - internal/model/graph/**
       - internal/model/symbol/**
       - internal/model/fileclass/**
-      - internal/model/clone/**
       - internal/model/pattern/**
       - internal/evidence/*
       - internal/evidence/*.go
@@ -208,7 +206,6 @@ modules:
       - internal/model/graph
       - internal/model/symbol
       - internal/model/fileclass
-      - internal/model/clone
       - internal/model/pattern
       - internal/evidence
     volatility: medium

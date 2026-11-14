@@ -137,7 +137,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		}
 	}
 	runPolicy = runPolicy.WithResolvedTopology(resolvedOwners, collected.DeployUnitsByModule)
-	noteToolError(toolJscpd, collected.CloneError)
 
 	graphResult, err := Collect(ctx, Input{
 		Scope: resolved, Extractors: extractors, Resolver: collected.Resolver,
@@ -195,7 +194,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		SyntaxFacts: syntaxFacts, FileLOC: collected.FileLOC,
 		FileClassIndex: collected.FileClassIndex,
 		FileFacts:      facts.Build(graphResult.SCIPSymbols, collected.FileLOC),
-		Clones:         collected.DuplicationClusters,
 		DynamicImports: collected.DynamicImports, RuntimeAsyncSites: collected.RuntimeAsyncSites,
 		RuntimeConfidence: collected.RuntimeConfidence, DeprecatedDeps: collected.DeprecatedDeps,
 		RustModuleGraphCrates: rustModuleGraphCrates,
@@ -264,7 +262,7 @@ func assessmentObservationsOf(
 		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
 		Symbols:     f.Symbols,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
-		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
+		FileFacts: f.FileFacts, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
 		DeprecatedDeps:      f.DeprecatedDeps,
 		DeclaredDeployUnits: declaredDeployUnits, CorroboratedDeployUnits: corroboratedDeployUnits,

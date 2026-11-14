@@ -2,7 +2,6 @@
 package evidence
 
 import (
-	modelclone "github.com/alexei-led/archfit/v3/internal/model/clone"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
@@ -24,7 +23,6 @@ type Facts struct {
 	FileLOC           map[string]int
 	FileClassIndex    map[string]fileclass.FileClass
 	FileFacts         []modevidence.FileFact
-	Clones            []modelclone.Cluster
 	DynamicImports    []modevidence.DynamicImportSite
 	RuntimeAsyncSites []modevidence.RuntimeAsyncSite
 	RuntimeConfidence string

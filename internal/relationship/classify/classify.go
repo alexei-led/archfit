@@ -378,9 +378,6 @@ func classify(e graph.Edge, mi moduleIndex, c Config, effectiveVol map[string]co
 
 	str := resolveStrength(e, mi)
 
-	// A clone pair never upgrades an import edge: it is its own symmetric clone
-	// fact (ClonePairs), attached to the seam by the relationship stage.
-
 	// --- Distance & volatility ---
 	dist, distBasis, vol := resolveDistanceVolatility(fromPath, toPath, mi, c, effectiveVol, extSystems)
 	// Functional and symmetric coupling ties both sides to each other's changes
@@ -499,14 +496,6 @@ func resolveDistanceVolatility(fromPath, toPath string, mi moduleIndex, c Config
 	return dist, distBasis, classifyVolatilityEffective(toPath, mi, modules, effectiveVol)
 }
 
-// modulePairKey returns the canonical sorted key for a module pair.
-func modulePairKey(a, b string) string {
-	if a > b {
-		a, b = b, a
-	}
-	return a + "\x00" + b
-}
-
 // classifyStrength determines strength from glob matching against all modules'
 // public and internal glob lists.
 //
@@ -528,7 +517,6 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 }
 
 // resolveStrength applies static surface and extractor precedence for one edge.
-// Clone facts are separate; the volatility cascade excludes clone pairs.
 func resolveStrength(e graph.Edge, mi moduleIndex) coupling.Strength {
 	toPath := pathFromID(e.To)
 	str := classifyStrength(toPath, mi)
@@ -616,10 +604,6 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 }
 
 // moduleDistance names the boundary between two RESOLVED, distinct modules.
-// Factored out of classifyDistance so ClonePairs can compute a module-pair
-// distance from module names alone: clone evidence carries repo file paths,
-// which for Python never match the dotted node-ID globs the path resolution in
-// classifyDistance expects.
 func moduleDistance(fromMod, toMod string, modules map[string]policy.ModuleDef) (coupling.Distance, coupling.DistanceBasis) {
 	fromDef, toDef := modules[fromMod], modules[toMod]
 	if fromDef.DeployUnit != "" && toDef.DeployUnit != "" && fromDef.DeployUnit != toDef.DeployUnit {
@@ -709,13 +693,7 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]policy
 // propagate across a chain of deliberate strong integrations instead of stopping
 // at one hop. Values are only raised, never lowered.
 //
-// Strong strength set for propagation: Functional, Symmetric, Intrusive. An edge
-// between a module pair in clonePairs is excluded even if it otherwise qualifies:
-// a detected clone is accidental coupling (duplicated code, not a deliberate
-// integration point), and volatility in the book's model (Ch9) is a component's
-// essential rate of change, driven by its domain role — an incidental clone
-// match between two modules says nothing about either module's real volatility,
-// so it must not flip a whole module's effective volatility to high.
+// Strong strength set for propagation: Functional, Symmetric, Intrusive.
 func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c Config) map[string]coupling.Volatility {
 	modules := c.Modules
 	// Seed effective map from config-declared volatility.
@@ -741,9 +719,6 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c Config) map[st
 		if !okFrom || !okTo || fromMod == toMod {
 			continue
 		}
-		if _, isClonePair := c.CrossModuleClonePairs[modulePairKey(fromMod, toMod)]; isClonePair {
-			continue // accidental coupling — must not trigger the cascade
-		}
 		edges = append(edges, cascadeEdge{from: fromMod, to: toMod})
 	}
 
@@ -758,6 +733,26 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c Config) map[st
 		}
 	}
 	return effective
+}
+
+// volatilityRiskRank orders volatility levels by book Ch9 ordinal for
+// worst-of-pair selection. High outranks undeclared/unknown (all three score
+// V=10) so a declared high is reported over an artifact of missing config.
+var volatilityRiskRank = map[coupling.Volatility]int{
+	coupling.VolatilityFrozen:     1,
+	coupling.VolatilityLow:        2,
+	coupling.VolatilityMedium:     3,
+	coupling.VolatilityUndeclared: 4,
+	coupling.VolatilityUnknown:    4,
+	coupling.VolatilityHigh:       5,
+}
+
+// worseVolatility returns the riskier of two volatility levels.
+func worseVolatility(a, b coupling.Volatility) coupling.Volatility {
+	if volatilityRiskRank[b] > volatilityRiskRank[a] {
+		return b
+	}
+	return a
 }
 
 // volatilityFromDef derives base volatility from a ModuleDef using the same

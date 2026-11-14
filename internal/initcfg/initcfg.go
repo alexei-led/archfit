@@ -423,8 +423,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("coupling:\n")
 	b.WriteString("  # Minimum severity for a coupling advisory: low|medium|high|critical\n")
 	b.WriteString("  min_severity: medium\n")
-	b.WriteString("  # Clone-only duplicated knowledge: score|advisory (default score)\n")
-	b.WriteString("  duplicated_knowledge: score\n\n")
+	b.WriteString("\n")
 
 	// languages: section — always emitted so operators can flip modes without
 	// needing to know the YAML shape. enabled is true|false|auto.
@@ -482,7 +481,6 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 		b.WriteString("#   scip: { enabled: true }         # symbol-level coupling strength\n")
 	}
 	b.WriteString("#   syntax: { enabled: true }       # ast-grep: roles, routes, exported surface\n")
-	b.WriteString("#   clones: { enabled: true }       # cross-module duplication\n")
 	b.WriteString("\n")
 	b.WriteString("# Off-gate LLM for config init/update/enrich and analyze/explain --ai-summary.\n")
 	b.WriteString("# The deterministic gate never uses it.\n")

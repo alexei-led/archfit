@@ -38,7 +38,7 @@ type Result struct {
 func evaluate(in Input) Result {
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{Relationships: in.Relationships, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
-		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size, Duplication: in.Signals.Duplication,
+		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size,
 	}
 	calculated := make([]result.MetricResult, 0, in.Metrics.Len())
 	for _, metric := range in.Metrics.metrics {

@@ -21,7 +21,6 @@ const (
 	cascadeFileNotifications = "notifications/svc.go"
 	cascadeFileGateway       = "gateway/svc.go"
 	cascadeProbeFile         = "probe/x.go"
-	cascadePairNotifPayment  = "notifications\x00payment"
 )
 
 // buildGraph constructs a Graph from a slice of (from, to, strengthHint) triples.
@@ -185,39 +184,6 @@ func TestVolatilityCascade(t *testing.T) {
 				t.Errorf("volatility = %q, want %q", cl.Volatility, tc.wantVol)
 			}
 		})
-	}
-}
-
-// TestVolatilityCascade_ClonePairExcluded is the B4 regression: a detected
-// cross-module clone is accidental coupling (duplicated code, not a deliberate
-// integration point) and must not trigger the cascade, even though its strength
-// hint otherwise qualifies as strong. Reproduces the prometheus finding where a
-// single clone-detected edge flipped an entire unrelated module's effective
-// volatility to high.
-func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
-	probe := cascadeProbeFile
-	g := buildGraph([][3]string{
-		{cascadeFileNotifications, cascadeFilePayment, string(coupling.StrengthFunctional)},
-		{probe, cascadeFileNotifications, ""},
-	})
-	c := classify.Config{
-		Modules:                  cascadeModules,
-		VolatilityCascadeEnabled: true,
-		CrossModuleClonePairs: map[string]struct{}{
-			// modulePairKey's format: sorted module names joined by "\x00".
-			cascadePairNotifPayment: {},
-		},
-	}
-	idx := classify.Run(g, c)
-	cl, ok := idx[probeKey(cascadeFileNotifications)]
-	if !ok {
-		t.Fatalf("probe edge not in index")
-	}
-	// Without the clone-pair exclusion this would be VolatilityHigh (same setup
-	// as "enabled functional: supporting raised to high" above) — the pair being
-	// clone-detected must suppress the cascade despite the strong strength hint.
-	if cl.Volatility != coupling.VolatilityLow {
-		t.Errorf("volatility = %q, want %q (clone pair must not trigger cascade)", cl.Volatility, coupling.VolatilityLow)
 	}
 }
 

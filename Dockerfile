@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=tools-builder /opt/archfit /opt/archfit
 COPY --from=tools-builder /out/archfit /usr/local/bin/archfit
-# Node runs the locked ast-grep and jscpd tools.
+# Node runs the locked ast-grep tool.
 ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/archfit/dotnet:/opt/archfit/node/bin:/opt/archfit/rust/bin:${PATH}" \
     HOME=/tmp \
     CARGO_HOME=/tmp/archfit-cargo \

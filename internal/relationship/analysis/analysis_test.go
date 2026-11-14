@@ -1,6 +1,6 @@
 // Behavior tests for the relationship analysis seam. They pin what Analyze
 // classifies — module resolution, static strength precedence, abstention,
-// clone-only pairs, runtime rollups, and advisory candidacy — so the capability
+// runtime rollups, and advisory candidacy — so the capability
 // migration can move ownership without moving semantics.
 package analysis_test
 
@@ -8,9 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
@@ -27,7 +25,6 @@ const (
 	teamA       = "team-a"
 	teamB       = "team-b"
 	ruleBC      = "bc/imbalanced_coupling"
-	ruleClone   = "bc/duplicated_knowledge"
 	kindImports = "imports"
 	volHigh     = "high"
 	volLow      = "low"
@@ -213,115 +210,6 @@ func TestAnalyzeEmitsAdvisoryCandidatesForSevereEdges(t *testing.T) {
 	}
 }
 
-// Cross-module clones with no import edge are duplicated knowledge; test files
-// are excluded because example duplication is not an architecture signal.
-func TestAnalyzeClonePairs(t *testing.T) {
-	const (
-		cloneA     = "a/dup.go"
-		cloneB     = "b/dup.go"
-		cloneBTest = "b/dup_test.go"
-	)
-	nodes := []graph.Node{
-		{Kind: graph.NodeKindFile, Path: cloneA, Language: graph.LangGo},
-		{Kind: graph.NodeKindFile, Path: cloneB, Language: graph.LangGo},
-	}
-	g := graph.Build([]graph.Facts{{Nodes: nodes}})
-
-	tests := []struct {
-		name      string
-		cluster   clone.Cluster
-		index     map[string]fileclass.FileClass
-		wantPairs int
-	}{
-		{
-			name:      "production clone across modules is a pair",
-			cluster:   clone.Cluster{Files: []string{cloneA, cloneB}, Lines: 40, Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}}},
-			index:     map[string]fileclass.FileClass{cloneA: fileclass.Production, cloneB: fileclass.Production},
-			wantPairs: 1,
-		},
-		{
-			name:      "clone touching a test file is excluded",
-			cluster:   clone.Cluster{Files: []string{cloneA, cloneBTest}, Lines: 40},
-			index:     map[string]fileclass.FileClass{cloneA: fileclass.Production, cloneBTest: fileclass.Test},
-			wantPairs: 0,
-		},
-		{
-			name:      "lock files shared across modules are not source",
-			cluster:   clone.Cluster{Files: []string{"a/packages.lock.json", "b/packages.lock.json"}, Lines: 40},
-			wantPairs: 0,
-		},
-		{
-			name:      "Dockerfiles shared across modules are not source",
-			cluster:   clone.Cluster{Files: []string{"a/Dockerfile", "b/Dockerfile"}, Lines: 40},
-			wantPairs: 0,
-		},
-		{
-			name:      "scripts and templates shared across modules are not source",
-			cluster:   clone.Cluster{Files: []string{"a/entrypoint.sh", "b/mail.html.hbs"}, Lines: 40},
-			wantPairs: 0,
-		},
-		{
-			name:      "clone inside one module is not cross-module",
-			cluster:   clone.Cluster{Files: []string{cloneA, "a/dup2.go"}, Lines: 40},
-			index:     map[string]fileclass.FileClass{cloneA: fileclass.Production, "a/dup2.go": fileclass.Production},
-			wantPairs: 0,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := analysis.Analyze(analysis.Input{
-				Graph: g, Policy: relationshipPolicy(twoModules()),
-				CloneClusters: []clone.Cluster{test.cluster}, FileClassIndex: test.index,
-			})
-			if len(got.Evidence.CloneOnly) != test.wantPairs {
-				t.Fatalf("clone-only pairs = %+v, want %d", got.Evidence.CloneOnly, test.wantPairs)
-			}
-			if test.wantPairs == 0 {
-				return
-			}
-			pair := got.Evidence.CloneOnly[0]
-			if pair.Strength != relationship.StrengthSymmetric {
-				t.Errorf("clone pair strength = %q, want symmetric", pair.Strength)
-			}
-			if pair.FromModule != moduleA || pair.ToModule != moduleB {
-				t.Errorf("clone pair modules = %s -> %s, want a -> b", pair.FromModule, pair.ToModule)
-			}
-			for _, c := range got.Assessment.AdvisoryCandidates {
-				if c.RuleID == ruleClone && c.EdgeKind != "clone" {
-					t.Errorf("duplicated-knowledge candidate kind = %q, want clone", c.EdgeKind)
-				}
-			}
-		})
-	}
-}
-
-// TestAnalyzeClonePairsClassifiesCSharpByPath pins the path-only fallback for
-// C# clone files the LOC walk never indexed: MSBuild output and test files are
-// not production, so they form no clone seam.
-func TestAnalyzeClonePairsClassifiesCSharpByPath(t *testing.T) {
-	const cloneA = "a/Dup.cs"
-	g := graph.Build([]graph.Facts{{Nodes: []graph.Node{{Kind: graph.NodeKindFile, Path: cloneA, Language: graph.LangDotNet}}}})
-	for _, tc := range []struct {
-		other     string
-		wantPairs int
-	}{
-		{"b/Dup.cs", 1},
-		{"b/obj/Debug/net10.0/Dup.cs", 0},
-		{"b/DupTests.cs", 0},
-		{"b/Dup.g.cs", 0},
-	} {
-		t.Run(tc.other, func(t *testing.T) {
-			got := analysis.Analyze(analysis.Input{
-				Graph: g, Policy: relationshipPolicy(twoModules()),
-				CloneClusters: []clone.Cluster{{Files: []string{cloneA, tc.other}, Lines: 40}},
-			})
-			if len(got.Evidence.CloneOnly) != tc.wantPairs {
-				t.Fatalf("clone-only pairs = %+v, want %d", got.Evidence.CloneOnly, tc.wantPairs)
-			}
-		})
-	}
-}
-
 func TestAnalyzeRuntimeSignalRollup(t *testing.T) {
 	const confidence = "medium"
 	sites := []evidence.RuntimeAsyncSite{
@@ -466,7 +354,7 @@ func TestAnalyzeEmptyGraph(t *testing.T) {
 	if !got.Relationships.Empty() {
 		t.Fatalf("relationships = %+v, want an empty set", got.Relationships)
 	}
-	if len(got.Assessment.AdvisoryCandidates) != 0 || len(got.Evidence.CloneOnly) != 0 {
+	if len(got.Assessment.AdvisoryCandidates) != 0 {
 		t.Fatalf("result = %+v, want no derived facts from an empty graph", got)
 	}
 }

@@ -172,7 +172,7 @@ def inventory(contract: ImageContract) -> None:
         f"cargo modules --version | grep -F {pins['versions']['cargo-modules']}; "
         f"uv --version | grep -F {pins['versions']['uv']}; "
         f'node -e {shlex.quote(node_script)}; python -I -c {shlex.quote(py_script)}; '
-        'test -z "$(command -v depcruise)"; test -z "$(command -v scip-go)"; test -z "$(command -v scip-typescript)"; test -z "$(command -v scip-python)"; test -z "$(command -v rust-analyzer)"; ast-grep --version; jscpd --version; '
+        'test -z "$(command -v depcruise)"; test -z "$(command -v scip-go)"; test -z "$(command -v scip-typescript)"; test -z "$(command -v scip-python)"; test -z "$(command -v rust-analyzer)"; test -z "$(command -v jscpd)"; ast-grep --version; '
         'mkdir -p "$CARGO_HOME" "$XDG_CACHE_HOME" "$UV_CACHE_DIR" "$npm_config_cache"; '
         "archfit --version"
     )
@@ -356,8 +356,6 @@ languages:
 analyzers:
   syntax:
     enabled: true
-  clones:
-    enabled: false
 layers: [core, adapter]
 modules:
   contracts:

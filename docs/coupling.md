@@ -61,8 +61,7 @@ remains unrated. Reports identify this gap and can recommend `declare_volatility
 Explicit `volatility:` takes precedence over `subdomain:`. `core` means high,
 `supporting` and `generic` mean low. Contract, model, and intrusive edges use the
 target module's volatility. Functional and symmetric edges use the higher
-volatility of both modules. Clone facts use the higher volatility of both
-modules. The optional cascade propagates volatility through the module graph to
+volatility of both modules. The optional cascade propagates volatility through the module graph to
 a fixed point.
 
 Finding explanations use **effective volatility**, not a claim about target churn.
@@ -151,7 +150,7 @@ measurement when at least one import edge meets all of these conditions:
 - Its source is not a `composition_root`, `generated`, or `test` role, unless
   the edge is intrusive.
 
-Medium volatility and clone facts do not qualify. Qualification is separate from
+Medium volatility does not qualify. Qualification is separate from
 the balance score. Owner and deploy labels do not change D=9 or make a seam
 qualify by themselves.
 
@@ -160,25 +159,17 @@ They have no stored-reference gate or metric ratchet. The Archfit 4 check applie
 the `coupling` rule to errors added by the change, independently of these report
 measurements. See [metrics](metrics.md#deltas-and-gates) and [rules](rules.md).
 
-## Clones and limits
+## Copies and limits
 
-A cross-module clone pair is symmetric coupling evidence. It does not upgrade an
-import edge. With `coupling.duplicated_knowledge: score` (the default), each
-clone pair contributes a scored fact to `coupling_balance`. A connected pair
-attaches to its existing seam. A clone-only pair has no seam, but still
-contributes to `coupling_balance`. With `advisory`, clone facts stay outside the
-score and appear as advisory evidence. Clone facts never qualify a seam.
-
-Only production source of the languages that are not turned off can form a
-clone pair: Go, TypeScript and JavaScript, Python, Rust, and C#. Lock files,
-templates, Dockerfiles, scripts, test files, and generated files never do.
+The `duplication` rule checks identical literals added across module boundaries.
+It is separate from import-edge scoring. See [rules](rules.md) for its limits.
 
 Go uses `go/types` data for report hints. .NET uses Roslyn compiler symbols from the `archfit-roslyn` helper.
 
 Published-language coupling between services has no type edge and is not
 measured in any language: message records duplicated in each service, a
 `.proto` that another project compiles directly, and HTTP or YARP runtime calls.
-Clone evidence can catch duplicated records; the rest stays outside the graph.
+These stay outside the dependency graph.
 
 TypeScript and Python imports have unknown strength unless declared `public:`
 or `internal:` surfaces classify the target. Runtime async evidence is report-only. It does not

@@ -8,15 +8,12 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
 	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
 
 // Input is the relationship stage boundary. Graph and runtime signals are
@@ -24,8 +21,6 @@ import (
 type Input struct {
 	Graph             *graph.Graph
 	Policy            policy.RelationshipPolicy
-	CloneClusters     []clone.Cluster
-	FileClassIndex    map[string]fileclass.FileClass
 	RuntimeSites      []evidence.RuntimeAsyncSite
 	RuntimeConfidence string
 	// DynamicImportSites are acquired dynamic/lazy import sites. Analyze rolls
@@ -43,12 +38,8 @@ func Analyze(in Input) relationship.AnalysisResult {
 	}
 	cfg := augmentConfig(in.Graph, classify.ConfigFrom(in.Policy))
 
-	if len(in.CloneClusters) > 0 {
-		cfg.CrossModuleClonePairs, cfg.CloneEvidence = clonePairs(in.CloneClusters, cfg.ModuleMap, in.FileClassIndex)
-	}
 	idx := classify.Run(in.Graph, cfg)
 	set := buildSet(in.Graph, idx, cfg.ModuleMap, cfg.Modules)
-	clones := clonePairsOf(in.Graph, cfg)
 	runtimeAsyncEdges := runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap)
 	// Dynamic/lazy imports are invisible to the static graph, so they hide cycles
 	// and undercount coupling. Rolled up here as report-only evidence: never read
@@ -60,24 +51,23 @@ func Analyze(in Input) relationship.AnalysisResult {
 		unmeasuredConnascence = connascence.Unmeasured
 	}
 	dynamicConnascence := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, unmeasuredConnascence)
-	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy, classify.BuildContainment(in.Policy.Topology.Modules), cfg.Modules)
+	classifiedEdges := buildClassifiedSummary(set, classify.BuildContainment(in.Policy.Topology.Modules), cfg.Modules)
 	distanceCandidates := append(buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
 		buildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
 	sortDistanceConfigCandidates(distanceCandidates)
 	out := relationship.AnalysisResult{
 		Relationships: set,
 		Assessment: relationship.AssessmentSignals{
-			AdvisoryCandidates: advisoryCandidates(set, clones, cfg),
+			AdvisoryCandidates: advisoryCandidates(set, cfg),
 			ClassifiedEdges:    classifiedEdges,
 			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules, Tree: classify.BuildContainment(in.Policy.Topology.Modules),
-				Graph: in.Graph, ClonePairs: seamCloneFacts(clones, cfg.DuplicatedKnowledgePolicy)}),
+				Graph: in.Graph}),
 		},
 		Evidence: relationship.AnalysisEvidence{
 			RuntimeModules:            runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
 			RuntimeEdges:              runtimeAsyncEdges,
 			DynamicImports:            dynamicImports,
 			DynamicConnascenceSignals: dynamicConnascence,
-			CloneOnly:                 cloneOnly(clones),
 			Connascence:               connascence,
 			DistanceConfigCandidates:  distanceCandidates,
 			LocalCoupling:             buildLocalCouplingSummary(set),
@@ -86,170 +76,6 @@ func Analyze(in Input) relationship.AnalysisResult {
 	}
 	return out
 }
-
-// seamCloneFacts returns the clone facts the seam ledger may use. The
-// `advisory` setting of coupling.duplicated_knowledge keeps clone facts out of
-// seams, as it keeps them out of the headline score.
-func seamCloneFacts(pairs []relationship.ClonePair, p policy.DuplicatedKnowledgePolicy) []relationship.ClonePair {
-	if policy.NormalizeDuplicatedKnowledgePolicy(p) != policy.DuplicatedKnowledgePolicyScore {
-		return nil
-	}
-	return pairs
-}
-
-// cloneOnly keeps the clone pairs with no import edge between their modules.
-// A connected pair is a clone fact on a seam and is reported there instead.
-func cloneOnly(pairs []relationship.ClonePair) []relationship.ClonePair {
-	var out []relationship.ClonePair
-	for _, p := range pairs {
-		if !p.Connected {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func clonePairsOf(g *graph.Graph, cfg classify.Config) []relationship.ClonePair {
-	pairs := classify.ClonePairs(g, cfg)
-	out := make([]relationship.ClonePair, 0, len(pairs))
-	for _, p := range pairs {
-		locs := locations(p.Locations)
-		out = append(out, relationship.ClonePair{Connected: p.Connected, FromModule: p.FromModule, ToModule: p.ToModule, FromPath: p.FromPath, ToPath: p.ToPath, Strength: p.Classification.Strength, Distance: p.Classification.Distance, Volatility: p.Classification.Volatility, Severity: p.Classification.Severity, Locations: locs, Classified: classification(p.Classification)})
-	}
-	return out
-}
-
-func clonePairs(clusters []clone.Cluster, mm policy.ModuleMap, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
-	filtered := sourceClusters(clusters, index)
-	moduleFor := func(f string) string {
-		m, ok := mm.ModuleForFile(f)
-		if ok {
-			return m
-		}
-		return ""
-	}
-	pairs := clone.ModulePairs(filtered, moduleFor)
-	set := make(map[string]struct{}, len(pairs))
-	for _, p := range pairs {
-		set[p[0]+"\x00"+p[1]] = struct{}{}
-	}
-	return set, cloneEvidence(filtered, mm)
-}
-
-// sourceClusters keeps the clusters whose every file is production source of
-// a language archfit analyses. A lock file, template, Dockerfile or script
-// shared by two modules is not duplicated knowledge, and a test or generated
-// copy is not an architecture signal.
-func sourceClusters(clusters []clone.Cluster, index map[string]fileclass.FileClass) []clone.Cluster {
-	out := make([]clone.Cluster, 0, len(clusters))
-	cfg := syntax.FileClassConfig{}
-	for _, c := range clusters {
-		source := true
-		for _, f := range c.Files {
-			lang := cloneLanguage(f)
-			if lang == "" || !fileclass.IsProduction(syntax.LookupFileClass(filepath.ToSlash(f), index, lang, cfg)) {
-				source = false
-				break
-			}
-		}
-		if source {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap) map[string][]graph.Location {
-	out := map[string][]graph.Location{}
-	moduleFor := func(f string) string {
-		m, ok := mm.ModuleForFile(f)
-		if ok {
-			return m
-		}
-		return ""
-	}
-	for _, c := range clusters {
-		for i, f := range c.Files {
-			a := moduleFor(f)
-			if a == "" {
-				continue
-			}
-			for j := i + 1; j < len(c.Files); j++ {
-				b := moduleFor(c.Files[j])
-				if b == "" || a == b {
-					continue
-				}
-				x, y := a, b
-				if x > y {
-					x, y = y, x
-				}
-				k := x + "\x00" + y
-				out[k] = appendUniqueLocation(out[k], f, cloneStartLine(c, i))
-				out[k] = appendUniqueLocation(out[k], c.Files[j], cloneStartLine(c, j))
-			}
-		}
-	}
-	for k, locs := range out {
-		sort.Slice(locs, func(i, j int) bool {
-			if locs[i].File != locs[j].File {
-				return locs[i].File < locs[j].File
-			}
-			return locs[i].Line < locs[j].Line
-		})
-		out[k] = locs
-	}
-	return out
-}
-
-// cloneStartLine returns the start line jscpd reported for Files[i] in c, or 0
-// when the cluster carries no per-file location data.
-func cloneStartLine(c clone.Cluster, i int) int {
-	if i < len(c.Locations) {
-		return c.Locations[i].StartLine
-	}
-	return 0
-}
-
-// appendUniqueLocation appends loc to locs unless an identical entry is already
-// present. One cluster can pair the same two modules through several file
-// combinations, so without this the same file:line ships repeatedly in a
-// bc/duplicated_knowledge finding's locations[] and inflates the clone counts.
-func appendUniqueLocation(locs []graph.Location, file string, line int) []graph.Location {
-	loc := graph.Location{File: file, Line: line}
-	for _, l := range locs {
-		if l == loc {
-			return locs
-		}
-	}
-	return append(locs, loc)
-}
-
-// cloneLanguage maps a file extension to the language tag LookupFileClass expects
-// for built-in test/generated detection. The TS/JS family all routes through the
-// TypeScript classifier because IsTestFile handles .test./.spec. and __tests__
-// there for both TS and JS extensions. An extension outside the supported set
-// returns "": the file is not source of an analysed language.
-func cloneLanguage(path string) string {
-	ext := filepath.Ext(path)
-	switch ext {
-	case ".go":
-		return graph.LangGo
-	case ".py":
-		return graph.LangPython
-	case ".rs":
-		return graph.LangRust
-	case ".cs":
-		return graph.LangDotNet
-	}
-	for _, tsExt := range cloneTypeScriptSourceExts {
-		if ext == tsExt {
-			return graph.LangTypeScript
-		}
-	}
-	return ""
-}
-
-var cloneTypeScriptSourceExts = graph.TypeScriptSourceExtensions()
 
 func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, modules map[string]policy.ModuleDef) relationship.Set {
 	if g == nil {
@@ -282,12 +108,12 @@ func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, modules m
 		tm, _ := moduleForNode(e.To, mm)
 		fromDef, fromClassified := modules[fm]
 		toDef, toClassified := modules[tm]
-		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
+		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), ConnascenceKinds: connascenceKinds(cl.Connascence)}, Classified: classification(cl)})
 	}
 	return set
 }
 func classification(in coupling.Classification) relationship.Classification {
-	return relationship.Classification{Explicitness: relationship.Explicitness(in.Explicitness), ContractRecommended: in.ContractRecommended, Score: relationship.Score{Scored: in.Score.Scored, Balance: in.Score.Balance, Value: in.Score.Value, Band: in.Score.Band, Reason: in.Score.Reason, Breakdown: relationship.ScoreBreakdown{StrengthValue: in.Score.Breakdown.StrengthVal, DistanceValue: in.Score.Breakdown.DistanceVal, VolatilityValue: in.Score.Breakdown.VolatilityVal, Modularity: in.Score.Breakdown.Modularity, VolDiscount: in.Score.Breakdown.VolDiscount}}, DistanceBasis: string(in.DistanceBasis), CloneLocations: locationsFromCoupling(in.CloneLocations), Connascence: connascence(in.Connascence)}
+	return relationship.Classification{Explicitness: relationship.Explicitness(in.Explicitness), ContractRecommended: in.ContractRecommended, Score: relationship.Score{Scored: in.Score.Scored, Balance: in.Score.Balance, Value: in.Score.Value, Band: in.Score.Band, Reason: in.Score.Reason, Breakdown: relationship.ScoreBreakdown{StrengthValue: in.Score.Breakdown.StrengthVal, DistanceValue: in.Score.Breakdown.DistanceVal, VolatilityValue: in.Score.Breakdown.VolatilityVal, Modularity: in.Score.Breakdown.Modularity, VolDiscount: in.Score.Breakdown.VolDiscount}}, DistanceBasis: string(in.DistanceBasis), Connascence: connascence(in.Connascence)}
 }
 
 func connascence(in []coupling.ConnascenceEvidence) []relationship.ConnascenceEvidence {
@@ -302,14 +128,6 @@ func connascenceKinds(in []coupling.ConnascenceEvidence) []string {
 	out := make([]string, 0, len(in))
 	for _, v := range in {
 		out = append(out, string(v.Kind))
-	}
-	return out
-}
-
-func locationsFromCoupling(in []coupling.Location) []relationship.Location {
-	out := make([]relationship.Location, 0, len(in))
-	for _, v := range in {
-		out = append(out, relationship.Location{File: v.File, Line: v.Line})
 	}
 	return out
 }

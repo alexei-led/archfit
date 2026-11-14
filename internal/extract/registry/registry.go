@@ -206,8 +206,6 @@ var (
 	// astGrep reads the TypeScript, JavaScript and Python imports of the
 	// check, and the literals of every language but Go.
 	astGrep = Tool{Name: ToolAstGrep, Command: ToolAstGrep, InstallHint: analyzerSetupURL}
-	// jscpd finds copied code for a diagnostic of the report.
-	jscpd = Tool{Name: "jscpd", Command: "jscpd", InstallHint: analyzerSetupURL}
 )
 
 // ToolUse is one tool of a doctor group and the languages that use it. No
@@ -225,7 +223,7 @@ func ToolGroups() (check, report []ToolUse) {
 		check = addUse(check, lang.ID, lang.CheckTools)
 		report = addUse(report, lang.ID, lang.ReportTools)
 	}
-	return check, append(report, ToolUse{Tool: jscpd})
+	return check, report
 }
 
 // addUse adds the tools of one language to a group: a tool already there gets

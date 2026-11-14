@@ -42,7 +42,7 @@ func TestToolsPerLanguage(t *testing.T) {
 }
 
 // TestToolGroups pins what doctor shows: git first, each tool once with every
-// language that uses it, jscpd last in the report group.
+// language that uses it.
 func TestToolGroups(t *testing.T) {
 	t.Parallel()
 	check, report := ToolGroups()
@@ -58,9 +58,6 @@ func TestToolGroups(t *testing.T) {
 	}
 	if got, want := check[1].Languages, []string{"typescript", "python", "rust", "dotnet"}; !slices.Equal(got, want) {
 		t.Errorf("ast-grep languages = %v, want %v", got, want)
-	}
-	if last := report[len(report)-1]; last.Name != "jscpd" || len(last.Languages) != 0 {
-		t.Errorf("last report tool = %+v, want jscpd for every language", last)
 	}
 	seen := map[string]bool{}
 	for _, u := range slices.Concat(check, report) {

@@ -3,23 +3,20 @@ package analysis
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"sort"
 	"strconv"
 
 	modelrule "github.com/alexei-led/archfit/v3/internal/model/rule"
-	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
 )
 
 const relationshipScoreVersion = "bc_score.v7"
 const (
-	bcImbalancedRule        = modelrule.RuleIDBCImbalancedCoupling
-	duplicatedKnowledgeRule = modelrule.RuleIDDuplicatedKnowledge
+	bcImbalancedRule = modelrule.RuleIDBCImbalancedCoupling
 )
 
-func advisoryCandidates(set relationship.Set, clones []relationship.ClonePair, cfg classify.Config) []relationship.AdvisoryCandidate {
-	out := make([]relationship.AdvisoryCandidate, 0, len(set.Edges)+len(clones))
+func advisoryCandidates(set relationship.Set, cfg classify.Config) []relationship.AdvisoryCandidate {
+	out := make([]relationship.AdvisoryCandidate, 0, len(set.Edges))
 	for _, edge := range set.Edges {
 		if edge.Severity == relationship.SeverityNone || !severityAtLeast(edge.Severity, cfg.BCAdvisoryMinSeverity) {
 			continue
@@ -29,33 +26,11 @@ func advisoryCandidates(set relationship.Set, clones []relationship.ClonePair, c
 			TargetPublic: len(cfg.Modules[edge.ToModule].Public) > 0, CohesiveRole: classify.CohesiveRole(cfg.Modules[edge.FromModule].Role),
 		}))
 		locs := append([]relationship.Location(nil), edge.Locations...)
-		locs = appendLocations(locs, edge.Classified.CloneLocations)
 		out = append(out, relationship.AdvisoryCandidate{
 			ID: couplingAdvisoryID(edge.FromPath, edge.ToPath, edge.Kind), RuleID: bcImbalancedRule,
 			Kind: "advisory", Severity: edge.Severity, From: edge.FromPath, To: edge.ToPath,
 			FromModule: edge.FromModule, ToModule: edge.ToModule, EdgeKind: edge.Kind,
 			Locations: locs, Why: bcAdvisoryWhy(edge), MatchedBy: matched,
-		})
-	}
-	for _, pair := range clones {
-		if pair.Connected {
-			continue // a clone fact on a seam, reported there; this rule means "no import edge"
-		}
-		if pair.Severity == relationship.SeverityNone || !severityAtLeast(pair.Severity, cfg.BCAdvisoryMinSeverity) {
-			continue
-		}
-		matched := classificationMatched(pair.Classified, pair.Strength, pair.Distance, pair.Volatility, relationship.BalancingHypothesis(relationship.HypothesisInput{
-			Strength: relationship.StrengthSymmetric, Volatility: pair.Volatility, Band: pair.Severity, Clone: true,
-			TargetPublic: len(cfg.Modules[pair.ToModule].Public) > 0, CohesiveRole: classify.CohesiveRole(cfg.Modules[pair.FromModule].Role),
-		}))
-		matched["score_policy"] = string(policy.NormalizeDuplicatedKnowledgePolicy(cfg.DuplicatedKnowledgePolicy))
-		out = append(out, relationship.AdvisoryCandidate{
-			ID: duplicatedKnowledgeID(pair.FromModule, pair.ToModule), RuleID: duplicatedKnowledgeRule,
-			Kind: "advisory", Severity: pair.Severity, From: pair.FromPath, To: pair.ToPath,
-			FromModule: pair.FromModule, ToModule: pair.ToModule, EdgeKind: "clone",
-			Locations: append([]relationship.Location(nil), pair.Locations...),
-			Why:       "Cross-module code clones between " + pair.FromModule + " and " + pair.ToModule + " with no import edge. Inspect whether the similar code represents shared knowledge that must evolve together. If it does, review how to keep changes consistent across the modules; extraction is not automatically the right fix.",
-			MatchedBy: matched,
 		})
 	}
 	return out
@@ -78,27 +53,6 @@ func classificationMatched(cl relationship.Classification, strength relationship
 	return matched
 }
 
-func appendLocations(base, extra []relationship.Location) []relationship.Location {
-	if len(extra) == 0 {
-		return base
-	}
-	seen := make(map[relationship.Location]struct{}, len(base)+len(extra))
-	out := make([]relationship.Location, 0, len(base)+len(extra))
-	for _, loc := range append(base, extra...) {
-		if _, ok := seen[loc]; !ok {
-			seen[loc] = struct{}{}
-			out = append(out, loc)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].File != out[j].File {
-			return out[i].File < out[j].File
-		}
-		return out[i].Line < out[j].Line
-	})
-	return out
-}
-
 func severityAtLeast(got relationship.Severity, threshold string) bool {
 	if threshold == "" {
 		return true
@@ -111,11 +65,6 @@ func couplingAdvisoryID(from, to, kind string) string {
 	h := sha256.Sum256([]byte(bcImbalancedRule + "\x00" + from + "\x00" + to + "\x00" + kind))
 	return hex.EncodeToString(h[:16])
 }
-func duplicatedKnowledgeID(from, to string) string {
-	h := sha256.Sum256([]byte(duplicatedKnowledgeRule + "\x00" + from + "\x00" + to))
-	return hex.EncodeToString(h[:16])
-}
-
 func bcAdvisoryWhy(edge relationship.Edge) string {
 	return "balanced coupling: " + string(edge.Strength) + " integration strength × " + string(edge.Distance) + " distance × " + string(edge.Volatility) + " volatility → " + string(edge.Severity) + " severity (" + bcRiskClause(edge) + ")"
 }

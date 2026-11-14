@@ -19,7 +19,6 @@ const (
 	toolDeployUnit    = "deploy-unit"
 	toolScip          = "scip"
 	toolScipSymbols   = "scip-symbols"
-	toolJscpd         = "jscpd"
 
 	metricCycle           = "cycle"
 	metricBlastRadius     = "blast_radius"

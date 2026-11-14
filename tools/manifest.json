@@ -12,8 +12,7 @@
     "dotnet": "10.0.402"
   },
   "node": {
-    "@ast-grep/cli": "0.51.0",
-    "jscpd": "5.4.2"
+    "@ast-grep/cli": "0.51.0"
   },
   "artifacts": {
     "amd64": {

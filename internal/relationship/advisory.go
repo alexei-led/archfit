@@ -48,11 +48,9 @@ type ClassifiedEdgeSummary struct {
 	External                       int
 	DeclaredExternal               int
 	ConnectedModules               int
-	CloneOnlyScored                int
-	CloneOnlyAdvisory              int
 	VolatilityProvenance           *VolatilityProvenance
 	DistanceCompression            *DistanceCompressionSummary
-	// UnratedVolatilityEdges counts scored cross-boundary edges and clone facts
+	// UnratedVolatilityEdges counts scored cross-boundary edges
 	// whose effective volatility is undeclared or unknown: V=10 enters the
 	// formula, but nobody declared it. UnratedVolatilityModules names the modules
 	// that leave them unrated, sorted.
@@ -62,15 +60,12 @@ type ClassifiedEdgeSummary struct {
 
 // CouplingTailRiskSummary records lower-tail relationship statistics.
 type CouplingTailRiskSummary struct {
-	WorstBalance              int
-	LowerDecileBalance        int
-	HighOrWorseEdges          int
-	HighOrWorseSharePct       int
-	CriticalEdges             int
-	DistributedMonolithEdges  int
-	CloneOnlyScored           int
-	CloneOnlyHighOrWorseEdges int
-	CloneOnlyWorstBalance     int
+	WorstBalance             int
+	LowerDecileBalance       int
+	HighOrWorseEdges         int
+	HighOrWorseSharePct      int
+	CriticalEdges            int
+	DistributedMonolithEdges int
 }
 
 // DistanceCompressionSummary records deterministic distance-ladder coverage.
@@ -124,7 +119,6 @@ type AnalysisEvidence struct {
 	// keyed here so no consumer has to re-derive the augmented module map.
 	DynamicImports            []evidence.DynamicImport
 	DynamicConnascenceSignals *evidence.DynamicConnascenceSignals
-	CloneOnly                 []ClonePair
 	Connascence               *evidence.ConnascenceReport
 	DistanceConfigCandidates  []evidence.DistanceConfigCandidate
 	LocalCoupling             []evidence.LocalCouplingModule

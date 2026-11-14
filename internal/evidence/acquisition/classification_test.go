@@ -32,12 +32,8 @@ func TestClassificationHash(t *testing.T) {
 		changed bool
 	}{
 		{"same leaves, other target order and default volatility", func(*policy.PolicySnapshot) {}, false},
-		{"explicit default duplicated_knowledge", func(p *policy.PolicySnapshot) {
-			p.Relationship.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyScore
-		}, false},
 		{"minimum severity is governance", func(p *policy.PolicySnapshot) { p.Relationship.MinimumSeverity = "high" }, false},
 		{"volatility cascade", func(p *policy.PolicySnapshot) { p.Relationship.VolatilityCascadeEnabled = true }, true},
-		{"advisory duplicated_knowledge", func(p *policy.PolicySnapshot) { p.Relationship.DuplicatedKnowledge = "advisory" }, true},
 		{"metric switched off", func(p *policy.PolicySnapshot) {
 			off := false
 			p.Gates.Metrics = map[string]policy.MetricConfig{"cycle": {Enabled: &off}}

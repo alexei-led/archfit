@@ -155,13 +155,12 @@ func (c Config) ForExtract(lang string) evidenceports.ExtractConfig {
 // this remains for transitional callers.
 func (c Config) ForClassify() classify.Config {
 	return classify.Config{
-		Modules:                   c.Modules,
-		Layers:                    c.Layers,
-		ModuleMap:                 policy.BuildModuleMap(c.Modules),
-		BCAdvisoryMinSeverity:     c.Coupling.MinSeverity,
-		VolatilityCascadeEnabled:  c.Coupling.VolatilityCascade,
-		ExternalSystems:           c.ExternalSystems,
-		DuplicatedKnowledgePolicy: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge),
+		Modules:                  c.Modules,
+		Layers:                   c.Layers,
+		ModuleMap:                policy.BuildModuleMap(c.Modules),
+		BCAdvisoryMinSeverity:    c.Coupling.MinSeverity,
+		VolatilityCascadeEnabled: c.Coupling.VolatilityCascade,
+		ExternalSystems:          c.ExternalSystems,
 	}
 }
 

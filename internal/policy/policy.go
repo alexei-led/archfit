@@ -24,13 +24,10 @@ type TopologyView struct {
 }
 
 // RelationshipPolicy contains only declarations needed to classify relationships.
-// Per-run enrichment (pinned labels, clone pairs) is a run signal, not policy,
-// and reaches relationship analysis through its own stage input.
 type RelationshipPolicy struct {
 	Topology                 TopologyView
 	MinimumSeverity          string
 	VolatilityCascadeEnabled bool
-	DuplicatedKnowledge      DuplicatedKnowledgePolicy
 }
 
 // DefaultFunctionLOCThreshold is the diagnostic-only size-tail cutoff used

@@ -95,10 +95,9 @@ type Location struct {
 // relationship fact was derived. It carries facts, not assessment findings or
 // metric state.
 type Provenance struct {
-	ClassificationKey  string
-	DistanceBasis      string
-	ConnascenceKinds   []string
-	CloneLocationCount int
+	ClassificationKey string
+	DistanceBasis     string
+	ConnascenceKinds  []string
 }
 
 // Score is the relationship-owned score value produced by classification.
@@ -134,7 +133,6 @@ type Classification struct {
 	ContractRecommended bool
 	Score               Score
 	DistanceBasis       string
-	CloneLocations      []Location
 	Connascence         []ConnascenceEvidence
 }
 
@@ -175,23 +173,6 @@ type Edge struct {
 	Locations           []Location
 	Provenance          Provenance
 	Classified          Classification
-}
-
-// ClonePair is relationship-owned duplicated-knowledge provenance.
-type ClonePair struct {
-	// Connected is true when the modules share an import edge: the pair is a
-	// clone fact attached to that seam, not a clone-only pair.
-	Connected  bool
-	FromModule string
-	ToModule   string
-	FromPath   string
-	ToPath     string
-	Strength   Strength
-	Distance   Distance
-	Volatility Volatility
-	Severity   Severity
-	Locations  []Location
-	Classified Classification
 }
 
 // Set is the relationship-owned output of classification. It is deliberately

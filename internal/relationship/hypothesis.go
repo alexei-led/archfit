@@ -8,14 +8,10 @@ type HypothesisInput struct {
 	Volatility Volatility
 	// Band is the driving fact's severity band.
 	Band Severity
-	// Clone is true when the driving fact is a clone fact, which is symmetric
-	// coupling with no import edge behind it.
-	Clone bool
 	// TargetPublic is true when the target module declares a public surface.
 	TargetPublic bool
 	// CohesiveRole is true when the source module is a composition root, or its
-	// sources are generated or test code. A clone fact has no source side, so the
-	// role never applies to it.
+	// sources are generated or test code.
 	CohesiveRole bool
 }
 
@@ -23,7 +19,7 @@ type HypothesisInput struct {
 // none is needed. Every flagged seam (band medium or worse) gets a move that
 // re-scores to low or better, or a non-move hypothesis; abstained facts get none.
 func BalancingHypothesis(in HypothesisInput) SeamHypothesis {
-	strong := in.Clone || isStrong(in.Strength)
+	strong := isStrong(in.Strength)
 	switch in.Band {
 	case SeverityNone, SeverityLow:
 		if strong {
@@ -35,13 +31,13 @@ func BalancingHypothesis(in HypothesisInput) SeamHypothesis {
 		return SeamHypothesisBalanced
 	}
 	switch {
-	case in.CohesiveRole && !in.Clone && in.Strength != StrengthIntrusive:
+	case in.CohesiveRole && in.Strength != StrengthIntrusive:
 		return SeamHypothesisExpectedByRole
 	case in.Volatility == VolatilityUndeclared || in.Volatility == VolatilityUnknown:
 		return SeamHypothesisDeclareVolatility
 	case in.Strength == StrengthIntrusive:
 		return SeamHypothesisIntroduceContract
-	case in.Clone || in.Strength == StrengthSymmetric:
+	case in.Strength == StrengthSymmetric:
 		return SeamHypothesisMoveFunctionality
 	case in.Strength == StrengthFunctional || in.Strength == StrengthModel:
 		if in.TargetPublic {

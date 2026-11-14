@@ -76,8 +76,7 @@ cap the value and band. These bands do not apply to the nine dimensions.
 Confidence comes from the scored share of module and declared-external facts: at
 least 80% is high, 50–79% is medium, and less than 50% is low. Fewer than five
 scored facts or fewer than three connected modules disallows high confidence.
-Zero scored facts gives `n/a` with low confidence. A degenerate graph can still
-have a measured score when clone-only facts provide coupling evidence.
+Zero scored facts gives `n/a` with low confidence.
 
 Critical edges cap the value at 60. Distributed-monolith edges cap it at 40
 when they reach at least 5% of scored and abstained facts. Low confidence caps
@@ -118,9 +117,7 @@ The following report blocks explain inputs or expose limits. None gates by itsel
 | `local_coupling`                               | Same-module coupling and cohesion signals. Unknown strength abstains. These edges do not enter `coupling_balance`.                                                                  |
 | `distance_context`, `classified_edges`         | Distance basis and scoring inputs, abstentions, volatility provenance, drivers, module-pair concentration, and tail risk. These explain the score; they do not create another gate. |
 
-`classified_edges` includes clone counts. Score mode counts clone-only pairs in
-`coupling_balance`. Advisory mode omits them from that score. The seam ledger
-includes only pairs with import edges.
+The seam ledger includes only pairs with import edges.
 
 Coverage, tool availability, abstained edges, confidence, and incomplete facts
 can limit a claim. A missing fact is not a zero. See [evidence](evidence.md)

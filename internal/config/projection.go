@@ -31,7 +31,7 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 		}
 	}
 	topology := policy.TopologyView{Modules: c.Modules, Layers: c.Layers, ModuleMap: policy.BuildModuleMap(c.Modules), ExternalSystems: c.ExternalSystems}
-	relationship := policy.RelationshipPolicy{MinimumSeverity: c.Coupling.MinSeverity, VolatilityCascadeEnabled: c.Coupling.VolatilityCascade, DuplicatedKnowledge: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge)}
+	relationship := policy.RelationshipPolicy{MinimumSeverity: c.Coupling.MinSeverity, VolatilityCascadeEnabled: c.Coupling.VolatilityCascade}
 	stale := c.ForStaleness()
 	assessment := policy.AssessmentPolicy{
 		Staleness:            policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold},
@@ -50,7 +50,6 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 		gates[lang.ID] = string(c.ToolGate(lang.ID))
 		modes[lang.ID] = string(c.ToolMode(lang.ID))
 	}
-	gates[ToolClones] = string(c.ToolGate(ToolClones))
 	gates[ToolCargoModules] = string(c.ToolGate(ToolCargoModules))
 	gates[ToolRoslyn] = string(c.ToolGate(ToolRoslyn))
 	modes[ToolRoslyn] = string(c.ToolMode(ToolRoslyn))
@@ -141,8 +140,7 @@ func (c Config) ExtractConfigs() registry.Configs {
 func (c Config) AcquisitionOptions() acquire.Options {
 	return acquire.Options{
 		Exclusions: c.Exclude, FileClass: c.ForFileClass(), ModuleMap: c.ModuleMapView(),
-		ClonesEnabled: c.ClonesEnabled(), CloneTimeout: c.ToolTimeout(ToolClones),
-		Syntax: c.ForSyntax(), GoExtract: c.ForExtract(LangGo), Languages: c.analysedLanguages(),
+		Syntax: c.ForSyntax(), GoExtract: c.ForExtract(LangGo),
 	}
 }
 
