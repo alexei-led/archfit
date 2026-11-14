@@ -99,7 +99,7 @@ func SortSyntaxFacts(facts []SyntaxFact) {
 }
 
 // FileFact holds neutral per-module structural facts assembled from the symbol
-// graph and file LOC. Report-only evidence for the off-gate LLM narrative.
+// graph and file LOC. Report-only evidence, never a verdict input.
 type FileFact struct {
 	Module string `json:"module"`
 	// Files lists the repo-relative source files that define this module's symbols.
@@ -202,26 +202,6 @@ type DistanceConfigEvidenceSite struct {
 	Kind     string `json:"kind"`
 	Language string `json:"language"`
 	Target   string `json:"target,omitempty"`
-}
-
-// VolatilityCorroboration reports source-control touch frequency for declared
-// modules. Supporting evidence only.
-type VolatilityCorroboration struct {
-	Source         string            `json:"source"`
-	Status         string            `json:"status"`
-	CommitWindow   int               `json:"commit_window,omitempty"`
-	FullHistory    bool              `json:"full_history,omitempty"`
-	CommitsScanned int               `json:"commits_scanned,omitempty"`
-	ModulesTouched int               `json:"modules_touched,omitempty"`
-	TopTouched     []VolatilityTouch `json:"top_touched,omitempty"`
-	Caveat         string            `json:"caveat,omitempty"`
-}
-
-// VolatilityTouch is one module's touch frequency sample from git history.
-type VolatilityTouch struct {
-	Module             string `json:"module"`
-	TouchCommits       int    `json:"touch_commits"`
-	DeclaredVolatility string `json:"declared_volatility,omitempty"`
 }
 
 // ConnascenceRoadmapItem explains one Ch6 connascence category's measurement

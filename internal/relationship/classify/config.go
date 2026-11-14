@@ -6,30 +6,12 @@ import (
 )
 
 // Config is the classifier input: the static relationship policy projected onto
-// this run, plus the per-run enrichment signals (approved labels, clone pairs)
-// that only exist once evidence has been acquired.
+// this run, plus the clone evidence acquired for this tree.
 type Config struct {
 	Modules               map[string]policy.ModuleDef
 	Layers                []string
 	ModuleMap             policy.ModuleMap
 	BCAdvisoryMinSeverity string // minimum severity to emit BC coupling advisories
-	// ApprovedLabels pins integration strength per ordered module pair, keyed
-	// by from+"\x00"+to (labels.Key). Human-approved enrich output with
-	// human/tool provenance, validated for freshness by the engine before
-	// injection. Precedence in classify: config globs > approved labels >
-	// extractor hint.
-	ApprovedLabels map[string]string
-	// LLMLabels pins integration strength for approved labels whose judgment
-	// came from an LLM (provenance: llm), same keying as ApprovedLabels.
-	// Weaker precedence: an llm label only fills a cell every static source
-	// left unknown (no config glob, no extractor/type-info/SCIP hint) — it
-	// never displaces a static classification (compiler-grade beats LLM, the
-	// same rule as SCIP-for-Go).
-	LLMLabels map[string]string
-	// LLMLabelConfidence records the confidence value for entries in LLMLabels,
-	// keyed the same way. Missing or non-"high" values are treated as uncertain
-	// when an LLM label actually fills an edge.
-	LLMLabelConfidence map[string]string
 	// CrossModuleClonePairs is the set of canonical module-pair keys
 	// ("[a]\x00[b]" with a≤b) that share duplicated code blocks, derived
 	// from the clone-detection signal. Consumed by the Symmetric-strength
@@ -61,7 +43,7 @@ type Config struct {
 }
 
 // ConfigFrom projects the static relationship policy into a classifier input.
-// Per-run enrichment fields stay zero; the relationship stage fills them once
+// Per-run clone fields stay zero; the relationship stage fills them once
 // evidence exists.
 func ConfigFrom(p policy.RelationshipPolicy) Config {
 	return Config{

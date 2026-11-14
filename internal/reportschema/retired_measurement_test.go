@@ -17,7 +17,7 @@ func TestStateSchemaRejectsRetiredMeasurementFields(t *testing.T) {
 		value             any
 	}{
 		{name: "base comparison", key: "comparison", value: map[string]any{"status": "not_requested", "reasons": []any{}}},
-		{name: "profile hash", parent: "identity", key: "measurement_profile_hash", value: "retired"},
+		{name: "profile hash", parent: identityParent, key: "measurement_profile_hash", value: retiredValue},
 		{name: "finding origin", parent: "findings", key: "origin", value: "introduced"},
 		{name: "task origin", parent: "agent_tasks", key: "origin", value: "introduced"},
 	} {

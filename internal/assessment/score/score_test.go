@@ -478,17 +478,15 @@ func TestCouplingBalance_TinyFullyScoredGraphCapsConfidence(t *testing.T) {
 		})
 	}
 
-	t.Run("sample cap and llm provenance do not stack below medium", func(t *testing.T) {
+	t.Run("sample cap stays at medium", func(t *testing.T) {
 		d := result.New()
 		d.Metrics = []result.MetricResult{metric(metricBlastRadius, 1, "info", "high")}
 		d.ClassifiedEdges = &result.ClassifiedEdgeSummary{
-			Total:                 2,
-			Scored:                2,
-			ConnectedModules:      2,
-			MeanBalance:           10.0,
-			BySeverity:            map[string]int{sevNone: 2},
-			LLMApproved:           1,
-			LLMLowConfidenceEdges: 1,
+			Total:            2,
+			Scored:           2,
+			ConnectedModules: 2,
+			MeanBalance:      10.0,
+			BySeverity:       map[string]int{sevNone: 2},
 		}
 
 		got := couplingBalanceDim(t, Synthesize(d))
@@ -596,124 +594,6 @@ func TestCouplingBalance_TailRiskEvidenceString(t *testing.T) {
 	}
 	if !evidenceContains(got.Evidence, "clone-only tail: worst balance 3/10, high-or-worse 1/4 scored clone-only pairs") {
 		t.Errorf("expected clone-only tail evidence, got: %v", got.Evidence)
-	}
-}
-
-func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
-	nonDegen := nonDegenMetricIndex()
-
-	cases := []struct {
-		name        string
-		scored      int
-		llmEdges    int
-		llmApproved int
-		wantConf    Confidence
-	}{
-		{
-			name:     "no llm labels → confidence unaffected (high)",
-			scored:   10,
-			llmEdges: 0,
-			wantConf: ConfidenceHigh,
-		},
-		{
-			name:        "single applied non-high llm edge lowers confidence",
-			scored:      10,
-			llmEdges:    1,
-			llmApproved: 1,
-			wantConf:    ConfidenceMedium,
-		},
-		{
-			name:        "one label can apply to enough edges to lower confidence",
-			scored:      10,
-			llmEdges:    2,
-			llmApproved: 1,
-			wantConf:    ConfidenceMedium,
-		},
-		{
-			name:        "raw labels without applied edges do not lower confidence",
-			scored:      10,
-			llmEdges:    0,
-			llmApproved: 2,
-			wantConf:    ConfidenceHigh,
-		},
-		{
-			name:        "llm-filled edge majority → confidence lowered by one band (high→medium)",
-			scored:      10,
-			llmEdges:    8,
-			llmApproved: 8,
-			wantConf:    ConfidenceMedium,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			sum := &result.ClassifiedEdgeSummary{
-				Total:                 tc.scored,
-				Scored:                tc.scored,
-				Abstained:             0,
-				MeanBalance:           9.0,
-				BySeverity:            map[string]int{sevLow: tc.scored},
-				LLMApproved:           tc.llmApproved,
-				LLMLowConfidenceEdges: tc.llmEdges,
-			}
-			got := couplingBalance(nil, nonDegen, sum)
-			if got.Confidence != tc.wantConf {
-				t.Errorf("confidence = %q, want %q (llmEdges=%d, llmApproved=%d, scored=%d)",
-					got.Confidence, tc.wantConf, tc.llmEdges, tc.llmApproved, tc.scored)
-			}
-		})
-	}
-}
-
-func TestCouplingBalance_LLMProvenance_EvidenceString(t *testing.T) {
-	nonDegen := nonDegenMetricIndex()
-	sum := &result.ClassifiedEdgeSummary{
-		Total: 10, Scored: 10, MeanBalance: 9.0,
-		BySeverity:  map[string]int{sevLow: 10},
-		LLMApproved: 3,
-	}
-	got := couplingBalance(nil, nonDegen, sum)
-	found := false
-	for _, ev := range got.Evidence {
-		if strings.Contains(ev, "llm-provenance") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected llm-provenance mention in evidence, got: %v", got.Evidence)
-	}
-}
-
-// TestCouplingBalance_LabeledLLM_EvidenceString verifies the labeled_llm
-// bucket is disclosed on the evidence line (attributing the scored-fraction
-// increase to the semantic layer) and stays silent when zero.
-func TestCouplingBalance_LabeledLLM_EvidenceString(t *testing.T) {
-	nonDegen := nonDegenMetricIndex()
-
-	hasLine := func(evidence []string) bool {
-		for _, ev := range evidence {
-			if strings.Contains(ev, "llm-labeled edges: 4") {
-				return true
-			}
-		}
-		return false
-	}
-
-	sum := &result.ClassifiedEdgeSummary{
-		Total: 10, Scored: 10, MeanBalance: 9.0,
-		BySeverity: map[string]int{sevLow: 10},
-		LabeledLLM: 4,
-	}
-	if got := couplingBalance(nil, nonDegen, sum); !hasLine(got.Evidence) {
-		t.Errorf("expected llm-labeled edge count in evidence, got: %v", got.Evidence)
-	}
-
-	sum.LabeledLLM = 0
-	got := couplingBalance(nil, nonDegen, sum)
-	for _, ev := range got.Evidence {
-		if strings.Contains(ev, "llm-labeled edges") {
-			t.Errorf("labeled_llm evidence line must be omitted when zero, got: %v", got.Evidence)
-		}
 	}
 }
 

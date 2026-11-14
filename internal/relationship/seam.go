@@ -191,12 +191,7 @@ type Seam struct {
 	CriticalSharePct    int
 	HighOrWorseSharePct int
 
-	// Labels holds the approved label keys applied to this seam, and
-	// LabelEvidenceHash the evidence hash they were approved against. Empty
-	// labels means "no override", never "every edge is a contract".
-	Labels            []string
-	LabelEvidenceHash string
-	Confidence        SeamConfidence
+	Confidence SeamConfidence
 
 	RoleExpectation SeamRoleExpectation
 	Hypothesis      SeamHypothesis

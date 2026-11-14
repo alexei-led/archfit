@@ -158,7 +158,7 @@ func TestStateSchemaRejectsRetiredReferenceFields(t *testing.T) {
 		value             any
 	}{
 		{name: "stored comparison", key: "gate_reference", value: map[string]any{statusKey: notRequested, "reasons": []any{}}},
-		{name: "stored digest", parent: "identity", key: "baseline_digest", value: "retired"},
+		{name: "stored digest", parent: identityParent, key: "baseline_digest", value: retiredValue},
 		{name: "seam gate reasons", key: "gate_reasons", value: []any{"no comparable reference"}},
 		{name: "dimension comparison", parent: "dimensions.drift", key: "delta", value: map[string]any{statusKey: notRequested}},
 	} {

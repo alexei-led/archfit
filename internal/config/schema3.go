@@ -25,7 +25,7 @@ import (
 //   - no module_review and no tool gate: warn, so a missing tool is still
 //     disclosed and blocks nothing (off would hide it);
 //   - SCIP and clones off;
-//   - coupling advisory tuning and AI as in Default.
+//   - coupling advisory tuning as in Default.
 //
 // Module owners and deploy units stay empty, so the run resolves them from
 // CODEOWNERS and git as before. The owners of schema 3 approve requests. They

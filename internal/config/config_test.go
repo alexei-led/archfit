@@ -1441,7 +1441,7 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 		{"internal/syntax/fileclass.go", "evidence-analysis", layerCore},
 		{"internal/extract/golang/cache.go", "evidence-adapters", layerAdapter},
 		{"internal/history/git/added_lines.go", "persistence-adapters", layerAdapter},
-		{"internal/llm/anthropic.go", "provider-adapters", layerAdapter},
+		{"internal/ownership/ownership.go", "persistence-adapters", layerAdapter},
 		{"internal/output/reporttext/reporttext.go", "report-adapters", layerAdapter},
 		{"internal/model/report/document.go", "report-contract", "model"},
 		{"internal/policy/module.go", "architecture-policy", layerCore},

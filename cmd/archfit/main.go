@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime/debug"
 	"syscall"
 	"time"
@@ -52,12 +51,8 @@ func releaseVersion(moduleVersion string) string {
 const devVersion = "dev"
 
 const (
-	flagHelp              = "--help"
-	defaultConfigPath     = ".archfit.yaml"            // fallback to config.Default() when absent
-	defaultLabelsPath     = ".archfit-labels.yaml"     // pinned coupling labels (enrich output)
-	defaultSubdomainsPath = ".archfit-subdomains.yaml" // subdomain draft/apply file (config enrich subdomain)
-	defaultOwnersPath     = ".archfit-owners.yaml"     // owner draft/apply file (config enrich owner)
-	defaultVolatilityPath = ".archfit-volatility.yaml" // volatility draft/apply file (config enrich volatility)
+	flagHelp          = "--help"
+	defaultConfigPath = ".archfit.yaml" // fallback to config.Default() when absent
 )
 
 const (
@@ -323,13 +318,5 @@ func runDeps(args []string, deps *appDeps) (exitStatus int) {
 }
 
 func main() {
-	// Best-effort .env autoload at startup so the LLM commands pick up a key from
-	// a local .env without polluting the shell. Real env / CI secrets always win.
-	// CWD first, then the analyzed repo (--root) and the config's directory, so a
-	// key kept alongside the target repo or config is found too (F3).
-	loadDotEnv(".env")
-	for _, dir := range envSearchDirs(os.Args[1:]) {
-		loadDotEnv(filepath.Join(dir, ".env"))
-	}
 	os.Exit(Run(os.Args[1:], os.Stdout))
 }

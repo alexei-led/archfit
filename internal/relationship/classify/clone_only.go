@@ -67,10 +67,6 @@ func ClonePairs(g *graph.Graph, c Config) []ClonePair {
 		if !ok {
 			continue
 		}
-		if pairLabelApproved(c.ApprovedLabels, fromMod, toMod) ||
-			pairLabelApproved(c.LLMLabels, fromMod, toMod) {
-			continue // a reviewer accepted this seam (any provenance) — mirrors the fromPin guard
-		}
 		locs := c.CloneEvidence[key]
 		fromPath, toPath := pairRepresentativePaths(locs, fromMod, toMod, mi)
 
@@ -116,20 +112,6 @@ func connectedModulePairs(g *graph.Graph, mi moduleIndex) map[string]struct{} {
 		connected[modulePairKey(fromMod, toMod)] = struct{}{}
 	}
 	return connected
-}
-
-// pairLabelApproved reports whether a human-approved pinned label exists for
-// the module pair in either direction. ApprovedLabels are keyed by the ordered
-// (from, to) pair while clone pairs are undirected, so both orders count.
-func pairLabelApproved(approved map[string]string, a, b string) bool {
-	if len(approved) == 0 {
-		return false
-	}
-	if _, ok := approved[a+"\x00"+b]; ok {
-		return true
-	}
-	_, ok := approved[b+"\x00"+a]
-	return ok
 }
 
 // pairRepresentativePaths returns the first clone location file resolving to

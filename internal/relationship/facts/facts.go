@@ -1,7 +1,6 @@
 // Package facts assembles per-module structural facts from already-collected
 // data (symbol graph, file LOC). The output is a neutral evidence block — no
-// risk labels, no rankings, no gates. Ranking and judgment are the
-// Tranche-2 LLM's job.
+// risk labels, no rankings, no gates.
 package facts
 
 import (

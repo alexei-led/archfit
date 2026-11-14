@@ -22,7 +22,6 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 		ByBalanceDriver: in.ByBalanceDriver, ByCriticalDriver: in.ByCriticalDriver, ByModulePair: in.ByModulePair,
 		DistributedMonolith: in.DistributedMonolith, External: in.External, DeclaredExternal: in.DeclaredExternal,
 		ConnectedModules: in.ConnectedModules, CloneOnlyScored: in.CloneOnlyScored, CloneOnlyAdvisory: in.CloneOnlyAdvisory,
-		LLMApproved: in.LLMApproved, LabeledLLM: in.LabeledLLM, LLMLowConfidenceEdges: in.LLMLowConfidenceEdges,
 	}
 	if in.VolatilityProvenance != nil {
 		out.VolatilityProvenance = &result.VolatilityProvenance{Declared: in.VolatilityProvenance.Declared, Inherited: in.VolatilityProvenance.Inherited, Cascade: in.VolatilityProvenance.Cascade, Undeclared: in.VolatilityProvenance.Undeclared}
@@ -86,7 +85,7 @@ func projectSeams(in []relationship.Seam) []result.Seam {
 			},
 			CriticalEdges: s.CriticalEdges, HighOrWorseEdges: s.HighOrWorseEdges,
 			CriticalSharePct: s.CriticalSharePct, HighOrWorseSharePct: s.HighOrWorseSharePct,
-			Labels: s.Labels, LabelEvidenceHash: s.LabelEvidenceHash, Confidence: string(s.Confidence),
+			Confidence:      string(s.Confidence),
 			RoleExpectation: string(s.RoleExpectation), Hypothesis: string(s.Hypothesis),
 			DistributedMonolith: s.DistributedMonolith,
 			QualifyingPaths:     qualifyingPaths(s.QualifyingEdges),

@@ -860,7 +860,7 @@
       "rule_id": "bc/imbalanced_coupling",
       "severity": "medium",
       "status": "new",
-      "why": "balanced coupling: functional integration strength × cross_module_different_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)"
+      "why": "balanced coupling: functional integration strength \u00d7 cross_module_different_owner distance \u00d7 medium volatility \u2192 medium severity (unbalanced coupling \u2192 elevated maintenance effort)"
     }
   ],
   "identity": {
@@ -869,8 +869,6 @@
     "schema_version": "archfit.result-identity.v1"
   },
   "measurement": {
-    "history_depth": 0,
-    "history_window": "unavailable",
     "source_ref": "worktree",
     "tool_versions": {}
   },

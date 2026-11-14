@@ -83,9 +83,8 @@ func assessInput() evaluation.AssessInput {
 		MarkedCoverage: []modevidence.Coverage{
 			{Tool: assessGrimp, Status: modevidence.StatusDisabled, Reason: "language analysis disabled by config"},
 		},
-		CoverageGaps:            []modevidence.CoverageGap{{Tool: toolCargo, Gate: "warn"}},
-		ConfigWarnings:          []string{"decision needed: module a has no volatility"},
-		VolatilityCorroboration: &modevidence.VolatilityCorroboration{Source: assessHistory, Status: "ok"},
+		CoverageGaps:   []modevidence.CoverageGap{{Tool: toolCargo, Gate: "warn"}},
+		ConfigWarnings: []string{"decision needed: module a has no volatility"},
 	}
 }
 
@@ -107,9 +106,6 @@ func TestAssessAssemblesTheDiagnosticFromOwnedEvidence(t *testing.T) {
 	}
 	if len(diag.FileFacts) != 1 {
 		t.Errorf("file facts = %+v, want the acquisition-built block", diag.FileFacts)
-	}
-	if diag.VolatilityCorroboration == nil || diag.VolatilityCorroboration.Source != "git_history" {
-		t.Errorf("volatility corroboration = %+v, want the acquisition-resolved block", diag.VolatilityCorroboration)
 	}
 	if diag.ClassifiedEdges == nil || diag.ClassifiedEdges.Scored != 1 {
 		t.Errorf("classified edges = %+v, want the explicit relationship assessment signal", diag.ClassifiedEdges)

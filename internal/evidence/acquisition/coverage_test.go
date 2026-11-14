@@ -14,7 +14,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/ownership"
 	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
@@ -49,9 +48,6 @@ const (
 
 	volatilityHigh = "high"
 	volatilityLow  = "low"
-
-	decisionModA = "app.a"
-	decisionModB = "app.b"
 
 	markerGoMod       = "go.mod"
 	markerCargoToml   = "Cargo.toml"
@@ -935,7 +931,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 				"app.util": {Paths: []string{"internal/util/**"}}, // no subdomain, no volatility
 			},
 		}
-		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, nil, configPath)
+		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, configPath)
 		found := false
 		for _, t2 := range tasks {
 			if strings.Contains(t2, "app.util") && strings.Contains(t2, configPath) {
@@ -967,7 +963,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 				"app.util": {Paths: []string{"internal/util/**"}, Volatility: volatilityLow},
 			},
 		}
-		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, nil, configPath)
+		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, configPath)
 		for _, t2 := range tasks {
 			if strings.Contains(t2, "app.util") {
 				t.Errorf("unexpected decision task for module with volatility: %s", t2)
@@ -978,55 +974,9 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	t.Run("no modules emits no tasks", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{}
-		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, nil, configPath)
+		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, configPath)
 		if len(tasks) != 0 {
 			t.Errorf("expected no tasks, got: %v", tasks)
-		}
-	})
-
-	t.Run("approved llm label emits decision task pointing at labels file", func(t *testing.T) {
-		t.Parallel()
-		cfg := config.Config{}
-		lbls := []labels.Label{
-			{From: decisionModA, To: decisionModB, Strength: enrichModel,
-				Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM},
-		}
-		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, lbls, configPath)
-		found := false
-		for _, t2 := range tasks {
-			if strings.Contains(t2, decisionModA) && strings.Contains(t2, decisionModB) &&
-				strings.Contains(t2, ".archfit-labels.yaml") {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("expected decision task for llm label, got: %v", tasks)
-		}
-	})
-
-	t.Run("draft llm label does NOT emit decision task", func(t *testing.T) {
-		t.Parallel()
-		cfg := config.Config{}
-		lbls := []labels.Label{
-			{From: decisionModA, To: decisionModB, Strength: enrichModel,
-				Status: labels.StatusDraft, Provenance: labels.ProvenanceLLM},
-		}
-		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, lbls, configPath)
-		if len(tasks) != 0 {
-			t.Errorf("expected no tasks for draft label, got: %v", tasks)
-		}
-	})
-
-	t.Run("approved human label does NOT emit decision task", func(t *testing.T) {
-		t.Parallel()
-		cfg := config.Config{}
-		lbls := []labels.Label{
-			{From: decisionModA, To: decisionModB, Strength: enrichModel,
-				Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman},
-		}
-		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, lbls, configPath)
-		if len(tasks) != 0 {
-			t.Errorf("expected no tasks for human label, got: %v", tasks)
 		}
 	})
 
@@ -1038,7 +988,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 				"aa.module": {Paths: []string{"aa/**"}},
 			},
 		}
-		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, nil, configPath)
+		tasks := acquisition.BuildJudgmentDecisionTasks(cfg.PolicySnapshot().Topology.Modules, configPath)
 		if len(tasks) < 2 {
 			t.Fatalf("expected ≥2 tasks, got %d", len(tasks))
 		}

@@ -108,8 +108,7 @@ var adapterPrefixes = []string{
 	modulePrefix + "internal/extract/",
 	modulePrefix + "internal/history/",
 	modulePrefix + "internal/output/",
-	modulePrefix + "internal/labels/labelsio", // labels file I/O adapter (os + YAML)
-	modulePrefix + "internal/factcache",       // extractor-fact cache adapter (os I/O)
+	modulePrefix + "internal/factcache", // extractor-fact cache adapter (os I/O)
 }
 
 func TestCompositionFanoutRatchet(t *testing.T) {
@@ -175,7 +174,7 @@ func TestApplicationImportsNoConcreteAdapters(t *testing.T) {
 	for _, pkg := range []string{
 		"internal/evidence/acquisition", "internal/extract", "internal/toolrun", "internal/output",
 		"internal/factcache", "internal/history", "internal/ownership",
-		"internal/labels/labelsio", "internal/llm", "internal/config",
+		"internal/config",
 	} {
 		for _, file := range productionImportFilesUnder(t, modulePrefix+pkg) {
 			if strings.HasPrefix(file, "internal/application/") {
@@ -244,7 +243,7 @@ func TestAssessmentProductionDoesNotImportRawGraphOrCoupling(t *testing.T) {
 // classification facts the relationship stage already owns, so the two
 // capabilities would drift apart silently.
 func TestAssessmentConsumesOnlyThePublicRelationshipContract(t *testing.T) {
-	for _, pkg := range []string{"classify", "scoring", "coupling", "facts", "labels", "analysis"} {
+	for _, pkg := range []string{"classify", "scoring", "coupling", "facts", "analysis"} {
 		for _, file := range productionImportFiles(t, modulePrefix+"internal/relationship/"+pkg) {
 			if strings.HasPrefix(file, "internal/assessment/") {
 				t.Errorf("assessment must consume the public relationship contract, not relationship/%s: %s", pkg, file)
@@ -570,22 +569,6 @@ func TestArchImports(t *testing.T) {
 		}
 	})
 
-	t.Run("llm_ring_unreachable_from_internal", func(t *testing.T) {
-		// The LLM-off-gate guarantee, enforced structurally: NO internal
-		// package may import internal/llm — only cmd may host explicit LLM flows.
-		// This covers the whole check pipeline: engine, classify, labels,
-		// metrics, renderers can never call a model.
-		const llmPkg = modulePrefix + "internal/llm"
-		for pkgPath, pkg := range loaded {
-			if pkgPath == llmPkg {
-				continue
-			}
-			if _, imports := pkg.Imports[llmPkg]; imports {
-				t.Errorf("package %s must not import %s: the check gate is LLM-free; only cmd may use the LLM layer", pkgPath, llmPkg)
-			}
-		}
-	})
-
 	t.Run("adapters_no_assessment_application_import", func(t *testing.T) {
 		assertAdaptersNoAssessmentApplicationImport(t, loaded)
 	})
@@ -603,22 +586,6 @@ func TestArchImports(t *testing.T) {
 			}
 		} else {
 			t.Errorf("report contract package %s was not loaded", reportPkg)
-		}
-	})
-
-	t.Run("labelsio_unreachable_from_internal", func(t *testing.T) {
-		// The labels I/O adapter (os + YAML) must be reachable only from cmd. No
-		// internal package — the engine, the core ring, anything — may import it:
-		// the engine consumes the PURE internal/labels helpers and receives loaded
-		// labels from cmd. Keeps the gate's import closure free of label-file I/O.
-		const labelsioPkg = modulePrefix + "internal/labels/labelsio"
-		for pkgPath, pkg := range loaded {
-			if pkgPath == labelsioPkg {
-				continue
-			}
-			if _, imports := pkg.Imports[labelsioPkg]; imports {
-				t.Errorf("package %s must not import %s: only cmd may load label files; internal code uses the pure internal/relationship/labels", pkgPath, labelsioPkg)
-			}
 		}
 	})
 
@@ -832,7 +799,6 @@ func TestCommandStagesDoNotImportDomainInternals(t *testing.T) {
 		modulePrefix + "internal/relationship/",
 		modulePrefix + "internal/model/graph",
 		modulePrefix + "internal/model/evidence",
-		modulePrefix + "internal/labels/labelsio",
 		modulePrefix + "internal/initcfg",
 	}
 	checked := 0

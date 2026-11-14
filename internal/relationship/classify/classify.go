@@ -376,10 +376,7 @@ func classify(e graph.Edge, mi moduleIndex, c Config, effectiveVol map[string]co
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
 
-	resolved := resolveStrength(e, mi, c)
-	str := resolved.strength
-	strengthFromLLM := resolved.fromLLM
-	strengthFromNonHighLLM := resolved.fromNonHighLLM
+	str := resolveStrength(e, mi)
 
 	// A clone pair never upgrades an import edge: it is its own symmetric clone
 	// fact (ClonePairs), attached to the seam by the relationship stage.
@@ -417,16 +414,13 @@ func classify(e graph.Edge, mi moduleIndex, c Config, effectiveVol map[string]co
 		isGenericSubdomain(toPath, mi, modules)
 
 	return coupling.Classification{
-		Strength:               str,
-		Distance:               dist,
-		Volatility:             vol,
-		Explicitness:           exp,
-		ContractRecommended:    contractRecommended,
-		DistanceBasis:          distBasis,
-		StrengthFromLLM:        strengthFromLLM,
-		StrengthFromNonHighLLM: strengthFromNonHighLLM,
-		StrengthPinned:         resolved.fromPin,
-		Connascence:            connascenceFromHints(e.ConnascenceHints),
+		Strength:            str,
+		Distance:            dist,
+		Volatility:          vol,
+		Explicitness:        exp,
+		ContractRecommended: contractRecommended,
+		DistanceBasis:       distBasis,
+		Connascence:         connascenceFromHints(e.ConnascenceHints),
 	}
 }
 
@@ -533,40 +527,11 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 	return coupling.StrengthUnknown
 }
 
-type strengthResolution struct {
-	strength       coupling.Strength
-	fromPin        bool
-	fromLLM        bool
-	fromNonHighLLM bool
-}
-
-// resolveStrength applies the shared pre-clone strength precedence for one
-// edge. classify adds the clone-derived Symmetric upgrade after this helper;
-// the volatility cascade uses this pre-clone result and excludes clone pairs
-// separately.
-func resolveStrength(e graph.Edge, mi moduleIndex, c Config) strengthResolution {
-	fromPath := pathFromID(e.From)
+// resolveStrength applies static surface and extractor precedence for one edge.
+// Clone facts are separate; the volatility cascade excludes clone pairs.
+func resolveStrength(e graph.Edge, mi moduleIndex) coupling.Strength {
 	toPath := pathFromID(e.To)
-	// An internal-glob match is authoritative intrusive. A public-glob match is a
-	// NOT-INTRUSIVE floor (str == contract): the edge goes through a declared public
-	// surface, but the glob alone cannot say WHICH kind of public coupling it is —
-	// a published interface (contract), a shared concrete type (model), or a function
-	// (functional). For a public (contract) or unknown edge the KIND is resolved by
-	// authority: an approved human label first (a reviewer's verdict beats a tool
-	// guess), then the symbol-level hint, then the contract default. An intrusive or
-	// human-pinned classification is never refined.
 	str := classifyStrength(toPath, mi)
-	fromPin := false
-	if (str == coupling.StrengthContract || str == coupling.StrengthUnknown) && len(c.ApprovedLabels) > 0 {
-		if fromMod, okF := mi.moduleFor(fromPath); okF {
-			if toMod, okT := mi.moduleFor(toPath); okT {
-				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
-					str = coupling.Strength(pinned)
-					fromPin = true
-				}
-			}
-		}
-	}
 	// A public-glob match is the integration CONTRACT: the target declared this
 	// surface as its published interface, so a call through it is contract
 	// coupling. A callable hint (function, method, interface method) never
@@ -581,7 +546,7 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c Config) strengthResolution 
 	// resolves). Intrusive coupling is integration through implementation
 	// details not meant for integration, and a file-granular public: glob
 	// declares the intended surface; it cannot make such a use a contract.
-	if !fromPin && str == coupling.StrengthContract {
+	if str == coupling.StrengthContract {
 		switch {
 		case e.StrengthHint == string(coupling.StrengthIntrusive):
 			str = coupling.StrengthIntrusive
@@ -589,37 +554,13 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c Config) strengthResolution 
 			str = coupling.StrengthModel
 		}
 	}
-	// Unknown (no glob, no label) falls back to the extractor or SCIP hint.
+	// Unknown (no glob) falls back to the extractor or SCIP hint.
 	// Connascence is report-only evidence and never sets strength.
 	if str == coupling.StrengthUnknown {
 		str = strengthFromHint(e.StrengthHint)
 	}
 
-	// An approved llm-provenance label fills ONLY a cell every static source
-	// left unknown: no config glob matched (intrusive/contract handled above)
-	// and the hint — Go type-info, SCIP, or extractor heuristic — resolved
-	// nothing. It never displaces a static classification.
-	strengthFromLLM := false
-	strengthFromNonHighLLM := false
-	if str == coupling.StrengthUnknown && len(c.LLMLabels) > 0 {
-		if fromMod, okF := mi.moduleFor(fromPath); okF {
-			if toMod, okT := mi.moduleFor(toPath); okT {
-				key := fromMod + "\x00" + toMod
-				if pinned, ok := c.LLMLabels[key]; ok {
-					str = coupling.Strength(pinned)
-					fromPin = true
-					strengthFromLLM = true
-					strengthFromNonHighLLM = c.LLMLabelConfidence[key] != "high"
-				}
-			}
-		}
-	}
-	return strengthResolution{
-		strength:       str,
-		fromPin:        fromPin,
-		fromLLM:        strengthFromLLM,
-		fromNonHighLLM: strengthFromNonHighLLM,
-	}
+	return str
 }
 
 // strengthFromHint maps an extractor's strength hint to a coupling.Strength.
@@ -789,8 +730,8 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c Config) map[st
 	type cascadeEdge struct{ from, to string }
 	edges := make([]cascadeEdge, 0)
 	for _, e := range g.Edges() {
-		resolved := resolveStrength(e, mi, c)
-		if !isStrongStrength(resolved.strength) {
+		resolved := resolveStrength(e, mi)
+		if !isStrongStrength(resolved) {
 			continue
 		}
 		fromPath := pathFromID(e.From)

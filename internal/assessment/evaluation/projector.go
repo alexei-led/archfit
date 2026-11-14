@@ -38,7 +38,6 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		UncoveredChange:    in.Policy.Gates.UncoveredChange,
 		Now:                in.Now,
 		AdvisoryCandidates: in.RelationshipSignals.AdvisoryCandidates,
-		StaleLabelKeys:     in.RelationshipSignals.StaleLabelKeys,
 		IncludeAdvisories:  in.Advisory,
 	})
 	resolvedFindings := assessed.Findings
@@ -69,7 +68,6 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		ConfigHash:            in.ConfigHash,
 		ModelHash:             in.ModelHash,
 		ClassificationHash:    in.ClassificationHash,
-		LabelsHash:            in.LabelsHash,
 		PrimaryExtractorTools: in.PrimaryExtractorTools,
 		Metrics:               metricResults,
 		Findings:              resolvedFindings,

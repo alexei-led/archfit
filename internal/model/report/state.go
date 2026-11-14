@@ -212,14 +212,12 @@ type UnevaluatedRule struct {
 	Reason string `json:"reason"`
 }
 
-// StateMeasurement holds deterministic source, history, and tool facts only. It
+// StateMeasurement holds deterministic source and tool facts only. It
 // deliberately excludes wall-clock evaluation time, absolute local paths, and
 // process IDs so two identical runs stay byte-identical.
 type StateMeasurement struct {
-	SourceRef     string            `json:"source_ref"`
-	HistoryDepth  int               `json:"history_depth"`
-	HistoryWindow string            `json:"history_window"`
-	ToolVersions  map[string]string `json:"tool_versions"`
+	SourceRef    string            `json:"source_ref"`
+	ToolVersions map[string]string `json:"tool_versions"`
 }
 
 // StateToolCoverage is one analyzer's coverage row as the state reports it.
@@ -294,8 +292,6 @@ type Seam struct {
 	HighOrWorseEdges     int                   `json:"high_or_worse_edges"`
 	CriticalSharePct     int                   `json:"critical_share_pct"`
 	HighOrWorseSharePct  int                   `json:"high_or_worse_share_pct"`
-	Labels               []string              `json:"labels,omitempty"`
-	LabelEvidenceHash    string                `json:"label_evidence_hash,omitempty"`
 	Confidence           string                `json:"confidence"`
 	RoleExpectation      string                `json:"role_expectation,omitempty"`
 	Hypothesis           string                `json:"hypothesis,omitempty"`

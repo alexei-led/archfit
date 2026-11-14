@@ -20,8 +20,6 @@ const (
 	RuleIDMapDeadRule = "map/dead_rule"
 	// RuleIDMapStaleReview identifies a stale-review map advisory.
 	RuleIDMapStaleReview = "map/stale_review"
-	// RuleIDLabelsStale identifies stale pinned-label evidence.
-	RuleIDLabelsStale = "labels/stale"
 	// RuleIDMetricPrefix starts the ID of a tripped metric ratchet: the rule ID
 	// is the prefix plus the metric name ("metric/cycle").
 	RuleIDMetricPrefix = "metric/"
@@ -54,7 +52,7 @@ func SyntheticWaiverScope(ruleID string) WaiverScope {
 		return WaiverScopeEdgeless
 	case RuleIDCouplingGate, RuleIDMapUncoveredChange:
 		return WaiverScopeForbidden
-	case RuleIDBCImbalancedCoupling, RuleIDDuplicatedKnowledge, RuleIDLabelsStale:
+	case RuleIDBCImbalancedCoupling, RuleIDDuplicatedKnowledge:
 		return WaiverScopeEdge
 	default:
 		return ""

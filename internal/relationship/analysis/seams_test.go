@@ -11,7 +11,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 const (
@@ -209,9 +208,6 @@ func TestSeamCompositionRootExpectationIsExpectedByRole(t *testing.T) {
 	if s.DistributedMonolith {
 		t.Error("a composition root's functional fan-out must not qualify the seam")
 	}
-	if len(s.Labels) != 0 {
-		t.Errorf("labels = %v, want none: a role expectation is never encoded as a strength label", s.Labels)
-	}
 }
 
 // TestSeamWithoutRoleReportsNoExpectation pins the abstention: an undeclared
@@ -340,88 +336,6 @@ func TestSeamsAreDeterministicallyOrdered(t *testing.T) {
 				t.Fatalf("seam order = %v, want %v", got, want)
 			}
 		}
-	}
-}
-
-// TestStaleLabelDisablesTheOverrideAndIsReported pins the stale-evidence rule:
-// a label whose evidence hash no longer matches the dependency surface stops
-// applying — the strength falls back to what the static sources actually saw —
-// and the run says so. Silently applying a label approved against a different
-// surface is the failure mode; silently dropping it without a word is the other.
-func TestStaleLabelDisablesTheOverrideAndIsReported(t *testing.T) {
-	stale := labels.Label{
-		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
-		Status: labels.StatusApproved, EvidenceHash: "hash-from-a-different-tree",
-		Provenance: labels.ProvenanceHuman,
-	}
-	in := analysis.Input{
-		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
-		Policy: relationshipPolicy(twoModules()),
-		Labels: []labels.Label{stale},
-	}
-
-	got := analysis.Analyze(in)
-	if len(got.Assessment.StaleLabelKeys) != 1 {
-		t.Fatalf("stale label keys = %v, want the stale pair reported", got.Assessment.StaleLabelKeys)
-	}
-	s := seamAB(t, got)
-	if s.Strength != relationship.StrengthIntrusive {
-		t.Errorf("strength = %q, want the extractor's intrusive hint — a stale label must not override", s.Strength)
-	}
-	if len(s.Labels) != 0 {
-		t.Errorf("seam labels = %v, want none: a disabled override is not in effect", s.Labels)
-	}
-}
-
-// TestApprovedLabelIsReportedOnTheSeam pins the other half: a fresh approved
-// label applies and the seam discloses which label did it, so a reader can tell
-// a measured strength from a reviewed one.
-func TestApprovedLabelIsReportedOnTheSeam(t *testing.T) {
-	// A full run (not a base run) with no evidence hash recorded on the label
-	// leaves the freshness check unanchored, which is the "approved and in
-	// effect" path.
-	fresh := labels.Label{
-		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
-		Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman,
-	}
-	got := analysis.Analyze(analysis.Input{
-		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
-		Policy: relationshipPolicy(twoModules()),
-		Labels: []labels.Label{fresh},
-	})
-
-	if len(got.Assessment.StaleLabelKeys) != 0 {
-		t.Errorf("stale label keys = %v, want none for a label in effect", got.Assessment.StaleLabelKeys)
-	}
-	s := seamAB(t, got)
-	if len(s.Labels) != 1 || s.Labels[0] != labels.Key(moduleA, moduleB) {
-		t.Errorf("seam labels = %v, want the applied label key disclosed", s.Labels)
-	}
-}
-
-// TestHandAuthoredLabelPublishesNoEvidenceHash pins what
-// `label_evidence_hash` means. A hand-authored label with no stored hash is
-// effective — isEffective skips the freshness check for it — and the seam used
-// to publish THIS RUN'S computed hash under a field documenting the evidence the
-// approval rested on. That is a claim nobody made: the reviewer never saw a
-// hash, so the honest answer is none.
-func TestHandAuthoredLabelPublishesNoEvidenceHash(t *testing.T) {
-	fresh := labels.Label{
-		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
-		Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman,
-	}
-	got := analysis.Analyze(analysis.Input{
-		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
-		Policy: relationshipPolicy(twoModules()),
-		Labels: []labels.Label{fresh},
-	})
-
-	s := seamAB(t, got)
-	if len(s.Labels) != 1 {
-		t.Fatalf("seam labels = %v, want the applied label key disclosed", s.Labels)
-	}
-	if s.LabelEvidenceHash != "" {
-		t.Errorf("label_evidence_hash = %q, want empty: the label stored none", s.LabelEvidenceHash)
 	}
 }
 

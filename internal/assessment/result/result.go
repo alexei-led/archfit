@@ -64,11 +64,9 @@ type Result struct {
 	OwnerSource               string                              `json:"owner_source,omitempty"`
 	PrimaryExtractorTools     []string                            `json:"primary_extractor_tools,omitempty"`
 	ConfigWarnings            []string                            `json:"config_warnings,omitempty"`
-	// ModelHash and LabelsHash fingerprint the module model and the approved
-	// label set for assessment and enrichment consumers.
+	// ModelHash fingerprints the module model.
 	ModelHash          string `json:"-"`
 	ClassificationHash string `json:"-"`
-	LabelsHash         string `json:"-"`
 
 	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
 	// ModuleGraphComplexity is an assessment-internal summary of the relationship
@@ -85,7 +83,6 @@ type Result struct {
 	SeamEndpointModules      map[string]string                  `json:"-"`
 	DistanceContext          *evidence.DistanceContext          `json:"distance_context,omitempty"`
 	DistanceConfigCandidates []evidence.DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
-	VolatilityCorroboration  *evidence.VolatilityCorroboration  `json:"volatility_corroboration,omitempty"`
 	LocalCoupling            []evidence.LocalCouplingModule     `json:"local_coupling,omitempty"`
 	Summary                  Summary                            `json:"summary"`
 	// State is the architecture-state result. It rides the assessment result

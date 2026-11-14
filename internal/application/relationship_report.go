@@ -33,7 +33,6 @@ func attachRelationshipEvidence(diag *result.Result, in relationship.AnalysisEvi
 		diag.Connascence = &modevidence.ConnascenceReport{}
 	}
 	if diag.ClassifiedEdges != nil {
-		diag.ClassifiedEdges.LLMApproved = in.LLMApprovedCount
 		if in.VolatilityProvenance != nil {
 			vp := in.VolatilityProvenance
 			diag.ClassifiedEdges.VolatilityProvenance = &result.VolatilityProvenance{

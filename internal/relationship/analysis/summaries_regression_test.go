@@ -1,6 +1,6 @@
 // Regression tests for the classified-edge rollups. Each one pins a counter
 // that a consumer reads directly: tail risk feeds the coupling_balance evidence
-// line, and the LLM counters feed its confidence band.
+// line, and distance compression explains structural spans.
 package analysis_test
 
 import (
@@ -10,7 +10,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 const fileA2 = "a/other.go"
@@ -85,44 +84,6 @@ func TestTailRiskKeepsWellBalancedEdges(t *testing.T) {
 	}
 	if s.TailRisk.WorstBalance == 0 {
 		t.Error("WorstBalance = 0, want the band-none edge counted in the balance distribution")
-	}
-}
-
-// TestClassifiedSummaryCountsLLMLabelProvenance pins the two counters the
-// coupling_balance confidence rule reads. LLMLowConfidenceEdges losing its
-// producer silently disabled the documented "llm labels below high confidence
-// lower the band" behavior.
-func TestClassifiedSummaryCountsLLMLabelProvenance(t *testing.T) {
-	// An llm-provenance label only fills a cell every static source left
-	// unknown, so the fixture edge carries no extractor strength hint.
-	lbls := []labels.Label{{
-		From: moduleA, To: moduleB, Strength: string(relationship.StrengthIntrusive),
-		Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium,
-	}}
-	got := analysis.Analyze(analysis.Input{
-		Graph:  graphWith(""),
-		Policy: relationshipPolicy(twoModules()),
-		Labels: lbls,
-	})
-	edge := onlyEdge(t, got)
-	if edge.Strength != relationship.StrengthIntrusive {
-		t.Fatalf("strength = %q, want the approved label applied", edge.Strength)
-	}
-	s := got.Assessment.ClassifiedEdges
-	if s.LabeledLLM != 1 {
-		t.Errorf("LabeledLLM = %d, want the llm-labeled edge counted", s.LabeledLLM)
-	}
-	if s.LLMLowConfidenceEdges != 1 {
-		t.Errorf("LLMLowConfidenceEdges = %d, want the below-high-confidence label counted", s.LLMLowConfidenceEdges)
-	}
-}
-
-// A same-module edge carries no cross-boundary coupling, so its label
-// provenance must not reach the counters either.
-func TestClassifiedSummarySkipsLLMProvenanceOnSameModuleEdges(t *testing.T) {
-	got := analysis.Analyze(analysis.Input{Graph: mixedGraph(), Policy: relationshipPolicy(twoModules())})
-	if s := got.Assessment.ClassifiedEdges; s.LabeledLLM != 0 || s.LLMLowConfidenceEdges != 0 {
-		t.Errorf("llm counters = %d/%d, want zero without approved llm labels", s.LabeledLLM, s.LLMLowConfidenceEdges)
 	}
 }
 

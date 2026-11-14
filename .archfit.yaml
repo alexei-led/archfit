@@ -97,7 +97,6 @@ modules:
       - evidence-contracts
       - persistence-adapters
       - policy-config-adapter
-      - provider-adapters
       - relationship-analysis
       - report-adapters
       - report-contract
@@ -223,12 +222,10 @@ modules:
       - internal/factcache/**
       - internal/history/**
       - internal/ownership/**
-      - internal/labels/**
     public:
       - internal/factcache
       - internal/history/**
       - internal/ownership
-      - internal/labels/**
     volatility: medium
     subdomain: supporting
     layer: adapter
@@ -259,14 +256,6 @@ modules:
       - evidence-analysis
       - evidence-contracts
       - relationship-analysis
-  provider-adapters:
-    paths:
-      - internal/llm/**
-    public:
-      - internal/llm
-    volatility: medium
-    subdomain: generic
-    layer: adapter
   relationship-analysis:
     paths:
       - internal/relationship/**
@@ -275,7 +264,6 @@ modules:
       - internal/relationship/balance
       - internal/relationship/coupling
       - internal/relationship/facts
-      - internal/relationship/labels
     volatility: high
     subdomain: core
     layer: core
@@ -342,14 +330,6 @@ rules:
         - internal/extract/**
     why: Assessment reading extractor output decides on tool-specific facts, so the same rule gives different verdicts per producer.
     instead: Consume the neutral evidence contract in internal/model/evidence and internal/evidence
-  - id: internal_no_labelsio
-    deny:
-      from:
-        - internal/**
-      to:
-        - internal/labels/labelsio/**
-    why: Label files load in cmd only. Library code that reads them makes the verdict depend on a file nobody passed in, and unapproved labels can reach the gate.
-    instead: Load labels in cmd/archfit and pass approved values through internal/relationship/labels.
   - id: assessment_no_coupling_internals
     deny:
       from:
@@ -512,14 +492,6 @@ rules:
       to:
         - internal/ownership/**
     why: Ownership readers are adapters. Application code that imports them ties the use case to CODEOWNERS and git.
-    instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
-  - id: application_no_labelsio
-    deny:
-      from:
-        - internal/application/**
-      to:
-        - internal/labels/labelsio/**
-    why: Label files load in cmd only. An application import of the loader lets unreviewed labels reach the gate.
     instead: Declare the need as a port in internal/application and wire the adapter in cmd/archfit
   - id: application_no_cmd
     deny:

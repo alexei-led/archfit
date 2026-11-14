@@ -115,7 +115,6 @@ type Document struct {
 	ClassifiedEdges           *ClassifiedEdgeSummary     `json:"classified_edges,omitempty"`
 	DistanceContext           *DistanceContext           `json:"distance_context,omitempty"`
 	DistanceConfigCandidates  []DistanceConfigCandidate  `json:"distance_config_candidates,omitempty"`
-	VolatilityCorroboration   *VolatilityCorroboration   `json:"volatility_corroboration,omitempty"`
 	LocalCoupling             []LocalCouplingModule      `json:"local_coupling,omitempty"`
 	Summary                   Summary                    `json:"summary"`
 

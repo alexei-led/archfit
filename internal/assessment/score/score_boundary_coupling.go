@@ -108,14 +108,6 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *result.ClassifiedE
 		dmCount := summary.DistributedMonolith
 		value, capApplied := applyCouplingCap(rawValue, crossBoundary, criticalCount, dmCount)
 
-		// LLM-provenance labels lower confidence by one band when a non-high-confidence
-		// LLM label actually filled at least one scored edge. Count applied edges, not
-		// raw label rows: one module-pair label can classify many edges, and some
-		// approved LLM labels may be beaten by static precedence.
-		llmConfLowered := summary.LLMLowConfidenceEdges > 0
-		if llmConfLowered {
-			conf = lowerConf(conf)
-		}
 		conf = applySummaryConfidenceCap(conf, capReasons)
 
 		dim.Value = value
@@ -125,7 +117,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *result.ClassifiedE
 		dim.Evidence = appendCouplingEvidence([]string{
 			fmt.Sprintf("%d scored internal cross-boundary edges; mean book balance %.1f/10 → value %d",
 				summary.Scored, summary.MeanBalance, value),
-		}, summary, scoredPct, criticalCount, dmCount, capApplied, rawValue, capReasons, llmConfLowered)
+		}, summary, scoredPct, criticalCount, dmCount, capApplied, rawValue, capReasons)
 		switch {
 		case dmCount > 0:
 			dim.Summary = "distributed-monolith edges present; inspect the reported strength, distance, and volatility drivers"
@@ -241,27 +233,7 @@ func appendTailRiskEvidence(evidence []string, summary *result.ClassifiedEdgeSum
 	return evidence
 }
 
-// appendLLMLabelEvidence appends the llm-label disclosure lines: the approved
-// llm-provenance label count (with the confidence-lowering note when it
-// applied) and the labeled_llm edge bucket, which attributes the
-// scored-fraction increase to the semantic layer — edges whose strength exists
-// only because an approved llm label filled an otherwise-abstained cell.
-func appendLLMLabelEvidence(evidence []string, summary *result.ClassifiedEdgeSummary, llmConfLowered bool) []string {
-	if llmConfLowered {
-		evidence = append(evidence,
-			fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
-	} else if summary.LLMApproved > 0 {
-		evidence = append(evidence,
-			fmt.Sprintf("llm-provenance labels in effect: %d", summary.LLMApproved))
-	}
-	if summary.LabeledLLM > 0 {
-		evidence = append(evidence,
-			fmt.Sprintf("llm-labeled edges: %d (strength from approved llm-provenance labels)", summary.LabeledLLM))
-	}
-	return evidence
-}
-
-func appendCouplingEvidence(evidence []string, summary *result.ClassifiedEdgeSummary, scoredPct, criticalCount, distributedMonolith int, capApplied string, rawValue int, capReasons []string, llmConfLowered bool) []string {
+func appendCouplingEvidence(evidence []string, summary *result.ClassifiedEdgeSummary, scoredPct, criticalCount, distributedMonolith int, capApplied string, rawValue int, capReasons []string) []string {
 	// Order is load-bearing: decision.buildWhy truncates Evidence to evidenceCap
 	// before joining it into the report's "why" line, so the scored fraction and
 	// the critical/distributed-monolith count — the two most actionable numbers
@@ -304,7 +276,7 @@ func appendCouplingEvidence(evidence []string, summary *result.ClassifiedEdgeSum
 		}
 		evidence = append(evidence, line)
 	}
-	return appendLLMLabelEvidence(evidence, summary, llmConfLowered)
+	return evidence
 }
 
 func applyCouplingCap(rawValue, crossBoundary, criticalCount, distributedMonolith int) (int, string) {

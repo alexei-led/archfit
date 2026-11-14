@@ -10,7 +10,7 @@ Archfit is a Go command-line tool. Its six layers keep policy, analysis, workflo
 | `support` | Shared analysis scope | `internal/scope` |
 | `core` | Policy, relationships, assessment, syntax analysis | `internal/policy`, `internal/relationship/**`, `internal/assessment/**`, `internal/syntax` |
 | `application` | Use-case stages and report projection | `internal/application` |
-| `adapter` | Config, acquisition, tools, persistence, providers, output | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/factcache`, `internal/history`, `internal/ownership`, `internal/labels`, `internal/llm`, `internal/output/record`, `internal/output/reporttext`, `internal/output/jsonout`, `internal/reportschema` |
+| `adapter` | Config, acquisition, tools, persistence, output | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/factcache`, `internal/history`, `internal/ownership`, `internal/output/record`, `internal/output/reporttext`, `internal/output/jsonout`, `internal/reportschema` |
 | `cmd` | CLI composition, development tools, architecture tests | `cmd/**`, `internal/calibrate`, `scripts/eval`, architecture tests |
 
 The module map and import limits live in `.archfit.yaml`. See `AGENTS.md` for the generated module table and blocking rules.
@@ -113,7 +113,7 @@ Keep decisions with their domain owner. Add a port when an inner layer needs an 
 
 The report projection sits in the application layer because it maps domain results to the report contract. It has a restricted import rule so it cannot reach into relationship or evidence internals.
 
-Configuration update and enrichment use restricted CLI adapters to translate authoring results.
+Configuration authoring uses restricted CLI adapters to translate authoring results.
 The exception register is `cmdDomainAdapterFiles` in `internal/arch_test.go`.
 These adapters can run an authoring pipeline. Command stages still enter through application use cases.
 

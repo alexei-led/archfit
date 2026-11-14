@@ -55,8 +55,7 @@ Required fact names below match `internal/assessment/state.RequiredFacts`. This 
 ### `change_locality`
 
 - **Required facts:** `eligible commit sample`, `commit-to-module attribution`.
-- **Denominator:** Touched declared modules over declared modules. If history finds more modules than policy declares, the larger set is the total.
-- **Promote when:** At least one eligible commit exists. The bounded sample completes. Every sampled commit has complete module attribution, including observed zeroes for untouched modules.
+- **Current result:** `unmeasured`. The report collects no co-change history or module touch counts.
 - **Limits:** Essential versus accidental volatility is out of claim. Commit frequency cannot distinguish domain change from design churn.
 
 ### `complexity`
@@ -103,7 +102,7 @@ The check compares the merge base and head under one policy and one engine in th
 
 The report measures one tree. It has no measurement profile, comparability verdict, finding origin, or base-tree comparison block. Tool versions and availability remain visible as measurement and coverage evidence. Missing evidence still prevents promotion; removing a profile does not make an incomplete inventory complete.
 
-Report identity retains the policy digest, labels digest, policy ref, base commit, head tree digest, and engine version when known. It carries no measurement-profile hash. A policy digest identifies policy bytes, not evidence completeness.
+Report identity retains the policy digest, policy ref, base commit, head tree digest, and engine version when known. It carries no measurement-profile hash. A policy digest identifies policy bytes, not evidence completeness.
 
 ## What the check reads
 
@@ -147,7 +146,7 @@ Each extractor key is a SHA-256 digest of NUL-separated values:
 schema version, analyzer name, tool version, analyzer config hash, input tree hash
 ```
 
-The input tree hash covers sorted relative paths and file content hashes. Hashing uses content rather than modification times. Archfit skips `.git` and `.archfit-cache` during input discovery. It stops cache-key discovery after 20,000 filesystem entries or 64 directory levels. It also refuses an input hash over 32 MiB. In each case, the extractor runs without a cache key. Hitting the entry cap is also reported on stderr (`warning: fact cache skipped: input tree has more than 20000 filesystem entries`), because a healthy tree over the cap would otherwise re-extract on every run with nothing saying why. The cache uses `.archfit-cache/facts/<analyzer>/<key>.json`. LLM responses use the separate `.archfit-cache/llm` directory.
+The input tree hash covers sorted relative paths and file content hashes. Hashing uses content rather than modification times. Archfit skips `.git` and `.archfit-cache` during input discovery. It stops cache-key discovery after 20,000 filesystem entries or 64 directory levels. It also refuses an input hash over 32 MiB. In each case, the extractor runs without a cache key. Hitting the entry cap is also reported on stderr (`warning: fact cache skipped: input tree has more than 20000 filesystem entries`), because a healthy tree over the cap would otherwise re-extract on every run with nothing saying why. The cache uses `.archfit-cache/facts/<analyzer>/<key>.json`.
 
 The fact cache is best effort. A missing, unreadable, or corrupt entry is a cache miss. A failed write does not fail analysis. A hit updates the entry time for eviction. The cache caps fact data at 1 GiB and evicts oldest entries until usage is at most 768 MiB.
 
@@ -163,7 +162,7 @@ The key has limits that vary by analyzer:
 
 The cache-key schema changes when serialized facts or their derivation semantics change. A cache entry never raises the evidence trust ceiling. It changes extraction cost, not evidence completeness or provenance.
 
-Delete `.archfit-cache` to remove cached facts and LLM responses. Cache contents are disposable. A cache miss causes extraction to run again.
+Delete `.archfit-cache` to remove cached facts. Cache contents are disposable. A cache miss causes extraction to run again.
 
 ## Analyzer trust boundary
 

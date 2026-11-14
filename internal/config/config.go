@@ -29,7 +29,7 @@ import (
 //   - languages      — per-language extractor settings (go/typescript/python/rust/dotnet)
 //   - analyzers      — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules/roslyn)
 //   - coverage       — opt-in ingestion of caller-supplied coverage artifacts
-//   - ai             — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows
+//   - ai             — legacy version 2 AI settings (not executed)
 //   - coupling       — Balanced-Coupling advisory tuning
 //   - layers/modules — the architecture map
 //   - rules/waivers  — gates and their approved deviations

@@ -151,17 +151,15 @@ type AssessInput struct {
 	ConfigHash            string
 	ModelHash             string
 	ClassificationHash    string
-	LabelsHash            string
 	PrimaryExtractorTools []string
 	OwnerSource           string
-	// ConfigWarnings, MarkedCoverage, CoverageGaps, and VolatilityCorroboration
+	// ConfigWarnings, MarkedCoverage, and CoverageGaps
 	// are acquisition-resolved run evidence. Assessment attaches them; it never
 	// re-derives them, because each depends on the source tree or the config
 	// file, which are outside this ring.
-	ConfigWarnings          []string
-	MarkedCoverage          []modevidence.Coverage
-	CoverageGaps            []modevidence.CoverageGap
-	VolatilityCorroboration *modevidence.VolatilityCorroboration
+	ConfigWarnings []string
+	MarkedCoverage []modevidence.Coverage
+	CoverageGaps   []modevidence.CoverageGap
 	// DeployUnitDetectedModules counts the modules deploy-unit DETECTION mapped,
 	// which is not len(Policy.DeployUnits): the snapshot is seeded from declared
 	// units and resolution only fills gaps, so a module that both declares a unit
@@ -189,7 +187,6 @@ func Assess(in AssessInput) (Assessed, error) {
 	diag := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
 	diag.SeamEndpointModules = seamEndpointModules(in.Relationships)
 	diag.OwnerSource = in.OwnerSource
-	diag.VolatilityCorroboration = in.VolatilityCorroboration
 	return Assessed{
 		Diagnostic: diag,
 		Warnings:   healthWarnings(diag, in.CoverageGaps, in.Policy.Topology, in.Facts.FileLOC, in.ScanRoot, in.ConfigSource),

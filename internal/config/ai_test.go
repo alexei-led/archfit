@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 const aiEffortField = "ai.effort"
@@ -49,11 +48,11 @@ func TestAIConfiguration(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolved, ok := cfg.LLM()
-			if !ok || resolved.Provider == "" || resolved.Model == "" {
+			resolved := cfg.AI
+			if resolved.Provider == "" || resolved.Model == "" {
 				t.Fatalf("unusable configuration: %+v", resolved)
 			}
-			if tc.name == "deepseek" && (resolved.Effort != "high" || resolved.MaxTokens != 65536 || resolved.Timeout != 3*time.Minute) {
+			if tc.name == "deepseek" && (resolved.Effort != "high" || resolved.MaxTokens != 65536 || resolved.Timeout != "3m") {
 				t.Fatalf("settings lost: %+v", resolved)
 			}
 		})

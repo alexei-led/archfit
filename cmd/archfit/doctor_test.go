@@ -102,7 +102,7 @@ func TestDoctorCmd_NoConfigFile(t *testing.T) {
 
 // TestDoctorCmd_BrokenConfigSurfacesError pins that a present-but-invalid
 // .archfit.yaml is reported as a load failure, not silently rendered as an
-// unconfigured LLM with the config checks skipped.
+// an absent config with the config checks skipped.
 func TestDoctorCmd_BrokenConfigSurfacesError(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".archfit.yaml"), []byte("version: [broken\n"), 0o600); err != nil {

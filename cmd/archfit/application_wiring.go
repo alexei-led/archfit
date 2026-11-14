@@ -4,7 +4,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/application"
 	"github.com/alexei-led/archfit/v3/internal/config"
 	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
-	"github.com/alexei-led/archfit/v3/internal/labels/labelsio"
 )
 
 // newEvidenceService builds the concrete acquisition stage for one tree.
@@ -12,7 +11,7 @@ func newEvidenceService(configPath, root string, cfg config.Config, deps *appDep
 	return &acquisition.Service{
 		ConfigPath: configPath, Root: root,
 		Options: cfg.RunOptions(), Policy: cfg.PolicySnapshot(),
-		Runner: deps.Runner, Labels: labelsio.Loader{},
+		Runner: deps.Runner,
 		Stderr: deps.stderr(), Progress: deps.progress, WarnLabel: deps.warnLabel, Refresh: deps.refresh,
 	}
 }

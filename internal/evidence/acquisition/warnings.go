@@ -10,7 +10,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/ownership"
 	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // lint reports the config-quality warnings for the run's resolved modules. A
@@ -41,12 +40,10 @@ func buildConfigWarnings(lint []string, toolWarnings []string) []string {
 //  1. Modules with no subdomain AND no volatility declared — the scorer cannot
 //     place their edges on the book's volatility scale. Tells the user to edit
 //     .archfit.yaml and add subdomain: or volatility:.
-//  2. Approved labels whose strength came from an LLM (provenance: llm) —
-//     notifies the user they can upgrade provenance to "human" after code review.
 //
 // These are advisory strings appended to ConfigWarnings, not gate findings.
 // Sorted for deterministic output.
-func buildJudgmentDecisionTasks(modules map[string]policy.ModuleDef, lbls []labels.Label, configPath string) []string {
+func buildJudgmentDecisionTasks(modules map[string]policy.ModuleDef, configPath string) []string {
 	var out []string
 
 	// 1. Modules missing subdomain and volatility — the book scorer reads an
@@ -64,17 +61,6 @@ func buildJudgmentDecisionTasks(modules map[string]policy.ModuleDef, lbls []labe
 					"the scorer uses V=10 (the worst case) for its edges; "+
 					"add `subdomain: core|supporting|generic` or `volatility: high|medium|low` "+
 					"to modules."+name+" in "+configPath)
-		}
-	}
-
-	// 2. LLM-provenance approved labels — inform the user they can promote to human.
-	for _, l := range lbls {
-		if l.Status == labels.StatusApproved && l.Provenance == labels.ProvenanceLLM {
-			out = append(out,
-				"decision needed: label "+l.From+" → "+l.To+
-					" approved but provenance is llm — "+
-					"if you have reviewed the code, set `provenance: human` in .archfit-labels.yaml "+
-					"to restore full confidence in coupling_balance")
 		}
 	}
 

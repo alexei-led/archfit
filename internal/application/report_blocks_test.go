@@ -48,10 +48,8 @@ func populatedResult() result.Result {
 	r.DistanceConfigCandidates = []evidence.DistanceConfigCandidate{{SourceBlock: "runtime_async", Module: "a", Target: blockNats, IntegrationKind: blockQueue, Count: 1,
 		EvidenceSites:         []evidence.DistanceConfigEvidenceSite{{File: blockFileA, Line: 7, Kind: "publish", Language: "go", Target: blockNats}},
 		SuggestedReviewAction: "declare external_systems.nats"}}
-	r.VolatilityCorroboration = &evidence.VolatilityCorroboration{Source: gitSource, Status: "ok", CommitWindow: 90, FullHistory: true, CommitsScanned: 12, ModulesTouched: 2, Caveat: "c",
-		TopTouched: []evidence.VolatilityTouch{{Module: "a", TouchCommits: 9, DeclaredVolatility: stateSevHigh}}}
 	r.LocalCoupling = []evidence.LocalCouplingModule{{Module: "a", ScoredEdges: 4, AbstainedEdges: 1, ComplexityEdges: 2, ComplexitySharePct: 50, MeanBalance: 3.5,
-		WorstOffenders: []evidence.LocalCouplingEdge{{From: blockFileA, To: "a/b.go", Strength: mergeContract, Balance: 2, Band: "critical", File: blockFileA, Line: 3}}}}
+		WorstOffenders: []evidence.LocalCouplingEdge{{From: blockFileA, To: "a/b.go", Strength: "contract", Balance: 2, Band: "critical", File: blockFileA, Line: 3}}}}
 
 	return r
 }
@@ -101,10 +99,6 @@ func reportBlockChecks(doc report.Document) []blockCheck {
 		{"distance candidates", func() bool {
 			return len(doc.DistanceConfigCandidates) == 1 && len(doc.DistanceConfigCandidates[0].EvidenceSites) == 1 &&
 				doc.DistanceConfigCandidates[0].EvidenceSites[0].Target == blockNats
-		}},
-		{"volatility corroboration", func() bool {
-			return doc.VolatilityCorroboration != nil && len(doc.VolatilityCorroboration.TopTouched) == 1 &&
-				doc.VolatilityCorroboration.TopTouched[0].TouchCommits == 9
 		}},
 		{"local coupling", func() bool {
 			return len(doc.LocalCoupling) == 1 && len(doc.LocalCoupling[0].WorstOffenders) == 1 &&

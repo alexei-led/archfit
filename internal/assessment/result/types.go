@@ -85,9 +85,6 @@ type ClassifiedEdgeSummary struct {
 	ConnectedModules               int                         `json:"connected_modules,omitempty"`
 	CloneOnlyScored                int                         `json:"clone_only_scored,omitempty"`
 	CloneOnlyAdvisory              int                         `json:"clone_only_advisory,omitempty"`
-	LLMApproved                    int                         `json:"llm_approved,omitempty"`
-	LabeledLLM                     int                         `json:"labeled_llm,omitempty"`
-	LLMLowConfidenceEdges          int                         `json:"-"`
 	VolatilityProvenance           *VolatilityProvenance       `json:"volatility_provenance,omitempty"`
 	DistanceCompression            *DistanceCompressionSummary `json:"distance_compression,omitempty"`
 }
@@ -164,8 +161,6 @@ type Seam struct {
 	HighOrWorseEdges     int                   `json:"high_or_worse_edges"`
 	CriticalSharePct     int                   `json:"critical_share_pct"`
 	HighOrWorseSharePct  int                   `json:"high_or_worse_share_pct"`
-	Labels               []string              `json:"labels,omitempty"`
-	LabelEvidenceHash    string                `json:"label_evidence_hash,omitempty"`
 	Confidence           string                `json:"confidence"`
 	RoleExpectation      string                `json:"role_expectation,omitempty"`
 	Hypothesis           string                `json:"hypothesis,omitempty"`

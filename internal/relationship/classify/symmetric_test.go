@@ -17,7 +17,7 @@ const modABKey = modNameA + "\x00" + modNameB
 var emptyGraph = graph.Build(nil)
 
 // TestCloneNeverUpgradesEdgeStrength: whatever else a clone pair does, it leaves
-// the strength of an import edge to the edge's own evidence, labels included.
+// the strength of an import edge to the edge's own evidence.
 func TestCloneNeverUpgradesEdgeStrength(t *testing.T) {
 	t.Parallel()
 
@@ -44,16 +44,6 @@ func TestCloneNeverUpgradesEdgeStrength(t *testing.T) {
 			edge:         graph.Edge{From: fileFromA, To: "file:services/b/api/b.go", Kind: graph.EdgeKindImports},
 			cfg:          twoModuleConfig([]string{publicB}, modABClonePair),
 			wantStrength: coupling.StrengthContract,
-		},
-		{
-			name: "pinned label stays pinned",
-			edge: graph.Edge{From: fileFromA, To: fileToB, Kind: graph.EdgeKindImports},
-			cfg: classify.Config{
-				Modules:               map[string]policy.ModuleDef{modNameA: {Paths: []string{pathsA}}, modNameB: {Paths: []string{pathsB}}},
-				ApprovedLabels:        map[string]string{modABKey: string(coupling.StrengthFunctional)},
-				CrossModuleClonePairs: modABClonePair,
-			},
-			wantStrength: coupling.StrengthFunctional,
 		},
 	}
 	for _, tt := range tests {

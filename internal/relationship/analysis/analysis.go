@@ -16,7 +16,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
 	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
 
@@ -25,7 +24,6 @@ import (
 type Input struct {
 	Graph             *graph.Graph
 	Policy            policy.RelationshipPolicy
-	Labels            []labels.Label
 	CloneClusters     []clone.Cluster
 	FileClassIndex    map[string]fileclass.FileClass
 	RuntimeSites      []evidence.RuntimeAsyncSite
@@ -44,12 +42,6 @@ func Analyze(in Input) relationship.AnalysisResult {
 		in.Graph = graph.Build(nil)
 	}
 	cfg := augmentConfig(in.Graph, classify.ConfigFrom(in.Policy))
-
-	evidenceHashes := pairEvidence(in.Graph, cfg.ModuleMap, in.Labels)
-	approved, llm, stale := labels.Approved(in.Labels, evidenceHashes)
-	cfg.ApprovedLabels = approved
-	cfg.LLMLabels = llm
-	cfg.LLMLabelConfidence = labels.LLMConfidenceByKey(in.Labels, evidenceHashes)
 
 	if len(in.CloneClusters) > 0 {
 		cfg.CrossModuleClonePairs, cfg.CloneEvidence = clonePairs(in.CloneClusters, cfg.ModuleMap, in.FileClassIndex)
@@ -78,11 +70,9 @@ func Analyze(in Input) relationship.AnalysisResult {
 			AdvisoryCandidates: advisoryCandidates(set, clones, cfg),
 			ClassifiedEdges:    classifiedEdges,
 			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules, Tree: classify.BuildContainment(in.Policy.Topology.Modules),
-				Graph: in.Graph, EvidenceHashes: evidenceHashes,
-				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes), ClonePairs: seamCloneFacts(clones, cfg.DuplicatedKnowledgePolicy)}),
+				Graph: in.Graph, ClonePairs: seamCloneFacts(clones, cfg.DuplicatedKnowledgePolicy)}),
 		},
 		Evidence: relationship.AnalysisEvidence{
-			LLMApprovedCount:          labels.LLMApprovedCount(in.Labels, evidenceHashes),
 			RuntimeModules:            runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
 			RuntimeEdges:              runtimeAsyncEdges,
 			DynamicImports:            dynamicImports,
@@ -93,9 +83,6 @@ func Analyze(in Input) relationship.AnalysisResult {
 			LocalCoupling:             buildLocalCouplingSummary(set),
 			VolatilityProvenance:      classify.ComputeVolatilityProvenance(in.Graph, in.Policy.Topology.Modules, cfg),
 		},
-	}
-	for _, l := range stale {
-		out.Assessment.StaleLabelKeys = append(out.Assessment.StaleLabelKeys, labels.Key(l.From, l.To))
 	}
 	return out
 }
@@ -128,35 +115,6 @@ func clonePairsOf(g *graph.Graph, cfg classify.Config) []relationship.ClonePair 
 	for _, p := range pairs {
 		locs := locations(p.Locations)
 		out = append(out, relationship.ClonePair{Connected: p.Connected, FromModule: p.FromModule, ToModule: p.ToModule, FromPath: p.FromPath, ToPath: p.ToPath, Strength: p.Classification.Strength, Distance: p.Classification.Distance, Volatility: p.Classification.Volatility, Severity: p.Classification.Severity, Locations: locs, Classified: classification(p.Classification)})
-	}
-	return out
-}
-
-func pairEvidence(g *graph.Graph, mm policy.ModuleMap, lbls []labels.Label) map[string]string {
-	if len(lbls) == 0 || g == nil {
-		return nil
-	}
-	wanted := make(map[string]struct{}, len(lbls))
-	for _, l := range lbls {
-		wanted[labels.Key(l.From, l.To)] = struct{}{}
-	}
-	items := map[string][]string{}
-	for _, e := range g.Edges() {
-		from, to := relationship.NodePath(e.From), relationship.NodePath(e.To)
-		fm, okf := mm.ModuleFor(from)
-		tm, okt := mm.ModuleFor(to)
-		if !okf || !okt || fm == tm {
-			continue
-		}
-		key := labels.Key(fm, tm)
-		if _, ok := wanted[key]; !ok {
-			continue
-		}
-		items[key] = append(items[key], from+"\x00"+to+"\x00"+string(e.Kind))
-	}
-	out := make(map[string]string, len(items))
-	for k, v := range items {
-		out[k] = labels.HashItems(v)
 	}
 	return out
 }
@@ -324,7 +282,7 @@ func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, modules m
 		tm, _ := moduleForNode(e.To, mm)
 		fromDef, fromClassified := modules[fm]
 		toDef, toClassified := modules[tm]
-		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, StrengthPinned: cl.StrengthPinned, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
+		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
 	}
 	return set
 }

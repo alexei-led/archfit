@@ -9,8 +9,7 @@ type Strength = relationship.Strength
 
 // Strength constants (spec §18).
 // contract and intrusive are decided deterministically (config globs,
-// visibility); model and functional come from SCIP symbol-kind heuristics —
-// the Tranche-2 enrich workflow refines those labels under human review.
+// visibility); model and functional come from extractor symbol-kind evidence.
 const (
 	StrengthContract   = relationship.StrengthContract
 	StrengthIntrusive  = relationship.StrengthIntrusive
@@ -171,21 +170,6 @@ type Classification struct {
 	// — appended onto the finding's Locations downstream (engine/advisories.go),
 	// never fed into distance/volatility/scoring.
 	CloneLocations []Location `json:"clone_locations,omitempty"`
-	// StrengthFromLLM records that Strength came from an approved
-	// llm-provenance label filling a cell every static source left unknown.
-	// Report-only — drives the classified_edges.labeled_llm disclosure count,
-	// never scoring.
-	StrengthFromLLM bool `json:"strength_from_llm,omitempty"`
-	// StrengthFromNonHighLLM records that StrengthFromLLM came from a label whose
-	// confidence was not high. Report-only — score confidence consumes the applied
-	// edge count rather than raw approved-label rows.
-	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
-	// StrengthPinned records that an approved label supplied Strength verbatim.
-	// A pin is the owner's verdict on how deeply two modules are coupled, not a
-	// report that a member was reached without access: a consumer that needs
-	// extractor evidence, such as internal_api_access, must not read a pinned
-	// intrusive strength as one.
-	StrengthPinned bool `json:"strength_pinned,omitempty"`
 	// Connascence carries deterministic static connascence evidence for this edge.
 	// The evidence is report-only: it never sets strength, distance or volatility.
 	Connascence []ConnascenceEvidence `json:"connascence,omitempty"`

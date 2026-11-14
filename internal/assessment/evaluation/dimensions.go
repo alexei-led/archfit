@@ -60,7 +60,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Structure:      structureDimension(diag, in.Facts),
 		Modularity:     modularityDimension(diag, in.Policy, in.Facts),
 		Coupling:       couplingDimension(diag),
-		ChangeLocality: changeLocalityDimension(diag, in.Policy),
+		ChangeLocality: changeLocalityDimension(),
 		Complexity:     complexityDimension(diag, in.Policy, in.Facts),
 		Testability:    testabilityDimension(in.Policy, in.Facts),
 		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
@@ -116,7 +116,7 @@ func gateFor(d state.Dimension) state.GateState {
 // hide it from every dimension at once.
 func dimensionForRule(ruleID string, ruleTypes map[string]string) string {
 	switch ruleID {
-	case finding.RuleIDBCImbalanced, finding.RuleIDDuplicatedKnowledge, ruleIDStaleLabel:
+	case finding.RuleIDBCImbalanced, finding.RuleIDDuplicatedKnowledge:
 		return state.DimensionCoupling
 	}
 	switch ruleTypes[ruleID] {
@@ -1108,50 +1108,13 @@ func seamMetrics(seams []result.Seam) []state.MetricValue {
 	}
 }
 
-// changeLocalityDimension reports the bounded git-history corroboration.
-// Zero observed commits is unmeasured, never a quiet zero: an unscanned history
-// and a genuinely stable repository produce the same number and must not
-// produce the same status.
-func changeLocalityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimension {
+// changeLocalityDimension leaves co-change unmeasured: module touch counts
+// cannot establish whether modules changed together.
+func changeLocalityDimension() state.Dimension {
 	dim := state.NewDimension(state.DimensionChangeLocality, state.OwnerChangeLocality)
-	h := diag.VolatilityCorroboration
-	reasons := map[string]string{
-		state.FactEligibleCommitSample:    "git history is unavailable or the history scan returned no eligible commit",
-		state.FactCommitModuleAttribution: "the history scan is incomplete, so not every eligible commit has a complete module attribution",
-	}
-	if h == nil {
-		applyPromotion(&dim, nil, nil, reasons)
-		return dim
-	}
-	if h.CommitsScanned == 0 {
-		reasons[state.FactEligibleCommitSample] = "the history scan returned no eligible commit (" + h.Status + "), so co-change cannot be distinguished from a stable tree"
-		applyPromotion(&dim, nil, nil, reasons)
-		return dim
-	}
-	observed := []string{state.FactEligibleCommitSample}
-	if h.Status == modevidence.StatusOK {
-		observed = append(observed, state.FactCommitModuleAttribution)
-	} else {
-		reasons[state.FactCommitModuleAttribution] = "the history scan reported " + h.Status + ", so the commit sample and its module attribution are truncated"
-	}
-	applyPromotion(&dim, observed, nil, reasons)
-	// The denominator is the declared module set, not the touched count. Observed
-	// over observed is a tautology: it reports 100% coverage on a window that
-	// reached one module out of forty, which is the shape of a history scan whose
-	// bound is too small to say anything about the rest of the repository.
-	declared := max(len(p.Topology.Modules), h.ModulesTouched)
-	dim.Coverage = state.Coverage{Basis: "declared modules touched in the scanned history window",
-		Observed: h.ModulesTouched, Total: declared}
-	dim.Metrics = []state.MetricValue{
-		count("commits_scanned", h.CommitsScanned, provGitHistory),
-		count("modules_touched", h.ModulesTouched, provGitHistory),
-	}
-	// Git history reflects both essential and accidental volatility, so it
-	// corroborates a declared volatility and never replaces it.
-	dim.Unknown = append(dim.Unknown, state.UnknownFact{
-		Fact:   state.FactEssentialAccidentalVolatility,
-		Reason: "commit frequency corroborates a declared volatility; it cannot establish one",
-		Owner:  state.OwnerChangeLocality,
+	applyPromotion(&dim, nil, nil, map[string]string{
+		state.FactEligibleCommitSample:    "co-change history is not collected",
+		state.FactCommitModuleAttribution: "co-change module attribution is not collected",
 	})
 	return dim
 }
