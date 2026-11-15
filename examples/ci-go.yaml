@@ -28,7 +28,7 @@ jobs:
           enable-cache: false
       - name: Install Archfit
         run: |
-          go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
+          go install github.com/alexei-led/archfit/v3/cmd/archfit@v4.0.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Test and write coverage
         run: go test -coverpkg=./... -coverprofile=coverage.out ./...
@@ -107,8 +107,4 @@ jobs:
           PY
       - name: Run Archfit gate
         run: |
-          status=0
-          archfit check -c .archfit.yaml || status=$?
-          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
-            exit "$status"
-          fi
+          archfit check

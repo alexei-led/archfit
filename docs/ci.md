@@ -35,13 +35,12 @@ target branch:
 Without a workflow that uses the Archfit Action, every result ends with
 `policy: not protected`. The check compares `.archfit.yaml` with the policy of
 the target branch, but only the Action and a required check on the protected
-branch make that comparison a boundary. The Action for a version 3 policy comes
-with Archfit 4.
+branch make that comparison a boundary.
 
 ## Go coverage workflow
 
 [The complete GitHub Actions example](../examples/ci-go.yaml) covers one Go
-module. It installs Archfit v3.2.0, runs the repository's Go tests with
+module. It installs Archfit v4.0.0, runs the repository's Go tests with
 coverage, writes a freshness sidecar, then runs the gate. It does not run
 repository tests through Archfit.
 
@@ -76,8 +75,7 @@ unsigned and does not prove who produced the report.
 
 The example installs only Archfit and the Go SDK. Add each optional analyzer
 tool required by your `.archfit.yaml`, or disable that analyzer.
-The historical example allows exit `2` while adopting the gate. Do not copy
-that allowance into an Archfit 4 workflow: exit `2` is never a pass.
+Exit `2` is `unknown`, wrong usage, or a tool error; it is never a pass.
 
 ## Adopt the gate
 
@@ -92,9 +90,7 @@ For a pull request, pass `--base "origin/${{ github.base_ref }}"` after fetching
 
 ## Pull request checks
 
-`check` compares the change with the target branch by default (`--base auto`),
-so fetch the full history. A shallow clone has no merge-base: the result is
-`unknown` with `reason: scope_unresolved` and the exit code is `2`.
+`check` compares the change with the remote default branch (`origin/HEAD`) unless you pass `--base`. Fetch the full history so Archfit can find the merge base. A shallow clone without that history gives `unknown` and exit code `2`.
 
 ```yaml
 - uses: actions/checkout@v7
@@ -102,14 +98,10 @@ so fetch the full history. A shallow clone has no merge-base: the result is
     fetch-depth: 0
 
 - name: Architecture check
-  run: archfit check -c .archfit.yaml
+  run: archfit check --base "origin/${{ github.base_ref }}"
 ```
 
-If `origin/HEAD` is not set in CI, set `target_branch` in `.archfit.yaml` or
-pass `--target`. Pass `--base <sha>` to compare with a fixed commit, for
-example the target tip on a merge commit. `--base` classifies current findings
-as introduced, pre-existing, or unknown. See [agent workflows](agents.md) for
-scope handling.
+The example names the pull request target with `--base`; this flag takes a Git ref. `--base <sha>` can select a fixed commit when needed. See [agent workflows](agents.md) for scope handling.
 
 ## Concurrency
 
@@ -150,7 +142,7 @@ permissions:
 ```yaml
 - name: Generate Archfit SARIF
   if: always()
-  run: archfit analyze --sarif -c .archfit.yaml > archfit.sarif
+  run: archfit check --format sarif > archfit.sarif
 
 - name: Upload Archfit SARIF
   if: always()
@@ -161,7 +153,7 @@ permissions:
 
 Both steps run after a failed gate. The upload step needs the SARIF file, so
 check that the generation step ran before the job was cancelled.
-Use the separate `check` step to enforce policy. Successful SARIF generation exits `0` even when the report contains blockers.
+SARIF output does not turn a failed check into a pass: `check` exits `1` for `fail` and `2` for `unknown`, even when it writes SARIF. Exit `2` is never a pass. Use the separate check step to enforce policy.
 
 ## Compare the change
 
@@ -175,8 +167,8 @@ history instead. Missing comparison evidence gives `unknown`, not `pass`.
 
 ## Complete engine image and App adoption
 
-The v3.2 image bundles the Go, TypeScript/JavaScript, Python, and Rust producers and optional tools. Images after v3.2.3 add the .NET SDK and the Roslyn helper. It does not enable
-all optional analysis for every project. Use the [locked tool environment](languages.md#install-analyzers)
+The v4.0.0 image bundles the Go, TypeScript/JavaScript, Python, Rust, and .NET producers and their runtime tools. It does not
+enable all optional analysis for every project. Use the [locked tool environment](languages.md#install-analyzers)
 and preserve target-specific limitations rather than treating missing evidence as zero.
 
 The App runs the engine through the pinned composite Action, not inside the App service image.
