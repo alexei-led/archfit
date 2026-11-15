@@ -13,7 +13,7 @@ brew install alexei-led/tap/archfit
 With Go, install a tagged release:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v4.0.0
 ```
 
 You can also download a release binary from the [release page](https://github.com/alexei-led/archfit/releases). Check the file against `SHA256SUMS` before you install it.
@@ -113,8 +113,8 @@ Fail the job on any exit code except `0`. See [CI](ci.md) for the workflow.
 The release image runs archfit with a bundled toolchain:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.2.0 \
-  check --config /repo/.archfit.yaml
+docker run --rm -v "$(pwd):/src" ghcr.io/alexei-led/archfit:v4.0.0 \
+  check
 ```
 
 The complete image includes Node, Python, Rust, the .NET SDK, ast-grep, cargo-modules, and the Roslyn helper (`archfit-roslyn`).

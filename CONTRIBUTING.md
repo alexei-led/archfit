@@ -73,10 +73,10 @@ Review changed golden files before accepting them.
 ## Keep contracts current
 
 Read [Architecture](docs/architecture.md) before changing package boundaries.
-Ask `archfit policy can-import <file> <target>` before adding a cross-module import.
+Ask `archfit can <file> <target>` before adding a cross-module dependency.
 Update the declared module paths when a package moves.
 
-Do not weaken policy, add waivers, change labels, or replace a baseline to make a check pass.
+Do not weaken the policy or add an exception to make a check pass.
 Keep deterministic analysis independent of AI providers.
 The [evidence contract](docs/evidence.md) defines completeness and comparison limits.
 

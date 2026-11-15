@@ -104,7 +104,7 @@ Git object writes use a private directory for the command, with the repository's
 | Change rendering | `internal/output/**` |
 | Change flags or concrete wiring | `cmd/archfit` |
 
-Keep decisions with their domain owner. Add a port when an inner layer needs an outer-layer service. Ask `archfit policy can-import` before adding a cross-module import.
+Keep decisions with their domain owner. Add a port when an inner layer needs an outer-layer service. Ask `archfit can <file> <target>` before adding a cross-module dependency.
 
 ## Accepted boundaries
 

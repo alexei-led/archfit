@@ -16,6 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -28,7 +29,7 @@ jobs:
           enable-cache: false
       - name: Install Archfit
         run: |
-          go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
+          go install github.com/alexei-led/archfit/v3/cmd/archfit@v4.0.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Test and write coverage
         run: go test -coverpkg=./... -coverprofile=coverage.out ./...
@@ -106,9 +107,4 @@ jobs:
           )
           PY
       - name: Run Archfit gate
-        run: |
-          status=0
-          archfit check -c .archfit.yaml || status=$?
-          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
-            exit "$status"
-          fi
+        run: archfit check --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
