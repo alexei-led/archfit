@@ -102,6 +102,9 @@ class Config:
     out: Path
     archfit: Path
     claude: str
+    # The binary that writes the hook-arm setup. Separate from archfit when the
+    # judged release binary predates the --hooks-only writer flag.
+    hooks_archfit: Path | None = None
     jobs: int = 1
     timeout: float = 1800
     max_budget_usd: float = 5.0
@@ -272,7 +275,8 @@ def prepare_clone(
     if spec.arm.hooks:
         # The v4 hook writer: doctor --fix. --hooks-only keeps the toolchain
         # installs (host-wide by design) out of the benchmark setup.
-        hook = [str(cfg.archfit), "doctor", "--fix", "--hooks-only"]
+        writer = cfg.hooks_archfit or cfg.archfit
+        hook = [str(writer), "doctor", "--fix", "--hooks-only"]
         _must(runner(hook, clone, None, None), "archfit doctor --fix --hooks-only")
     git("add", "--all")
     git(
@@ -630,6 +634,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="archfit",
         help="archfit binary for the agent and the check",
     )
+    p.add_argument(
+        "--hooks-archfit",
+        default=None,
+        help="archfit binary that writes the hook-arm setup (default: the --archfit binary)",
+    )
     p.add_argument("--claude", default="claude", help="Claude Code CLI")
     p.add_argument("--timeout", type=float, default=1800, help="seconds per agent run")
     p.add_argument(
@@ -641,12 +650,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     archfit = shutil.which(args.archfit)
+    hooks_archfit = shutil.which(args.hooks_archfit) if args.hooks_archfit else archfit
     claude = shutil.which(args.claude)
-    if not archfit or (not claude and not args.setup_only):
-        print(
-            f"not found: {args.archfit if not archfit else args.claude}",
-            file=sys.stderr,
-        )
+    if not archfit or not hooks_archfit or (not claude and not args.setup_only):
+        missing = args.archfit if not archfit else args.hooks_archfit if not hooks_archfit else args.claude
+        print(f"not found: {missing}", file=sys.stderr)
         return 2
     cfg = Config(
         trap=TRAPS[args.trap],
@@ -655,6 +663,7 @@ def main(argv: list[str] | None = None) -> int:
         reps=args.reps,
         out=args.out,
         archfit=Path(archfit).resolve(),
+        hooks_archfit=Path(hooks_archfit).resolve(),
         claude=claude or "claude",
         jobs=args.jobs,
         timeout=args.timeout,
