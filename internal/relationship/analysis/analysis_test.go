@@ -8,11 +8,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
-	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/graph"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship/analysis"
 )
 
 const (

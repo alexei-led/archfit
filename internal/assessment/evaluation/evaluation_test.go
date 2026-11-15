@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v4/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v4/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/v4/internal/assessment/result"
+	signal "github.com/alexei-led/archfit/v4/internal/assessment/signals"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
 )
 
 const (

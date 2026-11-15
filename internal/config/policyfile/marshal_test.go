@@ -6,7 +6,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
+	"github.com/alexei-led/archfit/v4/internal/config/policyfile"
 )
 
 // TestMarshalRoundTrip writes a policy with every custom-decoded form, the

@@ -17,12 +17,12 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/sync/errgroup"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/scope"
-	"github.com/alexei-led/archfit/v3/internal/syntax"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/graph"
+	"github.com/alexei-led/archfit/v4/internal/scope"
+	"github.com/alexei-led/archfit/v4/internal/syntax"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // confidenceHigh is the confidence of every .NET edge: MSBuild and the

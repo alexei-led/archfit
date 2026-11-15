@@ -8,7 +8,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 // settingKeys are the top-level keys whose values reach the policy model only

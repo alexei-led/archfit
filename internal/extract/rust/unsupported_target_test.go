@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/extract/rust"
-	"github.com/alexei-led/archfit/v3/internal/scope"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/extract/rust"
+	"github.com/alexei-led/archfit/v4/internal/scope"
 )
 
 func TestModuleGraphUnsupportedTargetIsPartial(t *testing.T) {

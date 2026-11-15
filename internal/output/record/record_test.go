@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/output/record"
-	"github.com/alexei-led/archfit/v3/internal/testutil"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/output/record"
+	"github.com/alexei-led/archfit/v4/internal/testutil"
 )
 
 // contractExamples holds the JSON of every example of design 8.1, the goldens

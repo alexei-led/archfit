@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/policy"
 )
 
 // ClassificationHash fingerprints the policy leaves that change the compared

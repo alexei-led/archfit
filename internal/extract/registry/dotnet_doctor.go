@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/extract/dotnet"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // Doctor runs the SDK and the helper the way analysis does: in the checked

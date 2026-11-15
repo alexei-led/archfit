@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 const flagHarness = "--harness"

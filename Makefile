@@ -4,7 +4,7 @@
 BINARY         := archfit
 CMD            := ./cmd/archfit
 BIN_DIR        := .bin
-MODULE         := github.com/alexei-led/archfit/v3
+MODULE         := github.com/alexei-led/archfit/v4
 ARCHFIT_CONFIG := .archfit.yaml
 ARCHFIT_REPORT := .archfit-cache/reports/archfit-report.txt
 

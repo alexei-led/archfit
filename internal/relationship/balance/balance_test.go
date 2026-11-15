@@ -3,8 +3,8 @@ package balance_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/relationship"
-	"github.com/alexei-led/archfit/v3/internal/relationship/balance"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship/balance"
 )
 
 const (

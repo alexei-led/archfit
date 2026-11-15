@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // ObjectStore redirects git object writes to private storage. Use its runner

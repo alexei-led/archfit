@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	gitpkg "github.com/alexei-led/archfit/v4/internal/history/git"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // noSuchRef names no commit in any test repository.

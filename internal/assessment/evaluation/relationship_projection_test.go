@@ -3,7 +3,7 @@ package evaluation
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
 )
 
 const modAPI = "api"

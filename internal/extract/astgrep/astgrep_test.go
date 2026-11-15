@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/extract/astgrep"
-	"github.com/alexei-led/archfit/v3/internal/model/pattern"
-	"github.com/alexei-led/archfit/v3/internal/scope"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/extract/astgrep"
+	"github.com/alexei-led/archfit/v4/internal/model/pattern"
+	"github.com/alexei-led/archfit/v4/internal/scope"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 const (

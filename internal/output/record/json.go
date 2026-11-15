@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/alexei-led/archfit/v3/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
 )
 
 // ResultJSON writes a check result as the archfit.result.v1 document of

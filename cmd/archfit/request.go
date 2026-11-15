@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/application/request"
-	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
-	requestsend "github.com/alexei-led/archfit/v3/internal/history/github"
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/application/request"
+	gitpkg "github.com/alexei-led/archfit/v4/internal/history/git"
+	requestsend "github.com/alexei-led/archfit/v4/internal/history/github"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 // RequestCmd is `archfit request` (internal/application/request): ask an

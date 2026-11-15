@@ -3,7 +3,7 @@ package result_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/internal/result"
+	"github.com/alexei-led/archfit/v4/internal/assessment/metrics/internal/result"
 )
 
 // ---------------------------------------------------------------------------

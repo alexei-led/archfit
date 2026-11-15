@@ -4,14 +4,14 @@ package evaluation
 import (
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
-	"github.com/alexei-led/archfit/v3/internal/assessment/staleness"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/symbol"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v4/internal/assessment/result"
+	signal "github.com/alexei-led/archfit/v4/internal/assessment/signals"
+	"github.com/alexei-led/archfit/v4/internal/assessment/staleness"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/symbol"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
 )
 
 // Input carries the measurements and relationship advisories of one report.

@@ -12,8 +12,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/mod/modfile"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/model/graph"
 )
 
 // QueryEdge builds the facts `archfit policy can-import` judges: one import

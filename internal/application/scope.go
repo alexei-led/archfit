@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v4/internal/model/report"
 )
 
 // BaseAuto asks ResolveScope to choose the base: the merge-base of HEAD and the

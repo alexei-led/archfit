@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/alexei-led/archfit/v3/internal/application"
-	"github.com/alexei-led/archfit/v3/internal/config"
-	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
+	"github.com/alexei-led/archfit/v4/internal/application"
+	"github.com/alexei-led/archfit/v4/internal/config"
+	"github.com/alexei-led/archfit/v4/internal/evidence/acquisition"
 )
 
 // newEvidenceService builds the concrete acquisition stage for one tree.

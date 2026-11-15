@@ -18,11 +18,11 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/scope"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/graph"
+	"github.com/alexei-led/archfit/v4/internal/scope"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // syntaxToolName is the coverage name for the SYNTAX pass. It is deliberately

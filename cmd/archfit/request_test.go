@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/application/request"
+	"github.com/alexei-led/archfit/v4/internal/application/request"
 )
 
 // requestGoldens holds the text of `archfit request` without the App (D5).

@@ -51,10 +51,10 @@ Install the CLI with Homebrew:
 brew install alexei-led/tap/archfit
 ```
 
-Or install a tagged release with Go:
+Or download a release binary from the [release page](https://github.com/alexei-led/archfit/releases). With Go installed:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
+go install github.com/alexei-led/archfit/v4/cmd/archfit@v4.0.0
 ```
 
 Run these commands from your repository:

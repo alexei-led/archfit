@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // realAstGrep returns the real runner, or skips when ast-grep is not

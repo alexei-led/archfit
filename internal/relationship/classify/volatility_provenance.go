@@ -1,10 +1,10 @@
 package classify
 
 import (
-	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
-	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v4/internal/model/graph"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship/coupling"
 )
 
 // VolatilitySource names where one module's base volatility came from. Cascade

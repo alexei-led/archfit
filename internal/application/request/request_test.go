@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/application/request"
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/testutil"
+	"github.com/alexei-led/archfit/v4/internal/application/request"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/testutil"
 )
 
 // contractExamples holds the JSON of every example of design 8.1. The request
