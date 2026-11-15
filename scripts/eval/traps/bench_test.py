@@ -182,9 +182,11 @@ class FakeProcesses:
         if argv[0] == str(FAKE_ARCHFIT):
             if argv[1] == "--version":
                 return bench.Result(0, "archfit version v0.0.0-test\n", "")
-            if argv[1:3] == ["hook", "install"]:
-                settings = Path(argv[argv.index("--dir") + 1]) / ".claude/settings.json"
-                settings.parent.mkdir(parents=True)
+            if argv[1:3] == ["doctor", "--fix"]:
+                if argv != [str(FAKE_ARCHFIT), "doctor", "--fix", "--hooks-only"]:
+                    raise AssertionError(f"unexpected doctor flags: {argv}")
+                settings = Path(cwd) / ".claude/settings.json"
+                settings.parent.mkdir(parents=True, exist_ok=True)
                 settings.write_text("{}\n")
                 return bench.Result(0, f"wrote {settings}\n", "")
             if argv[1] == "check":

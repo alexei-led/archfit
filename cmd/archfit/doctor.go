@@ -22,10 +22,11 @@ const installSubcmd = "install"
 // it also installs the analyzer toolchains archfit can install automatically
 // (the former `install` command, folded in so `doctor` both diagnoses and fixes).
 type DoctorCmd struct {
-	Fix    bool     `name:"fix" aliases:"install" help:"Install the hooks of the harnesses found here (Claude Code, Codex, git) and the missing toolchains archfit can install."`
-	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable. .NET has no automatic install: install the .NET SDK and build the helper with make dotnet-roslyn." enum:"go,ts,py,rust"`
-	DryRun bool     `name:"dry-run" short:"n" help:"With --fix: print the install commands and the hook files without changing anything."`
-	Format string   `name:"format" help:"Output format: text or json. json prints the tool rows and the agent loop (archfit.doctor.v1)." enum:"text,json" default:"text"`
+	Fix       bool     `name:"fix" aliases:"install" help:"Install the hooks of the harnesses found here (Claude Code, Codex, git) and the missing toolchains archfit can install."`
+	HooksOnly bool     `name:"hooks-only" help:"With --fix: write the hooks only; the toolchains are left as they are."`
+	Lang      []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable. .NET has no automatic install: install the .NET SDK and build the helper with make dotnet-roslyn." enum:"go,ts,py,rust"`
+	DryRun    bool     `name:"dry-run" short:"n" help:"With --fix: print the install commands and the hook files without changing anything."`
+	Format    string   `name:"format" help:"Output format: text or json. json prints the tool rows and the agent loop (archfit.doctor.v1)." enum:"text,json" default:"text"`
 }
 
 func (*DoctorCmd) Help() string {
@@ -45,7 +46,9 @@ the repository: .claude/settings.json, .codex/hooks.json, and the pre-commit
 hook. It keeps every other setting and hook, and never replaces a pre-commit
 hook that archfit did not write. Running it twice changes nothing. Outside a
 git repository it writes nothing and says so. It also installs the
-toolchains archfit can install (--lang).
+toolchains archfit can install (--lang); with --hooks-only it writes the
+hooks and leaves the toolchains alone, for a checkout that must not install
+anything on the host.
 
 For setup notes, see ` + languagesDocsURL + `.`
 }
@@ -112,7 +115,11 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		// The hooks come first: a toolchain install that fails (brew offline)
 		// must not cost a checkout its hooks.
 		hooksErr := c.installHooks(ctx, deps)
-		if err := errors.Join(hooksErr, c.runFix(ctx, deps)); err != nil {
+		if c.HooksOnly {
+			if hooksErr != nil {
+				return hooksErr
+			}
+		} else if err := errors.Join(hooksErr, c.runFix(ctx, deps)); err != nil {
 			return err
 		}
 	}
