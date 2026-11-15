@@ -1,23 +1,27 @@
 # Release notes
 
-## Unreleased
+## v4.0.0
 
 ### Summary
 
-`config init` writes a config that passes `config lint --strict`. The release image uses Go 1.27.4.
+One policy, one answer, one record. A schema 3 `.archfit.yaml` declares the modules, layers and rules that apply; `check` answers `pass`, `fail`, or `unknown` for a change, and `unknown` is never a pass. `can` answers a dependency question before the code exists, and `request` turns the errors a rule cannot settle into an owner request. `report` states the repository for its owners. Waivers, labels, agent tasks, metric ratchets and stored baselines are gone: an exception with a date is the only exemption, and the policy itself declares module volatility and subdomain. The analyzers are parser-based producers on a locked toolchain, and the readers that needed a second tool for the same answer — SCIP, `dependency-cruiser`, `grimp`, `jscpd` — are removed.
 
 ### Changes
 
-- `archfit doctor` shows the tools in two groups: needed for the check (`git`; `ast-grep` for TypeScript, JavaScript and Python, and for the literals of every language but Go; `cargo` for Rust; `dotnet` for C#), and optional, for the report. A Go repository needs only `git`. JSON tool rows carry `group` and `languages`.
-- `archfit doctor --fix` installs the hooks of each harness it finds (Claude Code, Codex, git), and warns when git ignores a harness settings file. `archfit hook` leaves the command list.
-- The hooks run the version 3 `can` and `check`. `post-tool-use` shows the record of `can` for an import it answers `no` for. `stop` runs `check` and stops once per set of errors. `pre-commit` runs `check` on the staged content against `HEAD`. A hook that fails for its own reasons shows why and stops nothing: `pre-commit` no longer exits `3`.
-- Build with Go 1.27.4 (CI, release image, `scip-go`). It fixes a `net/http` vulnerability, GO-2026-6859, which `govulncheck` reports for Go 1.27.3.
-- `policy can-import` answers `unconstrained` for a Go file under `testdata`, `vendor`, or a directory that starts with `.` or `_`, with the reason: the go command and the check never read it.
-- The starter `no-module-cycles` rule, and the commented `no-layer-back-edges` rule, carry a `rationale`. Since v3.3.0 a blocking rule without one is a `config lint --strict` error, so a config that `config init` had just written failed the lint.
+- Policy schema 3 (`version: 3`): `owners` and `gate`; `layers`; `modules` with `paths`, `public`, `volatility`, `subdomain`, `layer` and `depends_on`; `builtin` modes for `graph`, `coupling`, `duplication`, `cycle`, `layers` and `unowned`, with `min_balance` 7 by default; `rules` with one of `deny`, `only` or `note`, and `why` and `instead`; `exceptions` with `rule`, `from`, `to`, an optional `expires` date and `why`; `generated`, `tests`, `exclude`; and the `languages`, `analyzers` and `coverage` keys. `archfit init` converts an Archfit 3 file and reports every dropped key.
+- One exit contract: `check` 0 `pass`, 1 `fail`, 2 `unknown`, usage or tool error; `can` 0 yes, 1 no, 2 `unknown`; `report` exits 0 whatever it shows; `request` fails only when it cannot send. No command reads a version 2 policy except `init` conversion; `check`, `report`, `doctor` and the tools refuse it and point at `init`.
+- Errors are counted per key — rule, `from`, `to` and symbol — on the base and the head; a key is added when it is absent on the base or has a higher count on the head. An `unowned` key counts only when its file has an added line, so a pure rename passes. A cycle's key is each dependency inside it. A duplication key is the rule, the sorted module pair and the literal digest.
+- The result is `archfit.result.v1` JSON and the text record: `errors` with `path`, `line`, `rule`, `what`, `why`, `instead`, `balance` and `next`, the `policy` (`path`, `digest`, `protected`, `differs`, `target`), the commits, the `engine`, and `unknown` reasons with the file and the fix. `waiting` is set by the App only. `--verbose` adds the digests and the version.
+- `can <from> <to>` answers `yes`, `no` or `unknown` with the rule, its `why` and `instead`, and the balance; `rules` shows the rules that apply to paths or to the change, one rule in full, and the module graph; `request` files the `ask`-rule errors of the last check with an owner, through the App.
+- `report` gives owners the repository state — `clean`, `drift` or `expired` — the notes marked `not checked`, the exceptions within 14 days of their date, and the balance of each allowed dependency.
+- Producers on the locked toolchain: the Go parser, `tsimports` and `pyimports` (ast-grep), Rust `cargo-modules`, and the .NET Roslyn helper. `--refresh` re-runs them and takes fresh measurements. Python namespace packages give more edges; TypeScript monorepos resolve through `tsconfig` paths and give fewer unknown imports.
+- `doctor` checks the tools the check and the report need and the hooks of each harness; `doctor --fix` installs the hooks. The hooks run the schema 3 `can` and `check`.
+- Removed, without replacements by another name: the labels file and LLM enrichment (volatility and subdomain come from the policy), waivers (exceptions replace them), agent tasks and gate decisions, every report format but the `report` text and JSON, metric ratchets, measurement profiles, stored baselines and re-anchoring, and the tools that fed them: `scip-go`, `scip-typescript`, `scip-python`, `rust-analyzer`, `dependency-cruiser`, `grimp` and `jscpd`. The independent `duplication` rule finds copies; the measured precision is about 80%. The commands `analyze`, `baseline`, `explain`, `policy`, `map` and every `config` subcommand are retired.
+- The release image builds with Go 1.27.4, which fixes `net/http` GO-2026-6859, reported by `govulncheck` for 1.27.3.
 
 ### Upgrade
 
-Run `archfit doctor --fix` in each checkout to rewrite installed hooks: `hook run` no longer takes `-c`, and an installed hook that passes it fails. On a version 2 policy the hooks show `unknown` and stop nothing until `archfit init` converts the policy. A config written by an earlier `config init` needs a `rationale:` line on each blocking rule to pass `config lint --strict`.
+Run `archfit init` to convert a version 2 policy; it writes schema 3 and reports every dropped key. Remove `.archfit-labels.yaml` and declare `volatility` and `subdomain` in the policy; replace waivers with exceptions; retire the removed commands and flags from scripts and CI. Run `archfit doctor --fix` in each checkout to install or refresh the hooks. The Action runs this engine by image digest only: an older engine, schema or result contract is refused, not adapted.
 
 ## v3.4.0
 
