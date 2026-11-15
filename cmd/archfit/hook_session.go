@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/application/importcheck"
-	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
-	"github.com/alexei-led/archfit/v3/internal/output/record"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/application/importcheck"
+	historygit "github.com/alexei-led/archfit/v4/internal/history/git"
+	"github.com/alexei-led/archfit/v4/internal/output/record"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // sessionDirName holds the session files under the cache directory.

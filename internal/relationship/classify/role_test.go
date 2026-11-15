@@ -3,10 +3,10 @@ package classify_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
-	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v4/internal/model/graph"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship/classify"
+	"github.com/alexei-led/archfit/v4/internal/relationship/coupling"
 )
 
 // roleModules returns two modules — "src" (the edge source, role applied by the

@@ -3,9 +3,9 @@ package acquisition
 import (
 	"github.com/bmatcuk/doublestar/v4"
 
-	evidencecontract "github.com/alexei-led/archfit/v3/internal/evidence"
-	"github.com/alexei-led/archfit/v3/internal/extract/registry"
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	evidencecontract "github.com/alexei-led/archfit/v4/internal/evidence"
+	"github.com/alexei-led/archfit/v4/internal/extract/registry"
+	"github.com/alexei-led/archfit/v4/internal/policy"
 )
 
 // declaredOutOfScope names the walked source files the configuration declared

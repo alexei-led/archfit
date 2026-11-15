@@ -15,16 +15,16 @@ import (
 	"strings"
 	"time"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 
-	"github.com/alexei-led/archfit/v3/internal/factcache"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/graph"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/factcache"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/graph"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // goAnalyzer is the fact-cache subdirectory for per-member Go facts.

@@ -5,11 +5,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/extract/golang"
-	"github.com/alexei-led/archfit/v3/internal/extract/registry"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/ownership"
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/extract/golang"
+	"github.com/alexei-led/archfit/v4/internal/extract/registry"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/ownership"
+	"github.com/alexei-led/archfit/v4/internal/policy"
 )
 
 // lint reports the config-quality warnings for the run's resolved modules. A

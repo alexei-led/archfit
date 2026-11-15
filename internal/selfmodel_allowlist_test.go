@@ -5,8 +5,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/change"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/assessment/change"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 const (

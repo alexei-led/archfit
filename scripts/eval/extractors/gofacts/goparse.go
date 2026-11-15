@@ -15,8 +15,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/mod/modfile"
 
-	"github.com/alexei-led/archfit/v3/internal/config"
-	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	"github.com/alexei-led/archfit/v4/internal/config"
+	"github.com/alexei-led/archfit/v4/internal/extract/registry"
 )
 
 // member is one Go module the run reads: its module path and its dir

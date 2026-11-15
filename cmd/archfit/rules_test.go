@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/testutil"
+	"github.com/alexei-led/archfit/v4/internal/testutil"
 )
 
 // rulesGoldens holds the text of each form of `archfit rules`. Regenerate

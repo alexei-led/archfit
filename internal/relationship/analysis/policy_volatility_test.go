@@ -3,9 +3,9 @@ package analysis_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
-	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship/analysis"
 )
 
 func TestAnalyzeReadsVolatilityFromPolicy(t *testing.T) {

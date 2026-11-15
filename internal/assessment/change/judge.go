@@ -5,10 +5,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
-	"github.com/alexei-led/archfit/v3/internal/relationship/balance"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship/balance"
 )
 
 // The texts of the built-in rules. Design 8.1 gives the graph texts and the

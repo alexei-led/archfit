@@ -19,7 +19,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
 )
 
 // rootKey is the key of the files at the repository root.

@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"strconv"
 
-	modelrule "github.com/alexei-led/archfit/v3/internal/model/rule"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
-	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
+	modelrule "github.com/alexei-led/archfit/v4/internal/model/rule"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship/classify"
 )
 
 const relationshipScoreVersion = "bc_score.v7"

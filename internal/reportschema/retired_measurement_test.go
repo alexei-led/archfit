@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v4/internal/model/report"
 )
 
 func TestStateSchemaRejectsRetiredMeasurementFields(t *testing.T) {

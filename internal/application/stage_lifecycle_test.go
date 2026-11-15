@@ -9,7 +9,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/policy"
 )
 
 // lifecycleStage counts stage invocations and records the context each stage

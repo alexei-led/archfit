@@ -1,11 +1,11 @@
 package config
 
 import (
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
 
-	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/config/policyfile"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 // ReportConfig reads a schema 3 policy and returns the Config the report runs

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/symbol"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/symbol"
 )
 
 // Build assembles one evidence.FileFact per distinct module in g.

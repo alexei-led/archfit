@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // AddedLines returns the lines the working tree adds against base, per

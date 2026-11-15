@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/initcfg/policy3"
+	"github.com/alexei-led/archfit/v4/internal/initcfg/policy3"
 )
 
 // initGoldens holds the text of `archfit init`.

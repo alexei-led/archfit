@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/initcfg/policy3"
+	"github.com/alexei-led/archfit/v4/internal/initcfg/policy3"
 )
 
 // archfitExecEnv makes the test binary run the archfit CLI: git runs the

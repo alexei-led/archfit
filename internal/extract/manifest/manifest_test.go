@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/extract/manifest"
-	reportmodel "github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/extract/manifest"
+	reportmodel "github.com/alexei-led/archfit/v4/internal/model/evidence"
 )
 
 const (

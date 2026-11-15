@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/application/request"
-	requestsend "github.com/alexei-led/archfit/v3/internal/history/github"
-	"github.com/alexei-led/archfit/v3/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/application/request"
+	requestsend "github.com/alexei-led/archfit/v4/internal/history/github"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
 )
 
 type fakeRequestAPI struct {

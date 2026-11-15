@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 func TestDoctorDiscoversOwnedAnalyzerPrograms(t *testing.T) {

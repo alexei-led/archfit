@@ -1,4 +1,4 @@
-module github.com/alexei-led/archfit/v3
+module github.com/alexei-led/archfit/v4
 
 go 1.27.0
 

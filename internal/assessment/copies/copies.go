@@ -37,10 +37,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/change"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/assessment/change"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 // minRunes is R12's length bound: a shorter literal is too common to be

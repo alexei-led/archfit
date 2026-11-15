@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
-	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition/checkfacts"
-	"github.com/alexei-led/archfit/v3/internal/initcfg/policy3"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/config/policyfile"
+	"github.com/alexei-led/archfit/v4/internal/evidence/acquisition/checkfacts"
+	"github.com/alexei-led/archfit/v4/internal/initcfg/policy3"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 const archfit3Policy = `version: 2

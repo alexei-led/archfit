@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strconv"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/extract/registry"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/extract/registry"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 // Config is what the check reads from the policy to read the facts.

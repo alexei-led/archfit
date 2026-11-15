@@ -1,8 +1,8 @@
 package config
 
 import (
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/policy"
 )
 
 // ToolMode is the public config lifecycle view of a tool enable state.

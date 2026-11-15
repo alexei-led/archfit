@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/application/request"
-	requestsend "github.com/alexei-led/archfit/v3/internal/history/github"
-	"github.com/alexei-led/archfit/v3/internal/output/record"
+	"github.com/alexei-led/archfit/v4/internal/application/request"
+	requestsend "github.com/alexei-led/archfit/v4/internal/history/github"
+	"github.com/alexei-led/archfit/v4/internal/output/record"
 )
 
 type requestSenderAPI interface {

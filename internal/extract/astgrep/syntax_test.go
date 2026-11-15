@@ -9,9 +9,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/extract/astgrep"
-	"github.com/alexei-led/archfit/v3/internal/scope"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/extract/astgrep"
+	"github.com/alexei-led/archfit/v4/internal/scope"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // syntaxEntry builds a minimal sgSyntaxMatch-shaped JSON object for use in

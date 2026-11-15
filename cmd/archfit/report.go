@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alexei-led/archfit/v3/internal/application"
-	"github.com/alexei-led/archfit/v3/internal/application/repostate"
-	"github.com/alexei-led/archfit/v3/internal/config"
-	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition/checkfacts"
-	"github.com/alexei-led/archfit/v3/internal/model/report"
-	"github.com/alexei-led/archfit/v3/internal/output/jsonout"
-	"github.com/alexei-led/archfit/v3/internal/output/reporttext"
-	reportports "github.com/alexei-led/archfit/v3/internal/report/ports"
+	"github.com/alexei-led/archfit/v4/internal/application"
+	"github.com/alexei-led/archfit/v4/internal/application/repostate"
+	"github.com/alexei-led/archfit/v4/internal/config"
+	"github.com/alexei-led/archfit/v4/internal/evidence/acquisition/checkfacts"
+	"github.com/alexei-led/archfit/v4/internal/model/report"
+	"github.com/alexei-led/archfit/v4/internal/output/jsonout"
+	"github.com/alexei-led/archfit/v4/internal/output/reporttext"
+	reportports "github.com/alexei-led/archfit/v4/internal/report/ports"
 )
 
 // ReportCmd is `archfit report`: the repository-wide picture for owners. It

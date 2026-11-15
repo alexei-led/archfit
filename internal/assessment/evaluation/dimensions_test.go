@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	"github.com/alexei-led/archfit/v3/internal/assessment/state"
-	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v4/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v4/internal/assessment/result"
+	"github.com/alexei-led/archfit/v4/internal/assessment/state"
+	modevidence "github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/fileclass"
+	"github.com/alexei-led/archfit/v4/internal/policy"
 )
 
 const (

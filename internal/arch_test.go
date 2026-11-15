@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	modulePrefix = "github.com/alexei-led/archfit/v3/"
+	modulePrefix = "github.com/alexei-led/archfit/v4/"
 	goSourceExt  = ".go"
 
 	// Directories every repo walk in this package skips: not first-party source.

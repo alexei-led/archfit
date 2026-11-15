@@ -67,7 +67,7 @@ The first job runs `scripts/release-channel.sh` on the tag. It gives `final` for
 The workflow creates no moving major tag for either form.
 A tag of a different form stops the run in the first job, before anything is published.
 `make workflows` runs `scripts/tests/release_channel_test.sh`, the test of this rule.
-The Go module path uses `/v3`. Keep the major suffix in `go.mod` and imports for v3 releases.
+The Go module path uses `/v4`. Keep the major suffix in `go.mod` and imports for v4 releases.
 
 ## Language contracts
 
