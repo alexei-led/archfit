@@ -270,16 +270,10 @@ def prepare_clone(
     git("remote", "set-url", "origin", str(work / "no-remote"))
     apply_arm(clone, trap, spec.arm)
     if spec.arm.hooks:
-        hook = [
-            str(cfg.archfit),
-            "hook",
-            "install",
-            "--harness",
-            "claude",
-            "--dir",
-            str(clone),
-        ]
-        _must(runner(hook, clone, None, None), "archfit hook install")
+        # The v4 hook writer: doctor --fix. --hooks-only keeps the toolchain
+        # installs (host-wide by design) out of the benchmark setup.
+        hook = [str(cfg.archfit), "doctor", "--fix", "--hooks-only"]
+        _must(runner(hook, clone, None, None), "archfit doctor --fix --hooks-only")
     git("add", "--all")
     git(
         "-c",

@@ -182,7 +182,8 @@ Each run clones the pinned trap commit and commits the schema 3 policy on its de
 The task branch starts from that policy commit. Setup changes are excluded from the measured diff.
 The `prose` arm keeps the prose graph and denies `archfit`.
 The other arms use the five-line block. The `tool` arms remove the prose graph.
-Hook arms use `archfit hook install`, the same hook writer used by `doctor --fix`.
+Hook arms run `archfit doctor --fix --hooks-only` in the clone: the hook writer
+of `doctor --fix`, without the toolchain installs.
 This avoids installing host-wide toolchains during benchmark setup.
 A headless `claude -p` agent works on the task. Then `archfit check` judges the result.
 
