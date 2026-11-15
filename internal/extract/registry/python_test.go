@@ -89,7 +89,7 @@ func TestPythonReportFailureAndApplicability(t *testing.T) {
 		files map[string]string
 		want  string
 	}{
-		{"missing parser", evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}, map[string]string{fileFlatAppInit: ""}, evidence.StatusAbsent},
+		{"missing parser", evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}, map[string]string{fileFlatAppInit: ""}, evidence.StatusPartial},
 		{"disabled", evidenceports.ExtractConfig{Mode: evidenceports.ModeOff}, map[string]string{fileFlatAppInit: ""}, evidence.StatusAbsent},
 		{"loose scripts", evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}, map[string]string{"script.py": "import os\n"}, evidence.StatusAbsent},
 	} {
