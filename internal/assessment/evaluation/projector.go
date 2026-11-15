@@ -1,8 +1,8 @@
 package evaluation
 
 import (
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/assessment/result"
+	modevidence "github.com/alexei-led/archfit/v4/internal/model/evidence"
 )
 
 // project evaluates the assessment stages and assembles the diagnostic. Every

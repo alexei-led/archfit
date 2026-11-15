@@ -4,9 +4,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship/coupling"
 )
 
 // dynamicImportSiteCap bounds the number of sample sites stored per module in a

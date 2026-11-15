@@ -10,10 +10,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
-	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition/checkfacts"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/config/policyfile"
+	"github.com/alexei-led/archfit/v4/internal/evidence/acquisition/checkfacts"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // snapshot is what the golden conversions read instead of a tree: the head

@@ -68,9 +68,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/change"
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/assessment/change"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 // PolicySource gives the local policy, resolved with its defaults.

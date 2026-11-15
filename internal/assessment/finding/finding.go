@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"strings"
 
-	modelrule "github.com/alexei-led/archfit/v3/internal/model/rule"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
+	modelrule "github.com/alexei-led/archfit/v4/internal/model/rule"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
 )
 
 // Status represents the lifecycle state of a finding.

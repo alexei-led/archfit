@@ -15,7 +15,7 @@
 // lines, so the count on base and head applies that order.
 package change
 
-import "github.com/alexei-led/archfit/v3/internal/model/result"
+import "github.com/alexei-led/archfit/v4/internal/model/result"
 
 // Error is one rule a tree breaks, with every site of the tree that breaks it
 // in the same way.

@@ -19,15 +19,15 @@ DEFAULT_COST = 1.2
 # Too slow to shard by package, and split by test name across their own runners
 # instead (see the CI job): the CLI package is 56s on its own.
 SPLIT = (
-    "github.com/alexei-led/archfit/v3/cmd/archfit",
+    "github.com/alexei-led/archfit/v4/cmd/archfit",
 )
 
 # Measured warm per-package seconds, slowest first. Refresh with the "Run tests"
 # durations in a CI log; only the relative order matters for the split.
 COSTS = {
-    "github.com/alexei-led/archfit/v3/internal/toolrun": 26.0,
-    "github.com/alexei-led/archfit/v3/internal": 11.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/golang": 4.5,
+    "github.com/alexei-led/archfit/v4/internal/toolrun": 26.0,
+    "github.com/alexei-led/archfit/v4/internal": 11.0,
+    "github.com/alexei-led/archfit/v4/internal/extract/golang": 4.5,
 }
 
 

@@ -14,7 +14,7 @@ import (
 
 	"github.com/invopop/jsonschema"
 
-	"github.com/alexei-led/archfit/v3/internal/config/policyfile"
+	"github.com/alexei-led/archfit/v4/internal/config/policyfile"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 	// commentBase is this package's import path. AddGoComments keys comments by
 	// path.Join(base, walked directory), so joining "../config/policyfile" onto it
 	// gives the policyfile import path the reflected types carry.
-	commentBase = "github.com/alexei-led/archfit/v3/internal/configschema"
+	commentBase = "github.com/alexei-led/archfit/v4/internal/configschema"
 
 	typeString = "string"
 )

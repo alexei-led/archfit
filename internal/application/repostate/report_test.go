@@ -5,13 +5,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/alexei-led/archfit/v3/internal/application/repostate"
-	"github.com/alexei-led/archfit/v3/internal/assessment/change"
-	"github.com/alexei-led/archfit/v3/internal/assessment/count"
-	"github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/report"
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/policy/resolved"
+	"github.com/alexei-led/archfit/v4/internal/application/repostate"
+	"github.com/alexei-led/archfit/v4/internal/assessment/change"
+	"github.com/alexei-led/archfit/v4/internal/assessment/count"
+	"github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/report"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 )
 
 const policyPath = ".archfit.yaml"

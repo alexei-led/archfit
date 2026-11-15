@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/alexei-led/archfit/v3/internal/application/canquery"
-	"github.com/alexei-led/archfit/v3/internal/model/result"
-	"github.com/alexei-led/archfit/v3/internal/output/record"
+	"github.com/alexei-led/archfit/v4/internal/application/canquery"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/output/record"
 )
 
 // CanCmd is `archfit can <from> <to>` (internal/application/canquery): may

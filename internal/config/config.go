@@ -4,8 +4,8 @@ package config
 import (
 	"sort"
 
-	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
-	"github.com/alexei-led/archfit/v3/internal/policy"
+	evidenceports "github.com/alexei-led/archfit/v4/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v4/internal/policy"
 )
 
 // Config is an internal report projection, not a policy file format.

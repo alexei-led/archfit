@@ -16,8 +16,8 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	gitpkg "github.com/alexei-led/archfit/v4/internal/history/git"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // Build-time variables injected by -ldflags.

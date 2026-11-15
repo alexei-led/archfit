@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // TreeFiles returns every file of the git tree id tree, repository-relative

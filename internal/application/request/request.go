@@ -57,7 +57,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit/v3/internal/model/result"
+	"github.com/alexei-led/archfit/v4/internal/model/result"
 )
 
 // Errors of Service.Ask, tested with errors.Is.

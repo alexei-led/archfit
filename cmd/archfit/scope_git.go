@@ -9,10 +9,10 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v4/internal/application"
 
-	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
+	historygit "github.com/alexei-led/archfit/v4/internal/history/git"
+	"github.com/alexei-led/archfit/v4/internal/toolrun"
 )
 
 // scopeGit adapts the git history package to the scope resolution port, for

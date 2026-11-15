@@ -9,16 +9,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	"github.com/alexei-led/archfit/v3/internal/assessment/score"
-	"github.com/alexei-led/archfit/v3/internal/evidence"
-	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
-	"github.com/alexei-led/archfit/v3/internal/model/report"
-	"github.com/alexei-led/archfit/v3/internal/policy"
-	"github.com/alexei-led/archfit/v3/internal/relationship"
-	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
-	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v4/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v4/internal/assessment/result"
+	"github.com/alexei-led/archfit/v4/internal/assessment/score"
+	"github.com/alexei-led/archfit/v4/internal/evidence"
+	modevidence "github.com/alexei-led/archfit/v4/internal/model/evidence"
+	"github.com/alexei-led/archfit/v4/internal/model/report"
+	"github.com/alexei-led/archfit/v4/internal/policy"
+	"github.com/alexei-led/archfit/v4/internal/relationship"
+	"github.com/alexei-led/archfit/v4/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/v4/internal/scope"
 )
 
 const (

@@ -80,15 +80,15 @@ func TestApplicationStageContractsHaveNoBroadTypes(t *testing.T) {
 
 func TestApplicationNoConcreteAdapters(t *testing.T) {
 	forbidden := []string{
-		"github.com/alexei-led/archfit/v3/internal/analysispipeline",
-		"github.com/alexei-led/archfit/v3/internal/evidence/acquisition",
-		"github.com/alexei-led/archfit/v3/internal/extract",
-		"github.com/alexei-led/archfit/v3/internal/output",
-		"github.com/alexei-led/archfit/v3/internal/toolrun",
-		"github.com/alexei-led/archfit/v3/internal/factcache",
-		"github.com/alexei-led/archfit/v3/internal/history",
-		"github.com/alexei-led/archfit/v3/internal/ownership",
-		"github.com/alexei-led/archfit/v3/internal/config",
+		"github.com/alexei-led/archfit/v4/internal/analysispipeline",
+		"github.com/alexei-led/archfit/v4/internal/evidence/acquisition",
+		"github.com/alexei-led/archfit/v4/internal/extract",
+		"github.com/alexei-led/archfit/v4/internal/output",
+		"github.com/alexei-led/archfit/v4/internal/toolrun",
+		"github.com/alexei-led/archfit/v4/internal/factcache",
+		"github.com/alexei-led/archfit/v4/internal/history",
+		"github.com/alexei-led/archfit/v4/internal/ownership",
+		"github.com/alexei-led/archfit/v4/internal/config",
 	}
 	root := "."
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
