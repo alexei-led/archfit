@@ -23,6 +23,7 @@ from definitions import ARCHFIT_DENIED, ARMS, Trap
 
 FAKE_CLAUDE = "fake-claude"
 FAKE_ARCHFIT = Path("/fake/bin/archfit")
+FAKE_HOOKS_ARCHFIT = Path("/fake/bin/archfit-hooks")
 REGEX = "[a-z][a-z0-9]*"
 SECRET = "ghp_fixture_secret_value"
 
@@ -151,6 +152,8 @@ class FakeProcesses:
         self.agent = agent
         self.check = check
         self.agent_calls: list[dict] = []
+        self.doctor_calls: list[str] = []
+        self.check_calls: list[str] = []
 
     def __call__(self, argv, cwd, env=None, timeout=None):
         if argv == [FAKE_CLAUDE, "--version"]:
@@ -179,17 +182,22 @@ class FakeProcesses:
                 }
             )
             return bench.Result(0, self.agent(clone), "")
+        if argv[0] in (str(FAKE_ARCHFIT), str(FAKE_HOOKS_ARCHFIT)):
+            if argv[1:3] == ["doctor", "--fix"]:
+                if argv != [argv[0], "doctor", "--fix", "--hooks-only"]:
+                    raise AssertionError(f"unexpected doctor flags: {argv}")
+                self.doctor_calls.append(argv[0])
+                settings = Path(cwd) / ".claude/settings.json"
+                settings.parent.mkdir(parents=True, exist_ok=True)
+                settings.write_text("{}\n")
+                return bench.Result(0, f"wrote {settings}\n", "")
         if argv[0] == str(FAKE_ARCHFIT):
             if argv[1] == "--version":
                 return bench.Result(0, "archfit version v0.0.0-test\n", "")
-            if argv[1:3] == ["hook", "install"]:
-                settings = Path(argv[argv.index("--dir") + 1]) / ".claude/settings.json"
-                settings.parent.mkdir(parents=True)
-                settings.write_text("{}\n")
-                return bench.Result(0, f"wrote {settings}\n", "")
             if argv[1] == "check":
                 if argv != [str(FAKE_ARCHFIT), "check"]:
                     raise AssertionError(f"unexpected check flags: {argv}")
+                self.check_calls.append(argv[0])
                 code, doc = self.check
                 return bench.Result(code, doc, "")
             raise AssertionError(f"unexpected archfit call {argv}")
@@ -217,7 +225,9 @@ class BenchTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_bench(self, arm: str, procs: FakeProcesses) -> dict:
+    def run_bench(
+        self, arm: str, procs: FakeProcesses, hooks_archfit: Path = FAKE_ARCHFIT
+    ) -> dict:
         cfg = bench.Config(
             trap=trap_for(self.origin, self.pin),
             arms=[ARMS[arm]],
@@ -225,6 +235,7 @@ class BenchTest(unittest.TestCase):
             reps=1,
             out=self.out,
             archfit=FAKE_ARCHFIT,
+            hooks_archfit=hooks_archfit,
             claude=FAKE_CLAUDE,
             command="bench.py --out out",
             parent_env=self.parent_env,
@@ -270,6 +281,14 @@ class BenchTest(unittest.TestCase):
         self.assertIn("docs/usage.md", seen["readme"])
         self.assertTrue(seen["hooks"])
         self.assertNotIn("--disallowedTools", seen["argv"])
+
+    def test_hook_setup_uses_the_separate_writer_binary(self):
+        procs = FakeProcesses(copying_agent)
+        self.run_bench("tool-hooks", procs, hooks_archfit=FAKE_HOOKS_ARCHFIT)
+        seen = procs.agent_calls[0]
+        self.assertTrue(seen["hooks"])
+        self.assertEqual(procs.doctor_calls, [str(FAKE_HOOKS_ARCHFIT)])
+        self.assertEqual(procs.check_calls, [str(FAKE_ARCHFIT)])
 
     def test_agent_starts_clean_at_the_pin_and_cannot_fetch_or_push(self):
         procs = FakeProcesses(copying_agent)

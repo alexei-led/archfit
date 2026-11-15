@@ -249,6 +249,38 @@ func TestDoctorFixInstallsHooksWhenAToolchainInstallFails(t *testing.T) {
 	}
 }
 
+// TestDoctorFixHooksOnlySkipsTheToolchains: --hooks-only writes the hooks and
+// runs no toolchain install, so a benchmark clone never touches the host.
+func TestDoctorFixHooksOnlySkipsTheToolchains(t *testing.T) {
+	dir := fixRepo(t, map[string]string{harnessConfigFile(harnessClaude): "{}"})
+	chdirIsolated(t, dir)
+	installs := 0
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, name == testBrew
+		},
+		RunFunc: func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if cmd.Name == testBrew {
+				installs++
+			}
+			return toolrun.New().Run(ctx, cmd)
+		},
+	}
+	var out bytes.Buffer
+	if err := (&DoctorCmd{Fix: true, HooksOnly: true}).Run(&appDeps{Runner: runner, Stdout: &out}); err != nil {
+		t.Fatalf("doctor --fix --hooks-only: %v\n%s", err, out.String())
+	}
+	if installs != 0 {
+		t.Errorf("--hooks-only ran %d toolchain installs, want none", installs)
+	}
+	if strings.Contains(out.String(), "installing analyzer toolchains:") {
+		t.Errorf("--hooks-only printed the toolchain installs:\n%s", out.String())
+	}
+	if !strings.Contains(readFile(t, filepath.Join(dir, harnessConfigFile(harnessClaude))), hookRunCommand) {
+		t.Error("doctor --fix --hooks-only wrote no Claude Code hook")
+	}
+}
+
 // TestDoctorFixReadsANullSettingsFile: a settings file that holds JSON null
 // is an empty one.
 func TestDoctorFixReadsANullSettingsFile(t *testing.T) {
