@@ -10,10 +10,11 @@ On macOS or Linux, install the latest release with Homebrew:
 brew install alexei-led/tap/archfit
 ```
 
-With Go, install a tagged release:
+Or build the release from source. The Go module path is `github.com/alexei-led/archfit/v3`, so `go install` cannot fetch a v4 tag:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v4.0.0
+git clone --depth 1 --branch v4.0.0 https://github.com/alexei-led/archfit
+cd archfit && go install -ldflags="-X main.version=v4.0.0" ./cmd/archfit
 ```
 
 You can also download a release binary from the [release page](https://github.com/alexei-led/archfit/releases). Check the file against `SHA256SUMS` before you install it.

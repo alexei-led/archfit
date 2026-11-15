@@ -29,8 +29,9 @@ jobs:
           enable-cache: false
       - name: Install Archfit
         run: |
-          go install github.com/alexei-led/archfit/v3/cmd/archfit@v4.0.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          curl -fsSLo "$RUNNER_TEMP/archfit" "https://github.com/alexei-led/archfit/releases/download/v4.0.0/archfit-v4.0.0-linux-amd64"
+          chmod +x "$RUNNER_TEMP/archfit"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Test and write coverage
         run: go test -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Write coverage freshness sidecar
