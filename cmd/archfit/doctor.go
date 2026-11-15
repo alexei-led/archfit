@@ -240,7 +240,7 @@ func (c *DoctorCmd) installPy(ctx context.Context, deps *appDeps) error {
 
 func (c *DoctorCmd) installTS(ctx context.Context, deps *appDeps) error {
 	_, _ = fmt.Fprintln(deps.Stdout, "typescript tools:")
-	return c.ensureTool(ctx, deps, "node", "node", "https://nodejs.org/")
+	return c.ensureTool(ctx, deps, "ast-grep", "ast-grep", "https://ast-grep.github.io/guide/quick-start.html")
 }
 
 func (c *DoctorCmd) installGo(ctx context.Context, deps *appDeps) error {
