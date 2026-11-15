@@ -55,22 +55,31 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		}
 		return graph.Facts{}, cov, nil
 	}
+	fsys := os.DirFS(s.Root)
+	read, _, _ := packages(fsys, e.cfg.PyPackage)
+	modules := map[string]string{}
+	for _, pkg := range read {
+		files, _ := sourceFiles(fsys, pkg)
+		maps.Copy(modules, files)
+	}
+	for _, file := range modules {
+		if !excludedSource(e.cfg.Exclusions, file) {
+			cov.FilesApplicable++
+		}
+	}
 	parsed, err := Extract(ctx, e.runner, s.Root, Config{Package: e.cfg.PyPackage, Exclude: e.cfg.Exclusions})
 	if err != nil {
 		if ctx.Err() != nil {
 			return graph.Facts{}, cov, ctx.Err()
 		}
-		cov.Reason = err.Error()
+		cov.Status, cov.Reason = evidence.StatusPartial, err.Error()
 		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, cov, err
-		}
-		if !errors.Is(err, ErrNoAstGrep) {
-			cov.Status = evidence.StatusPartial
 		}
 		return graph.Facts{}, cov, nil
 	}
 	cov.Status = evidence.StatusOK
-	cov.FilesSeen, cov.FilesApplicable = len(parsed.Sources), len(parsed.Sources)
+	cov.FilesApplicable = len(parsed.Sources)
 	if len(parsed.Sources) > 0 {
 		out, err := e.runner.Run(ctx, toolrun.ToolCmd{Name: astGrep, Args: []string{"--version"}, WorkDir: s.Root})
 		if ctx.Err() != nil {
@@ -88,6 +97,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		}
 		cov.Version = strings.TrimSpace(string(out.Stdout))
 	}
+	cov.FilesSeen = len(parsed.Sources)
 	facts := graph.Facts{Language: graph.LangPython}
 	for _, file := range parsed.Sources {
 		facts.Nodes = append(facts.Nodes, graph.Node{Kind: graph.NodeKindModule, Path: parsed.Modules[file], Language: graph.LangPython})
