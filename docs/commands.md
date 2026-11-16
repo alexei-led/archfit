@@ -232,12 +232,13 @@ After the tools and the LLM settings, doctor shows the hooks. For each harness (
 | Codex | `codex` is on `PATH`, or `CODEX_HOME` (default `~/.codex`) exists | `.codex/hooks.json` | `SessionStart`, `PostToolUse` (after `apply_patch`, `Bash`), `Stop` |
 | git | the directory is in a git repository | `pre-commit` in the hooks directory git uses (`core.hooksPath` when set) | the pre-commit hook |
 
-It keeps every other setting and hook in a settings file and replaces its own earlier entries, so a second run changes nothing. It never replaces a pre-commit hook that archfit did not write, and never writes into a hooks directory outside the repository, such as a global `core.hooksPath`: it prints a warning with the line to add to that hook. The hooks read `.archfit.yaml` at the repository root; doctor warns when it does not exist. Codex runs the hooks only after you trust them. Outside a git repository, `--fix` writes no hook and says so. After the hooks, `--fix` installs the analyzer toolchains that archfit can install. A failed toolchain install keeps the hooks and makes doctor exit non-zero.
+It keeps every other setting and hook in a settings file and replaces its own earlier entries, so a second run changes nothing. It never replaces a pre-commit hook that archfit did not write, and never writes into a hooks directory outside the repository, such as a global `core.hooksPath`: it prints a warning with the line to add to that hook. The hooks read `.archfit.yaml` at the repository root; doctor warns when it does not exist. Codex runs the hooks only after you trust them. Outside a git repository, `--fix` writes no hook and says so. After the hooks, `--fix` installs the analyzer toolchains that archfit can install; `--hooks-only` stops after the hooks. A failed toolchain install keeps the hooks and makes doctor exit non-zero.
 
 | Flag | Meaning |
 | --- | --- |
 | `--fix` | Install the hooks of the harnesses found here, and the missing toolchains archfit can install. `--install` is an alias. |
 | `--lang <name>` | Limit the toolchain install to `go`, `ts`, `py`, or `rust`. Repeatable. Default: all. |
+| `--hooks-only` | With `--fix`: write the hooks only; the toolchains are left as they are. |
 | `-n, --dry-run` | With `--fix`: print the install commands and the hook files, and change nothing. |
 | `--format <name>` | `text` (default) or `json`. `json` prints the tool rows and the hooks as `archfit.doctor.v1`. Each tool row has `group` (`check` or `report`), `languages` (absent: every language), and `status` (`ok`, `missing`, or `invalid` with its `error`). A harness whose settings file git ignores has `ignored: true`. `json` cannot be combined with `--fix`. An `invalid` tool fails `doctor` in both formats, after the full report. |
 
