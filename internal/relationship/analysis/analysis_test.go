@@ -16,22 +16,24 @@ import (
 )
 
 const (
-	fileA       = "a/a.go"
-	fileB       = "b/b.go"
-	nodeA       = "file:" + fileA
-	nodeB       = "file:" + fileB
-	moduleA     = "a"
-	moduleB     = "b"
-	teamA       = "team-a"
-	teamB       = "team-b"
-	ruleBC      = "bc/imbalanced_coupling"
-	kindImports = "imports"
-	volHigh     = "high"
-	volLow      = "low"
-	globA       = "a/**"
-	globB       = "b/**"
-	libNATS     = "nats"
-	kindQueue   = "queue"
+	fileA            = "a/a.go"
+	fileB            = "b/b.go"
+	nodeA            = "file:" + fileA
+	nodeB            = "file:" + fileB
+	moduleA          = "a"
+	moduleB          = "b"
+	teamA            = "team-a"
+	teamB            = "team-b"
+	ruleBC           = "bc/imbalanced_coupling"
+	kindImports      = "imports"
+	volHigh          = "high"
+	volLow           = "low"
+	globA            = "a/**"
+	globB            = "b/**"
+	libNATS          = "nats"
+	kindQueue        = "queue"
+	testGoTypes      = "go/types"
+	unmeasuredStatic = "unmeasured_static"
 )
 
 // twoModules is the standard fixture topology: module a owned by team-a,
@@ -463,8 +465,8 @@ func TestAnalyzeConnascenceEvidence(t *testing.T) {
 			From: nodeA, To: nodeB, Kind: graph.EdgeKindImports, Language: graph.LangGo,
 			StrengthHint: string(relationship.StrengthFunctional),
 			ConnascenceHints: []graph.ConnascenceHint{
-				{Kind: "name", Source: "go/types", Detail: "Handler"},
-				{Kind: "type", Source: "go/types"},
+				{Kind: graph.ConnascenceName, Source: testGoTypes, Detail: "Handler"},
+				{Kind: graph.ConnascenceType, Source: testGoTypes},
 			},
 		}},
 	}})
@@ -483,7 +485,7 @@ func TestAnalyzeConnascenceEvidence(t *testing.T) {
 	if got.Evidence.Connascence.EdgesWithEvidence != 1 || got.Evidence.Connascence.TotalEvidence != 2 {
 		t.Errorf("connascence summary = %+v, want 1 edge with 2 facts", got.Evidence.Connascence)
 	}
-	if got.Evidence.Connascence.ByKind["name"] != 1 || got.Evidence.Connascence.BySource["go/types"] != 2 {
+	if got.Evidence.Connascence.ByKind[graph.ConnascenceName] != 1 || got.Evidence.Connascence.BySource[testGoTypes] != 2 {
 		t.Errorf("connascence rollups = %+v, want per-kind and per-source counts", got.Evidence.Connascence)
 	}
 	// Connascence is disclosure, not a distance input.
@@ -492,5 +494,53 @@ func TestAnalyzeConnascenceEvidence(t *testing.T) {
 	}))
 	if plain.Distance != edge.Distance {
 		t.Errorf("distance changed with connascence evidence: %q -> %q", plain.Distance, edge.Distance)
+	}
+}
+
+func TestConnascenceRoadmapDescribesProducerCapabilities(t *testing.T) {
+	for _, hints := range [][]graph.ConnascenceHint{
+		nil,
+		{{Kind: graph.ConnascencePosition, Source: "fixture"}},
+	} {
+		g := graph.Build([]graph.Facts{{
+			Nodes: []graph.Node{{Kind: graph.NodeKindFile, Path: fileA}, {Kind: graph.NodeKindFile, Path: fileB}},
+			Edges: []graph.Edge{{From: nodeA, To: nodeB, Kind: graph.EdgeKindImports, ConnascenceHints: hints}},
+		}})
+		report := analysis.Analyze(analysis.Input{Graph: g, Policy: relationshipPolicy(twoModules())}).Evidence.Connascence
+		if report == nil {
+			t.Fatal("missing connascence report")
+		}
+		want := map[string]struct {
+			status  string
+			sources []string
+		}{
+			"name":                {"deterministic_static", []string{testGoTypes, "tsimports", "pyimports"}},
+			graph.ConnascenceType: {"deterministic_static", []string{testGoTypes}},
+			"meaning":             {unmeasuredStatic, nil},
+			"algorithm":           {unmeasuredStatic, nil},
+			"position":            {unmeasuredStatic, nil},
+		}
+		for _, item := range report.Roadmap {
+			expected, ok := want[item.Kind]
+			if !ok {
+				continue
+			}
+			if item.CurrentStatus != expected.status || !slices.Equal(item.Sources, expected.sources) {
+				t.Errorf("roadmap %s = %+v, want status %q sources %v", item.Kind, item, expected.status, expected.sources)
+			}
+			delete(want, item.Kind)
+		}
+		if len(want) != 0 {
+			t.Errorf("missing roadmap items: %v", want)
+		}
+		for _, kind := range []string{graph.ConnascenceMeaning, graph.ConnascenceAlgorithm, graph.ConnascencePosition} {
+			wantUnmeasured := kind != graph.ConnascencePosition || len(hints) == 0
+			if slices.Contains(report.Unmeasured, kind) != wantUnmeasured {
+				t.Errorf("unmeasured = %v, kind %s expected absence=%v", report.Unmeasured, kind, wantUnmeasured)
+			}
+		}
+		if len(hints) > 0 && report.ByKind[graph.ConnascencePosition] != 1 {
+			t.Errorf("position evidence count lost: %+v", report.ByKind)
+		}
 	}
 }

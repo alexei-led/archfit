@@ -105,17 +105,25 @@ change. This is separate from report metrics. See [rules](rules.md),
 
 ## Supporting evidence
 
-The following report blocks explain inputs or expose limits. None gates by itself.
+The pipeline collects the following internal evidence blocks. None gates by itself.
+They are not separate blocks in CLI output: JSON renders the architecture state,
+and text renders repository state, evidence gaps, and measurements.
 
 | Block                                          | Meaning and limit                                                                                                                                                                   |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connascence`                                  | Deterministic static evidence for shared knowledge. It never sets strength. Dynamic categories remain unmeasured.                                                                   |
 | `dynamic_imports`, `classified_external_edges` | Dynamic import sites and excluded external edges. They inform review but do not enter internal coupling scoring.                                                                    |
-| `dynamic_connascence_signals`                  | Review hints from dynamic imports and runtime async relations. Each signal is unmeasured and report-only.                                                                           |
+| `dynamic_connascence_signals`                  | Review hints from dynamic imports and runtime async relations. Each signal is unmeasured and advisory.                                                                           |
 | `distance_config_candidates`                   | Static external, dynamic, and async evidence that can prompt config review. It does not change distance or config.                                                                  |
 | `runtime_async`, `runtime_async_edges`         | Detected async integration sites. Missing evidence does not prove synchronous coupling. These sites do not affect score or distance.                                                |
 | `local_coupling`                               | Same-module coupling and cohesion signals. Unknown strength abstains. These edges do not enter `coupling_balance`.                                                                  |
 | `distance_context`, `classified_edges`         | Distance basis and scoring inputs, abstentions, volatility provenance, drivers, module-pair concentration, and tail risk. These explain the score; they do not create another gate. |
+
+The Go producer records connascence evidence for resolved names and identified
+types. TypeScript and Python import producers also record names. No active
+producer measures meaning, algorithm, or position connascence. A function call
+or named data reference alone does not establish shared algorithm or magic-value
+conventions. The internal connascence block is not emitted in CLI JSON or text.
 
 The seam ledger includes only pairs with import edges.
 

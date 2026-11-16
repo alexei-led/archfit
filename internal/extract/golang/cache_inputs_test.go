@@ -151,3 +151,51 @@ func TestFactCache_ArchitectureFeaturesInvalidate(t *testing.T) {
 		})
 	}
 }
+
+func TestFactCache_ConnascenceMatchesFreshLoad(t *testing.T) {
+	root := t.TempDir()
+	for path, content := range map[string]string{
+		evidenceGoModFile:      "module example.com/cache\n\ngo 1.24\n",
+		"provider/provider.go": "package provider\nconst Value = 1\nfunc Call() {}\n",
+		"consumer/consumer.go": "package consumer\nimport \"example.com/cache/provider\"\nfunc Use() int { provider.Call(); return provider.Value }\n",
+	} {
+		path = filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("GOWORK", "off")
+	loads := 0
+	ex := New(evidenceports.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = func(cfg *packages.Config, patterns ...string) ([]*packages.Package, error) {
+		loads++
+		return packages.Load(cfg, patterns...)
+	}
+	extract := func() graph.Facts {
+		t.Helper()
+		facts, cov, err := ex.Extract(context.Background(), scope.Scope{Root: root})
+		if err != nil || cov.Status != "ok" {
+			t.Fatalf("Extract: status=%s error=%v", cov.Status, err)
+		}
+		return facts
+	}
+	cold := extract()
+	warm := extract()
+	if loads != 1 {
+		t.Fatalf("warm extract must hit cache: loads=%d", loads)
+	}
+	if !reflect.DeepEqual(cold, warm) {
+		t.Fatalf("cached facts differ from fresh facts: cold=%+v warm=%+v", cold, warm)
+	}
+	for _, edge := range warm.Edges {
+		for _, hint := range edge.ConnascenceHints {
+			if hint.Kind == graph.ConnascenceMeaning || hint.Kind == graph.ConnascenceAlgorithm {
+				t.Errorf("unsupported cached connascence hint: %+v", hint)
+			}
+		}
+	}
+}

@@ -283,13 +283,13 @@ func buildConnascenceSummary(set relationship.Set) *evidence.ConnascenceReport {
 			r.BySource[v.Source]++
 		}
 	}
-	kinds := []string{"position", "execution", "timing", "value", "identity"}
+	kinds := []string{"meaning", "algorithm", "position", "execution", "timing", "value", "identity"}
 	for _, k := range kinds {
 		if r.ByKind[k] == 0 {
 			r.Unmeasured = append(r.Unmeasured, k)
 		}
 	}
-	r.Roadmap = connascenceRoadmap(r.ByKind)
+	r.Roadmap = connascenceRoadmap()
 	if len(r.ByKind) == 0 {
 		r.ByKind = nil
 	}
@@ -306,36 +306,22 @@ const (
 	connascenceSourceGoTypes       = "go/types"
 	connascenceSourceTSImports     = "tsimports"
 	connascenceSourcePythonImports = "pyimports"
-	connascenceSourceSCIP          = "scip"
 )
 
-func connascenceRoadmap(by map[string]int) []evidence.ConnascenceRoadmapItem {
+func connascenceRoadmap() []evidence.ConnascenceRoadmapItem {
 	items := make([]evidence.ConnascenceRoadmapItem, 0, 9)
 	items = append(items,
-		evidence.ConnascenceRoadmapItem{Kind: "name", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceTSImports, connascenceSourcePythonImports, connascenceSourceSCIP}},
-		evidence.ConnascenceRoadmapItem{Kind: "type", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
-		evidence.ConnascenceRoadmapItem{Kind: "meaning", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
-		evidence.ConnascenceRoadmapItem{Kind: "algorithm", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceSCIP}},
-		evidence.ConnascenceRoadmapItem{Kind: "position", CurrentStatus: positionStatus(by), Sources: positionSources(by), UpgradeTrigger: "deterministic argument-order or tuple-position facts from an extractor"},
+		evidence.ConnascenceRoadmapItem{Kind: "name", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes, connascenceSourceTSImports, connascenceSourcePythonImports}},
+		evidence.ConnascenceRoadmapItem{Kind: "type", CurrentStatus: connascenceDeterministicStatic, Sources: []string{connascenceSourceGoTypes}},
+		evidence.ConnascenceRoadmapItem{Kind: "meaning", CurrentStatus: connascenceUnmeasuredStatic},
+		evidence.ConnascenceRoadmapItem{Kind: "algorithm", CurrentStatus: connascenceUnmeasuredStatic},
+		evidence.ConnascenceRoadmapItem{Kind: "position", CurrentStatus: connascenceUnmeasuredStatic, UpgradeTrigger: "deterministic argument-order or tuple-position facts from an extractor"},
 	)
 	for _, kind := range []string{"execution", "timing", "value", "identity"} {
 		items = append(items, evidence.ConnascenceRoadmapItem{Kind: kind, CurrentStatus: connascenceUnmeasuredDynamic, RelatedSignals: []string{"dynamic_imports", "runtime_async_edges"}, UpgradeTrigger: "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"})
 	}
 	return items
 }
-func positionStatus(by map[string]int) string {
-	if by["position"] > 0 {
-		return connascenceDeterministicStatic
-	}
-	return connascenceUnmeasuredStatic
-}
-func positionSources(by map[string]int) []string {
-	if by["position"] > 0 {
-		return []string{connascenceSourceSCIP}
-	}
-	return nil
-}
-
 func buildLocalCouplingSummary(set relationship.Set) []evidence.LocalCouplingModule {
 	type agg struct {
 		scored, abstained, complexity, sum int
