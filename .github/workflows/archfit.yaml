@@ -1,19 +1,22 @@
-# Archfit Action 3 remains available for manual runs until Action 4.
+# Archfit: check this change and send the result to the Archfit App at
+# https://app.coupling.dev, which decides the archfit/gate check.
+#
+# The only step is the Archfit Action, pinned to the v4.0.0 release commit. The
+# Action checks out the change itself without persisting credentials, runs the
+# pinned engine image, and checks the pull request head, pushed commit or merge
+# group commit against the target branch's policy. It uploads the result with the
+# job's GitHub OIDC token (id-token: write), uses no repository secret and runs no
+# repository script. pull_request, branch push and the default branch's merge
+# queue (merge_group) are accepted; every other event is refused before checkout.
 name: archfit
 
-# Milestone 2 restores automatic triggers with Action 4.
 on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: What a dispatched run does
-        type: choice
-        options:
-          - report
-          - discovery
-          - baseline
-          - reanchor
-        default: report
+  pull_request:
+  push:
+    branches:
+      - "main"
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
@@ -23,8 +26,7 @@ jobs:
   archfit:
     runs-on: ubuntu-latest
     steps:
-      - uses: alexei-led/archfit-action@2221f4bfece0725a657414fed751cdc090ba1bd4 # v3.1.1
+      - uses: alexei-led/archfit-action@9669571b7b25e3f37fd7f1d99d7b89741c6c95d6 # v4.0.0
         with:
           endpoint: "https://app.coupling.dev"
           audience: "https://app.coupling.dev"
-          mode: ${{ inputs.mode }}
