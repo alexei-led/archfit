@@ -33,6 +33,8 @@ const (
 	fileAAGo         = "pkg/a/a.go"
 	fileContractCons = "pkg/a/contract_cons.go"
 	fileConstCons    = "pkg/a/const_cons.go"
+	fileVarCons      = "pkg/a/var_cons.go"
+	fileFuncVarCons  = "pkg/a/funcvar_cons.go"
 )
 
 func testdataRoot(t *testing.T) string {
@@ -371,7 +373,7 @@ func TestExtract_StrengthHint(t *testing.T) {
 		// const_cons.go only reads b.MaxRetries — pure data sharing (book Ch7) → model, not functional.
 		{"const reference → model", fileConstCons, pkgB, graph.EdgeKindImports, hintModel},
 		// var_cons.go only reads b.DefaultName — pure data sharing (book Ch7) → model, not functional.
-		{"var reference → model", "pkg/a/var_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		{"var reference → model", fileVarCons, pkgB, graph.EdgeKindImports, hintModel},
 		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 4) → functional wins.
 		{"max rank wins", "pkg/a/max_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
 		// dto_cons.go only references b.UserDTO — exported struct, only exported
@@ -387,7 +389,7 @@ func TestExtract_StrengthHint(t *testing.T) {
 		// dto_rank_cons.go uses b.Greeter (contract, rank 1) AND b.UserDTO (dto, rank 2) → dto wins.
 		{"dto outranks contract", "pkg/a/dto_rank_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
 		// funcvar_cons.go calls b.DefaultHandler() — a func-typed var is stored behavior → functional.
-		{"func-valued var → functional", "pkg/a/funcvar_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		{"func-valued var → functional", fileFuncVarCons, pkgB, graph.EdgeKindImports, hintFunctional},
 		// callback_fire_cons.go invokes h.OnDone() — a func-typed field call outranks the holder's model hint.
 		{"func-typed field invocation → functional", "pkg/a/callback_fire_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
 		// dto_read_cons.go reads u.ID via a plain selector — the DTO field stays dto.
@@ -452,8 +454,11 @@ func TestExtract_ConnascenceHints(t *testing.T) {
 		want string
 	}{
 		{"interface type reference", fileContractCons, graph.ConnascenceType},
-		{"constant reference", fileConstCons, graph.ConnascenceMeaning},
-		{"function call", fileAAGo, graph.ConnascenceAlgorithm},
+		{"DTO field reference", "pkg/a/dto_read_cons.go", graph.ConnascenceType},
+		{"constant reference", fileConstCons, graph.ConnascenceName},
+		{"data variable reference", fileVarCons, graph.ConnascenceName},
+		{"delegated function call", fileAAGo, graph.ConnascenceName},
+		{"callable variable", fileFuncVarCons, graph.ConnascenceName},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -464,8 +469,10 @@ func TestExtract_ConnascenceHints(t *testing.T) {
 			if !got[tt.want] {
 				t.Fatalf("connascence kinds = %+v, want %s", got, tt.want)
 			}
-			if got[graph.ConnascencePosition] {
-				t.Fatalf("connascence kinds = %+v, position must abstain", got)
+			for _, kind := range []string{graph.ConnascenceMeaning, graph.ConnascenceAlgorithm, graph.ConnascencePosition} {
+				if got[kind] {
+					t.Errorf("connascence kinds = %+v, %s must abstain", got, kind)
+				}
 			}
 		})
 	}
@@ -554,13 +561,13 @@ func TestExtract_DataStrengthHint(t *testing.T) {
 		want string
 	}{
 		{"function call only has no data", fileAAGo, pkgB, ""},
-		{"func-valued var has no data", "pkg/a/funcvar_cons.go", pkgB, ""},
+		{"func-valued var has no data", fileFuncVarCons, pkgB, ""},
 		{"interface type is contract", fileContractCons, pkgB, hintContract},
 		{"interface method call carries the interface type", "pkg/a/iface_method_cons.go", pkgB, hintContract},
 		{"dto type is dto", "pkg/a/dto_cons.go", pkgB, hintDTO},
 		{"concrete type is model", "pkg/a/model_cons.go", pkgB, hintModel},
 		{"const is model", fileConstCons, pkgB, hintModel},
-		{"var is model", "pkg/a/var_cons.go", pkgB, hintModel},
+		{"var is model", fileVarCons, pkgB, hintModel},
 		{"concrete method is model", "pkg/a/concrete_method_cons.go", pkgB, hintModel},
 		{"callable use does not outrank data", "pkg/a/max_cons.go", pkgB, hintContract},
 		{"dto outranks contract", "pkg/a/dto_rank_cons.go", pkgB, hintDTO},

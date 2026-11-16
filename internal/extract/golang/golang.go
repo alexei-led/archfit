@@ -593,17 +593,8 @@ func goObjectConnascence(obj types.Object, dtos *dtoIndex) []graph.ConnascenceHi
 		if tn.IsField() && dtos.isDTOField(tn) {
 			return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceType, Source: sourceGoTypes, Detail: "dto field"})
 		}
-		switch tn.Type().Underlying().(type) {
-		case *types.Signature, *types.Chan:
-			return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes, Detail: "callable value"})
-		default:
-			return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes, Detail: "data value"})
-		}
-	case *types.Const:
-		return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes, Detail: "constant"})
-	default:
-		return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes, Detail: "function or method"})
 	}
+	return hints
 }
 
 // dtoIndex memoizes pure-data-DTO decisions per named type and records the

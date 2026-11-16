@@ -33,8 +33,8 @@ const goAnalyzer = "go"
 // memberFactsRevision rides every member key. Bump it when the same input tree
 // yields different facts, so a binary never replays what an older one derived:
 // "2" reads the imports of cgo files (they were dropped, their parsed copy being
-// outside the scan root).
-const memberFactsRevision = "2"
+// outside the scan root); "3" removes unsupported connascence claims.
+const memberFactsRevision = "3"
 
 // goSemantics is the measurement-contract version of the go/packages producer,
 // a package var so a test can prove the member key moves with it. The same
