@@ -29,7 +29,7 @@ jobs:
       - name: Read runtime pins
         id: pins
         run: jq -r '.versions | to_entries[] | "\(.key)=\(.value)"' tools/manifest.json >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.pins.outputs.go }}
           check-latest: false
@@ -70,7 +70,7 @@ jobs:
       - name: Read runtime pins
         id: pins
         run: jq -r '.versions | to_entries[] | "\(.key)=\(.value)"' tools/manifest.json >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.pins.outputs.go }}
           check-latest: false
@@ -320,7 +320,7 @@ jobs:
       - name: Read runtime pins
         id: pins
         run: jq -r '.versions | to_entries[] | "\(.key)=\(.value)"' tools/manifest.json >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.pins.outputs.go }}
           check-latest: false
@@ -486,7 +486,7 @@ jobs:
       - name: Read runtime pins
         id: pins
         run: jq -r '.versions | to_entries[] | "\(.key)=\(.value)"' tools/manifest.json >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.pins.outputs.go }}
           check-latest: false
