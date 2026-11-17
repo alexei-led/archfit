@@ -65,6 +65,7 @@ func (*Renderer) Render(d report.Document, w io.Writer) error {
 	}
 	writeIncomplete(&b, d.ToolCoverage, d.CoverageGaps)
 	writeMeasurements(&b, d.Metrics)
+	writeEvidence(&b, d.State.Evidence)
 	if repo != nil && !repo.Protected {
 		b.WriteString("policy: not protected\n")
 	}

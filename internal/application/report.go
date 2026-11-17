@@ -1,6 +1,8 @@
 package application
 
 import (
+	"sort"
+
 	"github.com/alexei-led/archfit/v4/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v4/internal/assessment/result"
 	"github.com/alexei-led/archfit/v4/internal/assessment/score"
@@ -67,6 +69,7 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 	out.Measurement.ToolVersions, out.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
 
 	out.Seams = projectStateSeams(r.Seams)
+	out.Evidence = projectEvidence(r)
 
 	out.Coverage.Measured, out.Coverage.Partial, out.Coverage.Unmeasured = out.Dimensions.CountStatuses()
 	return out
@@ -82,7 +85,7 @@ func projectStateSeams(in []result.Seam) []report.Seam {
 			ID: s.ID, FromModule: s.FromModule, ToModule: s.ToModule,
 			Edges: s.Edges, ScoredEdges: s.ScoredEdges, AbstainedEdges: s.AbstainedEdges,
 			Strength: s.Strength, Distance: s.Distance, Volatility: s.Volatility,
-			VolatilityProvenance: s.VolatilityProvenance, Severity: s.Severity,
+			Severity: s.Severity,
 			RawDistance: report.SeamDistance{
 				Level: s.RawDistance.Level, Basis: s.RawDistance.Basis,
 				FromOwner: s.RawDistance.FromOwner, ToOwner: s.RawDistance.ToOwner, SameOwner: s.RawDistance.SameOwner,
@@ -378,6 +381,147 @@ func projectFindings(in []finding.Finding) []report.Finding {
 			},
 			MatchedBy: matchedBy, Locations: locations, Why: f.Why, Constraint: f.Constraint, Alternatives: f.Alternatives,
 		})
+	}
+	return out
+}
+
+const (
+	reportEvidenceUnknown = "unknown"
+	reportEvidenceChanged = "changed"
+)
+
+func projectEvidence(r result.Result) report.ReportEvidence {
+	in := r.ReportEvidence
+	out := report.NewReportEvidence()
+	out.Connascence.TotalEdges = in.Relationships.TotalEdges
+	out.Connascence.Summary = projectConnascence(r.Connascence)
+	out.PairPopulation.TotalEdges = in.Relationships.PairEdges
+	var before, after evidence.ReportFileSnapshot
+	if in.Context != nil {
+		before, after = in.Context.Before, in.After
+		sc := in.Context.Scope
+		out.Scope = report.EvidenceScope{Abstraction: sc.Abstraction, SourceRoot: sc.SourceRoot, PolicyRef: projectEvidenceRef(sc.PolicyRef, before, after),
+			ModuleInventoryHash: in.Relationships.ModuleInventoryHash, ClassificationHash: r.ClassificationHash,
+			Exclude: append([]string{}, sc.Exclude...), Tests: append([]string{}, sc.Tests...), Generated: append([]string{}, sc.Generated...), Languages: []report.EvidenceLanguage{}}
+		for _, l := range sc.Languages {
+			out.Scope.Languages = append(out.Scope.Languages, report.EvidenceLanguage{Name: l.Name, Mode: l.Mode})
+		}
+		out.Snapshot = projectEvidenceSnapshot(before, after, sc.PolicyRef.SHA256)
+	}
+	components := map[string]evidence.ReportComponent{}
+	for _, c := range in.Relationships.Components {
+		components[c.Name] = c
+	}
+	if in.Context != nil {
+		for _, c := range in.Context.Components {
+			components[c.Name] = c
+		}
+	}
+	names := make([]string, 0, len(components))
+	for name := range components {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		c := components[name]
+		out.Components = append(out.Components, report.EvidenceComponent{Name: c.Name, Declared: c.Declared,
+			Public:     report.EvidencePathsFact{Raw: c.Public.Raw, Effective: c.Public.Effective, Origin: string(c.Public.Origin), Derivation: reportText(c.Public.Derivation, maxReportTextRunes), Refs: projectEvidenceRefs(c.Public.Refs, before, after, out.Scope.PolicyRef.Path)},
+			Subdomain:  projectEvidenceString(c.Subdomain, before, after, out.Scope.PolicyRef.Path),
+			Volatility: projectEvidenceString(c.Volatility, before, after, out.Scope.PolicyRef.Path), Unknowns: projectEvidenceUnknowns(c.Unknowns)})
+	}
+	for _, p := range in.Relationships.Pairs {
+		row := report.EvidencePair{PairID: p.PairID, Observations: []report.EvidenceObservation{}, InterfaceInventory: report.InterfaceInventory{Status: reportEvidenceUnknown, Reason: "no integration-interface collector; ordered module pair only"}, Unknowns: projectEvidenceUnknowns(p.Unknowns)}
+		for _, o := range p.Observations {
+			obs := report.EvidenceObservation{FromNode: o.FromNode, ToNode: o.ToNode, EdgeKind: o.EdgeKind, Language: o.Language, Sites: []report.EvidenceRef{}, Connascence: []report.EvidenceConnascenceItem{}}
+			for _, s := range o.Sites {
+				ref := evidence.ReportRef{Path: s.Path}
+				if s.Line > 0 {
+					ref.Line = new(s.Line)
+				} else {
+					row.Unknowns = append(row.Unknowns, report.UnknownFact{Fact: "site_line", Reason: "retained site has no positive source line", Owner: "extractor"})
+				}
+				site := projectEvidenceRef(ref, before, after)
+				if site.Status != "captured" {
+					row.Unknowns = append(row.Unknowns, report.UnknownFact{Fact: "site_bytes", Reason: reportText("site unavailable or changed in captured subset: "+s.Path, maxReportTextRunes), Owner: "evidence/acquisition"})
+				}
+				obs.Sites = append(obs.Sites, site)
+			}
+			for _, c := range o.Connascence {
+				obs.Connascence = append(obs.Connascence, report.EvidenceConnascenceItem{Kind: c.Kind, Source: c.Source, Detail: reportText(c.Detail, maxReportTextRunes)})
+			}
+			row.Observations = append(row.Observations, obs)
+		}
+		out.Pairs = append(out.Pairs, row)
+	}
+	return out
+}
+
+func projectEvidenceSnapshot(before, after evidence.ReportFileSnapshot, consumed *string) report.EvidenceSnapshot {
+	out := report.EvidenceSnapshot{HeadCommit: before.HeadCommit, HeadTree: before.HeadTree, BeforeDigest: before.Digest, AfterDigest: after.Digest,
+		PolicyBeforeDigest: before.PolicyDigest, PolicyAfterDigest: after.PolicyDigest, Cleanliness: before.Cleanliness, Stability: reportEvidenceUnknown, PolicyBinding: reportEvidenceUnknown,
+		Unknowns: append(projectEvidenceUnknowns(before.Unknowns), projectEvidenceUnknowns(after.Unknowns)...)}
+	if out.Cleanliness == "" {
+		out.Cleanliness = reportEvidenceUnknown
+	}
+	switch {
+	case consumed != nil && ((before.PolicyDigest != nil && *consumed != *before.PolicyDigest) || (after.PolicyDigest != nil && *consumed != *after.PolicyDigest)):
+		out.PolicyBinding = "mismatch"
+		out.Stability = reportEvidenceChanged
+	case consumed != nil && before.PolicyDigest != nil && after.PolicyDigest != nil:
+		out.PolicyBinding = "match"
+	default:
+		out.Unknowns = append(out.Unknowns, report.UnknownFact{Fact: "policy_binding", Reason: "consumed policy or boundary bytes unavailable", Owner: "evidence/acquisition"})
+	}
+	if evidenceStringChanged(before.HeadCommit, after.HeadCommit) || evidenceStringChanged(before.HeadTree, after.HeadTree) || evidenceStringChanged(before.Digest, after.Digest) {
+		out.Stability = reportEvidenceChanged
+	}
+	if out.Stability != reportEvidenceChanged && before.Digest != nil && after.Digest != nil && *before.Digest == *after.Digest && out.PolicyBinding == "match" {
+		out.Stability = "stable_by_pre_post_check"
+	}
+	return out
+}
+
+func evidenceStringChanged(a, b *string) bool { return a != nil && b != nil && *a != *b }
+
+func projectEvidenceRef(in evidence.ReportRef, before, after evidence.ReportFileSnapshot) report.EvidenceRef {
+	out := report.EvidenceRef{Path: in.Path, SHA256: in.SHA256, Line: in.Line, Selector: in.Selector, Status: reportEvidenceUnknown}
+	a, aok := before.Files[in.Path]
+	b, bok := after.Files[in.Path]
+	switch {
+	case aok && bok:
+		if out.SHA256 == nil {
+			out.SHA256 = new(a)
+		}
+		if a == b && *out.SHA256 == a {
+			out.Status = "captured"
+		} else {
+			out.Status = reportEvidenceChanged
+		}
+	case (aok || bok) && before.Digest != nil && after.Digest != nil:
+		out.Status = reportEvidenceChanged
+	}
+	return out
+}
+
+func projectEvidenceRefs(in []evidence.ReportRef, before, after evidence.ReportFileSnapshot, policyPath string) []report.EvidenceRef {
+	out := make([]report.EvidenceRef, 0, len(in))
+	for _, ref := range in {
+		if ref.Path == "" {
+			ref.Path = policyPath
+		}
+		out = append(out, projectEvidenceRef(ref, before, after))
+	}
+	return out
+}
+
+func projectEvidenceString(in evidence.ReportStringFact, before, after evidence.ReportFileSnapshot, policyPath string) report.EvidenceStringFact {
+	return report.EvidenceStringFact{Raw: in.Raw, Effective: in.Effective, Origin: string(in.Origin), Derivation: reportText(in.Derivation, maxReportTextRunes), Refs: projectEvidenceRefs(in.Refs, before, after, policyPath)}
+}
+
+func projectEvidenceUnknowns(in []evidence.ReportUnknownFact) []report.UnknownFact {
+	out := make([]report.UnknownFact, 0, len(in))
+	for _, u := range in {
+		out = append(out, report.UnknownFact{Fact: reportText(u.Fact, maxReportTextRunes), Reason: reportText(u.Reason, maxReportTextRunes), Owner: u.Owner})
 	}
 	return out
 }

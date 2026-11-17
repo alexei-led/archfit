@@ -3,7 +3,7 @@ package report
 // StateSchemaVersion identifies the canonical architecture-state JSON contract.
 // Renderers publish this state directly; the broader Document remains an
 // internal adapter input rather than a second wire format.
-const StateSchemaVersion = "archfit.architecture-state.v1"
+const StateSchemaVersion = "archfit.architecture-state.v2"
 
 // MeasurementStatus records whether a dimension's evidence was actually
 // gathered. Missing evidence is explicit, never an implicit green result.
@@ -213,34 +213,34 @@ type SeamScoreDistribution struct {
 // dimension's evidence: the dimension envelope keeps the common shape, and the
 // per-seam facts live here rather than being flattened into a repository mean.
 type Seam struct {
-	ID                   string                `json:"id"`
-	FromModule           string                `json:"from_module"`
-	ToModule             string                `json:"to_module"`
-	Edges                int                   `json:"edges"`
-	ScoredEdges          int                   `json:"scored_edges"`
-	AbstainedEdges       int                   `json:"abstained_edges"`
-	Strength             string                `json:"strength"`
-	Distance             string                `json:"distance"`
-	Volatility           string                `json:"volatility"`
-	VolatilityProvenance string                `json:"volatility_provenance,omitempty"`
-	Severity             string                `json:"severity,omitempty"`
-	RawDistance          SeamDistance          `json:"raw_distance"`
-	Quadrant             string                `json:"quadrant,omitempty"`
-	Scores               SeamScoreDistribution `json:"scores"`
-	CriticalEdges        int                   `json:"critical_edges"`
-	HighOrWorseEdges     int                   `json:"high_or_worse_edges"`
-	CriticalSharePct     int                   `json:"critical_share_pct"`
-	HighOrWorseSharePct  int                   `json:"high_or_worse_share_pct"`
-	Confidence           string                `json:"confidence"`
-	RoleExpectation      string                `json:"role_expectation,omitempty"`
-	Hypothesis           string                `json:"hypothesis,omitempty"`
-	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
+	ID                  string                `json:"id"`
+	FromModule          string                `json:"from_module"`
+	ToModule            string                `json:"to_module"`
+	Edges               int                   `json:"edges"`
+	ScoredEdges         int                   `json:"scored_edges"`
+	AbstainedEdges      int                   `json:"abstained_edges"`
+	Strength            string                `json:"strength"`
+	Distance            string                `json:"distance"`
+	Volatility          string                `json:"volatility"`
+	Severity            string                `json:"severity,omitempty"`
+	RawDistance         SeamDistance          `json:"raw_distance"`
+	Quadrant            string                `json:"quadrant,omitempty"`
+	Scores              SeamScoreDistribution `json:"scores"`
+	CriticalEdges       int                   `json:"critical_edges"`
+	HighOrWorseEdges    int                   `json:"high_or_worse_edges"`
+	CriticalSharePct    int                   `json:"critical_share_pct"`
+	HighOrWorseSharePct int                   `json:"high_or_worse_share_pct"`
+	Confidence          string                `json:"confidence"`
+	RoleExpectation     string                `json:"role_expectation,omitempty"`
+	Hypothesis          string                `json:"hypothesis,omitempty"`
+	DistributedMonolith bool                  `json:"distributed_monolith,omitempty"`
 }
 
 // ArchitectureState is the versioned architecture-state report contract. It has
 // no verdict: measurement completeness and repository state remain separate.
 type ArchitectureState struct {
-	SchemaVersion string `json:"schema_version"`
+	SchemaVersion string         `json:"schema_version"`
+	Evidence      ReportEvidence `json:"evidence"`
 	// Identity names what the run was judged under.
 	Identity    ResultIdentity   `json:"identity"`
 	Measurement StateMeasurement `json:"measurement"`
@@ -266,6 +266,7 @@ type ArchitectureState struct {
 func NewArchitectureState() ArchitectureState {
 	return ArchitectureState{
 		SchemaVersion: StateSchemaVersion,
+		Evidence:      NewReportEvidence(),
 		Identity:      ResultIdentity{SchemaVersion: IdentitySchemaVersion},
 		Measurement:   StateMeasurement{ToolVersions: map[string]string{}},
 		Dimensions: Dimensions{

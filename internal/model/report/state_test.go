@@ -14,8 +14,8 @@ import (
 // consumed by every downstream reader, so it changes only with a deliberate
 // contract migration.
 func TestStateSchemaVersionIsPinned(t *testing.T) {
-	if report.StateSchemaVersion != "archfit.architecture-state.v1" {
-		t.Fatalf("StateSchemaVersion = %q, want archfit.architecture-state.v1", report.StateSchemaVersion)
+	if report.StateSchemaVersion != "archfit.architecture-state.v2" {
+		t.Fatalf("StateSchemaVersion = %q, want archfit.architecture-state.v2", report.StateSchemaVersion)
 	}
 }
 

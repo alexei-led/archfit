@@ -109,6 +109,7 @@ type AssessmentSignals struct {
 // AnalysisEvidence is report-only relationship provenance. Assessment never
 // reads it; the application projects it into the external report contract.
 type AnalysisEvidence struct {
+	ReportRelationships evidence.ReportRelationships
 	// RuntimeModules and RuntimeEdges are the async-bridge rollups keyed by the
 	// module map classification actually used. Report-only: they never annotate
 	// an edge, never move distance, and never gate.

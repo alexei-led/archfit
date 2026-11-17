@@ -21,6 +21,7 @@ func attachRelationshipEvidence(diag *result.Result, in relationship.AnalysisEvi
 	if diag == nil {
 		return
 	}
+	diag.ReportEvidence.Relationships = in.ReportRelationships
 	diag.DynamicImports = in.DynamicImports
 	diag.RuntimeAsync = in.RuntimeModules
 	diag.RuntimeAsyncEdges = in.RuntimeEdges

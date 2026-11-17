@@ -22,6 +22,81 @@
         "balance"
       ]
     },
+    "ConnascenceReport": {
+      "properties": {
+        "edges_with_evidence": {
+          "type": "integer"
+        },
+        "abstained_edges": {
+          "type": "integer"
+        },
+        "total_evidence": {
+          "type": "integer"
+        },
+        "by_kind": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "by_source": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "unmeasured": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "roadmap": {
+          "items": {
+            "$ref": "#/$defs/ConnascenceRoadmapItem"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "edges_with_evidence",
+        "abstained_edges",
+        "total_evidence"
+      ]
+    },
+    "ConnascenceRoadmapItem": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "current_status": {
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "related_signals": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "upgrade_trigger": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "current_status"
+      ]
+    },
     "DimensionCoverage": {
       "properties": {
         "basis": {
@@ -138,6 +213,532 @@
         "testability",
         "operations",
         "drift"
+      ]
+    },
+    "EvidenceComponent": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "declared": {
+          "type": "boolean"
+        },
+        "public": {
+          "$ref": "#/$defs/EvidencePathsFact"
+        },
+        "subdomain": {
+          "$ref": "#/$defs/EvidenceStringFact"
+        },
+        "volatility": {
+          "$ref": "#/$defs/EvidenceStringFact"
+        },
+        "unknowns": {
+          "items": {
+            "$ref": "#/$defs/UnknownFact"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "declared",
+        "public",
+        "subdomain",
+        "volatility",
+        "unknowns"
+      ]
+    },
+    "EvidenceConnascence": {
+      "properties": {
+        "population": {
+          "type": "string",
+          "enum": [
+            "all_set_edges"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "edge"
+          ]
+        },
+        "total_edges": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summary": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConnascenceReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "population",
+        "unit",
+        "total_edges",
+        "summary"
+      ]
+    },
+    "EvidenceConnascenceItem": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "source",
+        "detail"
+      ]
+    },
+    "EvidenceLanguage": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "true",
+            "false",
+            "auto"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "mode"
+      ]
+    },
+    "EvidenceObservation": {
+      "properties": {
+        "from_node": {
+          "type": "string"
+        },
+        "to_node": {
+          "type": "string"
+        },
+        "edge_kind": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "sites": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "type": "array"
+        },
+        "connascence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceConnascenceItem"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "from_node",
+        "to_node",
+        "edge_kind",
+        "language",
+        "sites",
+        "connascence"
+      ]
+    },
+    "EvidencePair": {
+      "properties": {
+        "pair_id": {
+          "type": "string"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/EvidenceObservation"
+          },
+          "type": "array"
+        },
+        "interface_inventory": {
+          "$ref": "#/$defs/InterfaceInventory"
+        },
+        "unknowns": {
+          "items": {
+            "$ref": "#/$defs/UnknownFact"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "pair_id",
+        "observations",
+        "interface_inventory",
+        "unknowns"
+      ]
+    },
+    "EvidencePathsFact": {
+      "properties": {
+        "raw": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effective": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "observed",
+            "asserted",
+            "assessed",
+            "assumed",
+            "unknown"
+          ]
+        },
+        "derivation": {
+          "type": "string"
+        },
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "raw",
+        "effective",
+        "origin",
+        "derivation",
+        "refs"
+      ]
+    },
+    "EvidencePopulation": {
+      "properties": {
+        "population": {
+          "type": "string",
+          "enum": [
+            "seam_eligible_set_edges"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "edge"
+          ]
+        },
+        "total_edges": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "population",
+        "unit",
+        "total_edges"
+      ]
+    },
+    "EvidenceRef": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selector": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "captured",
+            "changed",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "sha256",
+        "status"
+      ]
+    },
+    "EvidenceScope": {
+      "properties": {
+        "abstraction": {
+          "type": "string",
+          "enum": [
+            "module"
+          ]
+        },
+        "source_root": {
+          "type": "string"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "module_inventory_hash": {
+          "type": "string"
+        },
+        "classification_hash": {
+          "type": "string"
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generated": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "languages": {
+          "items": {
+            "$ref": "#/$defs/EvidenceLanguage"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "abstraction",
+        "source_root",
+        "policy_ref",
+        "module_inventory_hash",
+        "classification_hash",
+        "exclude",
+        "tests",
+        "generated",
+        "languages"
+      ]
+    },
+    "EvidenceSnapshot": {
+      "properties": {
+        "head_commit": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head_tree": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "before_digest": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_digest": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy_before_digest": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy_after_digest": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleanliness": {
+          "type": "string",
+          "enum": [
+            "clean",
+            "dirty",
+            "unknown"
+          ]
+        },
+        "stability": {
+          "type": "string",
+          "enum": [
+            "stable_by_pre_post_check",
+            "changed",
+            "unknown"
+          ]
+        },
+        "policy_binding": {
+          "type": "string",
+          "enum": [
+            "match",
+            "mismatch",
+            "unknown"
+          ]
+        },
+        "unknowns": {
+          "items": {
+            "$ref": "#/$defs/UnknownFact"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "head_commit",
+        "head_tree",
+        "before_digest",
+        "after_digest",
+        "policy_before_digest",
+        "policy_after_digest",
+        "cleanliness",
+        "stability",
+        "policy_binding",
+        "unknowns"
+      ]
+    },
+    "EvidenceStringFact": {
+      "properties": {
+        "raw": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effective": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "observed",
+            "asserted",
+            "assessed",
+            "assumed",
+            "unknown"
+          ]
+        },
+        "derivation": {
+          "type": "string"
+        },
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "raw",
+        "effective",
+        "origin",
+        "derivation",
+        "refs"
       ]
     },
     "ExpiringException": {
@@ -294,6 +895,25 @@
         "status"
       ]
     },
+    "InterfaceInventory": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "status",
+        "reason"
+      ]
+    },
     "Location": {
       "properties": {
         "file": {
@@ -388,6 +1008,44 @@
       "required": [
         "ref",
         "sha"
+      ]
+    },
+    "ReportEvidence": {
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/EvidenceScope"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/EvidenceSnapshot"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/EvidenceComponent"
+          },
+          "type": "array"
+        },
+        "pair_population": {
+          "$ref": "#/$defs/EvidencePopulation"
+        },
+        "pairs": {
+          "items": {
+            "$ref": "#/$defs/EvidencePair"
+          },
+          "type": "array"
+        },
+        "connascence": {
+          "$ref": "#/$defs/EvidenceConnascence"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "scope",
+        "snapshot",
+        "components",
+        "pair_population",
+        "pairs",
+        "connascence"
       ]
     },
     "RepositoryBalance": {
@@ -563,9 +1221,6 @@
           "type": "string"
         },
         "volatility": {
-          "type": "string"
-        },
-        "volatility_provenance": {
           "type": "string"
         },
         "severity": {
@@ -854,9 +1509,12 @@
     "schema_version": {
       "type": "string",
       "enum": [
-        "archfit.architecture-state.v1"
+        "archfit.architecture-state.v2"
       ],
       "description": "The only architecture-state contract this binary emits."
+    },
+    "evidence": {
+      "$ref": "#/$defs/ReportEvidence"
     },
     "identity": {
       "$ref": "#/$defs/ResultIdentity"
@@ -890,6 +1548,7 @@
   "type": "object",
   "required": [
     "schema_version",
+    "evidence",
     "identity",
     "measurement",
     "dimensions",

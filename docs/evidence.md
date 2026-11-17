@@ -2,15 +2,91 @@
 
 Evidence status describes completeness. It does not describe whether a metric value is good. Report measurements and repository rule errors remain separate. See [results](results.md) for the public report fields and [metrics](metrics.md) for metric meaning.
 
+## Report evidence
+
+The report records the consumed policy bytes once. Configuration, declarations, repository state, and identity use that copy. The snapshot also reads the policy at both boundaries, even if exclusions omit it. If either differs from the consumed bytes, policy binding is `mismatch` and stability is `changed`.
+
+The snapshot hashes raw bytes of a bounded, named subset of source and build inputs. It re-enumerates the subset after analysis. `stable_by_pre_post_check` requires matching complete captures and matching consumed policy bytes. It does not prove isolation, detect transient ABA changes, or cover every external or ignored build input. Missing files, limits, symlinks, and unavailable Git facts remain unknown. The snapshot helper writes no Git index or objects. Existing report analyzers and caches can still write their normal artifacts.
+
+References name repository-relative files and captured hashes or decoded-policy selectors. A policy assertion is not authenticated owner approval. An unknown interface inventory is not an empty interface inventory. Module pairs group observed retained edges, not semantic interfaces. The connascence summary covers all retained edges, while the pair population covers only seam-eligible edges.
+
+### Digest recipes
+
+These hashes identify bytes or effective inputs, not architectural quality.
+All strings use UTF-8 bytes. `NUL` means byte `00`; `SOH` means byte `01`.
+Hex output is lowercase.
+
+**Policy:** `scope.policy_ref.sha256` and snapshot policy digests are
+`sha256:` plus SHA-256 of the exact raw policy bytes.
+The legacy `identity.policy_digest` contains the same digest without that prefix.
+Consumed bytes and boundary disk bytes remain separate inputs.
+
+**Snapshot:** [the report helper](../internal/evidence/acquisition/report_snapshot.go)
+defines the named source extensions, build basenames, and project-file extensions.
+It also includes enabled supplied-coverage artifacts and their explicit or default
+`<artifact>.sidecar.json` paths.
+The policy is included independently of exclusions.
+The helper uses effective merged exclusions, skips Git/cache metadata, and rejects
+secret paths. Symlinks, unsupported re-inclusions, read failures, and enumeration
+or byte limits prevent a complete digest.
+Enumeration is bounded to 20,000 entries and depth 64. Raw reads share a 32 MiB budget.
+
+For each captured file, compute SHA-256 of its raw bytes.
+Sort unique repository-relative, slash-separated paths using Go string ordering.
+Hash the concatenation below, using the **32 binary digest bytes**, not their hex text:
+
+```text
+UTF8(path) NUL SHA256(raw_file_bytes) NUL
+```
+
+Prefix the final lowercase SHA-256 hex with `sha256:`.
+The policy is read first for boundary binding, but aggregate encoding remains path-sorted.
+Per-file references use the prefixed raw-file digest.
+No complete aggregate is emitted for a partial capture.
+
+**Module inventory:** `scope.module_inventory_hash` is
+[ModelHash](../internal/policy/policy.go) over the effective classifier module map
+**after augmentation**, including synthetic modules and resolved topology.
+It is not a hash of raw declarations or public component rows.
+Sort module names. For each name, append these bytes in order:
+
+1. Module name, then `NUL`.
+2. For each list `Paths`, `Public`, `Internal`: sort strings, join with `SOH`, then append `NUL`.
+3. Each scalar followed by `NUL`: `Layer`, `Subdomain`, `Volatility`, `Owner`, `DeployUnit`, `Role`.
+
+Hash the concatenation with SHA-256 and emit lowercase hex without a prefix.
+Sorting preserves duplicate list entries. Nil and empty lists encode identically.
+Declared component rows retain original declaration origins separately.
+Synthetic ancestry remains unknown even when an effective inherited value is available.
+
+**Classification:** `scope.classification_hash` is
+[ClassificationHash](../internal/evidence/acquisition/classification.go) over the
+normalized run-policy settings, not raw policy text or augmented component rows.
+Define `write(parts...)` as UTF-8 parts joined with `SOH`, followed by `NUL`.
+Write these records in order:
+
+1. `write("cascade", strconv.FormatBool(VolatilityCascadeEnabled))`.
+2. `write("function_loc_threshold", strconv.Itoa(FunctionLOCThreshold))`.
+3. `write("disabled_metrics", strconv.Quote(comma_join(sorted_disabled_metric_names)))`.
+4. For each external system, sorted by name:
+   `write("external", strconv.Quote(name), volatility, comma_join(quoted_sorted_targets))`.
+
+Only explicitly disabled metrics enter the third record.
+External-system volatility defaults to `low` when empty.
+Sort target strings before quoting each with Go `strconv.Quote`.
+Hash the concatenation with SHA-256 and emit lowercase hex without a prefix.
+The quoted strings include their quotation marks and Go escape sequences.
+These recipes document existing algorithms, not a new hash version.
+
 ## Promotion rule
 
 Each dimension has a fixed set of required fact kinds. A producer can prove a fact not applicable only through its own applicability probe. A config opt-out does not prove that a fact does not apply.
 
-| Status | Condition |
-|---|---|
-| `measured` | The dimension applies, and every required fact is complete or proved not applicable. |
-| `partial` | The dimension applies, at least one required fact is complete, and another is incomplete. |
-| `unmeasured` | The dimension does not apply, or no required fact was observed. |
+| Status       | Condition                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| `measured`   | The dimension applies, and every required fact is complete or proved not applicable.      |
+| `partial`    | The dimension applies, at least one required fact is complete, and another is incomplete. |
+| `unmeasured` | The dimension does not apply, or no required fact was observed.                           |
 
 A producer reports zero only after it completes the relevant denominator. A missing row, unavailable tool, or failed producer is not zero. Every `partial` or `unmeasured` dimension names its missing in-claim facts. Unknown facts outside the claim do not block promotion.
 
@@ -108,14 +184,14 @@ Report identity retains the policy digest, policy ref, base commit, head tree di
 
 Schema 3 `archfit check` reads three kinds of fact from each tree: which file imports which package, file or library; the source files; and the string literals, which only the `duplication` rule needs. It reads them from two trees in one run: the merge base and the head. The head is the working tree as a commit of every change would hold it: edits and new files count, files git ignores do not. Both trees are written from git objects to a temporary directory and read there, so the head resolves imports against the same files the base and CI see, and the working tree is never changed.
 
-| Language | Read with | A first-party import targets |
-|---|---|---|
-| Go | The standard parser, built in. `go.mod` and `go.work` give the module path. | The package directory (`.` for the root package) |
-| TypeScript, JavaScript | `ast-grep`, and a built-in resolver for relative paths, `tsconfig` `paths` and workspace packages | The file |
-| Python | `ast-grep`, and a built-in resolver for packages and the `src` layout | The file |
-| Rust | `cargo metadata`: crates only | The crate directory; the site is the dependency's line in `Cargo.toml` |
-| C# | MSBuild project references | The project directory; the site is the reference's line in the project file |
-| Literals | The standard parser for Go, `ast-grep` for the other languages | — |
+| Language               | Read with                                                                                         | A first-party import targets                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Go                     | The standard parser, built in. `go.mod` and `go.work` give the module path.                       | The package directory (`.` for the root package)                            |
+| TypeScript, JavaScript | `ast-grep`, and a built-in resolver for relative paths, `tsconfig` `paths` and workspace packages | The file                                                                    |
+| Python                 | `ast-grep`, and a built-in resolver for packages and the `src` layout                             | The file                                                                    |
+| Rust                   | `cargo metadata`: crates only                                                                     | The crate directory; the site is the dependency's line in `Cargo.toml`      |
+| C#                     | MSBuild project references                                                                        | The project directory; the site is the reference's line in the project file |
+| Literals               | The standard parser for Go, `ast-grep` for the other languages                                    | —                                                                           |
 
 The check never runs a language toolchain for Go, TypeScript or Python, `node_modules`, dependency-cruiser, grimp, the typed Go loader, SCIP indexers or `jscpd`, and no optional analyzer: the facts are the same with every `analyzers` key on or off. A Go repository needs only `git`. TypeScript and Python need `git` and `ast-grep`. Rust needs `cargo` and C# the .NET SDK, plus `ast-grep` for their literals.
 
@@ -127,14 +203,14 @@ Facts are cached under the tree's git id in `.archfit-cache/facts/checkfacts/`. 
 
 Missing evidence is not zero. Each thing the check needs and cannot read is an `unknown` item with a cause and the step that restores it:
 
-| Cause | When | Next |
-|---|---|---|
-| `import` | A first-party import that names no file or package | fix the import |
-| `import` | A file that does not parse, or a `tsconfig` that does not parse | fix the syntax error |
-| `import` | A `tsconfig` `extends` the resolver does not read (a package, `node_modules`, outside the repository) | make the extends a relative path inside the repository |
-| `import` | A Go file whose build depends on cgo while `CGO_ENABLED` is not set | set `CGO_ENABLED` to 0 or 1 |
-| `tool` | `ast-grep`, `cargo` or `dotnet` is not installed where its language has files; the item is about the whole tree | install the tool |
-| `base` | The merge base cannot be read | run `git fetch`, then `archfit check` again |
+| Cause    | When                                                                                                            | Next                                                   |
+| -------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `import` | A first-party import that names no file or package                                                              | fix the import                                         |
+| `import` | A file that does not parse, or a `tsconfig` that does not parse                                                 | fix the syntax error                                   |
+| `import` | A `tsconfig` `extends` the resolver does not read (a package, `node_modules`, outside the repository)           | make the extends a relative path inside the repository |
+| `import` | A Go file whose build depends on cgo while `CGO_ENABLED` is not set                                             | set `CGO_ENABLED` to 0 or 1                            |
+| `tool`   | `ast-grep`, `cargo` or `dotnet` is not installed where its language has files; the item is about the whole tree | install the tool                                       |
+| `base`   | The merge base cannot be read                                                                                   | run `git fetch`, then `archfit check` again            |
 
 ## Fact cache
 
