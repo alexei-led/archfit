@@ -55,7 +55,7 @@ func withRunFacts(doc report.Document, in IdentityInputs) report.Document {
 }
 
 // projectArchitectureState projects the assessment-owned architecture state
-// onto the external archfit.architecture-state.v1 contract, and adds the run
+// onto the external archfit.architecture-state.v2 contract, and adds the run
 // facts assessment deliberately never sees: which tree was measured, which tool
 // versions produced the evidence.
 //

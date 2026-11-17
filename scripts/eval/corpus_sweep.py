@@ -30,7 +30,7 @@ COMMAND_TIMEOUT = 3600
 WORK_DIR_MARKER = ".archfit-sweep-workdir"
 VERDICT_EXITS = {"pass": 0, "fail": 1, "waiting": 1, "unknown": 2}
 RESULT_SCHEMA = "archfit.result.v1"
-STATE_SCHEMA_VERSION = "archfit.architecture-state.v1"
+STATE_SCHEMA_VERSION = "archfit.architecture-state.v2"
 
 
 @dataclass(frozen=True)
@@ -211,7 +211,7 @@ class Sweep:
                 not isinstance(state, dict)
                 or state.get("schema_version") != STATE_SCHEMA_VERSION
             ):
-                raise ValueError("report did not emit architecture-state.v1")
+                raise ValueError(f"report did not emit {STATE_SCHEMA_VERSION}")
             if self.validate_schema:
                 validate_published_schema(
                     state, REPO_ROOT / "archfit.report.schema.json"

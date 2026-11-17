@@ -580,7 +580,6 @@ def seam_scores(archfit: str, config: Path, root: Path) -> dict[Pair, dict]:
             "median": scores.get("median"),
             "strength": seam.get("strength"),
             "volatility": seam.get("volatility"),
-            "volatility_provenance": seam.get("volatility_provenance"),
             "edges": seam.get("edges"),
         }
     return out

@@ -1,5 +1,5 @@
 // Package reportschema generates a JSON Schema for the repository report,
-// the `archfit.architecture-state.v1` document that `report --format json` emits at the
+// the `archfit.architecture-state.v2` document that `report --format json` emits at the
 // document root.
 //
 // It exists because the output contract had no machine-readable form: consumers
