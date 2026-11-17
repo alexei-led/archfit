@@ -68,8 +68,9 @@ Finding explanations use **effective volatility**, not a claim about target chur
 For internal functional and symmetric coupling, a high-volatility source can produce a
 high-volatility edge even when its target is declared low. Declared external systems
 use their own target volatility. Cascade can also raise
-a declared value. The seam ledger's `volatility_provenance` distinguishes declared,
-inherited, cascade, and undeclared evidence. A seam aggregates edges, so its
+a declared value. `State.evidence.components` distinguishes asserted, assumed,
+assessed, and unknown component origins. These origins are not attestations or a
+per-seam provenance scalar. A seam aggregates edges, so its
 strongest classification need not describe every advisory subgroup. These static
 signals indicate change-propagation risk, not proof of an observed runtime cascade.
 

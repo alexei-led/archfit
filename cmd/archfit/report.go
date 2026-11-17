@@ -7,10 +7,12 @@ import (
 	"github.com/alexei-led/archfit/v4/internal/application"
 	"github.com/alexei-led/archfit/v4/internal/application/repostate"
 	"github.com/alexei-led/archfit/v4/internal/config"
+	"github.com/alexei-led/archfit/v4/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/v4/internal/evidence/acquisition/checkfacts"
 	"github.com/alexei-led/archfit/v4/internal/model/report"
 	"github.com/alexei-led/archfit/v4/internal/output/jsonout"
 	"github.com/alexei-led/archfit/v4/internal/output/reporttext"
+	"github.com/alexei-led/archfit/v4/internal/policy/resolved"
 	reportports "github.com/alexei-led/archfit/v4/internal/report/ports"
 )
 
@@ -59,17 +61,22 @@ func (c *ReportCmd) Run(deps *appDeps) error {
 		return noVerdict(errNoPolicy)
 	}
 
-	// The state comes first: an invalid policy stops slow measurements.
-	state, err := co.repositoryState(ctx)
+	in, err := config.NewReportInput(data)
 	if err != nil {
 		return noVerdict(err)
 	}
-	cfg, err := config.ReportConfig(data)
-	if err != nil {
-		return noVerdict(err)
-	}
+	return c.runLoaded(ctx, deps, co, in)
+}
 
-	doc, err := co.measure(ctx, deps, cfg)
+// runLoaded continues with the original consumed policy, even if disk changes.
+func (c *ReportCmd) runLoaded(ctx context.Context, deps *appDeps, co checkout, in config.ReportInput) error {
+	snapshots := acquisition.ReportSnapshotSource{Root: co.root, PolicyPath: co.policyPath(""), Exclude: in.Config.RunOptions().Exclusions, Inputs: reportSnapshotInputs(in), Runner: deps.Runner}
+	request := reportRequest(ctx, co, deps, in, snapshots)
+	state, err := co.repositoryState(ctx, in.Policy)
+	if err != nil {
+		return noVerdict(err)
+	}
+	doc, err := co.measure(ctx, deps, in, request)
 	if err != nil {
 		return noVerdict(err)
 	}
@@ -85,12 +92,8 @@ func (c *ReportCmd) Run(deps *appDeps) error {
 }
 
 // repositoryState judges the working tree with the local version 3 policy.
-func (co checkout) repositoryState(ctx context.Context) (report.RepositoryState, error) {
-	src := localPolicy{co}
-	p, err := src.Policy(ctx)
-	if err != nil {
-		return report.RepositoryState{}, err
-	}
+func (co checkout) repositoryState(ctx context.Context, p resolved.Policy) (report.RepositoryState, error) {
+	src := reportPolicySource{p}
 	svc := repostate.Service{Policies: src, Tree: repository{co}, Facts: co.facts(checkfacts.ConfigFrom(p))}
 	state, err := svc.State(ctx, co.root, co.now())
 	if err != nil {
@@ -104,13 +107,12 @@ func (co checkout) repositoryState(ctx context.Context) (report.RepositoryState,
 }
 
 // measure runs the report pipeline on the whole checkout, without stored references.
-func (co checkout) measure(ctx context.Context, deps *appDeps, cfg config.Config) (report.Document, error) {
+func (co checkout) measure(ctx context.Context, deps *appDeps, in config.ReportInput, request application.Request) (report.Document, error) {
 	deps.progress = func(string) {}
 	file := co.policyPath("")
-	resp, err := application.Service{Stages: newAnalysisStages(file, co.root, cfg, deps)}.Execute(ctx, application.Request{
-		ConfigSource: file, BundleDir: co.root, Formats: []string{formatJSON},
-		Identity: identityInputs(ctx, deps.Runner, file, co.root, ""),
-	})
+	stages := newAnalysisStages(file, co.root, in.Config, deps)
+	stages.Evidence = reportEvidenceService(file, co.root, in, deps)
+	resp, err := application.Service{Stages: stages}.Execute(ctx, request)
 	if err != nil {
 		return report.Document{}, fmt.Errorf("the measurements: %w", err)
 	}

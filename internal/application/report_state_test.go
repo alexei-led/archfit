@@ -158,7 +158,7 @@ func TestShadowStateIsNotOnTheDiagnosticWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal document: %v", err)
 	}
-	for _, key := range []string{"schema_version\":\"archfit.architecture-state.v1", "\"dimensions\"", "\"hard_gates\""} {
+	for _, key := range []string{"schema_version\":\"archfit.architecture-state.v2", "\"dimensions\"", "\"hard_gates\""} {
 		if bytes.Contains(encoded, []byte(key)) {
 			t.Errorf("internal document leaked architecture-state key %q:\n%s", key, encoded)
 		}

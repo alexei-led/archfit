@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.eval import language_contracts as lc
 
+STATE_SCHEMA_VERSION = "archfit.architecture-state.v2"
+
 
 class ImageContract:
     def __init__(self, image: str, context: str, output: Path):
@@ -96,8 +98,11 @@ class ImageContract:
     def read_state(self, output: Path, label: str) -> dict[str, Any]:
         try:
             state = json.loads((output / f"{label}.json").read_text())
-            if state.get("schema_version") != "archfit.architecture-state.v1":
-                raise ValueError("not architecture-state.v1")
+            if (
+                not isinstance(state, dict)
+                or state.get("schema_version") != STATE_SCHEMA_VERSION
+            ):
+                raise ValueError(f"not {STATE_SCHEMA_VERSION}")
             return state
         except (OSError, ValueError) as exc:
             self.expect(f"{output.name}/{label}: valid state", False, str(exc))

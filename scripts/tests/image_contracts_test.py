@@ -293,7 +293,7 @@ class ImageContractsTest(unittest.TestCase):
             output = Path(temporary)
             contract = image.ImageContract("local:contract", "colima", output)
             state = {
-                "schema_version": "archfit.architecture-state.v1",
+                "schema_version": "archfit.architecture-state.v2",
                 "measurement": {
                     "tool_versions": {
                         "pyimports": f"ast-grep {image.lc.TOOL_MANIFEST['node']['@ast-grep/cli']}"
@@ -423,7 +423,7 @@ class ImageContractsTest(unittest.TestCase):
         spec = next(s for s in image.lc.FIXTURES if s.name == "typescript")
         pin = f"ast-grep {image.lc.TOOL_MANIFEST['node']['@ast-grep/cli']}"
         good = {
-            "schema_version": "archfit.architecture-state.v1",
+            "schema_version": "archfit.architecture-state.v2",
             "measurement": {"tool_versions": {"tsimports": pin}},
             "coverage": {"tools": [{"tool": "tsimports", "status": "ok"}]},
         }
@@ -525,7 +525,7 @@ class ImageContractsTest(unittest.TestCase):
             contract = image.ImageContract("local:contract", "colima", output)
             scripts = []
             state = {
-                "schema_version": "archfit.architecture-state.v1",
+                "schema_version": "archfit.architecture-state.v2",
                 "coverage": {
                     "tools": [
                         {

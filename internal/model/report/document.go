@@ -90,7 +90,7 @@ type Document struct {
 	Scope *CheckScope `json:"-"`
 	// Score is the computed scorecard used by config comparison and the AI review.
 	Score Scorecard `json:"-"`
-	// State is the canonical archfit.architecture-state.v1 contract. Renderers
+	// State is the canonical archfit.architecture-state.v2 contract. Renderers
 	// select it explicitly; json:"-" prevents generic Document marshaling from
 	// creating an accidental second output format.
 	State ArchitectureState `json:"-"`

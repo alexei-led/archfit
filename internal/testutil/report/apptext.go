@@ -27,7 +27,7 @@ var droppedByConsumer = map[string]struct{}{"matched_by": {}, "declarations": {}
 // taskTextKeys are the agent-task fields the consumer caps at appTaskTextRunes.
 var taskTextKeys = map[string]struct{}{"goal": {}, "constraints": {}}
 
-// AppTextViolations walks an archfit.architecture-state.v1 document and lists
+// AppTextViolations walks an archfit.architecture-state.v2 document and lists
 // every string a strict consumer would reject, as "path: rule". An empty result
 // means every string is a single line within its cap.
 func AppTextViolations(stateJSON []byte) ([]string, error) {

@@ -50,6 +50,14 @@ type Request struct {
 	// Identity carries the run facts only the caller can read: the policy
 	// files' bytes, the git tree, the engine build.
 	Identity IdentityInputs
+	// ReportContext and Snapshots bind the report-only raw evidence surface.
+	ReportContext *modevidence.ReportContext
+	Snapshots     ReportSnapshotSource
+}
+
+// ReportSnapshotSource captures the live input subset after measurement.
+type ReportSnapshotSource interface {
+	Capture(context.Context) modevidence.ReportFileSnapshot
 }
 
 // AnalysisRequest is the narrow technical-stage input. The application owns
@@ -315,6 +323,12 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		return Response{}, &ExecutionError{Message: err.Error()}
 	}
 
+	if req.ReportContext != nil {
+		out.Diagnostic.ReportEvidence.Context = req.ReportContext
+		if req.Snapshots != nil {
+			out.Diagnostic.ReportEvidence.After = req.Snapshots.Capture(ctx)
+		}
+	}
 	return Response{
 		Document: withRunFacts(projectReport(out.Diagnostic, out.Score), req.Identity),
 		Formats:  formats,

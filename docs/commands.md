@@ -202,7 +202,7 @@ policy: not protected
 
 A version 2 policy stops the report with exit `2` and guidance to run `archfit init`.
 
-`--format json` writes the `archfit.architecture-state.v1` document of `archfit.report.schema.json`. On a version 3 policy, its `repository` object holds the state and each list above.
+`--format json` writes the `archfit.architecture-state.v2` document of `archfit.report.schema.json`. On a version 3 policy, its `repository` object holds the state and each list above.
 
 | Flag | Meaning |
 | --- | --- |

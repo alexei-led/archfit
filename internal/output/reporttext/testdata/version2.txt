@@ -3,3 +3,9 @@ measurements:
   coupling_balance: 78 (mixed)
   cycle: 0
   encapsulation: n/a
+evidence:
+  snapshot: unknown
+  policy binding: unknown
+  relationships: unknown
+  interface inventory: unknown
+  snapshot gaps: 1

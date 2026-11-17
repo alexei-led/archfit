@@ -44,6 +44,8 @@ type Service struct {
 	// ConfigPath and Root are the defaults a request may override.
 	ConfigPath string
 	Root       string
+	// ConsumedPolicyDigest binds report acquisition to its original input bytes.
+	ConsumedPolicyDigest string
 	// Options and Policy are the config projections this run analyses under.
 	Options RunOptions
 	Policy  policy.PolicySnapshot
@@ -219,12 +221,16 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		note(warning)
 	}
 	coverageGaps := buildCoverageGaps(marked, s.Options.Coverage, resolved.Root)
+	policyDigest := s.ConsumedPolicyDigest
+	if policyDigest == "" {
+		policyDigest = configHash(configPath)
+	}
 	return application.Acquired{
 		Facts:        snapshot,
 		Observations: observations,
 		Context: application.AnalysisContext{
 			Scope: resolved,
-			Now:   now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
+			Now:   now, ConfigHash: policyDigest, PrimaryExtractorTools: registry.PrimaryTools(),
 			ModelHash:          policy.ModelHash(runPolicy.Topology.Modules),
 			ClassificationHash: ClassificationHash(runPolicy),
 			ConfigSource:       configPath, BundleDir: bundleDir, ScanRoot: root,

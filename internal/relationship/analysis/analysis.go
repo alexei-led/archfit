@@ -64,6 +64,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 				Graph: in.Graph}),
 		},
 		Evidence: relationship.AnalysisEvidence{
+			ReportRelationships:       reportRelationships(set, cfg.Modules),
 			RuntimeModules:            runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
 			RuntimeEdges:              runtimeAsyncEdges,
 			DynamicImports:            dynamicImports,

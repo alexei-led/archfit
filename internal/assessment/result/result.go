@@ -14,6 +14,8 @@ const SchemaVersion = "archfit.diagnostic.v2"
 
 // Result is the assessment result before report projection.
 type Result struct {
+	// ReportEvidence is carried without influencing any assessment consumer.
+	ReportEvidence            evidence.ReportEvidence             `json:"-"`
 	SchemaVersion             string                              `json:"schema_version"`
 	Base                      string                              `json:"base"`
 	Head                      string                              `json:"head"`
