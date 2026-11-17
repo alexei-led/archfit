@@ -26,6 +26,7 @@ func TestNotUsedIn(t *testing.T) {
 		{name: "the check name", text: "the check archfit/gate failed"},
 		{name: "the policy key", text: "gate: required"},
 		{name: "gate as a word", text: "the gate is closed", want: []string{"gate"}},
+		{name: "review as a verb is not the report", text: "Review workflow change"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := testutil.NotUsedIn(tc.text); !slices.Equal(got, tc.want) {
