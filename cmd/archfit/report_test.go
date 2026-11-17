@@ -2,11 +2,22 @@ package main
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/v4/internal/model/report"
 )
+
+// TestReportIsNeverNamedReview keeps the report's own name off "review" in its
+// help. The word is no longer in the Not used matcher, because "Review
+// workflow change" is fine; section 5 bans it only as the report's name.
+func TestReportIsNeverNamedReview(t *testing.T) {
+	reviewName := regexp.MustCompile(`(?i)\breview\b`)
+	if help := (&ReportCmd{}).Help(); reviewName.MatchString(help) {
+		t.Errorf("report help names the report \"review\": %q", reviewName.FindString(help))
+	}
+}
 
 // reportGoldens holds the state part of `archfit report`: the text before
 // "measurements:". The measurements depend on the tools of the machine.
