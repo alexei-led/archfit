@@ -9,14 +9,16 @@ import (
 // notUsedWords are the words of the "Not used" column of design section 5.
 // Archfit output names each thing with one word; these are the other words.
 // "record" is not listed: section 5 forbids it only as the verb for an
-// owner's answer, and section 8 names the output a record.
+// owner's answer, and section 8 names the output a record. "review" is not
+// listed: section 5 forbids it only as the name of the report, which
+// cmd/archfit checks by name (TestReportIsNeverNamedReview).
 var notUsedWords = []string{
 	"config", "architecture file", "classification", "component", "surface",
 	"approved pair", "edge", "relation", "law", "intent", "decision", "guardrail",
 	"waiver", "baseline entry", "debt", "temporary decision", "finding", "violation",
 	"blocker", "problem", "task", "gate", "scan", "blocked", "denied",
 	"needs attention", "healthy", "decision request", "CR", "accept", "decline",
-	"architect", "approver", "rating", "score", "review", "analysis", "insight",
+	"architect", "approver", "rating", "score", "analysis", "insight",
 }
 
 // gateNames are the two uses of "gate" that are names, not words: the check

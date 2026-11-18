@@ -106,7 +106,7 @@ of a required check. The experiments in section 15 must confirm this design.
 - Proof that an architecture is good. Archfit enforces the approved policy over disclosed
   evidence.
 - Decisions without the App. Without the App the CLI is a local guide.
-- Organisation-level policy. The first release serves one repository, one or a few owners, and
+- Organization-level policy. The first release serves one repository, one or a few owners, and
   many agents.
 - Analysis of source code by the App. The engine keeps running in the repository's workflow.
 - Runtime measurement. New languages.
@@ -156,12 +156,15 @@ documents.
 | **pass / fail / waiting / unknown** | The four statuses of a change. | blocked, denied, needs attention, healthy |
 | **request** | A proposal to change the policy. It is a GitHub issue; its id is the issue number, written `#431`. | decision request, CR |
 | **approve / reject** | The owner's answer to a request. | accept, decline, record |
+| **admit** | An operator lets an installation run Archfit ("admitted", "admission"). Only the owner's answer is "approve". | approve an installation, approve an account |
 | **owner** | A person who writes the policy and answers requests. | architect, approver |
 | **worker** | A person or agent who changes code. | — |
 | **balance** | The coupling number, shown as `9/10 (min 7)`. | rating, score |
 | **volatility** | `low`, `medium`, or `high`: how often a module is expected to change. The check uses this value. | — |
 | **subdomain** | Optional: the business role of a module (`core`, `supporting`, `generic`), as in the book. It only sets the volatility when `volatility` is absent. | — |
-| **report** | The repository-wide measurements for the owner. | review, analysis, insight |
+| **report** | The repository-wide measurements for the owner. | analysis, insight, "review" as the name of the report |
+
+Owner decision, 2026-11-17: "review" is not used only as the name of the report; "Review workflow change" is fine. The pull request that carries policy changes is the "policy pull request". Operators admit installations; "approve" is only the owner's answer.
 
 Numbers:
 
@@ -538,14 +541,14 @@ This is the usual way to protect a policy of this kind (research of 2026-11-10, 
 1. An owner answers a request in the App. An answer that loosens the policy needs a passkey with
    user verification (a fingerprint, a face, or a PIN), registered by that owner. A session
    cookie or a password is not enough, because an agent can drive the owner's browser.
-2. The App writes the change into an architecture pull request on its own branch, and records
+2. The App writes the change into a policy pull request on its own branch, and records
    the approval: repository, the policy it replaces, the new policy, the owner, the time. An
    approval is valid once, for that step. An older approved policy cannot be used again.
-3. The architecture pull request merges. By default the owner's answer is **Approve and merge**:
+3. The policy pull request merges. By default the owner's answer is **Approve and merge**:
    the App merges it, so one answer is one action. The owner can choose to merge later; then the
    next answers join the same pull request.
 
-A pull request that changes the policy and is not the App's architecture pull request is
+A pull request that changes the policy and is not the App's policy pull request is
 `unknown`. This includes a code change that also edits the policy. Workers ask; they do not edit.
 An owner who wants to edit the YAML does it in the App, which checks the text and puts it on the
 same path.
@@ -1146,7 +1149,7 @@ Owner rows were made by the owner on 2026-11-10. Rows marked "Manager, from mile
 
 | Decision | Answer |
 | --- | --- |
-| Who the first release serves | One owner with many agents; possibly a few human owners. No organisation features. |
+| Who the first release serves | One owner with many agents; possibly a few human owners. No organization features. |
 | Decisions without the App | Not in this plan. |
 | A new dependency between two modules | An owner approves it; the engine gives the balance. |
 | An expired exception | Fails every pull request. Other drift does not. |
@@ -1260,7 +1263,7 @@ In Archfit 4:
 | `healthy`, `needs_attention`, `blocked` | `pass`, `fail`, `waiting`, `unknown` |
 | `ask_owner`, decision request | Request |
 | `analyze`, review | Report |
-| Baseline pull request | Architecture pull request |
+| Baseline pull request | Policy pull request |
 | Finding origin | Added by the change, or existing |
 
 ## Appendix C. Review and research record
