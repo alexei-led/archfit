@@ -1,5 +1,30 @@
 # Release notes
 
+## v5.0.0
+
+### Summary
+
+A report that carries its own evidence. `report` now emits `archfit.architecture-state.v2`: component origins are structured facts bound to the policy bytes the command consumed, pair observations are typed and ordered, edge populations stay apart, and raw-byte snapshot evidence is bounded. `check` results, scoring, policy syntax and enforcement are unchanged, so a gate that reads only `check` needs no change.
+
+### Changes
+
+- Report JSON is `archfit.architecture-state.v2`. Structured component origins are bound to the first consumed policy bytes and replace `seam.volatility_provenance`.
+- Pair observations are published in order, with separate edge populations, so a consumer no longer infers a pair from a merged seam list.
+- Snapshot evidence is a bounded raw-byte record tied to policy identity and configuration.
+- Report consumers in the image and the corpus readers require contract v2. Check-result v1 rejection stays: a v2 reader does not accept v1 check output and vice versa.
+- Derived load diagnostics keep every numeric field and drop the retired per-seam provenance scalar.
+- Go connascence evidence keeps supported name and type facts and no longer infers an algorithm or a meaning from Go object kinds; cached member facts are invalidated, and these diagnostics remain internal rather than emitted report blocks.
+- The evaluation hook arms are set up with the v4 hook writer, and the hook setup writes through a separate binary, so an arm cannot overwrite the binary under test.
+- `doctor --fix --hooks-only` is documented in the command reference.
+- Pull requests, pushes and the merge queue report to the App with Action 4.
+
+### Upgrade
+
+- Read `report` as v2 and expect `archfit.architecture-state.v2`. The file name and the exit code do not change.
+- Replace reads of `seam.volatility_provenance` with the structured component origins, and read pair observations from the ordered list rather than from a merged seam list.
+- `check` still emits `archfit.result.v1`, so a gate that reads only `check` needs no change.
+- The Action runs this engine by image digest only: an older engine or report contract is refused, not adapted.
+
 ## v4.0.0
 
 ### Summary
