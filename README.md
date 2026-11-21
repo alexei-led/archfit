@@ -1,3 +1,9 @@
+> [!IMPORTANT]
+> **archfit moved to [coupling-dev/archfit](https://github.com/coupling-dev/archfit).**
+> Releases from v0.9.0 on are published there (`brew install coupling-dev/tap/archfit`,
+> `go install github.com/coupling-dev/archfit/cmd/archfit@latest`, `ghcr.io/coupling-dev/archfit`).
+> This repository is archived and gets no updates. Older tags stay installable from here.
+
 # archfit
 
 [![CI](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml/badge.svg)](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml)
